@@ -727,6 +727,9 @@ STRUCT_TYPES = [
     "ScramCredentialUpsertion",
     "AlterUserScramCredentialsResult",
     "Coordinator",
+    "RoleNameFilter",
+    "RedpandaRole",
+    "RedpandaRoleMember",
 ]
 
 # A list of StructTypes that are allowed to be not arrays in the schema.

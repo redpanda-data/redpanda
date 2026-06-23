@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"time"
 
 	adminv2 "buf.build/gen/go/redpandadata/core/protocolbuffers/go/redpanda/core/admin/v2"
 	dataplanev1 "buf.build/gen/go/redpandadata/dataplane/protocolbuffers/go/redpanda/api/dataplane/v1"
@@ -30,6 +31,7 @@ type slStatusOptions struct {
 	overview bool
 	task     bool
 	topic    bool
+	sr       bool
 }
 
 // Helper types for unified printing across AdminAPI and Dataplane API.
@@ -63,10 +65,41 @@ type partitionInfo struct {
 }
 
 type shadowLinkStatus struct {
-	Overview                    linkOverview  `json:"overview" yaml:"overview"`
-	Tasks                       []taskStatus  `json:"tasks" yaml:"tasks"`
-	Topics                      []topicStatus `json:"topics" yaml:"topics"`
-	SyncedShadowTopicProperties []string      `json:"synced_shadow_topic_properties" yaml:"synced_shadow_topic_properties"`
+	Overview                    linkOverview              `json:"overview" yaml:"overview"`
+	Tasks                       []taskStatus              `json:"tasks" yaml:"tasks"`
+	Topics                      []topicStatus             `json:"topics" yaml:"topics"`
+	SyncedShadowTopicProperties []string                  `json:"synced_shadow_topic_properties" yaml:"synced_shadow_topic_properties"`
+	SchemaRegistry              *schemaRegistrySyncStatus `json:"schema_registry,omitempty" yaml:"schema_registry,omitempty"`
+}
+
+type schemaRegistrySyncStatus struct {
+	Inventory            *schemaRegistryInventory   `json:"inventory,omitempty" yaml:"inventory,omitempty"`
+	CurrentSync          *schemaRegistryCurrentSync `json:"current_sync,omitempty" yaml:"current_sync,omitempty"`
+	LastFullSync         *schemaRegistrySyncSummary `json:"last_full_sync,omitempty" yaml:"last_full_sync,omitempty"`
+	TotalsSinceTaskStart *schemaRegistrySyncSummary `json:"totals_since_task_start,omitempty" yaml:"totals_since_task_start,omitempty"`
+	LastErrorMessage     string                     `json:"last_error_message,omitempty" yaml:"last_error_message,omitempty"`
+}
+
+type schemaRegistryInventory struct {
+	SelectedSourceSubjects        int64 `json:"selected_source_subjects" yaml:"selected_source_subjects"`
+	SelectedSourceSubjectVersions int64 `json:"selected_source_subject_versions" yaml:"selected_source_subject_versions"`
+	DestinationSubjects           int64 `json:"destination_subjects" yaml:"destination_subjects"`
+	DestinationSubjectVersions    int64 `json:"destination_subject_versions" yaml:"destination_subject_versions"`
+}
+
+type schemaRegistryCurrentSync struct {
+	SyncType string                     `json:"sync_type" yaml:"sync_type"`
+	Summary  *schemaRegistrySyncSummary `json:"summary,omitempty" yaml:"summary,omitempty"`
+}
+
+type schemaRegistrySyncSummary struct {
+	StartTime                   string `json:"start_time,omitempty" yaml:"start_time,omitempty"`
+	FinishTime                  string `json:"finish_time,omitempty" yaml:"finish_time,omitempty"`
+	SubjectVersionsChanged      int64  `json:"subject_versions_changed" yaml:"subject_versions_changed"`
+	CompatibilityConfigsChanged int64  `json:"compatibility_configs_changed" yaml:"compatibility_configs_changed"`
+	ModesChanged                int64  `json:"modes_changed" yaml:"modes_changed"`
+	UnsupportedFeaturesRemoved  int64  `json:"unsupported_features_removed" yaml:"unsupported_features_removed"`
+	Errors                      int64  `json:"errors" yaml:"errors"`
 }
 
 func newStatusCommand(fs afero.Fs, p *config.Params) *cobra.Command {
@@ -140,25 +173,27 @@ Display specific sections:
 	cmd.Flags().BoolVarP(&opts.overview, "print-overview", "o", false, "Print the overview section")
 	cmd.Flags().BoolVarP(&opts.task, "print-task", "k", false, "Print the task status section")
 	cmd.Flags().BoolVarP(&opts.topic, "print-topic", "t", false, "Print the detailed topic status section")
+	cmd.Flags().BoolVarP(&opts.sr, "print-registry", "y", false, "Print the schema registry sync status section")
 	cmd.Flags().BoolVarP(&opts.all, "print-all", "a", false, "Print all sections")
 
 	p.InstallFormatFlag(cmd)
 	return cmd
 }
 
-// If no flags are set, default to overview and client sections.
+// If no flags are set, default to all sections.
 func (o *slStatusOptions) defaultOrAll() {
 	// We currently default to all sections until we have more fields to show.
-	if o.all || (!o.overview && !o.task && !o.topic) {
-		o.overview, o.task, o.topic = true, true, true
+	if o.all || (!o.overview && !o.task && !o.topic && !o.sr) {
+		o.overview, o.task, o.topic, o.sr = true, true, true, true
 	}
 }
 
 func printShadowLinkStatus(status shadowLinkStatus, opts slStatusOptions) {
 	const (
-		secOverview = "Overview"
-		secTasks    = "Tasks"
-		secTopics   = "Topics"
+		secOverview       = "Overview"
+		secTasks          = "Tasks"
+		secTopics         = "Topics"
+		secSchemaRegistry = "Schema Registry"
 	)
 
 	sections := out.NewSections(
@@ -166,6 +201,9 @@ func printShadowLinkStatus(status shadowLinkStatus, opts slStatusOptions) {
 			secOverview: opts.overview,
 			secTasks:    opts.task,
 			secTopics:   opts.topic,
+			// Only shown when present: topic-mode links and the cloud
+			// (dataplane) path do not carry schema registry sync status.
+			secSchemaRegistry: opts.sr && status.SchemaRegistry != nil,
 		})...,
 	)
 
@@ -179,6 +217,10 @@ func printShadowLinkStatus(status shadowLinkStatus, opts slStatusOptions) {
 
 	sections.Add(secTopics, func() {
 		printStatusTopics(status.Topics, status.SyncedShadowTopicProperties)
+	})
+
+	sections.Add(secSchemaRegistry, func() {
+		printStatusSchemaRegistry(status.SchemaRegistry)
 	})
 }
 
@@ -232,6 +274,66 @@ func printStatusPartitionTable(partitions []partitionInfo) {
 	}
 }
 
+func printStatusSchemaRegistry(sr *schemaRegistrySyncStatus) {
+	if sr == nil {
+		fmt.Println("No schema registry sync status.")
+		return
+	}
+	tw := out.NewTabWriter()
+	defer tw.Flush()
+
+	if inv := sr.Inventory; inv != nil {
+		tw.Print("SELECTED SOURCE SUBJECTS", inv.SelectedSourceSubjects)
+		tw.Print("SELECTED SOURCE SUBJECT VERSIONS", inv.SelectedSourceSubjectVersions)
+		tw.Print("DESTINATION SUBJECTS", inv.DestinationSubjects)
+		tw.Print("DESTINATION SUBJECT VERSIONS", inv.DestinationSubjectVersions)
+	}
+	if cs := sr.CurrentSync; cs != nil {
+		tw.Print("", "")
+		tw.Print("CURRENT SYNC:", "")
+		tw.Print("-------------", "")
+		// TYPE is only meaningful while a sync is running.
+		if cs.Summary != nil && cs.Summary.StartTime != "" {
+			tw.Print("TYPE", cs.SyncType)
+		}
+		printStatusSyncSummary(tw, cs.Summary)
+	}
+	if s := sr.LastFullSync; s != nil {
+		tw.Print("", "")
+		tw.Print("LAST FULL SYNC:", "")
+		tw.Print("---------------", "")
+		printStatusSyncSummary(tw, s)
+	}
+	if s := sr.TotalsSinceTaskStart; s != nil {
+		tw.Print("", "")
+		tw.Print("TOTALS SINCE TASK START:", "")
+		tw.Print("------------------------", "")
+		printStatusSyncSummary(tw, s)
+	}
+	if sr.LastErrorMessage != "" {
+		tw.Print("", "")
+		tw.Print("LAST ERROR", sr.LastErrorMessage)
+	}
+}
+
+func printStatusSyncSummary(tw *out.TabWriter, s *schemaRegistrySyncSummary) {
+	// A missing start time means the sync has not run yet; the counters would
+	// all be zero, so show a clear message instead.
+	if s == nil || s.StartTime == "" {
+		tw.Print("Sync has not started.")
+		return
+	}
+	tw.Print("START TIME", s.StartTime)
+	if s.FinishTime != "" {
+		tw.Print("FINISH TIME", s.FinishTime)
+	}
+	tw.Print("SUBJECT VERSIONS CHANGED", s.SubjectVersionsChanged)
+	tw.Print("COMPATIBILITY CONFIGS CHANGED", s.CompatibilityConfigsChanged)
+	tw.Print("MODES CHANGED", s.ModesChanged)
+	tw.Print("UNSUPPORTED FEATURES REMOVED", s.UnsupportedFeaturesRemoved)
+	tw.Print("ERRORS", s.Errors)
+}
+
 // fromAdminV2ShadowLink converts an adminv2.ShadowLink to the unified shadowLinkStatus.
 func fromAdminV2ShadowLink(link *adminv2.ShadowLink) shadowLinkStatus {
 	status := link.GetStatus()
@@ -247,6 +349,7 @@ func fromAdminV2ShadowLink(link *adminv2.ShadowLink) shadowLinkStatus {
 			State: state,
 		},
 		SyncedShadowTopicProperties: status.GetSyncedShadowTopicProperties(),
+		SchemaRegistry:              schemaRegistrySyncStatusToView(status.GetSchemaRegistrySyncStatus()),
 	}
 
 	// Convert tasks
@@ -288,6 +391,57 @@ func fromAdminV2ShadowLink(link *adminv2.ShadowLink) shadowLinkStatus {
 	}
 
 	return result
+}
+
+// schemaRegistrySyncStatusToView converts the admin proto schema registry sync
+// status to the unified view. The dataplane (cloud) API does not expose this
+// status, so it is only populated on the self-hosted path.
+func schemaRegistrySyncStatusToView(s *adminv2.SchemaRegistrySyncStatus) *schemaRegistrySyncStatus {
+	if s == nil {
+		return nil
+	}
+	view := &schemaRegistrySyncStatus{
+		LastFullSync:         schemaRegistrySyncSummaryToView(s.GetLastFullSync()),
+		TotalsSinceTaskStart: schemaRegistrySyncSummaryToView(s.GetTotalsSinceTaskStart()),
+		LastErrorMessage:     s.GetLastErrorMessage(),
+	}
+	if inv := s.GetInventory(); inv != nil {
+		view.Inventory = &schemaRegistryInventory{
+			SelectedSourceSubjects:        inv.GetSelectedSourceSubjects(),
+			SelectedSourceSubjectVersions: inv.GetSelectedSourceSubjectVersions(),
+			DestinationSubjects:           inv.GetDestinationSubjects(),
+			DestinationSubjectVersions:    inv.GetDestinationSubjectVersions(),
+		}
+	}
+	if cs := s.GetCurrentSync(); cs != nil {
+		view.CurrentSync = &schemaRegistryCurrentSync{
+			SyncType: strings.TrimPrefix(cs.GetSyncType().String(), "SCHEMA_REGISTRY_SYNC_TYPE_"),
+			Summary:  schemaRegistrySyncSummaryToView(cs.GetSummary()),
+		}
+	}
+	return view
+}
+
+func schemaRegistrySyncSummaryToView(s *adminv2.SchemaRegistrySyncSummary) *schemaRegistrySyncSummary {
+	if s == nil {
+		return nil
+	}
+	view := &schemaRegistrySyncSummary{
+		SubjectVersionsChanged:      s.GetSubjectVersionsChanged(),
+		CompatibilityConfigsChanged: s.GetCompatibilityConfigsChanged(),
+		ModesChanged:                s.GetModesChanged(),
+		UnsupportedFeaturesRemoved:  s.GetUnsupportedFeaturesRemoved(),
+		Errors:                      s.GetErrors(),
+	}
+	// The API sends a zero (epoch) timestamp rather than omitting the field
+	// when a sync has not run yet, so treat zero as unset.
+	if t := s.GetStartTime(); t != nil && (t.GetSeconds() != 0 || t.GetNanos() != 0) {
+		view.StartTime = t.AsTime().Format(time.RFC3339)
+	}
+	if t := s.GetFinishTime(); t != nil && (t.GetSeconds() != 0 || t.GetNanos() != 0) {
+		view.FinishTime = t.AsTime().Format(time.RFC3339)
+	}
+	return view
 }
 
 // fromDataplaneShadowLink converts dataplane API responses to the unified shadowLinkStatus.

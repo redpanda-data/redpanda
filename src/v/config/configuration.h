@@ -611,6 +611,7 @@ struct configuration final : public config_store {
     // health monitor
     property<std::chrono::milliseconds> health_monitor_tick_interval;
     property<std::chrono::milliseconds> health_monitor_max_metadata_age;
+    property<bool> health_monitor_metrics_enabled;
     bounded_property<unsigned> storage_space_alert_free_threshold_percent;
     bounded_property<size_t> storage_space_alert_free_threshold_bytes;
     bounded_property<size_t> storage_min_free_bytes;

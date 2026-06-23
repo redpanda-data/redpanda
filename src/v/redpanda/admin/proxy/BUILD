@@ -58,6 +58,7 @@ redpanda_cc_library(
         "//src/v/rpc",
         "//src/v/serde",
         "//src/v/serde/protobuf:rpc",
+        "//src/v/strings:utf8",
         "@abseil-cpp//absl/container:flat_hash_map",
         "@seastar",
     ],

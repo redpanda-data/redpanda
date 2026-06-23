@@ -10,14 +10,51 @@
 import contextlib
 import yaml
 
+from ducktape.mark import matrix
+
 from rptest.services.cluster import cluster
-from rptest.services.redpanda import RedpandaService
+from rptest.services.redpanda import MetricsEndpoint, RedpandaService
 from rptest.tests.redpanda_test import RedpandaTest
+
+# The host_metrics_watcher registers on both metrics endpoints, so every test
+# runs against each. The endpoint determines the family-name prefix
+# (vectorized_ internally, redpanda_ publicly); test bodies stay
+# prefix-agnostic by going through `_name()`.
+ALL_ENDPOINTS = [MetricsEndpoint.METRICS, MetricsEndpoint.PUBLIC_METRICS]
+
+_METRIC_PREFIX = {
+    MetricsEndpoint.METRICS: "vectorized_",
+    MetricsEndpoint.PUBLIC_METRICS: "redpanda_",
+}
 
 
 class HostMetricsTest(RedpandaTest):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, num_brokers=1, **kwargs)
+
+    # io_queue_config gauge suffixes (prefix added per endpoint via `_name`).
+    IO_QUEUE_CONFIG_GAUGES = [
+        "io_queue_config_read_bytes_rate",
+        "io_queue_config_write_bytes_rate",
+        "io_queue_config_read_req_rate",
+        "io_queue_config_write_req_rate",
+        "io_queue_config_max_cost_function",
+        "io_queue_config_duplex",
+    ]
+
+    @staticmethod
+    def _endpoint(use_public):
+        """Map the `use_public` matrix flag to a metrics endpoint."""
+        return MetricsEndpoint.PUBLIC_METRICS if use_public else MetricsEndpoint.METRICS
+
+    @staticmethod
+    def _name(endpoint, suffix):
+        """Qualify a metric name with the prefix for `endpoint`."""
+        return f"{_METRIC_PREFIX[endpoint]}{suffix}"
+
+    def _io_queue_config_gauges(self, endpoint):
+        """The full set of io_queue_config gauge names on `endpoint`."""
+        return {self._name(endpoint, s) for s in self.IO_QUEUE_CONFIG_GAUGES}
 
     def _log_node_disk_info(self, node):
         """Log mount table and /proc/diskstats for post-failure diagnosis."""
@@ -27,14 +64,15 @@ class HostMetricsTest(RedpandaTest):
         self.logger.debug(f"/proc/diskstats on {node.name}:\n{diskstats}")
 
     def _log_raw_metrics(self, node):
-        """Dump all host metrics families for diagnosis."""
-        metrics = list(self.redpanda.metrics(node))
-        for family in metrics:
-            if "host_" in family.name or "diskstats" in family.name:
-                for sample in family.samples:
-                    self.logger.debug(
-                        f"  {family.name} labels={sample.labels} value={sample.value}"
-                    )
+        """Dump all host metrics families on both endpoints for diagnosis."""
+        for endpoint in ALL_ENDPOINTS:
+            for family in self.redpanda.metrics(node, endpoint):
+                if "host_" in family.name or "diskstats" in family.name:
+                    for sample in family.samples:
+                        self.logger.debug(
+                            f"  [{endpoint.value}] {family.name} "
+                            f"labels={sample.labels} value={sample.value}"
+                        )
 
     @contextlib.contextmanager
     def _log_disk_info_on_failure(self, node):
@@ -47,26 +85,28 @@ class HostMetricsTest(RedpandaTest):
             raise
 
     @cluster(num_nodes=1)
-    def test_basic_hoststats(self):
+    @matrix(use_public=[False, True])
+    def test_basic_hoststats(self, use_public):
         """
         Test that we export the host stats
 
         """
-
+        metrics_endpoint = self._endpoint(use_public)
         node = self.redpanda.nodes[0]
         self._log_node_disk_info(node)
         with self._log_disk_info_on_failure(node):
-            metrics = list(self.redpanda.metrics(node))
+            metrics = list(self.redpanda.metrics(node, metrics_endpoint))
 
             def metric_stats(name):
                 samples = [s for f in metrics if f.name == name for s in f.samples]
                 return len(samples), sum(int(s.value) for s in samples)
 
-            for metric, label in [
-                ("vectorized_host_diskstats_reads", "disk reads"),
-                ("vectorized_host_netstat_bytes_received", "received bytes"),
-                ("vectorized_host_snmp_packets_received", "received packets"),
+            for suffix, label in [
+                ("host_diskstats_reads", "disk reads"),
+                ("host_netstat_bytes_received", "received bytes"),
+                ("host_snmp_packets_received", "received packets"),
             ]:
+                metric = self._name(metrics_endpoint, suffix)
                 n_samples, total = metric_stats(metric)
                 assert n_samples > 0, f"Expected samples for {label}, got 0"
                 assert total > 0, (
@@ -74,18 +114,21 @@ class HostMetricsTest(RedpandaTest):
                 )
 
     @cluster(num_nodes=1)
-    def test_info_metric(self):
+    @matrix(use_public=[False, True])
+    def test_info_metric(self, use_public):
         """
         Test that the host_metrics info metric exists with exactly one sample
         per node and has the expected label values.
         """
+        metrics_endpoint = self._endpoint(use_public)
         node = self.redpanda.nodes[0]
         with self._log_disk_info_on_failure(node):
-            metrics = list(self.redpanda.metrics(node))
+            metrics = list(self.redpanda.metrics(node, metrics_endpoint))
 
             info_samples = []
+            info_name = self._name(metrics_endpoint, "host_metrics_info")
             for family in metrics:
-                if family.name == "vectorized_host_metrics_info":
+                if family.name == info_name:
                     info_samples.extend(family.samples)
 
             assert len(info_samples) == 1, (
@@ -120,25 +163,20 @@ class HostMetricsTest(RedpandaTest):
                     assert label in labels, f"Missing label {label}"
 
     @cluster(num_nodes=1)
-    def test_io_queue_config_metrics(self):
+    @matrix(use_public=[False, True])
+    def test_io_queue_config_metrics(self, use_public):
         """
         Test that IO queue config metrics are exported with expected labels
         and gauge values. In docker, device resolution falls back to
         directory stat, producing a single sample per gauge with empty
         device/disk labels.
         """
+        metrics_endpoint = self._endpoint(use_public)
         node = self.redpanda.nodes[0]
         with self._log_disk_info_on_failure(node):
-            metrics = list(self.redpanda.metrics(node))
+            metrics = list(self.redpanda.metrics(node, metrics_endpoint))
 
-            expected_gauges = {
-                "vectorized_io_queue_config_read_bytes_rate",
-                "vectorized_io_queue_config_write_bytes_rate",
-                "vectorized_io_queue_config_read_req_rate",
-                "vectorized_io_queue_config_write_req_rate",
-                "vectorized_io_queue_config_max_cost_function",
-                "vectorized_io_queue_config_duplex",
-            }
+            expected_gauges = self._io_queue_config_gauges(metrics_endpoint)
 
             expected_labels = {
                 "disk",
@@ -196,7 +234,8 @@ class HostMetricsTest(RedpandaTest):
                     check_label(name, samples[0], "id", "0")
 
     @cluster(num_nodes=1)
-    def test_io_queue_config_with_io_properties(self):
+    @matrix(use_public=[False, True])
+    def test_io_queue_config_with_io_properties(self, use_public):
         """
         Restart Redpanda with a custom io-properties file pointing at the
         data directory. This creates a dedicated Seastar IO queue (id > 0)
@@ -208,6 +247,7 @@ class HostMetricsTest(RedpandaTest):
         back to directory stat, and get_io_queue returns the configured
         queue directly, so only 1 series is emitted.
         """
+        metrics_endpoint = self._endpoint(use_public)
         node = self.redpanda.nodes[0]
         with self._log_disk_info_on_failure(node):
             io_props = {
@@ -230,16 +270,9 @@ class HostMetricsTest(RedpandaTest):
                 extra_cli=[f"--io-properties-file={io_props_path}"],
             )
 
-            metrics = list(self.redpanda.metrics(node))
+            metrics = list(self.redpanda.metrics(node, metrics_endpoint))
 
-            expected_gauges = {
-                "vectorized_io_queue_config_read_bytes_rate",
-                "vectorized_io_queue_config_write_bytes_rate",
-                "vectorized_io_queue_config_read_req_rate",
-                "vectorized_io_queue_config_write_req_rate",
-                "vectorized_io_queue_config_max_cost_function",
-                "vectorized_io_queue_config_duplex",
-            }
+            expected_gauges = self._io_queue_config_gauges(metrics_endpoint)
 
             found = {}
             for family in metrics:
@@ -265,7 +298,8 @@ class HostMetricsTest(RedpandaTest):
                 assert int(configured[0].labels["id"]) > 0
 
             def gauge_value(metric_name):
-                samples = found[f"vectorized_io_queue_config_{metric_name}"]
+                name = self._name(metrics_endpoint, f"io_queue_config_{metric_name}")
+                samples = found[name]
                 return [
                     s
                     for s in samples

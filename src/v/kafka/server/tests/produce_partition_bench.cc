@@ -40,6 +40,7 @@ struct produce_partition_fixture : redpanda_thread_fixture {
     static constexpr size_t total_partition_count = 1;
 
     model::topic t;
+    int32_t idempotent_seq{0};
 
     produce_partition_fixture() {
         BOOST_TEST_CHECKPOINT("before leadership");
@@ -79,6 +80,13 @@ produce_partition_fixture::run_test(size_t data_size, measured_region region) {
     }
 
     auto batch = std::move(builder).build();
+
+    // Make it idempotent
+    batch.header().producer_id = 1;
+    batch.header().producer_epoch = 0;
+    batch.header().base_sequence = idempotent_seq;
+    idempotent_seq += num_records;
+    batch.header().reset_size_checksum_metadata(batch.data());
 
     // Reproduce the iobuf fragment layout of a real produce request: serialize
     // the batch to the kafka wire format and decode it through the batch

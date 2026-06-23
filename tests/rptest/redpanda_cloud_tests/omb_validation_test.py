@@ -317,9 +317,12 @@ class OMBValidationTest(RedpandaCloudTest):
             (tier_limits.max_connections_count - omb_connections) * 1.1
         )
 
-        # we expect each swarm producer to create 1 connection per broker, plus 1 additional connection
-        # for metadata
-        conn_per_swarm_producer = self.num_brokers + 1
+        # We expect each swarm producer to hold one connection per broker. Older librdkafka also kept a
+        # separate persistent connection to the bootstrap broker (the historical "+ 1"), but librdkafka
+        # removed it in v2.10.0 (confluentinc/librdkafka#4557): brokers are now keyed by id rather than
+        # host:port, so the bootstrap entry is merged into the learned broker list. client-swarm bundles
+        # librdkafka >= 2.10.0, so a producer holds exactly num_brokers connections.
+        conn_per_swarm_producer = self.num_brokers
 
         producer_per_swarm_node: int = (
             swarm_target_connections // conn_per_swarm_producer // SWARM_WORKERS

@@ -107,7 +107,7 @@ struct followers_stats
 };
 struct partition_status
   : serde::
-      envelope<partition_status, serde::version<6>, serde::compat_version<0>> {
+      envelope<partition_status, serde::version<7>, serde::compat_version<0>> {
     static constexpr size_t invalid_size_bytes = size_t(-1);
     static constexpr uint32_t invalid_shard_id = uint32_t(-1);
 
@@ -155,6 +155,13 @@ struct partition_status
      */
     std::optional<int64_t> cloud_topic_max_gc_eligible_epoch;
 
+    /**
+     * Kafka log start offset (first readable offset) for this partition
+     * replica. Only populated for Kafka namespace partitions. std::nullopt
+     * when reported by nodes running an older version.
+     */
+    std::optional<kafka::offset> log_start_offset;
+
     auto serde_fields() {
         return std::tie(
           id,
@@ -167,7 +174,8 @@ struct partition_status
           shard,
           followers_stats,
           high_watermark,
-          cloud_topic_max_gc_eligible_epoch);
+          cloud_topic_max_gc_eligible_epoch,
+          log_start_offset);
     }
 
     fmt::iterator format_to(fmt::iterator it) const;
@@ -476,6 +484,17 @@ struct cluster_health_overview {
     std::vector<model::ntp> under_replicated_partitions;
     size_t under_replicated_count{};
     std::optional<size_t> bytes_in_cloud_storage;
+    // True if the refresh attempted at assembly time errored. False on
+    // success, or if no refresh was needed (cache fresh enough to skip).
+    // Also surfaced as "no_health_report" in unhealthy_reasons.
+    bool refresh_failed{false};
+    // True if, at overview-assembly time, the local _reports cache holds a
+    // health report for every known cluster member (and refresh_failed is
+    // false). Signals that this overview reflects a fully-collected view
+    // rather than a partial one. The underlying refresh may have happened
+    // earlier - this is a property of the cache state, not of a single
+    // refresh attempt.
+    bool all_members_reported{false};
 
     fmt::iterator format_to(fmt::iterator it) const;
 };

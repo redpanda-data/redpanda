@@ -66,13 +66,19 @@ var Comments = map[string]string{
 	"redpanda.core.admin.v2.GetShadowTopicRequest.name":             "The name of the shadow topic to get",
 	"redpanda.core.admin.v2.GetShadowTopicRequest.shadow_link_name": "The name of the shadow link the topic is contained in",
 	"redpanda.core.admin.v2.GetShadowTopicResponse":                 "Response of to getting a shadow topic",
-	"redpanda.core.admin.v2.ListShadowLinksRequest":                 "Request to list all shadow links",
-	"redpanda.core.admin.v2.ListShadowLinksResponse":                "All shadow links on the cluster",
-	"redpanda.core.admin.v2.ListShadowLinksResponse.shadow_links":   "The shadow links",
-	"redpanda.core.admin.v2.ListShadowTopicsRequest":                "Request to list all shadow topics in a shadow link",
-	"redpanda.core.admin.v2.ListShadowTopicsResponse":               "Response to listing all shadow topics in a shadow link",
-	"redpanda.core.admin.v2.NameFilter":                             "A filter based on the name of a resource",
-	"redpanda.core.admin.v2.NameFilter.filter_type":                 "Include or exclude",
+	"redpanda.core.admin.v2.HTTPBasicAuthOptions":                   "HTTP Basic auth credentials.",
+	"redpanda.core.admin.v2.HTTPBasicAuthOptions.password":          "HTTP Basic auth password. For Confluent Cloud, this is the API secret.",
+	"redpanda.core.admin.v2.HTTPBasicAuthOptions.password_set":      "Indicates that the password has been set.",
+	"redpanda.core.admin.v2.HTTPBasicAuthOptions.password_set_at": `Timestamp of when the password was last set - only valid if password_set
+ is true.`,
+	"redpanda.core.admin.v2.HTTPBasicAuthOptions.username":        "HTTP Basic auth username. For Confluent Cloud, this is the API key.",
+	"redpanda.core.admin.v2.ListShadowLinksRequest":               "Request to list all shadow links",
+	"redpanda.core.admin.v2.ListShadowLinksResponse":              "All shadow links on the cluster",
+	"redpanda.core.admin.v2.ListShadowLinksResponse.shadow_links": "The shadow links",
+	"redpanda.core.admin.v2.ListShadowTopicsRequest":              "Request to list all shadow topics in a shadow link",
+	"redpanda.core.admin.v2.ListShadowTopicsResponse":             "Response to listing all shadow topics in a shadow link",
+	"redpanda.core.admin.v2.NameFilter":                           "A filter based on the name of a resource",
+	"redpanda.core.admin.v2.NameFilter.filter_type":               "Include or exclude",
 	"redpanda.core.admin.v2.NameFilter.name": `The resource name, or "*"
  Note if "*", must be the _only_ character
  and ` + "`" + `pattern_type` + "`" + ` must be ` + "`" + `PATTERN_TYPE_LITERAL` + "`" + ``,
@@ -86,20 +92,86 @@ var Comments = map[string]string{
 	"redpanda.core.admin.v2.PlainConfig.password_set": "Indicates that the password has been set",
 	"redpanda.core.admin.v2.PlainConfig.password_set_at": `Timestamp of when the password was last set - only valid if password_set
  is true`,
-	"redpanda.core.admin.v2.PlainConfig.username":            "PLAIN username",
-	"redpanda.core.admin.v2.SCRAM_MECHANISM_SCRAM_SHA_256":   "SCRAM-SHA-256",
-	"redpanda.core.admin.v2.SCRAM_MECHANISM_SCRAM_SHA_512":   "SCRAM-SHA-512",
-	"redpanda.core.admin.v2.SHADOW_LINK_STATE_ACTIVE":        "Shadow link is active",
-	"redpanda.core.admin.v2.SHADOW_LINK_STATE_PAUSED":        "Shadow link was paused",
-	"redpanda.core.admin.v2.SHADOW_LINK_STATE_UNSPECIFIED":   "Unspecified",
-	"redpanda.core.admin.v2.SHADOW_TOPIC_STATE_ACTIVE":       "Shadow topic is active",
-	"redpanda.core.admin.v2.SHADOW_TOPIC_STATE_FAILED_OVER":  "Shadow topic has failed over successfully",
-	"redpanda.core.admin.v2.SHADOW_TOPIC_STATE_FAILING_OVER": "Shadow topic is in the process of failing over",
-	"redpanda.core.admin.v2.SHADOW_TOPIC_STATE_FAULTED":      "Shadow topic has faulted",
-	"redpanda.core.admin.v2.SHADOW_TOPIC_STATE_PAUSED":       "Shadow topic has been paused",
-	"redpanda.core.admin.v2.SHADOW_TOPIC_STATE_PROMOTED":     "Shadow topic is promoted successfully",
-	"redpanda.core.admin.v2.SHADOW_TOPIC_STATE_PROMOTING":    "Shadow topic is in the process of being promoted",
-	"redpanda.core.admin.v2.SchemaRegistrySyncOptions":       "Options for how the Schema Registry is synced.",
+	"redpanda.core.admin.v2.PlainConfig.username":                      "PLAIN username",
+	"redpanda.core.admin.v2.SCHEMA_REGISTRY_SYNC_TYPE_FULL":            "A full source scan is running.",
+	"redpanda.core.admin.v2.SCHEMA_REGISTRY_SYNC_TYPE_TAIL":            "An incremental tail sync is running.",
+	"redpanda.core.admin.v2.SCHEMA_REGISTRY_SYNC_TYPE_UNSPECIFIED":     "The Schema Registry sync type is not specified.",
+	"redpanda.core.admin.v2.SCRAM_MECHANISM_SCRAM_SHA_256":             "SCRAM-SHA-256",
+	"redpanda.core.admin.v2.SCRAM_MECHANISM_SCRAM_SHA_512":             "SCRAM-SHA-512",
+	"redpanda.core.admin.v2.SHADOW_LINK_STATE_ACTIVE":                  "Shadow link is active",
+	"redpanda.core.admin.v2.SHADOW_LINK_STATE_PAUSED":                  "Shadow link was paused",
+	"redpanda.core.admin.v2.SHADOW_LINK_STATE_UNSPECIFIED":             "Unspecified",
+	"redpanda.core.admin.v2.SHADOW_TOPIC_STATE_ACTIVE":                 "Shadow topic is active",
+	"redpanda.core.admin.v2.SHADOW_TOPIC_STATE_FAILED_OVER":            "Shadow topic has failed over successfully",
+	"redpanda.core.admin.v2.SHADOW_TOPIC_STATE_FAILING_OVER":           "Shadow topic is in the process of failing over",
+	"redpanda.core.admin.v2.SHADOW_TOPIC_STATE_FAULTED":                "Shadow topic has faulted",
+	"redpanda.core.admin.v2.SHADOW_TOPIC_STATE_PAUSED":                 "Shadow topic has been paused",
+	"redpanda.core.admin.v2.SHADOW_TOPIC_STATE_PROMOTED":               "Shadow topic is promoted successfully",
+	"redpanda.core.admin.v2.SHADOW_TOPIC_STATE_PROMOTING":              "Shadow topic is in the process of being promoted",
+	"redpanda.core.admin.v2.SchemaRegistryAuthOptions":                 "Authentication settings for source Schema Registry HTTP requests.",
+	"redpanda.core.admin.v2.SchemaRegistryAuthOptions.basic":           "Authenticate source Schema Registry requests with HTTP Basic auth.",
+	"redpanda.core.admin.v2.SchemaRegistryContextDestination":          "Destination context mapping for source Schema Registry data.",
+	"redpanda.core.admin.v2.SchemaRegistryContextDestination.exact":    "Map selected source contexts to explicit destination contexts.",
+	"redpanda.core.admin.v2.SchemaRegistryContextDestination.identity": "Preserve source context names in the destination Schema Registry.",
+	"redpanda.core.admin.v2.SchemaRegistryContextMap":                  "One source-to-destination context mapping.",
+	"redpanda.core.admin.v2.SchemaRegistryContextMap.destination":      "Destination context name.",
+	"redpanda.core.admin.v2.SchemaRegistryContextMap.source":           "Source context name.",
+	"redpanda.core.admin.v2.SchemaRegistryCurrentSync":                 "A Schema Registry sync that is currently running.",
+	"redpanda.core.admin.v2.SchemaRegistryCurrentSync.summary":         "Counters for the sync currently running.",
+	"redpanda.core.admin.v2.SchemaRegistryCurrentSync.sync_type":       "Type of Schema Registry sync currently running.",
+	"redpanda.core.admin.v2.SchemaRegistryExactContextMappings":        "Explicit source-to-destination context mappings.",
+	"redpanda.core.admin.v2.SchemaRegistryExactContextMappings.mappings": `Explicit source-to-destination context mappings. Every source context in
+ the effective source scope must have exactly one mapping.`,
+	"redpanda.core.admin.v2.SchemaRegistryIdentityContextMapping": "Preserve source context names in the destination Schema Registry.",
+	"redpanda.core.admin.v2.SchemaRegistryInventory":              "Last observed Schema Registry inventory.",
+	"redpanda.core.admin.v2.SchemaRegistryInventory.destination_subject_versions": `Number of destination subject versions corresponding to the selected
+ source subjects after applying destination context mapping.`,
+	"redpanda.core.admin.v2.SchemaRegistryInventory.destination_subjects": `Number of destination subjects corresponding to the selected source
+ subjects after applying destination context mapping.`,
+	"redpanda.core.admin.v2.SchemaRegistryInventory.selected_source_subject_versions": `Number of source subject versions selected for replication after
+ applying source scope context and subject filters.`,
+	"redpanda.core.admin.v2.SchemaRegistryInventory.selected_source_subjects": `Number of source subjects selected for replication after applying source
+ scope context and subject filters.`,
+	"redpanda.core.admin.v2.SchemaRegistrySourceFilter": `Filter for specific Schema Registry contexts and subjects to select for
+ replication. If unset or empty, the whole source Schema Registry is
+ replicated.`,
+	"redpanda.core.admin.v2.SchemaRegistrySourceFilter.contexts": `Source contexts to replicate in full, for example ".", ".prod", or
+ ".staging". If both ` + "`" + `contexts` + "`" + ` and ` + "`" + `subjects` + "`" + ` are set, the effective
+ source scope is the union of both selections.`,
+	"redpanda.core.admin.v2.SchemaRegistrySourceFilter.subjects": `Exact source subjects to replicate, using Schema Registry qualified
+ subject syntax. For example, "orders-value" selects the subject in the
+ default context, and ":.prod:orders-value" selects the subject in context
+ ".prod". If both ` + "`" + `contexts` + "`" + ` and ` + "`" + `subjects` + "`" + ` are set, the union of both
+ selections is replicated. If a subject is also included by ` + "`" + `contexts` + "`" + `, it
+ is counted and replicated once.`,
+	"redpanda.core.admin.v2.SchemaRegistrySyncOptions": "Options for how the Schema Registry is synced.",
+	"redpanda.core.admin.v2.SchemaRegistrySyncOptions.ShadowSchemaRegistryApi": `Replicates selected Schema Registry subjects, configs, modes, and schema
+ IDs over the Schema Registry HTTP API.`,
+	"redpanda.core.admin.v2.SchemaRegistrySyncOptions.ShadowSchemaRegistryApi.auth_options": `Authentication settings for requests to the source Schema Registry.
+ If unset, requests are sent without authentication.`,
+	"redpanda.core.admin.v2.SchemaRegistrySyncOptions.ShadowSchemaRegistryApi.destination": `Mapping from source contexts implied by ` + "`" + `source_filter` + "`" + ` to
+ destination contexts. Each source context included in the replication
+ must map to a distinct destination context to avoid
+ collisions. If unset, source context names are preserved.`,
+	"redpanda.core.admin.v2.SchemaRegistrySyncOptions.ShadowSchemaRegistryApi.effective_full_sync_interval":             "The effective interval between full scans.",
+	"redpanda.core.admin.v2.SchemaRegistrySyncOptions.ShadowSchemaRegistryApi.effective_max_source_requests_per_second": "The effective maximum request rate, in requests per second.",
+	"redpanda.core.admin.v2.SchemaRegistrySyncOptions.ShadowSchemaRegistryApi.effective_tail_interval":                  "The effective interval between incremental polls.",
+	"redpanda.core.admin.v2.SchemaRegistrySyncOptions.ShadowSchemaRegistryApi.full_sync_interval": `Interval between full scans of the selected source subjects. If unset
+ or zero, the cluster default of 5m is used.`,
+	"redpanda.core.admin.v2.SchemaRegistrySyncOptions.ShadowSchemaRegistryApi.max_source_requests_per_second": `Maximum request rate, in requests per second, for calls to the source
+ Schema Registry. If unset or zero, a default rate limit of 30
+ requests/s is used.`,
+	"redpanda.core.admin.v2.SchemaRegistrySyncOptions.ShadowSchemaRegistryApi.source_filter": `Filter for specific Schema Registry contexts and subjects to select
+ for replication. If unset or empty, the whole source Schema Registry
+ is replicated.`,
+	"redpanda.core.admin.v2.SchemaRegistrySyncOptions.ShadowSchemaRegistryApi.source_url": "The source Schema Registry URL to use.",
+	"redpanda.core.admin.v2.SchemaRegistrySyncOptions.ShadowSchemaRegistryApi.tail_interval": `Interval between incremental polls for new source subjects and
+ subject versions. If unset or zero, the cluster default of 10s is
+ used.`,
+	"redpanda.core.admin.v2.SchemaRegistrySyncOptions.ShadowSchemaRegistryApi.tls_settings": "TLS settings for requests to the source Schema Registry.",
+	"redpanda.core.admin.v2.SchemaRegistrySyncOptions.ShadowSchemaRegistryApi.unsupported_schema_feature_policy": `Policy for handling source schema features unsupported by the
+ destination, such as rulesets or metadata tags. If unset, FAIL is
+ used.`,
 	"redpanda.core.admin.v2.SchemaRegistrySyncOptions.ShadowSchemaRegistryTopic": `Shadow the entire source cluster's Schema Registry byte-for-byte.
  If set, the Shadow Link will attempt to add the ` + "`" + `_schemas` + "`" + `
  topic to the list of Shadow Topics as long as:
@@ -113,6 +185,31 @@ var Comments = map[string]string{
  ` + "`" + `_schemas` + "`" + ` topic will be replicated byte-for-byte.  To stop shadowing the
  ` + "`" + `_schemas` + "`" + ` topic, unset this field, then either fail-over the topic or
  delete it.`,
+	"redpanda.core.admin.v2.SchemaRegistrySyncStatus": "Status of Schema Registry syncing.",
+	"redpanda.core.admin.v2.SchemaRegistrySyncStatus.current_sync": `Sync currently running. This is unset when no Schema Registry sync is
+ running.`,
+	"redpanda.core.admin.v2.SchemaRegistrySyncStatus.inventory": `Last observed source and destination Schema Registry inventory. These
+ counts are updated as sync work observes source and destination state.`,
+	"redpanda.core.admin.v2.SchemaRegistrySyncStatus.last_error_message": `Short sanitized summary of the most recent Schema Registry sync
+ error. Detailed errors are written to broker logs.`,
+	"redpanda.core.admin.v2.SchemaRegistrySyncStatus.last_full_sync": `Counters from the most recently completed full sync. This is unset until
+ a full sync completes on the current task instance.`,
+	"redpanda.core.admin.v2.SchemaRegistrySyncStatus.totals_since_task_start": `Cumulative counters since the Schema Registry task started. These
+ counters reset after task restart or leadership transfer.`,
+	"redpanda.core.admin.v2.SchemaRegistrySyncSummary": "Summary counters for one Schema Registry sync or for a cumulative interval.",
+	"redpanda.core.admin.v2.SchemaRegistrySyncSummary.compatibility_configs_changed": `Number of selected compatibility configuration changes applied to the
+ destination.`,
+	"redpanda.core.admin.v2.SchemaRegistrySyncSummary.errors": "Number of errors observed during the sync or cumulative interval.",
+	"redpanda.core.admin.v2.SchemaRegistrySyncSummary.finish_time": `Time when the sync finished. This is unset for a sync that is still
+ running and for cumulative counters.`,
+	"redpanda.core.admin.v2.SchemaRegistrySyncSummary.modes_changed": "Number of selected mode changes applied to the destination.",
+	"redpanda.core.admin.v2.SchemaRegistrySyncSummary.start_time": `Time when the sync started. For cumulative counters, this is the time
+ when the Schema Registry task started.`,
+	"redpanda.core.admin.v2.SchemaRegistrySyncSummary.subject_versions_changed": `Number of selected subject versions created, updated, or deleted on the
+ destination.`,
+	"redpanda.core.admin.v2.SchemaRegistrySyncSummary.unsupported_features_removed": `Number of unsupported fields removed from schemas or schema configs when
+ UNSUPPORTED_SCHEMA_FEATURE_POLICY_REMOVE is used.`,
+	"redpanda.core.admin.v2.SchemaRegistrySyncType":   "Type of Schema Registry sync currently running.",
 	"redpanda.core.admin.v2.ScramConfig":              "SCRAM settings",
 	"redpanda.core.admin.v2.ScramConfig.password":     "Password",
 	"redpanda.core.admin.v2.ScramConfig.password_set": "Indicates that the password has been set",
@@ -173,6 +270,7 @@ var Comments = map[string]string{
 	"redpanda.core.admin.v2.ShadowLinkConfigurations.topic_metadata_sync_options":  "Topic metadata sync options",
 	"redpanda.core.admin.v2.ShadowLinkState":                                       "State of the shadow link",
 	"redpanda.core.admin.v2.ShadowLinkStatus":                                      "Status of the shadow link",
+	"redpanda.core.admin.v2.ShadowLinkStatus.schema_registry_sync_status":          "Status of Schema Registry syncing.",
 	"redpanda.core.admin.v2.ShadowLinkStatus.shadow_topics":                        "Status of shadow topics",
 	"redpanda.core.admin.v2.ShadowLinkStatus.synced_shadow_topic_properties":       "List of topic properties that are being synced",
 	"redpanda.core.admin.v2.ShadowLinkStatus.task_statuses":                        "Statuses of the running tasks",
@@ -260,6 +358,10 @@ var Comments = map[string]string{
 	"redpanda.core.admin.v2.TopicPartitionInformation.source_high_watermark":         "Source partition's HWM",
 	"redpanda.core.admin.v2.TopicPartitionInformation.source_last_stable_offset":     "Source partition's LSO",
 	"redpanda.core.admin.v2.TopicPartitionInformation.source_last_updated_timestamp": "Timestamp of the last time the source partition information was updated",
+	"redpanda.core.admin.v2.UNSUPPORTED_SCHEMA_FEATURE_POLICY_FAIL":                  "Fail the sync when an unsupported schema feature is encountered.",
+	"redpanda.core.admin.v2.UNSUPPORTED_SCHEMA_FEATURE_POLICY_REMOVE":                "Remove unsupported schema features before writing to the destination.",
+	"redpanda.core.admin.v2.UNSUPPORTED_SCHEMA_FEATURE_POLICY_UNSPECIFIED":           "Use the default unsupported schema feature handling behavior.",
+	"redpanda.core.admin.v2.UnsupportedSchemaFeaturePolicy":                          "Policy for handling source schema features unsupported by the destination.",
 	"redpanda.core.admin.v2.UpdateShadowLinkRequest":                                 "Updates a shadow link",
 	"redpanda.core.admin.v2.UpdateShadowLinkRequest.shadow_link":                     "The shadow link to update",
 	"redpanda.core.admin.v2.UpdateShadowLinkRequest.update_mask": `The list of fields to update

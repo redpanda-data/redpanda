@@ -245,7 +245,7 @@ public:
       bool enable_authorizer,
       std::optional<security::tls::mtls_state> mtls_state,
       config::binding<uint32_t> max_request_size,
-      config::conversion_binding<std::vector<bool>, std::vector<ss::sstring>>
+      config::conversion_binding<api_key_table<bool>, std::vector<ss::sstring>>
         kafka_throughput_controlled_api_keys) noexcept;
     ~connection_context() noexcept;
 
@@ -598,7 +598,7 @@ private:
     ctx_log _authlog;
     std::optional<security::tls::mtls_state> _mtls_state;
     config::binding<uint32_t> _max_request_size;
-    config::conversion_binding<std::vector<bool>, std::vector<ss::sstring>>
+    config::conversion_binding<api_key_table<bool>, std::vector<ss::sstring>>
       _kafka_throughput_controlled_api_keys;
     std::unique_ptr<snc_quota_context> _snc_quota_context;
     ss::promise<> _wait_input_shutdown;

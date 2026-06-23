@@ -132,7 +132,7 @@ redpanda_cc_library(
         "catalog_client.h",
     ],
     implementation_deps = [
-        "//src/v/bytes:iobuf_parser",
+        "//src/v/strings:utf8",
     ],
     visibility = ["//visibility:public"],
     deps = [

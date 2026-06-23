@@ -36,14 +36,8 @@ public:
             _frag_index = _frag->get();
             // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic)
             _frag_index_end = _frag->get() + _frag->size();
-            // handle an empty fragment
-            if (_frag_index == _frag_index_end) {
-                next_fragment();
-            }
-        } else {
-            _frag_index = nullptr;
-            _frag_index_end = nullptr;
         }
+        skip_empty_fragment();
     }
     io_byte_iterator(
       const io_const_iterator& begin,
@@ -53,7 +47,9 @@ public:
       : _frag(begin)
       , _frag_end(end)
       , _frag_index(frag_index)
-      , _frag_index_end(frag_index_end) {}
+      , _frag_index_end(frag_index_end) {
+        skip_empty_fragment();
+    }
 
     pointer get() const { return _frag_index; }
     reference operator*() const noexcept { return *_frag_index; }
@@ -79,6 +75,14 @@ public:
     }
 
 private:
+    // If the current fragment is empty or exhausted, advance to the first
+    // non-empty fragment. The _frag != _frag_end guard makes this a no-op for
+    // the end sentinel, where _frag must not be dereferenced.
+    void skip_empty_fragment() {
+        if (_frag != _frag_end && _frag_index == _frag_index_end) {
+            next_fragment();
+        }
+    }
     void next_fragment() {
         while (true) {
             ++_frag;

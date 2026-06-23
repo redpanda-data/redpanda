@@ -258,6 +258,7 @@ struct flush_bytes_validator {
 };
 
 struct iceberg_config_validator {
+    bool extended_mode_config = false;
     std::optional<ss::sstring> operator()(
       model::topic_namespace_view tns,
       const ss::sstring&,
@@ -273,6 +274,10 @@ struct iceberg_config_validator {
               "Iceberg disabled in the cluster configuration, enable it by "
               "setting: {}",
               config::shard_local_cfg().iceberg_enabled.name());
+        }
+        if (value.needs_extended_cluster_feature() && !extended_mode_config) {
+            return "Invalid iceberg mode: extended key/headers config requires "
+                   "the cluster to be fully upgraded to at least v26.2.1.";
         }
         return std::nullopt;
     }

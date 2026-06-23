@@ -9,6 +9,7 @@
 
 #include "pandaproxy/schema_registry/sharded_store.h"
 
+#include "container/chunked_vector.h"
 #include "pandaproxy/schema_registry/error.h"
 #include "pandaproxy/schema_registry/exceptions.h"
 #include "pandaproxy/schema_registry/test/compatibility_protobuf.h"
@@ -18,6 +19,8 @@
 #include <seastar/util/defer.hh>
 
 #include <boost/test/unit_test.hpp>
+
+#include <algorithm>
 
 namespace pp = pandaproxy;
 namespace pps = pp::schema_registry;
@@ -983,6 +986,109 @@ SEASTAR_THREAD_TEST_CASE(test_sharded_store_referenced_by) {
                        pps::context_subject::unqualified("simple.proto"),
                        pps::schema_version{1})
                      .get());
+}
+
+namespace {
+
+bool contains_subject_version(
+  const chunked_vector<pps::subject_version>& got,
+  const pps::context_subject& sub,
+  pps::schema_version version) {
+    return std::ranges::any_of(got, [&](const pps::subject_version& sv) {
+        return sv.sub == sub && sv.version == version;
+    });
+}
+
+void upsert_version(
+  pps::sharded_store& store,
+  pps::context_subject sub,
+  pps::schema_id id,
+  pps::schema_version version,
+  pps::is_deleted deleted) {
+    store
+      .upsert(
+        pps::seq_marker{
+          std::nullopt,
+          std::nullopt,
+          version,
+          pps::seq_marker_key_type::schema},
+        pps::subject_schema{std::move(sub), simple.share()},
+        id,
+        version,
+        deleted)
+      .get();
+}
+
+} // namespace
+
+// list_subject_versions returns every (subject, version) whose subject passes
+// the filter predicate, including all versions of a subject, and honors
+// include_deleted at both the version and subject level.
+SEASTAR_THREAD_TEST_CASE(test_sharded_store_list_subject_versions) {
+    pps::sharded_store store;
+    store.start(pps::is_mutable::yes, ss::default_smp_service_group()).get();
+    auto stop_store = ss::defer([&store]() { store.stop().get(); });
+
+    auto a = pps::context_subject{pps::default_context, pps::subject{"a"}};
+    auto b = pps::context_subject{pps::default_context, pps::subject{"b"}};
+    auto c = pps::context_subject{pps::context{".other"}, pps::subject{"c"}};
+    auto d = pps::context_subject{pps::default_context, pps::subject{"d"}};
+
+    // a: live v1 plus deleted v2; b: a single live version; c: a live version
+    // in a different context; d: only a deleted version.
+    upsert_version(
+      store, a, pps::schema_id{1}, pps::schema_version{1}, pps::is_deleted::no);
+    upsert_version(
+      store,
+      a,
+      pps::schema_id{2},
+      pps::schema_version{2},
+      pps::is_deleted::yes);
+    upsert_version(
+      store, b, pps::schema_id{3}, pps::schema_version{1}, pps::is_deleted::no);
+    upsert_version(
+      store, c, pps::schema_id{4}, pps::schema_version{1}, pps::is_deleted::no);
+    upsert_version(
+      store,
+      d,
+      pps::schema_id{5},
+      pps::schema_version{1},
+      pps::is_deleted::yes);
+
+    auto only_default = [](const pps::context_subject& sub) {
+        return sub.ctx == pps::default_context;
+    };
+
+    // Default context, excluding deleted: c is filtered out by context, a's
+    // deleted v2 is hidden, and the wholly-deleted subject d disappears.
+    auto live = store
+                  .list_subject_versions(only_default, pps::include_deleted::no)
+                  .get();
+    BOOST_REQUIRE_EQUAL(live.size(), 2);
+    BOOST_REQUIRE(contains_subject_version(live, a, pps::schema_version{1}));
+    BOOST_REQUIRE(contains_subject_version(live, b, pps::schema_version{1}));
+
+    // include_deleted brings back a's second version and subject d entirely.
+    auto with_deleted
+      = store.list_subject_versions(only_default, pps::include_deleted::yes)
+          .get();
+    BOOST_REQUIRE_EQUAL(with_deleted.size(), 4);
+    BOOST_REQUIRE(
+      contains_subject_version(with_deleted, a, pps::schema_version{2}));
+    BOOST_REQUIRE(
+      contains_subject_version(with_deleted, d, pps::schema_version{1}));
+
+    // A different predicate selects only the other context.
+    auto in_other = store
+                      .list_subject_versions(
+                        [&c](const pps::context_subject& sub) {
+                            return sub.ctx == c.ctx;
+                        },
+                        pps::include_deleted::no)
+                      .get();
+    BOOST_REQUIRE_EQUAL(in_other.size(), 1);
+    BOOST_REQUIRE(
+      contains_subject_version(in_other, c, pps::schema_version{1}));
 }
 
 SEASTAR_THREAD_TEST_CASE(test_sharded_store_find_unordered) {

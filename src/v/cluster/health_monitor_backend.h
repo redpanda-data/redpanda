@@ -29,6 +29,7 @@
 #include <seastar/core/shared_ptr.hh>
 
 #include <chrono>
+#include <memory>
 #include <vector>
 namespace cluster {
 
@@ -123,6 +124,8 @@ public:
     ss::future<result<std::optional<kafka::offset>>>
       get_partition_high_watermark(
         model::topic_namespace_view, model::partition_id);
+
+    ~health_monitor_backend(); // defined in .cc (incomplete PIMPL type)
 
 private:
     /**
@@ -241,6 +244,10 @@ private:
     ss::sharded<node_status_table>& _node_status_table;
 
     ss::lowres_clock::time_point _last_refresh;
+    // Number of times collect_cluster_health() has completed without
+    // throwing. Exposed as the `refreshes` counter and gates the
+    // `metadata_age_seconds` gauge (returns -1 while this is 0).
+    uint64_t _refresh_count{0};
     ss::lw_shared_ptr<abortable_refresh_request> _refresh_request;
 
     status_cache_t _status;
@@ -262,6 +269,11 @@ private:
     cluster::notification_id_type _next_callback_id{0};
 
     ssx::mutex _report_collection_mutex{"health_report_collection"};
+
+    // Probe for the cluster_health_overview metrics; defined in .cc.
+    class health_probe;
+    friend class health_probe;
+    std::unique_ptr<health_probe> _health_probe;
 
     friend struct health_report_accessor;
 };

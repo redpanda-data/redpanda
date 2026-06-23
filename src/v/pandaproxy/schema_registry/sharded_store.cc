@@ -440,6 +440,34 @@ ss::future<chunked_vector<context_subject>> sharded_store::get_subjects(
     co_return co_await _store.map_reduce0(map, subjects{}, reduce);
 }
 
+ss::future<chunked_vector<subject_version>>
+sharded_store::list_subject_versions(
+  std::function<bool(const context_subject&)> filter, include_deleted inc_del) {
+    using result_t = chunked_vector<subject_version>;
+    auto map = [filter = std::move(filter), inc_del](store& s) {
+        result_t out;
+        for (const auto& sub : s.get_subjects(inc_del)) {
+            if (!filter(sub)) {
+                continue;
+            }
+            auto versions = s.get_versions(sub, inc_del);
+            if (versions.has_error()) {
+                continue;
+            }
+            for (auto v : versions.assume_value()) {
+                out.emplace_back(sub, v);
+            }
+        }
+        return out;
+    };
+    auto reduce = [](result_t acc, result_t part) {
+        acc.reserve(acc.size() + part.size());
+        std::move(part.begin(), part.end(), std::back_inserter(acc));
+        return acc;
+    };
+    co_return co_await _store.map_reduce0(map, result_t{}, reduce);
+}
+
 ss::future<bool>
 sharded_store::has_subjects(context ctx, include_deleted inc_del) {
     auto map = [ctx, inc_del](store& s) {

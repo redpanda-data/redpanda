@@ -176,7 +176,7 @@ public:
       = storage::log_append_config::fsync::no,
       bool flush_after_append = true) {
         auto lstats = log->offsets();
-        storage::log_append_config append_cfg{sync, model::no_timeout};
+        storage::log_append_config append_cfg{sync};
 
         model::offset base_offset = lstats.dirty_offset < model::offset(0)
                                       ? model::offset(0)
@@ -205,7 +205,7 @@ public:
               std::move(batches));
             auto res = std::move(reader)
                          .for_each_ref(
-                           log->make_appender(append_cfg), append_cfg.timeout)
+                           log->make_appender(append_cfg), model::no_timeout)
                          .get();
             if (flush_after_append) {
                 log->flush().get();
@@ -227,7 +227,7 @@ public:
           batch.header().last_offset_delta);
         buffer.push_back(std::move(batch));
         storage::log_append_config append_cfg{
-          storage::log_append_config::fsync::no, model::no_timeout};
+          storage::log_append_config::fsync::no};
 
         model::offset old_dirty_offset = log->offsets().dirty_offset;
         model::offset base_offset = old_dirty_offset < model::offset(0)

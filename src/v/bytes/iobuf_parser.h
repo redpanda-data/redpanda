@@ -98,19 +98,6 @@ public:
         return str;
     }
 
-    /// \brief read and consume a maximum size string at utf8 boundaries. Throws
-    /// on invalid utf8, truncates incomplete utf8. Advances the consumption
-    /// index by only the valid string length.
-    /// \param max_size the maximum allowed size to consume & return
-    /// \return longest valid utf8 string of size len or less
-    ss::sstring read_string_safe(size_t max_size) {
-        auto raw_string = peek_string_unsafe(max_size);
-        const auto valid_size = validate_and_truncate(raw_string);
-        raw_string.resize(valid_size);
-        skip(valid_size);
-        return raw_string;
-    }
-
     bytes read_bytes(size_t n) {
         bytes b(bytes::initialized_later{}, n);
         _in.consume_to(n, b.begin());

@@ -266,6 +266,45 @@ func TestDiffConfigs(t *testing.T) {
 				"configurations.client_options.authentication_configuration",
 			},
 		},
+		{
+			name: "schema registry API scalar field change - source_url",
+			original: &ShadowLinkConfig{
+				SchemaRegistrySyncOptions: &SchemaRegistrySyncOptions{
+					ShadowSchemaRegistryAPI: &ShadowSchemaRegistryAPI{
+						SourceURL: "https://old-sr:8081",
+					},
+				},
+			},
+			updated: &ShadowLinkConfig{
+				SchemaRegistrySyncOptions: &SchemaRegistrySyncOptions{
+					ShadowSchemaRegistryAPI: &ShadowSchemaRegistryAPI{
+						SourceURL: "https://new-sr:8081",
+					},
+				},
+			},
+			want: []string{
+				"configurations.schema_registry_sync_options.shadow_schema_registry_api.source_url",
+			},
+		},
+		{
+			name: "schema registry shadowing mode switch - topic to api",
+			original: &ShadowLinkConfig{
+				SchemaRegistrySyncOptions: &SchemaRegistrySyncOptions{
+					ShadowSchemaRegistryTopic: &ShadowSchemaRegistryTopic{},
+				},
+			},
+			updated: &ShadowLinkConfig{
+				SchemaRegistrySyncOptions: &SchemaRegistrySyncOptions{
+					ShadowSchemaRegistryAPI: &ShadowSchemaRegistryAPI{
+						SourceURL: "https://source-sr:8081",
+					},
+				},
+			},
+			want: []string{
+				"configurations.schema_registry_sync_options.shadow_schema_registry_topic",
+				"configurations.schema_registry_sync_options.shadow_schema_registry_api",
+			},
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

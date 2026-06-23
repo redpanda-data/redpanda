@@ -47,8 +47,7 @@ inline local_log_reader_config reader_config() {
 
 inline log_append_config append_config() {
     return log_append_config{
-      .should_fsync = storage::log_append_config::fsync::yes,
-      .timeout = model::no_timeout};
+      .should_fsync = storage::log_append_config::fsync::yes};
 }
 
 inline model::ntp log_builder_ntp() {

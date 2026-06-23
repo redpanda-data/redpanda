@@ -8,6 +8,8 @@
  * the Business Source License, use of this software will be governed
  * by the Apache License, Version 2.0
  */
+#include "kafka/protocol/describe_redpanda_roles.h"
+#include "kafka/protocol/produce.h"
 #include "kafka/server/handlers/handler_interface.h"
 #include "kafka/server/handlers/handlers.h"
 
@@ -31,14 +33,14 @@ void check_all_types(kafka::type_list<Ts...>) {
 }
 
 BOOST_AUTO_TEST_CASE(handler_all_types) {
-    check_all_types(kafka::request_types{});
+    check_all_types(kafka::handler_request_types{});
 }
 
 BOOST_AUTO_TEST_CASE(handler_handler_for_key) {
     // key too low
     BOOST_CHECK(!kafka::handler_for_key(kafka::api_key(-1)).has_value());
     // key too high
-    const auto max_key = kafka::max_api_key(kafka::request_types{});
+    const auto max_key = kafka::max_api_key(kafka::handler_request_types{});
     BOOST_CHECK(
       !kafka::handler_for_key(kafka::api_key(max_key + 1)).has_value());
     // last key should be present
@@ -46,4 +48,29 @@ BOOST_AUTO_TEST_CASE(handler_handler_for_key) {
     // 34 is AlterReplicaLogDirs which we don't currently support, use it as a
     // test case for handlers which fall in the valid range but we don't support
     BOOST_CHECK(!kafka::handler_for_key(kafka::api_key(34)).has_value());
+}
+
+BOOST_AUTO_TEST_CASE(handler_for_reserved_key) {
+    // The reserved-range API dispatches.
+    auto h = kafka::handler_for_key(kafka::redpanda_api_key_base);
+    BOOST_REQUIRE(h.has_value());
+    BOOST_CHECK_EQUAL((*h)->key(), kafka::redpanda_api_key_base);
+    BOOST_CHECK_EQUAL((*h)->name(), kafka::describe_redpanda_roles_api::name);
+
+    // A key just past the registered reserved range has no handler.
+    BOOST_CHECK(!kafka::handler_for_key(
+                   kafka::api_key(kafka::redpanda_api_key_base() + 1))
+                   .has_value());
+}
+
+BOOST_AUTO_TEST_CASE(api_name_to_key_resolves_all_keys) {
+    // Standard names resolve.
+    BOOST_CHECK_EQUAL(
+      kafka::api_name_to_key(kafka::produce_api::name).value(),
+      kafka::produce_api::key);
+    // Reserved names resolve too: api_name_to_key is a pure name->key map, so
+    // operators may opt reserved APIs into name-based throughput throttling.
+    BOOST_CHECK_EQUAL(
+      kafka::api_name_to_key(kafka::describe_redpanda_roles_api::name).value(),
+      kafka::redpanda_api_key_base);
 }

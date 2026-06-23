@@ -205,6 +205,8 @@ type SecuritySettingsSyncOptions struct {
 }
 
 type SchemaRegistrySyncOptions struct {
+	// One of the following shadowing modes must be selected:
+	//
 	// Shadow the entire source cluster's Schema Registry byte-for-byte.
 	// If set, the Shadow Link will attempt to add the `_schemas`
 	// topic to the list of Shadow Topics as long as:
@@ -219,9 +221,111 @@ type SchemaRegistrySyncOptions struct {
 	// `_schemas` topic, unset this field, then either fail-over the topic or
 	// delete it.
 	ShadowSchemaRegistryTopic *ShadowSchemaRegistryTopic `json:"shadow_schema_registry_topic,omitempty" yaml:"shadow_schema_registry_topic,omitempty"`
+	// Shadow the source cluster's Schema Registry through its HTTP API,
+	// replicating the selected contexts and subjects to the shadow cluster.
+	ShadowSchemaRegistryAPI *ShadowSchemaRegistryAPI `json:"shadow_schema_registry_api,omitempty" yaml:"shadow_schema_registry_api,omitempty"`
 }
 
 type ShadowSchemaRegistryTopic struct{}
+
+type ShadowSchemaRegistryAPI struct {
+	// The source Schema Registry URL to use
+	SourceURL string `json:"source_url,omitempty" yaml:"source_url,omitempty"`
+	// Authentication settings for requests to the source Schema Registry.
+	// If unset, requests are sent without authentication
+	AuthOptions *SchemaRegistryAuthOptions `json:"auth_options,omitempty" yaml:"auth_options,omitempty"`
+	// TLS settings for requests to the source Schema Registry
+	TLSSettings *TLSSettings `json:"tls_settings,omitempty" yaml:"tls_settings,omitempty"`
+	// Interval between incremental polls for new source subjects and subject
+	// versions
+	// If 0 is provided, defaults to 10 seconds
+	TailInterval time.Duration `json:"tail_interval,omitempty" yaml:"tail_interval,omitempty"`
+	// Interval between full scans of the selected source subjects
+	// If 0 is provided, defaults to 5 minutes
+	FullSyncInterval time.Duration `json:"full_sync_interval,omitempty" yaml:"full_sync_interval,omitempty"`
+	// Maximum request rate, in requests per second, for calls to the source
+	// Schema Registry
+	// If 0 is provided, defaults to 30 requests/s
+	MaxSourceRequestsPerSecond int32 `json:"max_source_requests_per_second,omitempty" yaml:"max_source_requests_per_second,omitempty"`
+	// Filter for specific Schema Registry contexts and subjects to select
+	// for replication. If unset or empty, the whole source Schema Registry
+	// is replicated
+	SourceFilter *SchemaRegistrySourceFilter `json:"source_filter,omitempty" yaml:"source_filter,omitempty"`
+	// Mapping from source contexts implied by `source_filter` to destination
+	// contexts. Each source context included in the replication must map to
+	// a distinct destination context to avoid collisions. If unset, source
+	// context names are preserved
+	Destination *SchemaRegistryContextDestination `json:"destination,omitempty" yaml:"destination,omitempty"`
+	// Policy for handling source schema features unsupported by the
+	// destination, such as rulesets or metadata tags. If unset, FAIL is used
+	UnsupportedSchemaFeaturePolicy UnsupportedSchemaFeaturePolicy `json:"unsupported_schema_feature_policy,omitempty" yaml:"unsupported_schema_feature_policy,omitempty"`
+}
+
+// SchemaRegistryAuthOptions is the union for source Schema Registry
+// authentication options.
+type SchemaRegistryAuthOptions struct {
+	// Authenticate source Schema Registry requests with HTTP Basic auth
+	Basic *HTTPBasicAuthOptions `json:"basic,omitempty" yaml:"basic,omitempty"`
+}
+
+// HTTPBasicAuthOptions are HTTP Basic auth credentials.
+type HTTPBasicAuthOptions struct {
+	// HTTP Basic auth username. For Confluent Cloud, this is the API key
+	Username string `json:"username,omitempty" yaml:"username,omitempty"`
+	// HTTP Basic auth password. For Confluent Cloud, this is the API secret
+	Password string `json:"password,omitempty" yaml:"password,omitempty"`
+}
+
+type SchemaRegistrySourceFilter struct {
+	// Source contexts to replicate in full, for example ".", ".prod", or
+	// ".staging". If both `contexts` and `subjects` are set, the effective
+	// source scope is the union of both selections
+	Contexts []string `json:"contexts,omitempty" yaml:"contexts,omitempty"`
+	// Exact source subjects to replicate, using Schema Registry qualified
+	// subject syntax. For example, "orders-value" selects the subject in the
+	// default context, and ":.prod:orders-value" selects the subject in
+	// context ".prod"
+	Subjects []string `json:"subjects,omitempty" yaml:"subjects,omitempty"`
+}
+
+// SchemaRegistryContextDestination is the union for mapping source contexts
+// to destination contexts.
+type SchemaRegistryContextDestination struct {
+	// One of the following must be provided:
+	//
+	// Source context names are preserved on the destination
+	Identity *SchemaRegistryIdentityContextMapping `json:"identity,omitempty" yaml:"identity,omitempty"`
+	// Explicit source-to-destination context mappings
+	Exact *SchemaRegistryExactContextMappings `json:"exact,omitempty" yaml:"exact,omitempty"`
+}
+
+type SchemaRegistryIdentityContextMapping struct{}
+
+type SchemaRegistryExactContextMappings struct {
+	// Explicit source-to-destination context mappings. Every source context
+	// in the effective source scope must have exactly one mapping
+	Mappings []*SchemaRegistryContextMap `json:"mappings,omitempty" yaml:"mappings,omitempty"`
+}
+
+type SchemaRegistryContextMap struct {
+	// Source context name
+	Source string `json:"source,omitempty" yaml:"source,omitempty"`
+	// Destination context name
+	Destination string `json:"destination,omitempty" yaml:"destination,omitempty"`
+}
+
+// UnsupportedSchemaFeaturePolicy are valid policies for handling source
+// schema features unsupported by the destination.
+type UnsupportedSchemaFeaturePolicy string
+
+const (
+	// UnsupportedSchemaFeaturePolicyFail fails the sync when an unsupported
+	// schema feature is encountered.
+	UnsupportedSchemaFeaturePolicyFail UnsupportedSchemaFeaturePolicy = "FAIL"
+	// UnsupportedSchemaFeaturePolicyRemove removes unsupported fields from
+	// schemas or schema configs.
+	UnsupportedSchemaFeaturePolicyRemove UnsupportedSchemaFeaturePolicy = "REMOVE"
+)
 
 type NameFilter struct {
 	// Literal or prefix

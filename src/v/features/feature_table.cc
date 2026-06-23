@@ -49,6 +49,8 @@ std::string_view to_string_view(feature f) {
         return "batch_mirror_topic_status";
     case feature::shadow_link_sr_api_sync:
         return "shadow_link_sr_api_sync";
+    case feature::iceberg_extended_mode_config:
+        return "iceberg_extended_mode_config";
     case feature::coordinated_compaction:
         return "coordinated_compaction";
     case feature::cloud_retention:

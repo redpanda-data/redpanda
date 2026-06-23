@@ -21,8 +21,12 @@
 #include "storage/snapshot.h"
 
 #include <seastar/core/abort_source.hh>
+#include <seastar/core/coroutine.hh>
 #include <seastar/core/smp.hh>
 #include <seastar/core/sstring.hh>
+
+#include <tuple>
+#include <utility>
 
 namespace raft::details {
 /// copy all record batch readers into N containers using the
@@ -129,55 +133,67 @@ public:
     Func _f;
 };
 
+template<typename ReferenceConsumer>
+struct configuration_extracting_consumer {
+    ss::future<ss::stop_iteration> operator()(model::record_batch& batch) {
+        if (
+          batch.header().type == model::record_batch_type::raft_configuration) {
+            iobuf_parser parser(batch.copy_records().begin()->release_value());
+            configurations.emplace_back(
+              next_offset, deserialize_configuration(parser));
+        }
+
+        // we have to calculate offsets manually because the batch may not
+        // yet have the base offset assigned.
+        next_offset += model::offset(batch.header().last_offset_delta)
+                       + model::offset(1);
+
+        return wrapped(batch);
+    }
+
+    auto end_of_stream() {
+        return ss::futurize_invoke([this] { return wrapped.end_of_stream(); })
+          .then([confs = std::move(configurations)](auto ret) mutable {
+              return std::make_tuple(std::move(ret), std::move(confs));
+          });
+    }
+
+    ReferenceConsumer wrapped;
+    model::offset next_offset;
+    chunked_vector<offset_configuration> configurations;
+};
+
+template<typename ReferenceConsumer>
+using configuration_extracting_consumer_result_t = typename ss::futurize<
+  decltype(std::declval<ReferenceConsumer&>().end_of_stream())>::value_type;
+
 /**
- * Function that allow consuming batches with given consumer while lazily
- * extracting raft::group_configuration from the reader.
+ * Consumes all batches with the given consumer while lazily extracting
+ * raft::group_configuration batches.
  *
- * returns tuple<consumer_result, std::vector<offset_configuration>>
+ * returns tuple<consumer_result, chunked_vector<offset_configuration>>
  */
 template<typename ReferenceConsumer>
-auto for_each_ref_extract_configuration(
+requires model::ReferenceBatchReaderConsumer<ReferenceConsumer>
+ss::future<std::tuple<
+  configuration_extracting_consumer_result_t<ReferenceConsumer>,
+  chunked_vector<offset_configuration>>>
+for_each_ref_extract_configuration(
   model::offset base_offset,
-  model::record_batch_reader&& rdr,
-  ReferenceConsumer c,
-  model::timeout_clock::time_point tm) {
-    struct extracting_consumer {
-        ss::future<ss::stop_iteration> operator()(model::record_batch& batch) {
-            if (
-              batch.header().type
-              == model::record_batch_type::raft_configuration) {
-                iobuf_parser parser(
-                  batch.copy_records().begin()->release_value());
-                configurations.emplace_back(
-                  next_offset, deserialize_configuration(parser));
-            }
-
-            // we have to calculate offsets manually because the batch may not
-            // yet have the base offset assigned.
-            next_offset += model::offset(batch.header().last_offset_delta)
-                           + model::offset(1);
-
-            return wrapped(batch);
+  chunked_vector<model::record_batch> batches,
+  ReferenceConsumer c) {
+    auto consumer = configuration_extracting_consumer<ReferenceConsumer>{
+      .wrapped = std::move(c), .next_offset = model::next_offset(base_offset)};
+    for (auto& batch : batches) {
+        // move the batch out so that its memory is released as soon as it has
+        // been consumed instead of holding all batches alive until the whole
+        // append completes
+        auto b = std::move(batch);
+        if (co_await consumer(b) == ss::stop_iteration::yes) {
+            break;
         }
-
-        auto end_of_stream() {
-            return ss::futurize_invoke(
-                     [this] { return wrapped.end_of_stream(); })
-              .then([confs = std::move(configurations)](auto ret) mutable {
-                  return std::make_tuple(std::move(ret), std::move(confs));
-              });
-        }
-
-        ReferenceConsumer wrapped;
-        model::offset next_offset;
-        chunked_vector<offset_configuration> configurations;
-    };
-
-    return std::move(rdr).for_each_ref(
-      extracting_consumer{
-        .wrapped = std::move(c),
-        .next_offset = model::next_offset(base_offset)},
-      tm);
+    }
+    co_return co_await consumer.end_of_stream();
 }
 
 bytes serialize_group_key(raft::group_id, metadata_key);

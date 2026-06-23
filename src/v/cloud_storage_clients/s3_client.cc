@@ -33,6 +33,7 @@
 #include "http/utils.h"
 #include "json/istreamwrapper.h"
 #include "json/reader.h"
+#include "strings/utf8.h"
 #include "utils/base64.h"
 #include "utils/xml.h"
 
@@ -578,18 +579,8 @@ rest_error_response parse_unknown_format_error_response(
         read_size = max_body_size;
     }
 
-    ss::sstring error_body = "";
-    iobuf_parser parser{std::move(buf)};
-
-    // this is the unhappy unhappy path, handle potentially invalid utf8
-    try {
-        error_body = parser.read_string_safe(read_size);
-    } catch (const invalid_utf8_exception& e) {
-        vlog(s3_log.info, "response body contains invalid utf8 {}", e);
-    } catch (...) {
-        vlog(s3_log.error, "error parse error {}", std::current_exception());
-        throw;
-    }
+    ss::sstring error_body
+      = utf8_sanitize(buf.share(0, read_size)).linearize_to_string();
 
     return rest_error_response{
       fmt::format("{}", status_to_error_code(status)),

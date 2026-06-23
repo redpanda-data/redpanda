@@ -44,6 +44,25 @@ SEASTAR_THREAD_TEST_CASE(test_copy_equal) {
     BOOST_CHECK_EQUAL(buf, copy);
 }
 
+SEASTAR_THREAD_TEST_CASE(test_iterator_consumer_begin_skips_empty_fragment) {
+    auto empty = std::make_unique<details::io_fragment>(0);
+    ss::temporary_buffer<char> data("hello", 5);
+    auto non_empty = std::make_unique<details::io_fragment>(std::move(data));
+
+    iobuf buf;
+    buf.append(std::move(empty));
+    buf.append(std::move(non_empty));
+
+    auto consumer = details::io_iterator_consumer(buf.cbegin(), buf.cend());
+
+    std::string result;
+    for (auto byte : consumer) {
+        result.push_back(byte);
+    }
+
+    BOOST_REQUIRE_EQUAL(result, "hello");
+}
+
 SEASTAR_THREAD_TEST_CASE(test_lt) {
     BOOST_CHECK_LT(iobuf::from(""), iobuf::from("cat"));
     BOOST_CHECK_LT(iobuf::from("cat"), iobuf::from("dog"));

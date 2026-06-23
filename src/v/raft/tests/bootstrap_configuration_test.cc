@@ -58,15 +58,15 @@ struct bootstrap_fixture : raft::simple_record_fixture {
 
     std::vector<storage::append_result> write_n(const std::size_t n) {
         const auto cfg = storage::log_append_config{
-          storage::log_append_config::fsync::no, model::no_timeout};
+          storage::log_append_config::fsync::no};
         std::vector<storage::append_result> res;
         res.push_back(
           datas(n)
-            .for_each_ref(get_log()->make_appender(cfg), cfg.timeout)
+            .for_each_ref(get_log()->make_appender(cfg), model::no_timeout)
             .get());
         res.push_back(
           configs(n, raft::group_configuration::v_6)
-            .for_each_ref(get_log()->make_appender(cfg), cfg.timeout)
+            .for_each_ref(get_log()->make_appender(cfg), model::no_timeout)
             .get());
         get_log()->flush().get();
         return res;
@@ -107,19 +107,19 @@ FIXTURE_TEST(write_configs, bootstrap_fixture) {
 }
 FIXTURE_TEST(mixed_config_versions, bootstrap_fixture) {
     const storage::log_append_config append_cfg{
-      storage::log_append_config::fsync::no, model::no_timeout};
+      storage::log_append_config::fsync::no};
 
     datas(20)
-      .for_each_ref(get_log()->make_appender(append_cfg), append_cfg.timeout)
+      .for_each_ref(get_log()->make_appender(append_cfg), model::no_timeout)
       .get();
     configs(3, raft::group_configuration::v_4)
-      .for_each_ref(get_log()->make_appender(append_cfg), append_cfg.timeout)
+      .for_each_ref(get_log()->make_appender(append_cfg), model::no_timeout)
       .get();
     configs(2, raft::group_configuration::v_5)
-      .for_each_ref(get_log()->make_appender(append_cfg), append_cfg.timeout)
+      .for_each_ref(get_log()->make_appender(append_cfg), model::no_timeout)
       .get();
     configs(5, raft::group_configuration::v_6)
-      .for_each_ref(get_log()->make_appender(append_cfg), append_cfg.timeout)
+      .for_each_ref(get_log()->make_appender(append_cfg), model::no_timeout)
       .get();
     get_log()->flush().get();
 

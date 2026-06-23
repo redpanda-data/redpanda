@@ -32,7 +32,7 @@ serialize_apis(type_list<RequestTypes...>) {
 
 static chunked_vector<api_versions_response_key>
 get_supported_apis(bool is_idempotence_enabled, bool are_transactions_enabled) {
-    auto all_api = serialize_apis(request_types{});
+    auto all_api = serialize_apis(handler_request_types{});
 
     chunked_vector<api_versions_response_key> filtered;
     std::copy_if(

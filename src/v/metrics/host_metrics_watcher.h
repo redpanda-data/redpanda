@@ -162,7 +162,8 @@ private:
     // /proc/net/snmp
     metrics_file_info<snmp_stats> _snmp_stats;
 
-    metrics::internal_metric_groups _metrics;
+    // Published on both /metrics and /public_metrics for the SLF dashboard.
+    metrics::all_metrics_groups _metrics;
 };
 
 } // namespace metrics

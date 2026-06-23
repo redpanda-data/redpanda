@@ -799,9 +799,7 @@ redpanda_thread_fixture::make_data(std::optional<model::timestamp> base_ts) {
             model::offset(0),
             20,
             maybe_compress_batches::yes,
-            log_append_config{
-              .should_fsync = log_append_config::fsync::yes,
-              .timeout = model::no_timeout},
+            log_append_config{.should_fsync = log_append_config::fsync::yes},
             disk_log_builder::should_flush_after::yes,
             base_ts)
           | stop();
@@ -855,7 +853,7 @@ conn_ptr redpanda_thread_fixture::make_connection_context(bool use_authz) {
       std::nullopt,
       config::mock_property<uint32_t>(100_MiB).bind(),
       config::mock_property<std::vector<ss::sstring>>({"produce", "fetch"})
-        .bind<std::vector<bool>>(
+        .bind<kafka::api_key_table<bool>>(
           &kafka::server::convert_api_names_to_key_bitmap));
 }
 

@@ -114,7 +114,8 @@ private:
       model::output_topic_index,
       transfer_queue<transformed_output>*,
       sink*,
-      kafka::offset);
+      kafka::offset,
+      ss::abort_source&);
     ss::future<> poll_sleep();
     ss::future<absl::flat_hash_map<model::output_topic_index, kafka::offset>>
     load_latest_committed();

@@ -83,6 +83,7 @@ redpanda_cc_btest(
         "//src/v/utils:delta_for",
         "//src/v/utils:human",
         "@boost//:test",
+        "@seastar",
         "@seastar//:testing",
     ],
 )

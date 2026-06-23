@@ -3562,6 +3562,16 @@ configuration::configuration()
       "non-controller broker.",
       {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
       10s)
+  , health_monitor_metrics_enabled(
+      *this,
+      "health_monitor_metrics_enabled",
+      "Whether the cluster_health_* metrics are exported. When enabled, each "
+      "broker refreshes them on an interval of 10x "
+      "`health_monitor_max_metadata_age`, so the two scale together. "
+      "Refreshing "
+      "increases CPU usage and network traffic. Disabled by default.",
+      {.needs_restart = needs_restart::yes, .visibility = visibility::tunable},
+      false)
   , storage_space_alert_free_threshold_percent(
       *this,
       "storage_space_alert_free_threshold_percent",

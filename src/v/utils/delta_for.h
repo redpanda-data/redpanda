@@ -24,7 +24,7 @@
 #include "serde/rw/tags.h"
 #include "ssx/sformat.h"
 
-#include <seastar/util/log.hh>
+#include <boost/iterator/iterator_facade.hpp>
 
 #include <concepts>
 #include <cstddef>
@@ -1006,12 +1006,13 @@ private:
     template<class PredT>
     const_iterator pred_search(value_t value) const {
         PredT pred;
-        for (auto it = begin(); it != end(); ++it) {
+        auto end_it = end();
+        for (auto it = begin(); it != end_it; ++it) {
             if (pred(*it, value)) {
                 return it;
             }
         }
-        return end();
+        return end_it;
     }
 
     std::array<value_t, buffer_depth> _head{};
@@ -1509,12 +1510,13 @@ public:
     /// Find first value that matches the predicate
     const_iterator pred_search(
       value_t value, std::regular_invocable<value_t, value_t> auto pred) const {
-        for (auto it = this->begin(); it != this->end(); ++it) {
+        auto end_it = this->end();
+        for (auto it = this->begin(); it != end_it; ++it) {
             if (pred(*it, value)) {
                 return it;
             }
         }
-        return this->end();
+        return end_it;
     }
 };
 
@@ -1556,14 +1558,15 @@ public:
             }
             index += it->size();
         }
+        auto end_it = this->end();
         if (it != this->_frames.end()) {
             auto start = const_iterator(it, this->_frames.end(), 0, index);
-            for (; start != this->end(); ++start) {
+            for (; start != end_it; ++start) {
                 if (pred(*start, value)) {
                     return start;
                 }
             }
         }
-        return this->end();
+        return end_it;
     }
 };

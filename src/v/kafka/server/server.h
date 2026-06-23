@@ -211,11 +211,11 @@ public:
 
     /**
      * \param api_names list of Kafka API names
-     * \return std::vector<bool> always sized to index the entire Kafka API key
-     * space, with true values at indexes whose names have appeared in
-     * \p api_names
+     * \return api_key_table<bool> covering both the standard and reserved
+     * Kafka API key spaces, with true values at indexes whose names have
+     * appeared in \p api_names
      */
-    static std::vector<bool>
+    static api_key_table<bool>
     convert_api_names_to_key_bitmap(const std::vector<ss::sstring>& api_names);
 
     const replica_selector& get_replica_selector() const {

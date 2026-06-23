@@ -36,7 +36,7 @@ Redpanda Data recommends using the following free, prebuilt stable releases.
 
 ```
 curl -1sLf \
-  'https://dl.redpanda.com/nzc4ZYQK3WRGd9sy/redpanda/cfg/setup/bash.deb.sh' \
+  'https://linux.pkg.redpanda.com/setup-redpanda.deb.sh' \
   | sudo -E bash
 
 sudo apt-get install redpanda
@@ -46,7 +46,7 @@ sudo apt-get install redpanda
 
 ```
 curl -1sLf \
-  'https://dl.redpanda.com/nzc4ZYQK3WRGd9sy/redpanda/cfg/setup/bash.rpm.sh' \
+  'https://linux.pkg.redpanda.com/setup-redpanda.rpm.sh' \
   | sudo -E bash
 
 sudo yum install redpanda
@@ -110,7 +110,7 @@ RC builds are not recommended for production use.
 
 ```bash
 curl -1sLf \
-  'https://dl.redpanda.com/E4xN1tVe3Xy60GTx/redpanda-unstable/setup.deb.sh' \
+  'https://linux.pkg.redpanda.com/setup-redpanda-unstable.deb.sh' \
   | sudo -E bash
 
 sudo apt-get install redpanda
@@ -120,7 +120,7 @@ sudo apt-get install redpanda
 
 ```bash
 curl -1sLf \
-  'https://dl.redpanda.com/E4xN1tVe3Xy60GTx/redpanda-unstable/setup.rpm.sh' \
+  'https://linux.pkg.redpanda.com/setup-redpanda-unstable.rpm.sh' \
   | sudo -E bash
 
 sudo yum install redpanda

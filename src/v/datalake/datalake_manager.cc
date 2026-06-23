@@ -43,27 +43,31 @@ static std::unique_ptr<type_resolver> make_type_resolver(
   schema::registry& sr,
   schema_cache& cache,
   resolved_type_cache& type_cache) {
-    switch (mode.kind()) {
-    case model::iceberg_mode::variant::disabled:
-        vassert(
-          false,
-          "Cannot make record translator when iceberg is disabled, logic bug.");
-    case model::iceberg_mode::variant::key_value:
+    vassert(
+      !mode.is_disabled(),
+      "Cannot make type resolver when iceberg is disabled, logic bug.");
+    switch (mode.value().mode) {
+    case model::iceberg_mode::schema_mode::binary:
         return std::make_unique<binary_type_resolver>();
-    case model::iceberg_mode::variant::value_schema_id_prefix:
+    case model::iceberg_mode::schema_mode::schema_id_prefix:
         return std::make_unique<record_schema_resolver>(
           sr, cache, type_cache, std::move(sr_context));
-    case model::iceberg_mode::variant::value_schema_latest:
+    case model::iceberg_mode::schema_mode::schema_latest:
         auto subject = pandaproxy::schema_registry::subject(
           fmt::format("{}-value", topic_name));
-        if (auto explicit_subject = mode.subject_name()) {
-            subject = pandaproxy::schema_registry::subject(*explicit_subject);
+        if (!mode.value().subject.empty()) {
+            subject = pandaproxy::schema_registry::subject(
+              mode.value().subject);
+        }
+        std::optional<ss::sstring> proto_name;
+        if (!mode.value().protobuf_name.empty()) {
+            proto_name = mode.value().protobuf_name;
         }
         return std::make_unique<latest_subject_schema_resolver>(
           sr,
           std::move(sr_context),
           subject,
-          mode.protobuf_full_name(),
+          std::move(proto_name),
           config::shard_local_cfg().iceberg_latest_schema_cache_ttl_ms.bind(),
           cache,
           type_cache);
@@ -72,15 +76,14 @@ static std::unique_ptr<type_resolver> make_type_resolver(
 
 static std::unique_ptr<record_translator>
 make_record_translator(const model::iceberg_mode& mode) {
-    switch (mode.kind()) {
-    case model::iceberg_mode::variant::disabled:
-        vassert(
-          false,
-          "Cannot make record translator when iceberg is disabled, logic bug.");
-    case model::iceberg_mode::variant::key_value:
+    vassert(
+      !mode.is_disabled(),
+      "Cannot make record translator when iceberg is disabled, logic bug.");
+    switch (mode.value().mode) {
+    case model::iceberg_mode::schema_mode::binary:
         return std::make_unique<key_value_translator>();
-    case model::iceberg_mode::variant::value_schema_id_prefix:
-    case model::iceberg_mode::variant::value_schema_latest:
+    case model::iceberg_mode::schema_mode::schema_id_prefix:
+    case model::iceberg_mode::schema_mode::schema_latest:
         return std::make_unique<structured_data_translator>();
     }
 }

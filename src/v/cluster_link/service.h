@@ -21,7 +21,9 @@
 #include "kafka/data/rpc/fwd.h"
 #include "kafka/server/fwd.h"
 #include "model/fundamental.h"
+#include "pandaproxy/schema_registry/fwd.h"
 #include "rpc/fwd.h"
+#include "schema/fwd.h"
 #include "ssx/mutex.h"
 #include "ssx/work_queue.h"
 
@@ -30,6 +32,9 @@
 #include <seastar/util/defer.hh>
 
 namespace cluster_link {
+namespace schema_registry_sync {
+class source_reader_factory;
+}
 namespace replication {
 class data_source;
 class data_sink;
@@ -57,6 +62,7 @@ public:
       ss::sharded<cluster::security_frontend>* security_fe,
       ss::sharded<kafka::data::rpc::client>* kafka_data_rpc_client,
       ss::sharded<cluster::id_allocator_frontend>* id_alloc,
+      pandaproxy::schema_registry::api* schema_registry,
       ss::smp_service_group smp_group,
       ss::scheduling_group scheduling_group);
 
@@ -241,8 +247,12 @@ private:
     ss::sharded<cluster::security_frontend>* _security_fe;
     ss::sharded<kafka::data::rpc::client>* _kafka_data_rpc_client;
     ss::sharded<cluster::id_allocator_frontend>* _id_allocator_frontend;
+    pandaproxy::schema_registry::api* _schema_registry_api;
     ss::smp_service_group _smp_group;
     ss::scheduling_group _scheduling_group;
+    std::unique_ptr<schema::registry> _schema_registry_dest;
+    std::unique_ptr<schema_registry_sync::source_reader_factory>
+      _source_reader_factory;
     std::unique_ptr<manager> _manager;
     std::vector<ss::deferred_action<ss::noncopyable_function<void()>>>
       _notification_cleanups;

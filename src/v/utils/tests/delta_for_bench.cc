@@ -132,11 +132,16 @@ void append_tx_test(StoreT& store, int test_scale) {
 }
 
 template<class StoreT>
-void find_test(StoreT& store) {
+size_t find_test(StoreT& store) {
+    constexpr size_t batch = 10;
+    auto target = *store.last_value();
     perf_tests::start_measuring_time();
-    auto it = store.find(*store.last_value());
-    perf_tests::do_not_optimize(it);
+    for (size_t i = 0; i < batch; i++) {
+        auto it = store.find(target);
+        perf_tests::do_not_optimize(it);
+    }
     perf_tests::stop_measuring_time();
+    return batch;
 }
 
 template<class StoreT>
@@ -173,9 +178,11 @@ PERF_TEST(deltafor_bench, xor_column_append_tx2) {
     append_tx_test(column, 4097);
 }
 
-PERF_TEST(deltafor_bench, xor_frame_find_4K) { find_test(xor_frame_4K); }
+PERF_TEST(deltafor_bench, xor_frame_find_4K) { return find_test(xor_frame_4K); }
 
-PERF_TEST(deltafor_bench, xor_column_find_4K) { find_test(xor_column_4K); }
+PERF_TEST(deltafor_bench, xor_column_find_4K) {
+    return find_test(xor_column_4K);
+}
 
 PERF_TEST(deltafor_bench, xor_frame_at_4K) { at_test(xor_frame_4K); }
 
@@ -209,9 +216,13 @@ PERF_TEST(deltafor_bench, delta_column_append_tx2) {
     append_tx_test(column, 4097);
 }
 
-PERF_TEST(deltafor_bench, delta_frame_find_4K) { find_test(delta_frame_4K); }
+PERF_TEST(deltafor_bench, delta_frame_find_4K) {
+    return find_test(delta_frame_4K);
+}
 
-PERF_TEST(deltafor_bench, delta_column_find_4K) { find_test(delta_column_4K); }
+PERF_TEST(deltafor_bench, delta_column_find_4K) {
+    return find_test(delta_column_4K);
+}
 
 PERF_TEST(deltafor_bench, delta_column_find_4M) { at_test(delta_column_4M); }
 

@@ -296,7 +296,6 @@ struct offset_stats {
 struct log_append_config {
     using fsync = ss::bool_class<class skip_tag>;
     fsync should_fsync;
-    model::timeout_clock::time_point timeout;
 };
 struct append_result {
     log_clock::time_point append_time;

@@ -24,6 +24,7 @@
 #include "cluster/members_table.h"
 #include "cluster/node/local_monitor.h"
 #include "cluster/node_status_table.h"
+#include "cluster/partition_kafka_offsets.h"
 #include "cluster/partition_manager.h"
 #include "cluster/partition_probe.h"
 #include "cluster/types.h"
@@ -31,25 +32,31 @@
 #include "config/property.h"
 #include "container/chunked_hash_map.h"
 #include "features/feature_table.h"
+#include "metrics/metrics.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "raft/fwd.h"
 #include "rpc/connection_cache.h"
 #include "rpc/types.h"
 #include "ssx/async_algorithm.h"
+#include "ssx/future-util.h"
 
 #include <seastar/core/lowres_clock.hh>
+#include <seastar/core/metrics.hh>
 #include <seastar/core/sharded.hh>
 #include <seastar/core/shared_ptr.hh>
 #include <seastar/core/timed_out_error.hh>
+#include <seastar/core/timer.hh>
 #include <seastar/core/with_timeout.hh>
 #include <seastar/util/log.hh>
 
+#include <fmt/chrono.h>
 #include <fmt/format.h>
 
 #include <algorithm>
 #include <chrono>
 #include <iterator>
+#include <limits>
 #include <optional>
 #include <ranges>
 #include <utility>
@@ -57,6 +64,72 @@
 using namespace cluster::health_monitor_backend_details;
 
 namespace cluster {
+
+// Exports the cluster "health overview" (the cluster-wide aggregate
+// returned by the /v1/cluster/health_overview admin endpoint - distinct
+// from the per-node "health reports" each broker ships up) as Prometheus
+// metrics on both the public and internal endpoints.
+//
+// Two metric groups, both under the `cluster_health` prefix:
+//
+//  - The "meta" group is registered at startup and is always emitted.
+//    It carries `metadata_age_seconds` (age of the most recent
+//    successful refresh of the local per-node health-report cache,
+//    INT32_MAX if no refresh has happened yet) and a `refreshes_total`
+//    counter.
+//
+//  - The "overview" group exports the cluster_health_overview fields
+//    (nodes_down, leaderless_partitions, ...). It is NOT registered
+//    until the probe has cached a real overview, so Prometheus simply
+//    sees no series for these until real data is available.
+//
+// A `refresh_interval` timer periodically re-fetches the overview to keep
+// the cache fresh independently of how often Prometheus scrapes.
+class health_monitor_backend::health_probe {
+public:
+    explicit health_probe(health_monitor_backend& parent);
+    ~health_probe();
+    health_probe(const health_probe&) = delete;
+    health_probe& operator=(const health_probe&) = delete;
+    health_probe(health_probe&&) = delete;
+    health_probe& operator=(health_probe&&) = delete;
+
+    // Cache the given overview. The first call also registers the
+    // overview metric group; subsequent calls just update the cache.
+    void update_cache(cluster_health_overview overview);
+
+private:
+    // Re-fetch the overview, refresh the cache, and re-arm the refresh timer.
+    void tick();
+    // Register the always-on meta metrics (metadata age, refresh count).
+    void setup_meta_metrics();
+    // Register the cluster_health_* overview metric group, deferred until the
+    // first usable overview is cached (see update_cache()).
+    void setup_overview_metrics();
+
+    // Cadence on which the probe re-fetches the cluster health overview
+    // to keep its cache fresh. Resolved once at construction as a fixed
+    // multiple of `health_monitor_max_metadata_age` (zero = disabled, when
+    // `health_monitor_metrics_enabled` is false).
+    std::chrono::milliseconds refresh_interval() const {
+        return _refresh_interval;
+    }
+    // Max ticks to defer registering the overview metrics waiting for a
+    // complete view.
+    static constexpr int defer_max_attempts = 2;
+
+    health_monitor_backend& _parent;
+    cluster_health_overview _cache;
+    metrics::all_metrics_groups _metrics;
+    bool _overview_registered{false};
+    ss::timer<ss::lowres_clock> _refresh_timer;
+    std::chrono::milliseconds _refresh_interval{0};
+    // Number of overviews seen so far that were too incomplete to register
+    // the overview metrics with. Once we either see a complete overview or
+    // hit defer_max_attempts, the metrics are registered and this counter
+    // is no longer updated.
+    int _overview_attempts{0};
+};
 
 health_monitor_backend::health_monitor_backend(
   ss::lw_shared_ptr<raft::consensus> raft0,
@@ -84,7 +157,12 @@ health_monitor_backend::health_monitor_backend(
   , _node_status_table(node_status_table)
   , _reports{ss::make_lw_shared<report_cache_t>()}
   , _local_monitor(local_monitor)
-  , _self(_raft0->self().id()) {}
+  , _self(_raft0->self().id())
+  , _health_probe(std::make_unique<health_probe>(*this)) {}
+
+// Defined out-of-line because health_probe is an incomplete type
+// in the header.
+health_monitor_backend::~health_monitor_backend() = default;
 
 cluster::notification_id_type
 health_monitor_backend::register_node_callback(health_node_cb_t cb) {
@@ -125,6 +203,10 @@ ss::future<> health_monitor_backend::stop() {
         _refresh_request.release();
     }
     co_await std::move(f);
+    // Destroy the probe only after the gate has drained: an in-flight
+    // tick fiber holds a reference to it. Ticks firing after the gate
+    // close are no-ops and the timer is never re-armed.
+    _health_probe.reset();
 }
 
 cluster_health_report health_monitor_backend::build_cluster_report(
@@ -736,6 +818,11 @@ health_monitor_backend::collect_remote_node_health(model::node_id id) {
         })
       .then(&rpc::get_ctx_data<get_node_health_reply>)
       .then([this, id](result<get_node_health_reply> reply) {
+          vlog(
+            clusterlog.trace,
+            "collect_remote_node_health: reply from node {} (ok={})",
+            id,
+            !reply.has_error());
           return process_node_reply(id, std::move(reply));
       });
 }
@@ -803,6 +890,11 @@ ss::future<std::error_code> health_monitor_backend::collect_cluster_health() {
     vlog(clusterlog.debug, "collecting cluster health statistics");
     // collect all reports
     auto ids = _members.local().node_ids();
+    vlog(
+      clusterlog.trace,
+      "collect_cluster_health: dispatching to {} members: {}",
+      ids.size(),
+      ids);
     auto collected_reports
       = co_await ssx::async_transform<std::vector<result<node_health_report>>>(
         ids.begin(), ids.end(), [this](model::node_id id) {
@@ -812,6 +904,10 @@ ss::future<std::error_code> health_monitor_backend::collect_cluster_health() {
             }
             return collect_remote_node_health(id);
         });
+    vlog(
+      clusterlog.trace,
+      "collect_cluster_health: gathered {} results",
+      collected_reports.size());
     auto new_reports = ss::make_lw_shared<report_cache_t>();
 
     // update nodes reports and cache cluster-level data disk health
@@ -881,6 +977,7 @@ ss::future<std::error_code> health_monitor_backend::collect_cluster_health() {
     _reports = std::move(new_reports);
     _restart_risks_collected = node_restart_risks_available;
     _last_refresh = ss::lowres_clock::now();
+    ++_refresh_count;
     co_return errc::success;
 }
 
@@ -969,6 +1066,7 @@ partition_status build_partition_status(const partition& p) {
         // HWM cannot be reliably retrieved until raft has started
         status.high_watermark = model::offset_cast(
           p.log()->from_log_offset(p.high_watermark()));
+        status.log_start_offset = model::offset_cast(kafka_start_offset(p));
     }
 
     if (p.raft()->is_elected_leader()) {
@@ -1219,6 +1317,222 @@ health_monitor_backend::aggregate_reports(const report_cache_t& reports) {
       .under_replicated_count = urp.count()};
 }
 
+health_monitor_backend::health_probe::health_probe(
+  health_monitor_backend& parent)
+  : _parent(parent) {
+    if (!config::shard_local_cfg().health_monitor_metrics_enabled()) {
+        vlog(
+          clusterlog.info,
+          "health_probe: health_monitor_metrics_enabled is false; "
+          "cluster_health_* metrics are disabled");
+        return;
+    }
+    // Scale the refresh cadence with the metadata age so operators can tune
+    // both with a single knob (health_monitor_max_metadata_age), clamped
+    // below at 1s so a tiny metadata age can't drive a runaway refresh rate.
+    constexpr int refresh_interval_multiplier = 10;
+    // Clamp below by 1s in case the hmm setting is very low for some reason.
+    constexpr std::chrono::milliseconds min_refresh_interval{1000};
+    _refresh_interval = std::max(
+      min_refresh_interval,
+      refresh_interval_multiplier
+        * config::shard_local_cfg().health_monitor_max_metadata_age());
+    vlog(
+      clusterlog.info,
+      "health_probe: registering meta metrics and arming refresh timer "
+      "(interval={})",
+      _refresh_interval);
+    setup_meta_metrics();
+    _refresh_timer.set_callback([this] { tick(); });
+    // Fire the first tick immediately so the overview metrics start
+    // populating without waiting a full interval.
+    _refresh_timer.arm(ss::lowres_clock::duration::zero());
+}
+
+health_monitor_backend::health_probe::~health_probe() {
+    if (_refresh_timer.armed()) {
+        _refresh_timer.cancel();
+    }
+}
+
+void health_monitor_backend::health_probe::update_cache(
+  cluster_health_overview overview) {
+    _cache = std::move(overview);
+    const auto& ov = _cache;
+    if (_overview_registered) {
+        vlog(
+          clusterlog.trace,
+          "health_probe: overview cache updated (refresh_failed={}, "
+          "all_members_reported={}, nodes_down={}, unhealthy_reasons={})",
+          ov.refresh_failed,
+          ov.all_members_reported,
+          ov.nodes_down.size(),
+          ov.unhealthy_reasons.size());
+        return;
+    }
+    // Overview metrics not yet registered: only publish once we have a
+    // complete view, or after defer_max_attempts ticks (handles the
+    // legitimate "a peer is permanently down" case).
+    ++_overview_attempts;
+    if (ov.all_members_reported || _overview_attempts >= defer_max_attempts) {
+        vlog(
+          clusterlog.trace,
+          "health_probe: first overview cached after {} tick(s) ({}), "
+          "registering cluster_health_* overview metrics",
+          _overview_attempts,
+          ov.all_members_reported ? "all members reported"
+                                  : "max startup attempts reached");
+        setup_overview_metrics();
+        _overview_registered = true;
+    } else {
+        vlog(
+          clusterlog.trace,
+          "health_probe: first overview not yet usable (refresh_failed={}, "
+          "all_members_reported={}, nodes_down={}); will retry",
+          ov.refresh_failed,
+          ov.all_members_reported,
+          ov.nodes_down.size());
+    }
+}
+
+void health_monitor_backend::health_probe::tick() {
+    if (_parent._gate.is_closed()) {
+        return;
+    }
+    ssx::spawn_with_gate(_parent._gate, [this](this auto) -> ss::future<> {
+        vlog(clusterlog.trace, "health_probe: tick - refreshing overview");
+        try {
+            auto overview = co_await _parent.get_cluster_health_overview(
+              model::time_from_now(_parent.max_metadata_age()));
+            update_cache(std::move(overview));
+        } catch (const ss::abort_requested_exception&) {
+            // shutting down
+        } catch (...) {
+            vlog(
+              clusterlog.warn,
+              "health_probe: failed to refresh cluster health overview: {}",
+              std::current_exception());
+        }
+        if (!_parent._gate.is_closed()) {
+            _refresh_timer.arm(
+              std::chrono::duration_cast<ss::lowres_clock::duration>(
+                refresh_interval()));
+        }
+    });
+}
+
+void health_monitor_backend::health_probe::setup_meta_metrics() {
+    namespace sm = ss::metrics;
+    _metrics.add_group(
+      "cluster_health",
+      {
+        sm::make_gauge(
+          "metadata_age_seconds",
+          [this]() -> double {
+              if (_parent._refresh_count == 0) {
+                  // never refreshed: report "infinitely stale" so that
+                  // age > threshold alerts fire
+                  return std::numeric_limits<int32_t>::max();
+              }
+              auto age = ss::lowres_clock::now() - _parent._last_refresh;
+              return std::chrono::duration_cast<std::chrono::duration<double>>(
+                       age)
+                .count();
+          },
+          sm::description(
+            "Seconds since the local health monitor last successfully "
+            "refreshed its _status/_reports metadata cache. 2^31-1 if "
+            "no refresh has happened yet."))
+          .aggregate({sm::shard_label}),
+        sm::make_counter(
+          "refreshes_total",
+          [this] { return _parent._refresh_count; },
+          sm::description(
+            "Total successful health-report refreshes "
+            "performed by this node since startup."))
+          .aggregate({sm::shard_label}),
+      });
+}
+
+void health_monitor_backend::health_probe::setup_overview_metrics() {
+    namespace sm = ss::metrics;
+    _metrics.add_group(
+      "cluster_health",
+      {
+        sm::make_gauge(
+          "unhealthy_reasons",
+          [this] { return _cache.unhealthy_reasons.size(); },
+          sm::description(
+            "Count of reasons the cluster is currently considered unhealthy. "
+            "0 if the cluster is healthy; equals the size of "
+            "cluster_health_overview.unhealthy_reasons."))
+          .aggregate({sm::shard_label}),
+        sm::make_gauge(
+          "nodes_down",
+          [this] { return _cache.nodes_down.size(); },
+          sm::description(
+            "Number of cluster members not responding to "
+            "liveness checks. 0 if healthy."))
+          .aggregate({sm::shard_label}),
+        sm::make_gauge(
+          "high_disk_usage_nodes",
+          [this] { return _cache.high_disk_usage_nodes.size(); },
+          sm::description(
+            "Number of cluster members whose data disk has exceeded the "
+            "configured storage space alert threshold. 0 if healthy."))
+          .aggregate({sm::shard_label}),
+        sm::make_gauge(
+          "leaderless_partitions",
+          [this] { return _cache.leaderless_count; },
+          sm::description(
+            "Number of partitions without an elected leader. 0 if healthy."))
+          .aggregate({sm::shard_label}),
+        sm::make_gauge(
+          "under_replicated_partitions",
+          [this] { return _cache.under_replicated_count; },
+          sm::description(
+            "Number of partitions with at least one "
+            "under-replicated replica. 0 if healthy."))
+          .aggregate({sm::shard_label}),
+        sm::make_gauge(
+          "no_elected_controller",
+          [this] { return _cache.controller_id.has_value() ? 0 : 1; },
+          sm::description(
+            "1 if no controller (raft0) leader is currently elected, else 0."))
+          .aggregate({sm::shard_label}),
+        sm::make_gauge(
+          "no_health_report",
+          [this] { return _cache.refresh_failed ? 1 : 0; },
+          sm::description(
+            "1 if the last attempt to refresh the cluster "
+            "health report failed, else 0."))
+          .aggregate({sm::shard_label}),
+        sm::make_gauge(
+          "nodes_in_recovery_mode",
+          [this] { return _cache.nodes_in_recovery_mode.size(); },
+          sm::description(
+            "Informational: count of nodes booted in recovery "
+            "mode. Does NOT contribute to cluster health "
+            "status."))
+          .aggregate({sm::shard_label}),
+        sm::make_gauge(
+          "cluster_size",
+          [this] { return _cache.all_nodes.size(); },
+          sm::description(
+            "Informational: total number of known cluster members. Does NOT "
+            "contribute to cluster health status."))
+          .aggregate({sm::shard_label}),
+        sm::make_gauge(
+          "bytes_in_cloud_storage",
+          [this] { return _cache.bytes_in_cloud_storage.value_or(0); },
+          sm::description(
+            "Informational: total bytes stored in cloud (tiered) storage "
+            "across the cluster, or 0 if unavailable. Does NOT contribute "
+            "to cluster health status."))
+          .aggregate({sm::shard_label}),
+      });
+}
+
 ss::future<cluster_health_overview>
 health_monitor_backend::get_cluster_health_overview(
   model::timeout_clock::time_point deadline) {
@@ -1308,9 +1622,19 @@ health_monitor_backend::get_cluster_health_overview(
     // cluster is not healthy if the health report can't be obtained
     if (ec) {
         ret.unhealthy_reasons.emplace_back("no_health_report");
+        ret.refresh_failed = true;
     }
 
     ret.bytes_in_cloud_storage = _bytes_in_cloud_storage;
+
+    // True only when every known member produced a successful health
+    // report. Distinct from refresh_failed, which only catches errors
+    // from maybe_refresh_cluster_health itself - per-peer RPC failures
+    // (e.g., during boot before connections are established) do NOT set
+    // ec, but they do leave _reports incomplete.
+    ret.all_members_reported = !ec
+                               && reports().size()
+                                    == _members.local().nodes().size();
 
     co_return ret;
 }

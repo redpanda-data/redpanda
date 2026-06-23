@@ -12,12 +12,52 @@
 
 #include "base/vassert.h"
 #include "base/vlog.h"
+#include "cloud_storage_clients/s3_error.h"
+#include "net/connection.h"
 #include "ssx/future-util.h"
 
+#include <seastar/core/timed_out_error.hh>
 #include <seastar/coroutine/as_future.hh>
 #include <seastar/coroutine/exception.hh>
 
 namespace cloud_storage_clients {
+
+namespace {
+
+// Classify a failed multipart sub-request for logging. A retryable failure is
+// not a true failure: the upload is re-driven by the caller's retry/backoff, so
+// log it at warn and reserve error for genuine failures. Retryable means either
+// an S3 throttle / transient server error (slow_down / internal_error /
+// request_timeout, as s3_client::send_request maps to error_outcome::retry) or
+// a transient transport error (reconnect or timeout, mirroring
+// handle_client_transport_error). (ABS throttles still log at error; parity is
+// a follow-up.)
+ss::log_level multipart_failure_log_level(const std::exception_ptr& ex) {
+    if (ssx::is_shutdown_exception(ex)) {
+        return ss::log_level::warn;
+    }
+    try {
+        std::rethrow_exception(ex);
+    } catch (const rest_error_response& e) {
+        switch (e.code()) {
+        case s3_error_code::slow_down:
+        case s3_error_code::internal_error:
+        case s3_error_code::request_timeout:
+            return ss::log_level::warn;
+        default:
+            return ss::log_level::error;
+        }
+    } catch (const std::system_error& e) {
+        return net::is_reconnect_error(e) ? ss::log_level::warn
+                                          : ss::log_level::error;
+    } catch (const ss::timed_out_error&) {
+        return ss::log_level::warn;
+    } catch (...) {
+        return ss::log_level::error;
+    }
+}
+
+} // namespace
 
 /// Data sink implementation that delegates to multipart_upload::put()
 ///
@@ -136,8 +176,7 @@ ss::future<> multipart_upload::complete() {
             auto ex = fut.get_exception();
             vlogl(
               _logger,
-              ssx::is_shutdown_exception(ex) ? ss::log_level::warn
-                                             : ss::log_level::error,
+              multipart_failure_log_level(ex),
               "Multipart upload final part failed, aborting: {}",
               ex);
             co_await abort_on_error();
@@ -155,8 +194,7 @@ ss::future<> multipart_upload::complete() {
         auto ex = fut.get_exception();
         vlogl(
           _logger,
-          ssx::is_shutdown_exception(ex) ? ss::log_level::warn
-                                         : ss::log_level::error,
+          multipart_failure_log_level(ex),
           "Multipart upload completion failed, aborting: {}",
           ex);
         co_await abort_on_error();

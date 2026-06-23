@@ -117,7 +117,7 @@ using validators = make_validator_types<
   replication_factor_must_be_greater_or_equal_to_minimum,
   vcluster_id_validator,
   write_caching_configs_validator,
-  iceberg_config_validator,
+  iceberg_create_config_validator,
   iceberg_invalid_record_action_validator,
   iceberg_target_lag_ms_validator,
   schema_registry_context_create_validator,

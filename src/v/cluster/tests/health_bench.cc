@@ -76,6 +76,7 @@ struct health_bench : health_report_accessor {
 
         perf_tests::start_measuring_time();
         auto res = aggr_fn(reports);
+        perf_tests::do_not_optimize(res);
         perf_tests::stop_measuring_time();
     }
 };

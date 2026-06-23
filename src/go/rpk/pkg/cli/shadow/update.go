@@ -173,15 +173,27 @@ Update a Shadow Link configuration:
 	return cmd
 }
 
-// if the password is set, replace it with a redacted value so user can provide
-// a change easily instead of writing the full password field.
+// if a password is set, replace it with a redacted value so user can provide
+// a change easily instead of writing the full password field. The server only
+// reports whether a password is set, never its value.
 func addRedactedPasswordString(cfg *ShadowLinkConfig, link *adminv2.ShadowLink) {
-	isPassSet := link.GetConfigurations().GetClientOptions().GetAuthenticationConfiguration().GetScramConfiguration().GetPasswordSet()
-	if !isPassSet {
-		return
+	const redacted = "<redacted>"
+
+	cfgs := link.GetConfigurations()
+	if cfgs.GetClientOptions().GetAuthenticationConfiguration().GetScramConfiguration().GetPasswordSet() {
+		if co := cfg.ClientOptions; co != nil {
+			if auth := co.AuthenticationConfiguration; auth != nil && auth.ScramConfiguration != nil {
+				auth.ScramConfiguration.Password = redacted
+			}
+		}
 	}
-	if auth := cfg.ClientOptions.AuthenticationConfiguration; auth != nil && auth.ScramConfiguration != nil {
-		auth.ScramConfiguration.Password = "<redacted>"
+
+	if cfgs.GetSchemaRegistrySyncOptions().GetShadowSchemaRegistryApi().GetAuthOptions().GetBasic().GetPasswordSet() {
+		if sr := cfg.SchemaRegistrySyncOptions; sr != nil && sr.ShadowSchemaRegistryAPI != nil {
+			if auth := sr.ShadowSchemaRegistryAPI.AuthOptions; auth != nil && auth.Basic != nil {
+				auth.Basic.Password = redacted
+			}
+		}
 	}
 }
 

@@ -1394,6 +1394,105 @@ FIXTURE_TEST(test_iceberg_property, alter_config_test_fixture) {
     }
 
     {
+        // New section-based format strings should be accepted and normalize to
+        // the canonical string on describe.
+        struct new_fmt_case {
+            const char* input;
+            const char* expected_output;
+        };
+        for (const auto& [input, expected] : {
+               new_fmt_case{
+                 "value:mode=schema_id_prefix", "value_schema_id_prefix"},
+               new_fmt_case{
+                 "value:mode=schema_latest,subject=foo",
+                 "value_schema_latest:subject=foo"},
+               new_fmt_case{
+                 "key:mode=schema_id_prefix", "key:mode=schema_id_prefix"},
+               new_fmt_case{
+                 "headers:value_type=string", "headers:value_type=string"},
+             }) {
+            absl::flat_hash_map<ss::sstring, ss::sstring> properties;
+            properties.emplace("redpanda.iceberg.mode", input);
+
+            auto alter_resp = alter_configs(
+              make_alter_topic_config_resource_cv(topic2, properties));
+            BOOST_REQUIRE_EQUAL(alter_resp.data.responses.size(), 1);
+            BOOST_REQUIRE_EQUAL(
+              alter_resp.data.responses[0].error_code, kafka::error_code::none);
+
+            auto describe_resp = describe_configs(topic2);
+            assert_property_value(
+              topic2, "redpanda.iceberg.mode", expected, describe_resp);
+
+            absl::flat_hash_map<
+              ss::sstring,
+              std::pair<
+                std::optional<ss::sstring>,
+                kafka::config_resource_operation>>
+              inc_props;
+            inc_props.emplace(
+              "redpanda.iceberg.mode",
+              std::make_pair(
+                ss::sstring(input), kafka::config_resource_operation::set));
+
+            auto inc_resp = incremental_alter_configs(
+              make_incremental_alter_topic_config_resource_cv(
+                topic2, inc_props));
+            BOOST_REQUIRE_EQUAL(inc_resp.data.responses.size(), 1);
+            BOOST_REQUIRE_EQUAL(
+              inc_resp.data.responses[0].error_code, kafka::error_code::none);
+        }
+    }
+
+    {
+        // Malformed iceberg.mode values should yield invalid_config with a
+        // descriptive error message.
+        for (const auto& bad_val : {
+               "hederas:value_type=string",
+               "value:mode=banana",
+               "value:mode=schema_id_prefix,unknown_opt=x",
+               "value:mode=schema_id_prefix;value:mode=binary",
+             }) {
+            {
+                absl::flat_hash_map<ss::sstring, ss::sstring> properties;
+                properties.emplace("redpanda.iceberg.mode", bad_val);
+
+                auto resp = alter_configs(
+                  make_alter_topic_config_resource_cv(topic2, properties));
+                BOOST_REQUIRE_EQUAL(resp.data.responses.size(), 1);
+                BOOST_REQUIRE_EQUAL(
+                  resp.data.responses[0].error_code,
+                  kafka::error_code::invalid_config);
+                BOOST_REQUIRE(resp.data.responses[0].error_message.has_value());
+                BOOST_REQUIRE(!resp.data.responses[0].error_message->empty());
+            }
+            {
+                absl::flat_hash_map<
+                  ss::sstring,
+                  std::pair<
+                    std::optional<ss::sstring>,
+                    kafka::config_resource_operation>>
+                  properties;
+                properties.emplace(
+                  "redpanda.iceberg.mode",
+                  std::make_pair(
+                    ss::sstring(bad_val),
+                    kafka::config_resource_operation::set));
+
+                auto resp = incremental_alter_configs(
+                  make_incremental_alter_topic_config_resource_cv(
+                    topic2, properties));
+                BOOST_REQUIRE_EQUAL(resp.data.responses.size(), 1);
+                BOOST_REQUIRE_EQUAL(
+                  resp.data.responses[0].error_code,
+                  kafka::error_code::invalid_config);
+                BOOST_REQUIRE(resp.data.responses[0].error_message.has_value());
+                BOOST_REQUIRE(!resp.data.responses[0].error_message->empty());
+            }
+        }
+    }
+
+    {
         // Altering iceberg configuration on an internal topic should fail
         // create an internal topic
         BOOST_REQUIRE(

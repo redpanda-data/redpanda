@@ -335,13 +335,12 @@ ss::future<security::tls::mtls_state> get_mtls_principal_state(
       });
 }
 
-/*static*/ std::vector<bool> server::convert_api_names_to_key_bitmap(
+/*static*/ api_key_table<bool> server::convert_api_names_to_key_bitmap(
   const std::vector<ss::sstring>& api_names) {
-    std::vector<bool> res;
-    res.resize(max_api_key() + 1);
+    api_key_table<bool> res{};
     for (const ss::sstring& api_name : api_names) {
         if (const auto api_key = api_name_to_key(api_name); api_key) {
-            res.at(*api_key) = true;
+            res[*api_key] = true;
             continue;
         }
         vlog(klog.warn, "Unrecognized Kafka API name: {}", api_name);
@@ -385,7 +384,7 @@ ss::future<> server::apply(ss::lw_shared_ptr<net::connection> conn) {
       mtls_state,
       config::shard_local_cfg().kafka_request_max_bytes.bind(),
       config::shard_local_cfg()
-        .kafka_throughput_controlled_api_keys.bind<std::vector<bool>>(
+        .kafka_throughput_controlled_api_keys.bind<api_key_table<bool>>(
           &convert_api_names_to_key_bitmap));
 
     std::exception_ptr eptr;

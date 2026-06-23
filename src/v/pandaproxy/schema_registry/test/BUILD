@@ -199,6 +199,7 @@ redpanda_cc_btest(
     cpu = 1,
     deps = [
         ":compatibility_protobuf",
+        "//src/v/container:chunked_vector",
         "//src/v/pandaproxy/schema_registry:exceptions",
         "//src/v/pandaproxy/schema_registry:seq_writer",
         "//src/v/pandaproxy/schema_registry:store",

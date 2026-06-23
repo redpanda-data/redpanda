@@ -1947,6 +1947,120 @@ TEST(converter_test, metadata_to_shadow_link_schema_registry_api_options) {
       proto::admin::schema_registry_sync_type::unspecified);
 }
 
+namespace {
+
+cluster_link::model::task_status_report sr_task_report(
+  cluster_link::model::task_state state,
+  cluster_link::model::schema_registry_sync_status sr) {
+    cluster_link::model::task_status_report report;
+    report.task_name = "Schema Registry Shadowing";
+    report.task_state = state;
+    report.detail = cluster_link::model::task_detail{
+      .schema_registry_sync_status = std::move(sr)};
+    return report;
+}
+
+cluster_link::model::shadow_link_status_report sr_status_report(
+  chunked_vector<cluster_link::model::task_status_report> reports) {
+    cluster_link::model::shadow_link_status_report report;
+    report.task_status_reports.emplace(
+      ss::sstring{"Schema Registry Shadowing"}, std::move(reports));
+    return report;
+}
+
+ss::lw_shared_ptr<cluster_link::model::metadata> sr_api_metadata() {
+    auto md = ss::make_lw_shared<cluster_link::model::metadata>();
+    md->name = cluster_link::model::name_t{"test-link"};
+    md->uuid = cluster_link::model::uuid_t(uuid_t::create());
+    cluster_link::model::schema_registry_sync_config::shadow_schema_registry_api
+      api;
+    api.source_url = "https://schema-registry.example.com";
+    md->configuration.schema_registry_sync_cfg.sync_mode = std::move(api);
+    return md;
+}
+
+} // namespace
+
+TEST(converter_test, metadata_to_shadow_link_schema_registry_sync_status) {
+    cluster_link::model::schema_registry_sync_status sr;
+    sr.inventory.selected_source_subjects = 3;
+    sr.inventory.selected_source_subject_versions = 7;
+    sr.inventory.destination_subjects = 2;
+    sr.inventory.destination_subject_versions = 5;
+    sr.current_sync = cluster_link::model::schema_registry_current_sync{
+      .sync_type = cluster_link::model::schema_registry_sync_type::full,
+      .summary = {}};
+    sr.current_sync->summary.start_time = model::timestamp{1000};
+    sr.last_full_sync = cluster_link::model::schema_registry_sync_summary{};
+    sr.last_full_sync->start_time = model::timestamp{2000};
+    sr.last_full_sync->finish_time = model::timestamp{3000};
+    sr.last_full_sync->subject_versions_changed = 9;
+    sr.last_full_sync->errors = 1;
+    sr.totals_since_task_start.subject_versions_changed = 42;
+    sr.totals_since_task_start.errors = 2;
+    sr.last_error_message = "boom";
+
+    chunked_vector<cluster_link::model::task_status_report> reports;
+    reports.push_back(
+      sr_task_report(cluster_link::model::task_state::active, std::move(sr)));
+    auto sl = admin::metadata_to_shadow_link(
+      sr_api_metadata(), sr_status_report(std::move(reports)));
+
+    const auto& proto = sl.get_status().get_schema_registry_sync_status();
+
+    const auto& inv = proto.get_inventory();
+    EXPECT_EQ(inv.get_selected_source_subjects(), 3);
+    EXPECT_EQ(inv.get_selected_source_subject_versions(), 7);
+    EXPECT_EQ(inv.get_destination_subjects(), 2);
+    EXPECT_EQ(inv.get_destination_subject_versions(), 5);
+
+    EXPECT_EQ(
+      proto.get_current_sync().get_sync_type(),
+      proto::admin::schema_registry_sync_type::full);
+    EXPECT_EQ(
+      proto.get_current_sync().get_summary().get_start_time(),
+      absl::FromUnixMillis(1000));
+
+    EXPECT_EQ(
+      proto.get_last_full_sync().get_start_time(), absl::FromUnixMillis(2000));
+    EXPECT_EQ(
+      proto.get_last_full_sync().get_finish_time(), absl::FromUnixMillis(3000));
+    EXPECT_EQ(proto.get_last_full_sync().get_subject_versions_changed(), 9);
+    EXPECT_EQ(proto.get_last_full_sync().get_errors(), 1);
+
+    EXPECT_EQ(
+      proto.get_totals_since_task_start().get_subject_versions_changed(), 42);
+    EXPECT_EQ(proto.get_totals_since_task_start().get_errors(), 2);
+
+    EXPECT_EQ(proto.get_last_error_message(), "boom");
+}
+
+// The SR task runs only on the _schemas/0 leader shard; reports are aggregated
+// across shards/nodes. A stopped (non-leader) report must never shadow the
+// leader's real status in the admin response.
+TEST(
+  converter_test,
+  metadata_to_shadow_link_schema_registry_status_prefers_leader) {
+    cluster_link::model::schema_registry_sync_status leader_status;
+    leader_status.totals_since_task_start.subject_versions_changed = 5;
+
+    chunked_vector<cluster_link::model::task_status_report> reports;
+    // Stopped report first, so a naive "first with value" would pick it.
+    reports.push_back(
+      sr_task_report(cluster_link::model::task_state::stopped, {}));
+    reports.push_back(sr_task_report(
+      cluster_link::model::task_state::active, std::move(leader_status)));
+    auto sl = admin::metadata_to_shadow_link(
+      sr_api_metadata(), sr_status_report(std::move(reports)));
+
+    EXPECT_EQ(
+      sl.get_status()
+        .get_schema_registry_sync_status()
+        .get_totals_since_task_start()
+        .get_subject_versions_changed(),
+      5);
+}
+
 TEST(converter_test, test_convert_timestamp) {
     {
         auto req = create_base_link();

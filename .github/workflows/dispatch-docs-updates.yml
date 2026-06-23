@@ -22,13 +22,13 @@ jobs:
           echo "Draft:      ${{ github.event.release.draft }}"
 
       # Assume AWS role and fetch ACTIONS_BOT_TOKEN
-      - uses: aws-actions/configure-aws-credentials@v4
+      - uses: aws-actions/configure-aws-credentials@v6
         with:
           aws-region: ${{ vars.RP_AWS_CRED_REGION }}
           role-to-assume: arn:aws:iam::${{ secrets.RP_AWS_CRED_ACCOUNT_ID }}:role/${{ vars.RP_AWS_CRED_BASE_ROLE_NAME }}${{ github.event.repository.name }}
 
       - id: ghsecrets
-        uses: aws-actions/aws-secretsmanager-get-secrets@v2
+        uses: aws-actions/aws-secretsmanager-get-secrets@v3
         with:
           secret-ids: |
             ,sdlc/prod/github/actions_bot_token
@@ -54,7 +54,7 @@ jobs:
       # Dispatch to api-docs repo if latest
       - name: Dispatch to api-docs repo
         if: steps.latest.outputs.is_latest == 'true'
-        uses: peter-evans/repository-dispatch@v3
+        uses: peter-evans/repository-dispatch@v4
         with:
           token: ${{ env.ACTIONS_BOT_TOKEN }}
           repository: redpanda-data/api-docs
@@ -65,7 +65,7 @@ jobs:
       # Dispatch to docs repo for property docs generation if latest
       - name: Dispatch property docs generation to docs repo
         if: steps.latest.outputs.is_latest == 'true'
-        uses: peter-evans/repository-dispatch@v3
+        uses: peter-evans/repository-dispatch@v4
         with:
           token: ${{ env.ACTIONS_BOT_TOKEN }}
           repository: redpanda-data/docs

@@ -1477,6 +1477,92 @@ chunked_vector<shadow_link_task_status> create_task_status(
     return task_status;
 }
 
+proto::admin::schema_registry_sync_type
+convert_sync_type(cluster_link::model::schema_registry_sync_type type) {
+    switch (type) {
+    case cluster_link::model::schema_registry_sync_type::full:
+        return proto::admin::schema_registry_sync_type::full;
+    case cluster_link::model::schema_registry_sync_type::tail:
+        return proto::admin::schema_registry_sync_type::tail;
+    }
+}
+
+proto::admin::schema_registry_sync_summary convert_sync_summary(
+  const cluster_link::model::schema_registry_sync_summary& summary) {
+    proto::admin::schema_registry_sync_summary proto;
+    if (summary.start_time.has_value()) {
+        proto.set_start_time(absl::FromUnixMillis(summary.start_time->value()));
+    }
+    if (summary.finish_time.has_value()) {
+        proto.set_finish_time(
+          absl::FromUnixMillis(summary.finish_time->value()));
+    }
+    proto.set_subject_versions_changed(
+      static_cast<int64_t>(summary.subject_versions_changed));
+    proto.set_compatibility_configs_changed(
+      static_cast<int64_t>(summary.compatibility_configs_changed));
+    proto.set_modes_changed(static_cast<int64_t>(summary.modes_changed));
+    proto.set_unsupported_features_removed(
+      static_cast<int64_t>(summary.unsupported_features_removed));
+    proto.set_errors(static_cast<int64_t>(summary.errors));
+    return proto;
+}
+
+schema_registry_sync_status convert_schema_registry_sync_status(
+  const cluster_link::model::schema_registry_sync_status& status) {
+    schema_registry_sync_status proto;
+
+    proto::admin::schema_registry_inventory inventory;
+    inventory.set_selected_source_subjects(
+      static_cast<int64_t>(status.inventory.selected_source_subjects));
+    inventory.set_selected_source_subject_versions(
+      static_cast<int64_t>(status.inventory.selected_source_subject_versions));
+    inventory.set_destination_subjects(
+      static_cast<int64_t>(status.inventory.destination_subjects));
+    inventory.set_destination_subject_versions(
+      static_cast<int64_t>(status.inventory.destination_subject_versions));
+    proto.set_inventory(std::move(inventory));
+
+    if (status.current_sync.has_value()) {
+        proto::admin::schema_registry_current_sync current;
+        current.set_sync_type(
+          convert_sync_type(status.current_sync->sync_type));
+        current.set_summary(convert_sync_summary(status.current_sync->summary));
+        proto.set_current_sync(std::move(current));
+    }
+
+    if (status.last_full_sync.has_value()) {
+        proto.set_last_full_sync(convert_sync_summary(*status.last_full_sync));
+    }
+
+    proto.set_totals_since_task_start(
+      convert_sync_summary(status.totals_since_task_start));
+    proto.set_last_error_message(ss::sstring{status.last_error_message});
+
+    return proto;
+}
+
+// Locates the Schema Registry shadowing task's status report. The task runs on
+// a single shard (the schema registry partition leader), but reports are
+// aggregated across all shards and nodes, so skip stopped (non-leader) reports
+// to avoid letting an empty default status win over the leader's real status.
+const cluster_link::model::schema_registry_sync_status*
+find_schema_registry_sync_status(
+  const cluster_link::model::shadow_link_status_report& status_report) {
+    for (const auto& [task_name, reports] : status_report.task_status_reports) {
+        for (const auto& report : reports) {
+            if (
+              report.task_state == cluster_link::model::task_state::stopped
+              || !report.detail.has_value()
+              || !report.detail->schema_registry_sync_status.has_value()) {
+                continue;
+            }
+            return &report.detail->schema_registry_sync_status.value();
+        }
+    }
+    return nullptr;
+}
+
 shadow_link_status create_shadow_link_status(
   const cluster_link::model::metadata& md,
   const cluster_link::model::shadow_link_status_report& status_report) {
@@ -1497,7 +1583,16 @@ shadow_link_status create_shadow_link_status(
 
     const auto& sr_cfg = md.configuration.schema_registry_sync_cfg;
     if (sr_cfg.api_mode() != nullptr) {
-        status.set_schema_registry_sync_status(schema_registry_sync_status{});
+        if (
+          const auto* sr_status = find_schema_registry_sync_status(
+            status_report);
+          sr_status != nullptr) {
+            status.set_schema_registry_sync_status(
+              convert_schema_registry_sync_status(*sr_status));
+        } else {
+            status.set_schema_registry_sync_status(
+              schema_registry_sync_status{});
+        }
     }
 
     return status;

@@ -376,7 +376,16 @@ create_topic_properties_update(
                   update.properties.iceberg_mode,
                   cfg.value,
                   kafka::config_resource_operation::set,
-                  iceberg_config_validator{});
+                  iceberg_config_validator{
+                    ctx.feature_table().local().is_active(
+                      features::feature::iceberg_extended_mode_config)},
+                  [](const ss::sstring& s) -> model::iceberg_mode {
+                      auto r = model::parse_iceberg_mode(s);
+                      if (!r) {
+                          throw validation_error(r.error());
+                      }
+                      return std::move(*r);
+                  });
                 continue;
             }
             if (cfg.name == topic_property_leaders_preference) {

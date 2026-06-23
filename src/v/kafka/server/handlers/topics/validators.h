@@ -279,13 +279,14 @@ private:
     }
 };
 
-struct iceberg_config_validator {
+struct iceberg_create_config_validator {
     static constexpr const char* error_message
       = "Invalid property value or Iceberg configuration disabled at cluster "
         "level.";
     static constexpr error_code ec = error_code::invalid_config;
 
-    static bool is_valid(const creatable_topic& c, features::feature_table*) {
+    static bool
+    is_valid(const creatable_topic& c, features::feature_table* ft) {
         model::iceberg_mode parsed_mode = model::iceberg_mode::disabled;
 
         auto mode_it = std::find_if(
@@ -295,12 +296,11 @@ struct iceberg_config_validator {
               return cfg.name == topic_property_iceberg_mode;
           });
         if (mode_it != c.configs.end() && mode_it->value.has_value()) {
-            try {
-                parsed_mode = boost::lexical_cast<model::iceberg_mode>(
-                  mode_it->value.value());
-            } catch (...) {
+            auto parsed = model::parse_iceberg_mode(mode_it->value.value());
+            if (!parsed) {
                 return false;
             }
+            parsed_mode = *parsed;
         }
 
         auto pspec_it = std::find_if(
@@ -339,7 +339,15 @@ struct iceberg_config_validator {
         // be created with any override. If it is disabled
         // at the cluster level, it cannot be enabled with a topic
         // override.
-        return config::shard_local_cfg().iceberg_enabled();
+        if (!config::shard_local_cfg().iceberg_enabled()) {
+            return false;
+        }
+        if (
+          parsed_mode.needs_extended_cluster_feature()
+          && (ft == nullptr || !ft->is_active(features::feature::iceberg_extended_mode_config))) {
+            return false;
+        }
+        return true;
     }
 };
 

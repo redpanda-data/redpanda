@@ -173,7 +173,7 @@ func printShadowLinkCfgOverview(slCfg *ShadowLinkConfig) {
 			tw.Print("Source Redpanda ID:", slCfg.CloudOptions.SourceRedpandaID)
 		}
 	}
-	if len(slCfg.ClientOptions.BootstrapServers) > 0 {
+	if slCfg.ClientOptions != nil && len(slCfg.ClientOptions.BootstrapServers) > 0 {
 		tw.Print("Bootstrap Servers:", "")
 		for _, srv := range slCfg.ClientOptions.BootstrapServers {
 			tw.Print("", fmt.Sprintf("- %s", srv))
@@ -188,15 +188,20 @@ func validateParsedShadowLinkConfig(slCfg *ShadowLinkConfig) error {
 	if slCfg.Name == "" {
 		return errors.New("the Shadow Link name is required")
 	}
+	// ClientOptions may be nil when the config omits the client_options block,
+	// which is valid for cloud (bootstrap servers are optional there).
+	clientOpts := slCfg.ClientOptions
 	// Cloud configuration does not require bootstrap servers.
-	if slCfg.CloudOptions == nil && len(slCfg.ClientOptions.BootstrapServers) == 0 {
+	if slCfg.CloudOptions == nil && (clientOpts == nil || len(clientOpts.BootstrapServers) == 0) {
 		return errors.New("at least one bootstrap server is required")
 	}
-	if tls := slCfg.ClientOptions.TLSSettings; tls != nil && tls.TLSFileSettings != nil && tls.TLSPEMSettings != nil {
-		return errors.New("only one of TLS file settings or PEM settings can be provided")
-	}
-	if auth := slCfg.ClientOptions.AuthenticationConfiguration; auth != nil && auth.ScramConfiguration != nil && auth.PlainConfiguration != nil {
-		return errors.New("only one of scram_configuration or plain_configuration can be provided")
+	if clientOpts != nil {
+		if tls := clientOpts.TLSSettings; tls != nil && tls.TLSFileSettings != nil && tls.TLSPEMSettings != nil {
+			return errors.New("only one of TLS file settings or PEM settings can be provided")
+		}
+		if auth := clientOpts.AuthenticationConfiguration; auth != nil && auth.ScramConfiguration != nil && auth.PlainConfiguration != nil {
+			return errors.New("only one of scram_configuration or plain_configuration can be provided")
+		}
 	}
 	if ts := slCfg.TopicMetadataSyncOptions; ts != nil {
 		var count int
@@ -213,6 +218,19 @@ func validateParsedShadowLinkConfig(slCfg *ShadowLinkConfig) error {
 			return errors.New("only one of start_at_latest, start_at_earliest, or start_at_timestamp can be provided")
 		}
 	}
+	if sr := slCfg.SchemaRegistrySyncOptions; sr != nil {
+		if sr.ShadowSchemaRegistryTopic != nil && sr.ShadowSchemaRegistryAPI != nil {
+			return errors.New("only one of shadow_schema_registry_topic or shadow_schema_registry_api can be provided")
+		}
+		if api := sr.ShadowSchemaRegistryAPI; api != nil {
+			if tls := api.TLSSettings; tls != nil && tls.TLSFileSettings != nil && tls.TLSPEMSettings != nil {
+				return errors.New("only one of schema registry API TLS file settings or PEM settings can be provided")
+			}
+			if dest := api.Destination; dest != nil && dest.Identity != nil && dest.Exact != nil {
+				return errors.New("only one of schema registry destination identity or exact can be provided")
+			}
+		}
+	}
 
 	slc := slCfg.CloudOptions
 	if slc == nil {
@@ -225,18 +243,33 @@ func validateParsedShadowLinkConfig(slCfg *ShadowLinkConfig) error {
 	if slc.ShadowRedpandaID == slc.SourceRedpandaID {
 		return errors.New("shadow_redpanda_id and source_redpanda_id cannot be the same")
 	}
-	co := slCfg.ClientOptions
-	if co == nil {
-		return nil
-	}
-	if co.TLSSettings != nil && co.TLSSettings.TLSFileSettings != nil {
+	// Cloud requires inline PEM content; the cloud agent cannot read local file
+	// paths, so file-based TLS settings are rejected for both the client and the
+	// schema registry API.
+	if clientOpts != nil && clientOpts.TLSSettings != nil && clientOpts.TLSSettings.TLSFileSettings != nil {
 		return errors.New("TLS file settings are not supported when using cloud options; use tls_pem_settings instead")
 	}
-	if pw := authPassword(co); pw != "" && !strings.HasPrefix(pw, secretsPrefix) {
-		return errors.New("cloud shadow links don't support plain passwords, you must use secrets from the secrets store. See 'rpk security secret --help' for more details")
+	if sr := slCfg.SchemaRegistrySyncOptions; sr != nil && sr.ShadowSchemaRegistryAPI != nil {
+		if tls := sr.ShadowSchemaRegistryAPI.TLSSettings; tls != nil && tls.TLSFileSettings != nil {
+			return errors.New("schema registry API TLS file settings are not supported when using cloud options; use tls_pem_settings instead")
+		}
 	}
-	if key := tlsKey(slCfg.ClientOptions); key != "" && !strings.HasPrefix(key, secretsPrefix) {
-		return errors.New("cloud shadow links don't support plain TLS keys, you must use secrets from the secrets store. See 'rpk security secret --help' for more details")
+	// Cloud secret-bearing fields must reference the secrets store rather than
+	// carry plain values. These accessors nil-guard internally, so they are
+	// safe even when client_options or schema_registry_sync_options is unset.
+	secretRefs := []struct {
+		value string
+		kind  string
+	}{
+		{authPassword(clientOpts), "passwords"},
+		{tlsKey(clientOpts), "TLS keys"},
+		{srAPIAuthPassword(slCfg.SchemaRegistrySyncOptions), "passwords"},
+		{srAPITLSKey(slCfg.SchemaRegistrySyncOptions), "TLS keys"},
+	}
+	for _, ref := range secretRefs {
+		if ref.value != "" && !strings.HasPrefix(ref.value, secretsPrefix) {
+			return fmt.Errorf("cloud shadow links don't support plain %s, you must use secrets from the secrets store. See 'rpk security secret --help' for more details", ref.kind)
+		}
 	}
 	return nil
 }
@@ -267,6 +300,30 @@ func tlsKey(co *ShadowLinkClientOptions) string {
 	return ""
 }
 
+// srAPIAuthPassword extracts the schema registry API basic-auth password from
+// the schema registry sync options, if set.
+func srAPIAuthPassword(opts *SchemaRegistrySyncOptions) string {
+	if opts == nil || opts.ShadowSchemaRegistryAPI == nil {
+		return ""
+	}
+	if auth := opts.ShadowSchemaRegistryAPI.AuthOptions; auth != nil && auth.Basic != nil {
+		return auth.Basic.Password
+	}
+	return ""
+}
+
+// srAPITLSKey extracts the schema registry API TLS PEM key from the schema
+// registry sync options, if set.
+func srAPITLSKey(opts *SchemaRegistrySyncOptions) string {
+	if opts == nil || opts.ShadowSchemaRegistryAPI == nil {
+		return ""
+	}
+	if tls := opts.ShadowSchemaRegistryAPI.TLSSettings; tls != nil && tls.TLSPEMSettings != nil {
+		return tls.TLSPEMSettings.Key
+	}
+	return ""
+}
+
 // tryShadowLinkErrReason attempts to extract a more specific error reason from
 // the Shadow Link response, defaulting to a generic error message if the call
 // fails or there is no additional information.
@@ -282,9 +339,25 @@ func tryShadowLinkErrReason(ctx context.Context, cl controlplanev1connect.Shadow
 }
 
 func validateCloudSecrets(ctx context.Context, prof *config.RpkProfile, slCfg *ShadowLinkConfig) error {
-	// We should only try to validate if pass or key are present in the config.
-	pass, key := authPassword(slCfg.ClientOptions), tlsKey(slCfg.ClientOptions)
-	if pass == "" && key == "" {
+	// We should only try to validate the secrets that are present in the
+	// config.
+	refs := []struct {
+		value string
+		desc  string
+	}{
+		{authPassword(slCfg.ClientOptions), "authentication password"},
+		{tlsKey(slCfg.ClientOptions), "TLS key"},
+		{srAPIAuthPassword(slCfg.SchemaRegistrySyncOptions), "schema registry authentication password"},
+		{srAPITLSKey(slCfg.SchemaRegistrySyncOptions), "schema registry TLS key"},
+	}
+	var present bool
+	for _, r := range refs {
+		if r.value != "" {
+			present = true
+			break
+		}
+	}
+	if !present {
 		return nil
 	}
 	// We can't validate the presence of secrets if the Shadow Link is not for
@@ -312,14 +385,12 @@ func validateCloudSecrets(ctx context.Context, prof *config.RpkProfile, slCfg *S
 		secretRefs[fmt.Sprintf("%s%s}", secretsPrefix, secret.Id)] = struct{}{}
 	}
 
-	if pass != "" {
-		if _, ok := secretRefs[pass]; !ok {
-			return fmt.Errorf("unable to find authentication password secret %q in the shadow cluster secrets store (REDPANDA_CLUSTER scope)", pass)
+	for _, r := range refs {
+		if r.value == "" {
+			continue
 		}
-	}
-	if key != "" {
-		if _, ok := secretRefs[key]; !ok {
-			return fmt.Errorf("unable to find TLS key secret %q in the shadow cluster secrets store (REDPANDA_CLUSTER scope)", key)
+		if _, ok := secretRefs[r.value]; !ok {
+			return fmt.Errorf("unable to find %s secret %q in the shadow cluster secrets store (REDPANDA_CLUSTER scope)", r.desc, r.value)
 		}
 	}
 	return nil

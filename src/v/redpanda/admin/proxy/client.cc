@@ -12,11 +12,13 @@
 #include "redpanda/admin/proxy/client.h"
 
 #include "base/vlog.h"
+#include "bytes/iobuf.h"
 #include "redpanda/admin/proxy/context.h"
 #include "redpanda/admin/proxy/proxy_service.h"
 #include "redpanda/admin/proxy/types.h"
 #include "rpc/connection_cache.h"
 #include "serde/protobuf/rpc.h"
+#include "strings/utf8.h"
 
 #include <exception>
 #include <utility>
@@ -42,10 +44,9 @@ template<typename T>
     if (resp.payload.empty()) {
         throw T(std::move(ei));
     }
-    iobuf_parser parser(std::move(resp.payload));
     constexpr size_t max_error_message_size = 4_KiB;
-    auto msg = parser.read_string_safe(
-      std::min(parser.bytes_left(), max_error_message_size));
+    auto msg = utf8_sanitize(resp.payload.share(0, max_error_message_size))
+                 .linearize_to_string();
     throw T(std::move(msg), std::move(ei));
 }
 

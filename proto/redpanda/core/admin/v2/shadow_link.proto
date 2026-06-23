@@ -259,6 +259,8 @@ message ShadowLinkConfigurations {
     SecuritySettingsSyncOptions security_sync_options = 4;
     // Schema Registry sync options
     SchemaRegistrySyncOptions schema_registry_sync_options = 5;
+    // Role sync options
+    RoleSyncOptions role_sync_options = 6;
 }
 // Options for the client link
 message ShadowLinkClientOptions {
@@ -560,6 +562,21 @@ message SecuritySettingsSyncOptions {
     bool paused = 3;
     // ACL filters
     repeated ACLFilter acl_filters = 4;
+}
+// Options for syncing RBAC roles
+message RoleSyncOptions {
+    // Sync interval
+    // If 0 provided, defaults to 30 seconds
+    google.protobuf.Duration interval = 1;
+    // The effective interval for the task
+    google.protobuf.Duration effective_interval = 2
+        [(google.api.field_behavior) = OUTPUT_ONLY];
+    // Allows user to pause the role sync task.  If paused, then the task will
+    // enter the 'paused' state and will not sync roles from the source cluster
+    bool paused = 3;
+    // Filters selecting which roles to shadow by name.  Defaults to empty: no
+    // roles are synced until at least one include filter is added
+    repeated NameFilter role_name_filters = 4;
 }
 // Authentication config.  Supports:
 // * SASL/SCRAM

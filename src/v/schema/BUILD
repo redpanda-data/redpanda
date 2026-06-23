@@ -7,6 +7,14 @@ package(
 )
 
 redpanda_cc_library(
+    name = "fwd",
+    hdrs = [
+        "fwd.h",
+    ],
+    visibility = ["//visibility:public"],
+)
+
+redpanda_cc_library(
     name = "registry",
     srcs = [
         "registry.cc",

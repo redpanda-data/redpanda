@@ -171,6 +171,72 @@ class ClusterMetricsTest(RedpandaTest):
 
             self._assert_cluster_metrics(node, expect_metrics=False)
 
+    def _controller_leader_for(
+        self, node: ClusterNode, endpoint: MetricsEndpoint
+    ) -> float | None:
+        """
+        The raft `leader_for` gauge for the controller group as scraped from
+        `node` on `endpoint`, or None if the series is absent. Absence is never
+        expected: every node in the controller group registers the gauge, so
+        returning None (rather than 0.0) lets the caller distinguish "missing"
+        from "present and 0". Internal labels are unprefixed; public labels
+        carry the `redpanda_` prefix.
+        """
+        ns_label, topic_label = (
+            ("redpanda_namespace", "redpanda_topic")
+            if endpoint == MetricsEndpoint.PUBLIC_METRICS
+            else ("namespace", "topic")
+        )
+        samples = self.redpanda.metrics_sample(
+            sample_pattern="raft_leader_for",
+            nodes=[node],
+            metrics_endpoint=endpoint,
+        )
+        if samples is None:
+            return None
+        # label_filter only applies the first key, so chain to filter on both
+        # namespace and topic and isolate the controller group.
+        controller = samples.label_filter({ns_label: "redpanda"}).label_filter(
+            {topic_label: "controller"}
+        )
+        if not controller.samples:
+            return None
+        return sum(s.value for s in controller.samples)
+
+    def _assert_controller_leader_metric(
+        self, current_controller: Optional[ClusterNode]
+    ):
+        """
+        The raft `leader_for` gauge for the controller group must read 1 on the
+        controller leader and 0 on every other running node, on both the
+        internal and public metrics endpoints. With no leader, every node
+        reads 0.
+        """
+
+        def check() -> bool:
+            for endpoint in (
+                MetricsEndpoint.METRICS,
+                MetricsEndpoint.PUBLIC_METRICS,
+            ):
+                for node in self.redpanda.started_nodes():
+                    expected = 1.0 if node == current_controller else 0.0
+                    actual = self._controller_leader_for(node, endpoint)
+                    if actual != expected:
+                        self.logger.debug(
+                            f"controller raft_leader_for on {node.name} via "
+                            f"{endpoint.value} = {actual}, expected {expected}"
+                        )
+                        return False
+            return True
+
+        wait_until(
+            check,
+            timeout_sec=15,
+            backoff_sec=1,
+            err_msg="controller raft_leader_for gauge never matched the "
+            "expected controller leadership",
+        )
+
     @cluster(num_nodes=3)
     def cluster_metrics_reported_only_by_leader_test(self):
         """
@@ -180,20 +246,24 @@ class ClusterMetricsTest(RedpandaTest):
         # Assert metrics are reported once in a fresh, three node cluster
         controller = self._wait_until_controller_leader_is_stable()
         self._assert_reported_by_controller(controller)
+        self._assert_controller_leader_metric(controller)
 
         # Restart the controller node and assert.
         controller = self._restart_controller_node()
         self._assert_reported_by_controller(controller)
+        self._assert_controller_leader_metric(controller)
 
         # Stop the controller node and assert.
         controller = self._failover()
         self._assert_reported_by_controller(controller)
+        self._assert_controller_leader_metric(controller)
 
         # Stop the controller node and assert again.
         # This time the metrics should not be reported as a controller
         # couldn't be elected due to lack of quorum.
         self._stop_controller_node()
         self._assert_reported_by_controller(None)
+        self._assert_controller_leader_metric(None)
 
     @cluster(num_nodes=3)
     def cluster_metrics_correctness_test(self):

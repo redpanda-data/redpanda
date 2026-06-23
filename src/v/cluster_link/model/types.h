@@ -1202,11 +1202,128 @@ struct update_cluster_link_configuration_cmd
     update_cluster_link_configuration_cmd copy() const;
 };
 
+/// Type of Schema Registry sync currently running. Mirrors the admin proto
+/// SchemaRegistrySyncType.
+enum class schema_registry_sync_type : uint8_t {
+    full,
+    tail,
+};
+
+/// Last observed source and destination Schema Registry inventory.
+struct schema_registry_inventory
+  : serde::envelope<
+      schema_registry_inventory,
+      serde::version<0>,
+      serde::compat_version<0>> {
+    // Counts are non-negative; the admin proto uses int64 for
+    // connectrpc/json, the converter narrows at the boundary.
+    uint64_t selected_source_subjects{0};
+    uint64_t selected_source_subject_versions{0};
+    uint64_t destination_subjects{0};
+    uint64_t destination_subject_versions{0};
+
+    friend bool operator==(
+      const schema_registry_inventory&,
+      const schema_registry_inventory&) = default;
+
+    auto serde_fields() {
+        return std::tie(
+          selected_source_subjects,
+          selected_source_subject_versions,
+          destination_subjects,
+          destination_subject_versions);
+    }
+};
+
+/// Summary counters for one Schema Registry sync or a cumulative interval.
+struct schema_registry_sync_summary
+  : serde::envelope<
+      schema_registry_sync_summary,
+      serde::version<0>,
+      serde::compat_version<0>> {
+    std::optional<::model::timestamp> start_time;
+    std::optional<::model::timestamp> finish_time;
+    uint64_t subject_versions_changed{0};
+    uint64_t compatibility_configs_changed{0};
+    uint64_t modes_changed{0};
+    uint64_t unsupported_features_removed{0};
+    uint64_t errors{0};
+
+    friend bool operator==(
+      const schema_registry_sync_summary&,
+      const schema_registry_sync_summary&) = default;
+
+    auto serde_fields() {
+        return std::tie(
+          start_time,
+          finish_time,
+          subject_versions_changed,
+          compatibility_configs_changed,
+          modes_changed,
+          unsupported_features_removed,
+          errors);
+    }
+};
+
+/// A Schema Registry sync that is currently running.
+struct schema_registry_current_sync
+  : serde::envelope<
+      schema_registry_current_sync,
+      serde::version<0>,
+      serde::compat_version<0>> {
+    schema_registry_sync_type sync_type{schema_registry_sync_type::full};
+    schema_registry_sync_summary summary;
+
+    friend bool operator==(
+      const schema_registry_current_sync&,
+      const schema_registry_current_sync&) = default;
+
+    auto serde_fields() { return std::tie(sync_type, summary); }
+};
+
+/// Status of Schema Registry syncing for a link. Mirrors the admin proto
+/// SchemaRegistrySyncStatus.
+struct schema_registry_sync_status
+  : serde::envelope<
+      schema_registry_sync_status,
+      serde::version<0>,
+      serde::compat_version<0>> {
+    schema_registry_inventory inventory;
+    std::optional<schema_registry_current_sync> current_sync;
+    std::optional<schema_registry_sync_summary> last_full_sync;
+    schema_registry_sync_summary totals_since_task_start;
+    ss::sstring last_error_message;
+
+    friend bool operator==(
+      const schema_registry_sync_status&,
+      const schema_registry_sync_status&) = default;
+
+    auto serde_fields() {
+        return std::tie(
+          inventory,
+          current_sync,
+          last_full_sync,
+          totals_since_task_start,
+          last_error_message);
+    }
+};
+
+/// Task-specific status detail. Each task type that reports extra status adds
+/// its own optional member here (append-only, for serde compatibility).
+struct task_detail
+  : serde::envelope<task_detail, serde::version<0>, serde::compat_version<0>> {
+    std::optional<schema_registry_sync_status> schema_registry_sync_status;
+
+    friend bool operator==(const task_detail&, const task_detail&) = default;
+
+    auto serde_fields() { return std::tie(schema_registry_sync_status); }
+};
+
 /// Status report for a task
 struct task_status_report
   : serde::envelope<
       task_status_report,
-      serde::version<0>,
+      serde::version<1>,
       serde::compat_version<0>> {
     ss::sstring task_name;
     task_state task_state;
@@ -1217,6 +1334,8 @@ struct task_status_report
       is_controller_locked_task_t::no};
     ::model::node_id node_id;
     ss::shard_id shard;
+    /// Task-specific status, set only by tasks that report extra detail.
+    std::optional<task_detail> detail;
     friend bool
     operator==(const task_status_report&, const task_status_report&) = default;
 
@@ -1227,7 +1346,8 @@ struct task_status_report
           task_state_reason,
           is_controller_locked_task,
           node_id,
-          shard);
+          shard,
+          detail);
     }
 };
 

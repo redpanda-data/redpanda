@@ -111,14 +111,6 @@ public:
     get_cloud_storage_status() const override;
 
 private:
-    // Returns the Kafka offset corresponding to the lowest offset in the
-    // log, including local and cloud storage. Doesn't take into account any
-    // start offset overrides (see start_offset()).
-    model::offset partition_kafka_start_offset() const;
-
-    model::offset kafka_start_offset_with_override(
-      model::offset start_kafka_offset_override) const;
-
     // Returns the highest offset in the given term, without considering
     // overrides of the starting offset.
     ss::future<std::optional<model::offset>>

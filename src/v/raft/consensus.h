@@ -935,6 +935,7 @@ private:
     std::chrono::milliseconds _recovery_append_timeout;
     size_t _heartbeat_disconnect_failures;
     metrics::internal_metric_groups _metrics;
+    metrics::public_metric_groups _public_metrics;
     storage::api& _storage;
     std::optional<std::reference_wrapper<coordinated_recovery_throttle>>
       _recovery_throttle;

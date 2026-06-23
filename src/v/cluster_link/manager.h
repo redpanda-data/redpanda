@@ -150,6 +150,7 @@ public:
     /// are created
     template<typename T, typename... Args>
     ss::future<> register_task_factory(Args&&... args) {
+        auto factory = std::make_unique<T>(std::forward<Args>(args)...);
         auto fut = co_await ss::coroutine::as_future(
           _link_task_reconciler_mutex.get_units(_as));
         if (fut.failed()) {
@@ -163,8 +164,7 @@ public:
             }
             co_return;
         }
-        _task_factories.emplace_back(
-          std::make_unique<T>(std::forward<Args>(args)...));
+        _task_factories.emplace_back(std::move(factory));
     }
 
     model::cluster_link_task_status_report get_task_status_report() const;

@@ -13,7 +13,9 @@ redpanda_cc_library(
         "//src/v/kafka:__subpackages__",
         "//src/v/security/audit:__subpackages__",
     ],
-    deps = MESSAGE_TYPES,
+    deps = [
+        "//src/v/kafka/protocol",
+    ] + MESSAGE_TYPES,
 )
 
 redpanda_cc_library(
@@ -25,6 +27,8 @@ redpanda_cc_library(
         "types.cc",
     ],
     hdrs = [
+        "api_key_indexed_array.h",
+        "api_key_table.h",
         "batch_consumer.h",
         "batch_reader.h",
         "errors.h",
@@ -34,6 +38,7 @@ redpanda_cc_library(
         "legacy_message.h",
         "timeout.h",
         "topic_properties.h",
+        "type_list.h",
         "types.h",
         "wire.h",
     ],

@@ -10,6 +10,7 @@
  */
 #pragma once
 
+#include "kafka/protocol/api_key_table.h"
 #include "kafka/protocol/schemata/add_offsets_to_txn_request.h"
 #include "kafka/protocol/schemata/add_partitions_to_txn_request.h"
 #include "kafka/protocol/schemata/alter_client_quotas_request.h"
@@ -31,6 +32,7 @@
 #include "kafka/protocol/schemata/describe_groups_request.h"
 #include "kafka/protocol/schemata/describe_log_dirs_request.h"
 #include "kafka/protocol/schemata/describe_producers_request.h"
+#include "kafka/protocol/schemata/describe_redpanda_roles_request.h"
 #include "kafka/protocol/schemata/describe_transactions_request.h"
 #include "kafka/protocol/schemata/describe_user_scram_credentials_request.h"
 #include "kafka/protocol/schemata/end_txn_request.h"
@@ -55,13 +57,11 @@
 #include "kafka/protocol/schemata/sasl_handshake_request.h"
 #include "kafka/protocol/schemata/sync_group_request.h"
 #include "kafka/protocol/schemata/txn_offset_commit_request.h"
+#include "kafka/protocol/type_list.h"
 
 #include <algorithm>
 
 namespace kafka {
-
-template<typename... Ts>
-struct type_list {};
 
 template<typename... Requests>
 using make_request_types = type_list<Requests...>;
@@ -112,5 +112,52 @@ using request_types = make_request_types<
   describe_cluster_api,
   describe_user_scram_credentials_api,
   alter_user_scram_credentials_api>;
+
+// Redpanda-specific APIs occupying the reserved key range (>= 15000). Kept
+// separate from request_types so the standard dispatch/flex/metering tables
+// stay sized to the standard range; both lists feed api_key_indexed_array.
+using redpanda_request_types = make_request_types<describe_redpanda_roles_api>;
+
+namespace detail {
+template<typename... Ts>
+consteval api_key::type max_key(type_list<Ts...>) {
+    return std::max({Ts::key()...});
+}
+template<typename... Ts>
+consteval std::size_t count(type_list<Ts...>) {
+    return sizeof...(Ts);
+}
+} // namespace detail
+
+// standard_api_key_table_size / reserved_api_key_table_size and the
+// api_key_table alias live in api_key_table.h so headers that only need the
+// table type don't pull in the request schemata. Verify the literals there
+// still track the live request type lists.
+static_assert(
+  standard_api_key_table_size
+    == static_cast<std::size_t>(detail::max_key(request_types{})) + 1,
+  "standard_api_key_table_size in api_key_table.h is stale: set it to the "
+  "max standard api key + 1");
+static_assert(
+  reserved_api_key_table_size
+    == static_cast<std::size_t>(
+         detail::max_key(redpanda_request_types{}) - redpanda_api_key_base())
+         + 1,
+  "reserved_api_key_table_size in api_key_table.h is stale");
+
+// A dense, array-backed table is only worthwhile when the keys it spans are
+// reasonably packed. Guard that design assumption: each region's span must stay
+// within this factor of the number of APIs it actually holds, otherwise a
+// sparse key would silently bloat the backing std::array and a different
+// structure should be considered.
+inline constexpr std::size_t max_api_key_sparsity_factor = 10;
+static_assert(
+  standard_api_key_table_size
+    < detail::count(request_types{}) * max_api_key_sparsity_factor,
+  "standard api_key table is too sparse for a dense array");
+static_assert(
+  reserved_api_key_table_size
+    < detail::count(redpanda_request_types{}) * max_api_key_sparsity_factor,
+  "reserved api_key table is too sparse for a dense array");
 
 } // namespace kafka

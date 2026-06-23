@@ -340,6 +340,46 @@ func precompiledData() map[string]map[string]map[string]io {
 				"default": {"", 4 * 269588, 7398 * 1024 * 1024, 540197, 3590 * 1024 * 1024, true},
 			},
 
+			// m9gd values are taken from direct measurement with iotune except
+			// where noted.
+			"m9gd.large": {
+				// advertised:  43604             21802
+				"default": {"", 43614, 306225472, 21803, 146621200, true},
+			},
+
+			"m9gd.xlarge": {
+				// advertised:  87207             43604
+				"default": {"", 87229, 612447872, 43614, 293574688, true},
+			},
+
+			"m9gd.2xlarge": {
+				// advertised:  174417              87209
+				"default": {"", 174581, 1230804224, 87229, 587151104, true},
+			},
+
+			"m9gd.4xlarge": {
+				// advertised:  348832              174417
+				"default": {"", 349161, 2461534976, 174580, 1174274048, true},
+			},
+
+			"m9gd.8xlarge": {
+				// advertised:  697665              348834
+				"default": {"", 702226, 4923082752, 349161, 2370320640, true},
+			},
+
+			"m9gd.12xlarge": {
+				// advertised:  1046496              523251
+				"default": {"", 1047209, 7382385664, 523544, 3522541824, true},
+			},
+
+			// Read IOPS values are upscaled because default iotune struggles to
+			// reach full RIOPS with default settings on the largest instance size.
+			"m9gd.16xlarge": {
+				// advertised:      1395331                 697668
+				// measured         862638,          		698973,
+				"default": {"", 2 * 702226, 2 * 4923082752, 698973, 4740612096, true},
+			},
+
 			// m6id values are copied from m7gd as they should have the same
 			// disks and behave the same from tests.
 			"m6id.large": {

@@ -17,6 +17,8 @@
 
 #include <seastar/core/sharded.hh>
 
+#include <functional>
+
 namespace pandaproxy::schema_registry {
 
 class store;
@@ -107,6 +109,12 @@ public:
     ss::future<chunked_vector<context_subject>> get_subjects(
       include_deleted inc_del,
       std::optional<ss::sstring> subject_prefix = std::nullopt);
+
+    ///\brief Return every (subject, version) whose subject matches `filter`,
+    /// in a single scatter-gather across shards.
+    ss::future<chunked_vector<subject_version>> list_subject_versions(
+      std::function<bool(const context_subject&)> filter,
+      include_deleted inc_del);
 
     ///\brief Return whether there are any subjects.
     ss::future<bool> has_subjects(context ctx, include_deleted inc_del);

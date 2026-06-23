@@ -221,6 +221,13 @@ public:
 
     void cork_sink(model::output_topic_index idx) { _sinks[idx()]->cork(); }
     void uncork_sink(model::output_topic_index idx) { _sinks[idx()]->uncork(); }
+    void fail_sink(model::output_topic_index idx) {
+        _sinks[idx()]->fail_writes();
+    }
+    void recover_sink(model::output_topic_index idx) {
+        _sinks[idx()]->resume_writes();
+    }
+    bool processor_running() const { return _p->is_running(); }
 
     std::vector<model::output_topic_index> output_topics() const {
         std::vector<model::output_topic_index> indexes;
@@ -361,6 +368,95 @@ TEST_P(ProcessorTestFixture, LagOverflowBug) {
     // their lag.
     tests::drain_task_queue().get();
     EXPECT_EQ(lag(), 0);
+}
+
+// Regression test for the "stuck transform" bug. When one output's producer
+// fails to produce (e.g. a transient "not a leader for partition"), the failure
+// must be reported as state::errored so the manager restarts the processor,
+// regardless of how many outputs the transform has.
+//
+// The bug: with MULTIPLE outputs, `run_all_producers()` fanned out via
+// `ss::parallel_for_each()`, which captures the first exception but waits for
+// every loop to finish before resolving. Nothing aborted the shared abort
+// source, so the surviving producer loop(s) spin forever, pinning
+// parallel_for_each pending: state::errored never fired, the processor stayed
+// "running", and it made no progress until an external stop (== an `rpk
+// transform pause`/`resume`). Single-output transforms were unaffected because
+// parallel_for_each over one element resolves exceptionally right away.
+//
+// The fix drives the producer loops off a composite abort source, so the first
+// failing producer unwinds its siblings (without touching the processor's own
+// abort source) and propagates exactly one error.
+TEST_P(ProcessorTestFixture, ProduceFailureIsReportedForAnyOutputCount) {
+    set_tee_output();
+
+    // Healthy baseline so the pipeline is flowing and committed.
+    auto baseline = make_records(1);
+    push_batch(baseline);
+    for (auto o : output_topics()) {
+        EXPECT_THAT(read_records(o, 1), SameRecords(baseline));
+    }
+    ASSERT_TRUE(wait_for_all_committed());
+
+    // Fail only output 0; any other outputs stay healthy.
+    fail_sink(model::output_topic_index(0));
+    push_batch(make_records(1));
+    tests::drain_task_queue().get();
+
+    // The producers all unwind instead of wedging. The processor still reports
+    // running (its abort source is untouched); like a single-output failure, it
+    // relies on the manager observing the error and restarting it.
+    EXPECT_TRUE(processor_running());
+    // Output 0's producer died, so nothing is ever written there.
+    EXPECT_TRUE(sink_empty(model::output_topic_index(0)));
+    // The failure is reported exactly once, no matter the output count: the
+    // consumer/transform loops keep running on the untouched abort source, so
+    // the manager restarts the processor without spurious duplicate errors.
+    EXPECT_EQ(error_count(), 1u)
+      << "produce failure should be reported as errored exactly once";
+}
+
+// A produce failure must leave the processor cleanly restartable: the manager's
+// recovery path stops and then restarts the same processor instance, so stop()
+// has to tear down (and the wedge fix must not have aborted the processor's own
+// abort source, which would short-circuit stop() and leave the engine started
+// for the restart to double-start). Exercise that full cycle and assert the
+// restart is clean and the processor resumes producing.
+TEST_P(ProcessorTestFixture, RecoversFromProduceFailureViaRestart) {
+    set_tee_output();
+
+    // Healthy baseline so the pipeline is flowing and committed.
+    auto baseline = make_records(1);
+    push_batch(baseline);
+    for (auto o : output_topics()) {
+        EXPECT_THAT(read_records(o, 1), SameRecords(baseline));
+    }
+    ASSERT_TRUE(wait_for_all_committed());
+
+    // A producer fails and the error is reported, exactly what the manager
+    // observes before it restarts.
+    fail_sink(model::output_topic_index(0));
+    push_batch(make_records(1));
+    tests::drain_task_queue().get();
+    ASSERT_EQ(error_count(), 1u);
+
+    // Recovery: the transient failure clears and the manager stops and restarts
+    // the same processor instance.
+    recover_sink(model::output_topic_index(0));
+    restart();
+    tests::drain_task_queue().get();
+
+    // A clean restart produces no further errors.
+    ASSERT_EQ(error_count(), 1u)
+      << "restart after a produce failure should not report a new error";
+    EXPECT_TRUE(processor_running());
+
+    // The restarted processor resumes producing to every output.
+    auto resumed = make_records(1);
+    push_batch(resumed);
+    for (auto o : output_topics()) {
+        EXPECT_FALSE(read_records(o, 1).empty());
+    }
 }
 
 INSTANTIATE_TEST_SUITE_P(

@@ -28,6 +28,7 @@ MESSAGES = [
     "describe_groups",
     "describe_log_dirs",
     "describe_producers",
+    "describe_redpanda_roles",
     "describe_transactions",
     "describe_user_scram_credentials",
     "end_txn",

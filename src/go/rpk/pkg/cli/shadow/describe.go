@@ -102,7 +102,22 @@ type describeSecuritySyncOptions struct {
 }
 
 type describeSchemaRegistrySyncOptions struct {
-	ShadowingMode string `json:"shadowing_mode" yaml:"shadowing_mode"`
+	ShadowingMode           string                           `json:"shadowing_mode" yaml:"shadowing_mode"`
+	ShadowSchemaRegistryAPI *describeShadowSchemaRegistryAPI `json:"shadow_schema_registry_api,omitempty" yaml:"shadow_schema_registry_api,omitempty"`
+}
+
+// describeShadowSchemaRegistryAPI uses effective interval/rate values and auth
+// metadata (not the password).
+type describeShadowSchemaRegistryAPI struct {
+	SourceURL                      string                            `json:"source_url" yaml:"source_url"`
+	AuthOptions                    *describeAuthenticationConfig     `json:"auth_options,omitempty" yaml:"auth_options,omitempty"`
+	TLSSettings                    *TLSSettings                      `json:"tls_settings,omitempty" yaml:"tls_settings,omitempty"`
+	TailInterval                   string                            `json:"tail_interval" yaml:"tail_interval"`
+	FullSyncInterval               string                            `json:"full_sync_interval" yaml:"full_sync_interval"`
+	MaxSourceRequestsPerSecond     int32                             `json:"max_source_requests_per_second" yaml:"max_source_requests_per_second"`
+	SourceFilter                   *SchemaRegistrySourceFilter       `json:"source_filter,omitempty" yaml:"source_filter,omitempty"`
+	Destination                    *SchemaRegistryContextDestination `json:"destination,omitempty" yaml:"destination,omitempty"`
+	UnsupportedSchemaFeaturePolicy string                            `json:"unsupported_schema_feature_policy" yaml:"unsupported_schema_feature_policy"`
 }
 
 func newDescribeCommand(fs afero.Fs, p *config.Params) *cobra.Command {
@@ -275,6 +290,7 @@ func printCloudShadowLinkDescription(f config.OutFormatter, link *controlplanev1
 			secTopicSync:      opts.topic,
 			secConsumerOffset: opts.co,
 			secSecurity:       opts.sec,
+			secSchemaRegistry: opts.sr,
 		})...,
 	)
 
@@ -350,29 +366,7 @@ func printClient(opts *adminv2.ShadowLinkClientOptions) {
 	}
 
 	// TLS section
-	if tls := opts.GetTlsSettings(); tls != nil {
-		tw.Print("TLS:", "")
-		tw.Print("----", "")
-		// TLS settings can be either file-based or PEM-based.
-		if fileSettings := tls.GetTlsFileSettings(); fileSettings != nil {
-			// CA is required, key and cert are optional.
-			tw.Print("CA", fileSettings.GetCaPath())
-			if keyPath := fileSettings.GetKeyPath(); keyPath != "" {
-				tw.Print("KEY", keyPath)
-			}
-			if certPath := fileSettings.GetCertPath(); certPath != "" {
-				tw.Print("CERT", certPath)
-			}
-		} else if pemSettings := tls.GetTlsPemSettings(); pemSettings != nil {
-			tw.Print("CA", pemSettings.GetCa())
-			if key := pemSettings.GetKeyFingerprint(); key != "" {
-				tw.Print("KEY FINGERPRINT", key)
-			}
-			if cert := pemSettings.GetCert(); cert != "" {
-				tw.Print("CERT", cert)
-			}
-		}
-	}
+	printTLSSettings(tw, opts.GetTlsSettings())
 
 	// SASL section
 	if auth := opts.GetAuthenticationConfiguration(); auth != nil {
@@ -560,6 +554,84 @@ func printSchemaRegistrySync(opts *adminv2.SchemaRegistrySyncOptions) {
 		return
 	}
 	tw.Print("SHADOWING MODE", strings.ReplaceAll(opts.WhichSchemaRegistryShadowingMode().String(), "_", " "))
+
+	api := opts.GetShadowSchemaRegistryApi()
+	if api == nil {
+		return
+	}
+	tw.Print("SOURCE URL", api.GetSourceUrl())
+	tw.Print("TAIL INTERVAL", api.GetEffectiveTailInterval().AsDuration().String())
+	tw.Print("FULL SYNC INTERVAL", api.GetEffectiveFullSyncInterval().AsDuration().String())
+	tw.Print("MAX SOURCE REQUESTS PER SECOND", api.GetEffectiveMaxSourceRequestsPerSecond())
+	tw.Print("UNSUPPORTED SCHEMA FEATURE POLICY", formatUnsupportedSchemaFeaturePolicy(api.GetUnsupportedSchemaFeaturePolicy()))
+
+	printTLSSettings(tw, api.GetTlsSettings())
+
+	if basic := api.GetAuthOptions().GetBasic(); basic != nil {
+		tw.Print("", "")
+		tw.Print("BASIC AUTH:", "")
+		tw.Print("-----------", "")
+		tw.Print("USERNAME", basic.GetUsername())
+		if basic.GetPasswordSet() {
+			tw.Print("PASSWORD SET AT", basic.GetPasswordSetAt().AsTime().Format(time.RFC3339))
+		}
+	}
+
+	if sf := api.GetSourceFilter(); sf != nil {
+		if contexts := sf.GetContexts(); len(contexts) > 0 {
+			tw.Print("SOURCE CONTEXTS:", "")
+			for _, c := range contexts {
+				tw.Print("", fmt.Sprintf("- %s", c))
+			}
+		}
+		if subjects := sf.GetSubjects(); len(subjects) > 0 {
+			tw.Print("SOURCE SUBJECTS:", "")
+			for _, s := range subjects {
+				tw.Print("", fmt.Sprintf("- %s", s))
+			}
+		}
+	}
+
+	if dest := api.GetDestination(); dest != nil {
+		switch {
+		case dest.GetIdentity() != nil:
+			tw.Print("DESTINATION", "identity")
+		case dest.GetExact() != nil:
+			tw.Print("DESTINATION", "exact")
+			for _, m := range dest.GetExact().GetMappings() {
+				tw.Print("", fmt.Sprintf("- %s -> %s", m.GetSource(), m.GetDestination()))
+			}
+		}
+	}
+}
+
+// printTLSSettings renders the shared core TLS settings (file- or PEM-based)
+// used by both the client options and the schema registry API.
+func printTLSSettings(tw *out.TabWriter, tls *corecommonv1.TLSSettings) {
+	if tls == nil {
+		return
+	}
+	tw.Print("TLS:", "")
+	tw.Print("----", "")
+	// TLS settings can be either file-based or PEM-based.
+	if fileSettings := tls.GetTlsFileSettings(); fileSettings != nil {
+		// CA is required, key and cert are optional.
+		tw.Print("CA", fileSettings.GetCaPath())
+		if keyPath := fileSettings.GetKeyPath(); keyPath != "" {
+			tw.Print("KEY", keyPath)
+		}
+		if certPath := fileSettings.GetCertPath(); certPath != "" {
+			tw.Print("CERT", certPath)
+		}
+	} else if pemSettings := tls.GetTlsPemSettings(); pemSettings != nil {
+		tw.Print("CA", pemSettings.GetCa())
+		if key := pemSettings.GetKeyFingerprint(); key != "" {
+			tw.Print("KEY FINGERPRINT", key)
+		}
+		if cert := pemSettings.GetCert(); cert != "" {
+			tw.Print("CERT", cert)
+		}
+	}
 }
 
 func formatScramMechanism(m adminv2.ScramMechanism) string {
@@ -609,6 +681,10 @@ func formatACLOperation(o corecommonv1.ACLOperation) string {
 
 func formatACLPermissionType(p corecommonv1.ACLPermissionType) string {
 	return strings.ToUpper(strings.TrimPrefix(p.String(), "ACL_PERMISSION_TYPE_"))
+}
+
+func formatUnsupportedSchemaFeaturePolicy(p adminv2.UnsupportedSchemaFeaturePolicy) string {
+	return strings.TrimPrefix(p.String(), "UNSUPPORTED_SCHEMA_FEATURE_POLICY_")
 }
 
 // fromAdminV2ShadowLinkDescription converts adminv2.ShadowLink to shadowLinkDescription.
@@ -788,6 +864,35 @@ func buildDescribeSchemaRegistryOptions(opts *adminv2.SchemaRegistrySyncOptions)
 		return nil
 	}
 	return &describeSchemaRegistrySyncOptions{
-		ShadowingMode: strings.ReplaceAll(opts.WhichSchemaRegistryShadowingMode().String(), "_", " "),
+		ShadowingMode:           strings.ReplaceAll(opts.WhichSchemaRegistryShadowingMode().String(), "_", " "),
+		ShadowSchemaRegistryAPI: buildDescribeShadowSchemaRegistryAPI(opts.GetShadowSchemaRegistryApi()),
 	}
+}
+
+func buildDescribeShadowSchemaRegistryAPI(api *adminv2.SchemaRegistrySyncOptions_ShadowSchemaRegistryApi) *describeShadowSchemaRegistryAPI {
+	if api == nil {
+		return nil
+	}
+	d := &describeShadowSchemaRegistryAPI{
+		SourceURL:                      api.GetSourceUrl(),
+		TLSSettings:                    adminTLSToCfg(api.GetTlsSettings()),
+		TailInterval:                   api.GetEffectiveTailInterval().AsDuration().String(),
+		FullSyncInterval:               api.GetEffectiveFullSyncInterval().AsDuration().String(),
+		MaxSourceRequestsPerSecond:     api.GetEffectiveMaxSourceRequestsPerSecond(),
+		SourceFilter:                   adminSchemaRegistrySourceFilterToCfg(api.GetSourceFilter()),
+		Destination:                    adminSchemaRegistryDestinationToCfg(api.GetDestination()),
+		UnsupportedSchemaFeaturePolicy: formatUnsupportedSchemaFeaturePolicy(api.GetUnsupportedSchemaFeaturePolicy()),
+	}
+	if basic := api.GetAuthOptions().GetBasic(); basic != nil {
+		var passwordSetAt string
+		if basic.GetPasswordSet() && basic.GetPasswordSetAt() != nil {
+			passwordSetAt = basic.GetPasswordSetAt().AsTime().Format(time.RFC3339)
+		}
+		d.AuthOptions = &describeAuthenticationConfig{
+			Username:      basic.GetUsername(),
+			PasswordSet:   basic.GetPasswordSet(),
+			PasswordSetAt: passwordSetAt,
+		}
+	}
+	return d
 }

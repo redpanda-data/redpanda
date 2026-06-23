@@ -72,6 +72,7 @@ redpanda_cc_library(
         "//src/v/ssx:sformat",
         "//src/v/ssx:watchdog",
         "//src/v/strings:string_switch",
+        "//src/v/strings:utf8",
         "//src/v/utils:base64",
         "//src/v/utils:log_hist",
         "//src/v/utils:named_type",

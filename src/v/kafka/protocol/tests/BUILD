@@ -1,4 +1,4 @@
-load("//bazel:test.bzl", "redpanda_cc_btest")
+load("//bazel:test.bzl", "redpanda_cc_btest", "redpanda_cc_gtest")
 load("//src/v/kafka/protocol:protocol.bzl", "MESSAGE_TYPES")
 
 redpanda_cc_btest(
@@ -103,5 +103,62 @@ redpanda_cc_btest(
         "@boost//:test",
         "@seastar",
         "@seastar//:testing",
+    ],
+)
+
+redpanda_cc_gtest(
+    name = "describe_redpanda_roles_test",
+    timeout = "short",
+    srcs = [
+        "describe_redpanda_roles_test.cc",
+    ],
+    deps = [
+        "//src/v/bytes:iobuf",
+        "//src/v/kafka/protocol",
+        "//src/v/kafka/protocol:describe_redpanda_roles",
+        "//src/v/test_utils:gtest",
+        "@googletest//:gtest",
+    ],
+)
+
+redpanda_cc_gtest(
+    name = "api_key_table_test",
+    timeout = "short",
+    srcs = [
+        "api_key_table_test.cc",
+    ],
+    deps = [
+        "//src/v/kafka/protocol",
+        "//src/v/kafka/protocol:messages",
+        "//src/v/test_utils:gtest",
+        "@googletest//:gtest",
+    ],
+)
+
+redpanda_cc_gtest(
+    name = "api_key_indexed_array_test",
+    timeout = "short",
+    srcs = [
+        "api_key_indexed_array_test.cc",
+    ],
+    deps = [
+        "//src/v/kafka/protocol",
+        "//src/v/test_utils:gtest",
+        "@googletest//:gtest",
+    ],
+)
+
+redpanda_cc_gtest(
+    name = "flex_versions_test",
+    timeout = "short",
+    srcs = [
+        "flex_versions_test.cc",
+    ],
+    deps = [
+        "//src/v/kafka/protocol",
+        "//src/v/kafka/protocol:flex_versions",
+        "//src/v/kafka/protocol:messages",
+        "//src/v/test_utils:gtest",
+        "@googletest//:gtest",
     ],
 )

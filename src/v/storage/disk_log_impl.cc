@@ -2111,7 +2111,6 @@ model::offset get_next_append_offset(const offset_stats& offsets) {
 }
 } // namespace
 
-// config timeout is for the one calling reader consumer
 log_appender disk_log_impl::make_appender(log_append_config cfg) {
     throw_if_closed();
     auto now = log_clock::now();

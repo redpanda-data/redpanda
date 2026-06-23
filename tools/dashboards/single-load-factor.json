@@ -1,0 +1,3734 @@
+{
+  "annotations": {},
+  "description": "Resource utilization dashboard for Redpanda showing CPU, memory, and disk I/O metrics",
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 0,
+  "panels": [
+    {
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      },
+      "id": 999,
+      "panels": [],
+      "title": "Version 1 | Generated: unspecified",
+      "type": "row"
+    },
+    {
+      "collapsed": true,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 1
+      },
+      "id": 0,
+      "panels": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "$DS_PROMETHEUS"
+          },
+          "description": "Host metrics configuration info per shard",
+          "fieldConfig": {
+            "defaults": {
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "transparent",
+                    "value": null
+                  }
+                ]
+              }
+            },
+            "overrides": [
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "Same Partition"
+                },
+                "properties": [
+                  {
+                    "id": "mappings",
+                    "value": [
+                      {
+                        "options": {
+                          "0": {
+                            "color": "red",
+                            "text": "0"
+                          },
+                          "1": {
+                            "color": "green",
+                            "text": "1"
+                          }
+                        },
+                        "type": "value"
+                      }
+                    ]
+                  },
+                  {
+                    "id": "custom.cellOptions",
+                    "value": {
+                      "mode": "basic",
+                      "type": "color-background"
+                    }
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "Data Resolved"
+                },
+                "properties": [
+                  {
+                    "id": "mappings",
+                    "value": [
+                      {
+                        "options": {
+                          "0": {
+                            "color": "red",
+                            "text": "0"
+                          },
+                          "1": {
+                            "color": "green",
+                            "text": "1"
+                          }
+                        },
+                        "type": "value"
+                      }
+                    ]
+                  },
+                  {
+                    "id": "custom.cellOptions",
+                    "value": {
+                      "mode": "basic",
+                      "type": "color-background"
+                    }
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "Cache Resolved"
+                },
+                "properties": [
+                  {
+                    "id": "mappings",
+                    "value": [
+                      {
+                        "options": {
+                          "0": {
+                            "color": "red",
+                            "text": "0"
+                          },
+                          "1": {
+                            "color": "green",
+                            "text": "1"
+                          }
+                        },
+                        "type": "value"
+                      }
+                    ]
+                  },
+                  {
+                    "id": "custom.cellOptions",
+                    "value": {
+                      "mode": "basic",
+                      "type": "color-background"
+                    }
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "Has IO Properties"
+                },
+                "properties": [
+                  {
+                    "id": "mappings",
+                    "value": [
+                      {
+                        "options": {
+                          "0": {
+                            "color": "red",
+                            "text": "0"
+                          },
+                          "1": {
+                            "color": "green",
+                            "text": "1"
+                          }
+                        },
+                        "type": "value"
+                      }
+                    ]
+                  },
+                  {
+                    "id": "custom.cellOptions",
+                    "value": {
+                      "mode": "basic",
+                      "type": "color-background"
+                    }
+                  }
+                ]
+              }
+            ]
+          },
+          "gridPos": {
+            "h": 6,
+            "w": 24,
+            "x": 0,
+            "y": 1
+          },
+          "options": null,
+          "repeatDirection": "h",
+          "targets": [
+            {
+              "expr": "vectorized_host_metrics_info{$instance_label=~\"$instance_value\"}",
+              "format": "table",
+              "instant": true,
+              "range": false,
+              "refId": ""
+            }
+          ],
+          "title": "Host Metrics Info",
+          "transformations": [
+            {
+              "id": "organize",
+              "options": {
+                "excludeByName": {
+                  "Time": true,
+                  "Value": true,
+                  "__name__": true,
+                  "job": true,
+                  "shard": true
+                },
+                "indexByName": {
+                  "$instance_label": 0,
+                  "cache_device": 2,
+                  "cache_resolved": 5,
+                  "data_device": 1,
+                  "data_has_io_queue": 6,
+                  "data_resolved": 4,
+                  "same_partition": 3
+                },
+                "renameByName": {
+                  "$instance_label": "Instance",
+                  "cache_device": "Cache Device",
+                  "cache_resolved": "Cache Resolved",
+                  "data_device": "Data Device",
+                  "data_has_io_queue": "Has IO Properties",
+                  "data_resolved": "Data Resolved",
+                  "same_partition": "Same Partition"
+                }
+              }
+            }
+          ],
+          "transparent": false,
+          "type": "table"
+        }
+      ],
+      "title": "Host Info",
+      "type": "row"
+    },
+    {
+      "collapsed": true,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 8
+      },
+      "id": 0,
+      "panels": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "$DS_PROMETHEUS"
+          },
+          "description": "IOTune-detected disk read/write rates per instance",
+          "fieldConfig": {
+            "defaults": {
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "transparent",
+                    "value": null
+                  }
+                ]
+              }
+            },
+            "overrides": [
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "Read IOPS"
+                },
+                "properties": [
+                  {
+                    "id": "unit",
+                    "value": "ops"
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "Read BW"
+                },
+                "properties": [
+                  {
+                    "id": "unit",
+                    "value": "Bps"
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "Write IOPS"
+                },
+                "properties": [
+                  {
+                    "id": "unit",
+                    "value": "ops"
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "Write BW"
+                },
+                "properties": [
+                  {
+                    "id": "unit",
+                    "value": "Bps"
+                  }
+                ]
+              }
+            ]
+          },
+          "gridPos": {
+            "h": 6,
+            "w": 24,
+            "x": 0,
+            "y": 8
+          },
+          "options": null,
+          "repeatDirection": "h",
+          "targets": [
+            {
+              "expr": "max by ($instance_label) (vectorized_io_queue_config_read_req_rate{$instance_label=~\"$instance_value\"})",
+              "format": "table",
+              "instant": true,
+              "range": false,
+              "refId": "A"
+            },
+            {
+              "expr": "max by ($instance_label) (vectorized_io_queue_config_read_bytes_rate{$instance_label=~\"$instance_value\"})",
+              "format": "table",
+              "instant": true,
+              "range": false,
+              "refId": "B"
+            },
+            {
+              "expr": "max by ($instance_label) (vectorized_io_queue_config_write_req_rate{$instance_label=~\"$instance_value\"})",
+              "format": "table",
+              "instant": true,
+              "range": false,
+              "refId": "C"
+            },
+            {
+              "expr": "max by ($instance_label) (vectorized_io_queue_config_write_bytes_rate{$instance_label=~\"$instance_value\"})",
+              "format": "table",
+              "instant": true,
+              "range": false,
+              "refId": "D"
+            }
+          ],
+          "title": "IO Properties",
+          "transformations": [
+            {
+              "id": "joinByField",
+              "options": {
+                "byField": "$instance_label",
+                "mode": "outer"
+              }
+            },
+            {
+              "id": "organize",
+              "options": {
+                "excludeByName": {
+                  "Time": true,
+                  "Value": true,
+                  "__name__": true
+                },
+                "indexByName": {
+                  "$instance_label": 0,
+                  "Value #A": 1,
+                  "Value #B": 2,
+                  "Value #C": 3,
+                  "Value #D": 4
+                },
+                "renameByName": {
+                  "$instance_label": "Instance",
+                  "Value #A": "Read IOPS",
+                  "Value #B": "Read BW",
+                  "Value #C": "Write IOPS",
+                  "Value #D": "Write BW"
+                }
+              }
+            }
+          ],
+          "transparent": false,
+          "type": "table"
+        }
+      ],
+      "title": "IO Properties",
+      "type": "row"
+    },
+    {
+      "collapsed": true,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 15
+      },
+      "id": 0,
+      "panels": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "$DS_PROMETHEUS"
+          },
+          "description": "Cloud instance type and estimated host capacity per instance",
+          "fieldConfig": {
+            "defaults": {
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "transparent",
+                    "value": null
+                  }
+                ]
+              }
+            },
+            "overrides": [
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "Cloud"
+                },
+                "properties": [
+                  {
+                    "id": "mappings",
+                    "value": [
+                      {
+                        "options": {
+                          "unknown": {
+                            "color": "red",
+                            "text": "unknown"
+                          }
+                        },
+                        "type": "value"
+                      },
+                      {
+                        "options": {
+                          "pattern": ".*",
+                          "result": {
+                            "color": "green"
+                          }
+                        },
+                        "type": "regex"
+                      }
+                    ]
+                  },
+                  {
+                    "id": "custom.cellOptions",
+                    "value": {
+                      "mode": "basic",
+                      "type": "color-background"
+                    }
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "Instance Type"
+                },
+                "properties": [
+                  {
+                    "id": "mappings",
+                    "value": [
+                      {
+                        "options": {
+                          "unknown": {
+                            "color": "red",
+                            "text": "unknown"
+                          }
+                        },
+                        "type": "value"
+                      },
+                      {
+                        "options": {
+                          "pattern": ".*",
+                          "result": {
+                            "color": "green"
+                          }
+                        },
+                        "type": "regex"
+                      }
+                    ]
+                  },
+                  {
+                    "id": "custom.cellOptions",
+                    "value": {
+                      "mode": "basic",
+                      "type": "color-background"
+                    }
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "vCPUs"
+                },
+                "properties": [
+                  {
+                    "id": "mappings",
+                    "value": [
+                      {
+                        "options": {
+                          "0": {
+                            "color": "red",
+                            "text": "0"
+                          }
+                        },
+                        "type": "value"
+                      }
+                    ]
+                  },
+                  {
+                    "id": "custom.cellOptions",
+                    "value": {
+                      "mode": "basic",
+                      "type": "color-background"
+                    }
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "Memory"
+                },
+                "properties": [
+                  {
+                    "id": "mappings",
+                    "value": [
+                      {
+                        "options": {
+                          "0": {
+                            "color": "red",
+                            "text": "0"
+                          }
+                        },
+                        "type": "value"
+                      }
+                    ]
+                  },
+                  {
+                    "id": "custom.cellOptions",
+                    "value": {
+                      "mode": "basic",
+                      "type": "color-background"
+                    }
+                  },
+                  {
+                    "id": "unit",
+                    "value": "bytes"
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "Disk"
+                },
+                "properties": [
+                  {
+                    "id": "mappings",
+                    "value": [
+                      {
+                        "options": {
+                          "0": {
+                            "color": "red",
+                            "text": "0"
+                          }
+                        },
+                        "type": "value"
+                      }
+                    ]
+                  },
+                  {
+                    "id": "custom.cellOptions",
+                    "value": {
+                      "mode": "basic",
+                      "type": "color-background"
+                    }
+                  },
+                  {
+                    "id": "unit",
+                    "value": "bytes"
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "Read IOPS"
+                },
+                "properties": [
+                  {
+                    "id": "mappings",
+                    "value": [
+                      {
+                        "options": {
+                          "0": {
+                            "color": "red",
+                            "text": "0"
+                          }
+                        },
+                        "type": "value"
+                      }
+                    ]
+                  },
+                  {
+                    "id": "custom.cellOptions",
+                    "value": {
+                      "mode": "basic",
+                      "type": "color-background"
+                    }
+                  },
+                  {
+                    "id": "unit",
+                    "value": "ops"
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "Write IOPS"
+                },
+                "properties": [
+                  {
+                    "id": "mappings",
+                    "value": [
+                      {
+                        "options": {
+                          "0": {
+                            "color": "red",
+                            "text": "0"
+                          }
+                        },
+                        "type": "value"
+                      }
+                    ]
+                  },
+                  {
+                    "id": "custom.cellOptions",
+                    "value": {
+                      "mode": "basic",
+                      "type": "color-background"
+                    }
+                  },
+                  {
+                    "id": "unit",
+                    "value": "ops"
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "Network BW"
+                },
+                "properties": [
+                  {
+                    "id": "mappings",
+                    "value": [
+                      {
+                        "options": {
+                          "0": {
+                            "color": "red",
+                            "text": "0"
+                          }
+                        },
+                        "type": "value"
+                      }
+                    ]
+                  },
+                  {
+                    "id": "custom.cellOptions",
+                    "value": {
+                      "mode": "basic",
+                      "type": "color-background"
+                    }
+                  },
+                  {
+                    "id": "unit",
+                    "value": "Bps"
+                  }
+                ]
+              }
+            ]
+          },
+          "gridPos": {
+            "h": 6,
+            "w": 24,
+            "x": 0,
+            "y": 15
+          },
+          "options": null,
+          "repeatDirection": "h",
+          "targets": [
+            {
+              "expr": "max by ($instance_label, cloud_provider, instance_type) (vectorized_instance_info{$instance_label=~\"$instance_value\"})",
+              "format": "table",
+              "instant": true,
+              "range": false,
+              "refId": "info"
+            },
+            {
+              "expr": "(max by ($instance_label) (vectorized_instance_vcpus{$instance_label=~\"$instance_value\"})) or ((max by ($instance_label) (vectorized_instance_info{$instance_label=~\"$instance_value\"})) * 0)",
+              "format": "table",
+              "instant": true,
+              "range": false,
+              "refId": "vcpus"
+            },
+            {
+              "expr": "(max by ($instance_label) (vectorized_instance_memory_bytes{$instance_label=~\"$instance_value\"})) or ((max by ($instance_label) (vectorized_instance_info{$instance_label=~\"$instance_value\"})) * 0)",
+              "format": "table",
+              "instant": true,
+              "range": false,
+              "refId": "memory"
+            },
+            {
+              "expr": "(max by ($instance_label) (vectorized_instance_disk_bytes{$instance_label=~\"$instance_value\"})) or ((max by ($instance_label) (vectorized_instance_info{$instance_label=~\"$instance_value\"})) * 0)",
+              "format": "table",
+              "instant": true,
+              "range": false,
+              "refId": "disk"
+            },
+            {
+              "expr": "(max by ($instance_label) (vectorized_instance_read_iops{$instance_label=~\"$instance_value\"})) or ((max by ($instance_label) (vectorized_instance_info{$instance_label=~\"$instance_value\"})) * 0)",
+              "format": "table",
+              "instant": true,
+              "range": false,
+              "refId": "read_iops"
+            },
+            {
+              "expr": "(max by ($instance_label) (vectorized_instance_write_iops{$instance_label=~\"$instance_value\"})) or ((max by ($instance_label) (vectorized_instance_info{$instance_label=~\"$instance_value\"})) * 0)",
+              "format": "table",
+              "instant": true,
+              "range": false,
+              "refId": "write_iops"
+            },
+            {
+              "expr": "(max by ($instance_label) (vectorized_instance_network_bytes_per_sec{$instance_label=~\"$instance_value\"})) or ((max by ($instance_label) (vectorized_instance_info{$instance_label=~\"$instance_value\"})) * 0)",
+              "format": "table",
+              "instant": true,
+              "range": false,
+              "refId": "network"
+            }
+          ],
+          "title": "Instance Info",
+          "transformations": [
+            {
+              "id": "joinByField",
+              "options": {
+                "byField": "$instance_label",
+                "mode": "outer"
+              }
+            },
+            {
+              "id": "organize",
+              "options": {
+                "excludeByName": {
+                  "Time": true,
+                  "Value": true,
+                  "Value #info": true,
+                  "__name__": true
+                },
+                "indexByName": {
+                  "$instance_label": 0,
+                  "Value #disk": 5,
+                  "Value #memory": 4,
+                  "Value #network": 8,
+                  "Value #read_iops": 6,
+                  "Value #vcpus": 3,
+                  "Value #write_iops": 7,
+                  "cloud_provider": 1,
+                  "instance_type": 2
+                },
+                "renameByName": {
+                  "$instance_label": "Instance",
+                  "Value #disk": "Disk",
+                  "Value #memory": "Memory",
+                  "Value #network": "Network BW",
+                  "Value #read_iops": "Read IOPS",
+                  "Value #vcpus": "vCPUs",
+                  "Value #write_iops": "Write IOPS",
+                  "cloud_provider": "Cloud",
+                  "instance_type": "Instance Type"
+                }
+              }
+            }
+          ],
+          "transparent": false,
+          "type": "table"
+        }
+      ],
+      "title": "Instance Info",
+      "type": "row"
+    },
+    {
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 22
+      },
+      "id": 0,
+      "panels": [],
+      "title": "Load Factor",
+      "type": "row"
+    },
+    {
+      "datasource": {
+        "type": "datasource",
+        "uid": "-- Mixed --"
+      },
+      "description": "Maximum utilization across all resource types (reactor, IO queue, memory, connections, disk IOPS, network)",
+      "fieldConfig": {
+        "defaults": {
+          "decimals": 1,
+          "mappings": [],
+          "max": 100,
+          "min": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 60
+              },
+              {
+                "color": "red",
+                "value": 80
+              }
+            ]
+          },
+          "unit": "percent"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 10,
+        "w": 8,
+        "x": 0,
+        "y": 23
+      },
+      "options": {
+        "minVizHeight": 75,
+        "minVizWidth": 75,
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "max"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "showThresholdLabels": false,
+        "showThresholdMarkers": true,
+        "sizing": "auto"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "datasource",
+            "uid": "-- Dashboard --"
+          },
+          "panelId": 100,
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "datasource",
+            "uid": "-- Dashboard --"
+          },
+          "panelId": 101,
+          "refId": "B"
+        },
+        {
+          "datasource": {
+            "type": "datasource",
+            "uid": "-- Dashboard --"
+          },
+          "panelId": 102,
+          "refId": "C"
+        },
+        {
+          "datasource": {
+            "type": "datasource",
+            "uid": "-- Dashboard --"
+          },
+          "panelId": 104,
+          "refId": "D"
+        },
+        {
+          "datasource": {
+            "type": "datasource",
+            "uid": "-- Dashboard --"
+          },
+          "panelId": 105,
+          "refId": "E"
+        },
+        {
+          "datasource": {
+            "type": "datasource",
+            "uid": "-- Dashboard --"
+          },
+          "panelId": 106,
+          "refId": "F"
+        },
+        {
+          "datasource": {
+            "type": "datasource",
+            "uid": "-- Dashboard --"
+          },
+          "panelId": 107,
+          "refId": "G"
+        },
+        {
+          "datasource": {
+            "type": "datasource",
+            "uid": "-- Dashboard --"
+          },
+          "panelId": 108,
+          "refId": "H"
+        }
+      ],
+      "title": "Highest Load Factor",
+      "transformations": [
+        {
+          "id": "reduce",
+          "options": {
+            "includeTimeField": false,
+            "labelsToFields": false,
+            "mode": "seriesToRows",
+            "reducers": [
+              "max"
+            ]
+          }
+        }
+      ],
+      "type": "gauge"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "$DS_PROMETHEUS"
+      },
+      "description": "Highest reactor utilization across all nodes and shards",
+      "fieldConfig": {
+        "defaults": {
+          "decimals": 1,
+          "max": 100,
+          "min": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 60
+              },
+              {
+                "color": "red",
+                "value": 80
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 4,
+        "x": 8,
+        "y": 23
+      },
+      "id": 100,
+      "options": null,
+      "repeatDirection": "h",
+      "targets": [
+        {
+          "expr": "max(vectorized_reactor_utilization{$instance_label=~\"$instance_value\"})",
+          "instant": true,
+          "range": false,
+          "refId": ""
+        }
+      ],
+      "title": "Reactor / CPU",
+      "transformations": [],
+      "transparent": false,
+      "type": "gauge"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "$DS_PROMETHEUS"
+      },
+      "description": "Highest IO queue consumption across all nodes",
+      "fieldConfig": {
+        "defaults": {
+          "decimals": 1,
+          "max": 100,
+          "min": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 60
+              },
+              {
+                "color": "red",
+                "value": 80
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 4,
+        "x": 12,
+        "y": 23
+      },
+      "id": 101,
+      "options": null,
+      "repeatDirection": "h",
+      "targets": [
+        {
+          "expr": "max(sum by ($instance_label) ((irate(vectorized_io_queue_consumption{$instance_label=~\"$instance_value\"}[$__rate_interval])) * 100))",
+          "instant": true,
+          "range": false,
+          "refId": ""
+        }
+      ],
+      "title": "IO Scheduler",
+      "transformations": [],
+      "transparent": false,
+      "type": "gauge"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "$DS_PROMETHEUS"
+      },
+      "description": "Highest data-disk read IOPS vs host capacity across all nodes",
+      "fieldConfig": {
+        "defaults": {
+          "decimals": 1,
+          "max": 100,
+          "min": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 60
+              },
+              {
+                "color": "red",
+                "value": 80
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 4,
+        "x": 16,
+        "y": 23
+      },
+      "id": 104,
+      "options": null,
+      "repeatDirection": "h",
+      "targets": [
+        {
+          "expr": "max(100 * (sum by ($instance_label) (irate(vectorized_host_diskstats_reads{$instance_label=~\"$instance_value\",data_disk=\"1\"}[$__rate_interval]))) / max by ($instance_label) (vectorized_instance_read_iops{$instance_label=~\"$instance_value\"}))",
+          "instant": true,
+          "range": false,
+          "refId": ""
+        }
+      ],
+      "title": "Disk Read IOPS",
+      "transformations": [],
+      "transparent": false,
+      "type": "gauge"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "$DS_PROMETHEUS"
+      },
+      "description": "Highest data-disk write IOPS vs host capacity across all nodes",
+      "fieldConfig": {
+        "defaults": {
+          "decimals": 1,
+          "max": 100,
+          "min": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 60
+              },
+              {
+                "color": "red",
+                "value": 80
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 4,
+        "x": 20,
+        "y": 23
+      },
+      "id": 105,
+      "options": null,
+      "repeatDirection": "h",
+      "targets": [
+        {
+          "expr": "max(100 * (sum by ($instance_label) (irate(vectorized_host_diskstats_writes{$instance_label=~\"$instance_value\",data_disk=\"1\"}[$__rate_interval]))) / max by ($instance_label) (vectorized_instance_write_iops{$instance_label=~\"$instance_value\"}))",
+          "instant": true,
+          "range": false,
+          "refId": ""
+        }
+      ],
+      "title": "Disk Write IOPS",
+      "transformations": [],
+      "transparent": false,
+      "type": "gauge"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "$DS_PROMETHEUS"
+      },
+      "description": "Highest memory usage across all nodes, scaled so 100 means available memory is down to 10% of total",
+      "fieldConfig": {
+        "defaults": {
+          "decimals": 1,
+          "max": 100,
+          "min": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 60
+              },
+              {
+                "color": "red",
+                "value": 80
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 4,
+        "x": 8,
+        "y": 28
+      },
+      "id": 108,
+      "options": null,
+      "repeatDirection": "h",
+      "targets": [
+        {
+          "expr": "max(100 * (sum by ($instance_label) (vectorized_memory_total_memory{$instance_label=~\"$instance_value\"}) - sum by ($instance_label) (vectorized_memory_available_memory{$instance_label=~\"$instance_value\"})) / (0.9 * sum by ($instance_label) (vectorized_memory_total_memory{$instance_label=~\"$instance_value\"})))",
+          "instant": true,
+          "range": false,
+          "refId": ""
+        }
+      ],
+      "title": "Available Memory",
+      "transformations": [],
+      "transparent": false,
+      "type": "gauge"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "$DS_PROMETHEUS"
+      },
+      "description": "Highest connection load factor across all nodes",
+      "fieldConfig": {
+        "defaults": {
+          "decimals": 1,
+          "max": 100,
+          "min": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 60
+              },
+              {
+                "color": "red",
+                "value": 80
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 4,
+        "x": 12,
+        "y": 28
+      },
+      "id": 102,
+      "options": null,
+      "repeatDirection": "h",
+      "targets": [
+        {
+          "expr": "max(100 * sum by ($instance_label) (vectorized_kafka_rpc_active_connections{$instance_label=~\"$instance_value\"}) / ((1000 * (sum by ($instance_label) (vectorized_memory_allocated_memory{$instance_label=~\"$instance_value\"} + vectorized_memory_free_memory{$instance_label=~\"$instance_value\"}) / (1024 * 1024 * 1024))) - clamp_min((1000 * (sum by ($instance_label) (vectorized_memory_allocated_memory{$instance_label=~\"$instance_value\"} + vectorized_memory_free_memory{$instance_label=~\"$instance_value\"}) / (1024 * 1024 * 1024))) - (3000 * count by ($instance_label) (vectorized_memory_allocated_memory{$instance_label=~\"$instance_value\"})), 0)))",
+          "instant": true,
+          "range": false,
+          "refId": ""
+        }
+      ],
+      "title": "Connections",
+      "transformations": [],
+      "transparent": false,
+      "type": "gauge"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "$DS_PROMETHEUS"
+      },
+      "description": "Highest inbound network vs host NIC bandwidth across all nodes",
+      "fieldConfig": {
+        "defaults": {
+          "decimals": 1,
+          "max": 100,
+          "min": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 60
+              },
+              {
+                "color": "red",
+                "value": 80
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 4,
+        "x": 16,
+        "y": 28
+      },
+      "id": 106,
+      "options": null,
+      "repeatDirection": "h",
+      "targets": [
+        {
+          "expr": "max(100 * (sum by ($instance_label) (irate(vectorized_network_bytes_received{$instance_label=~\"$instance_value\"}[$__rate_interval]))) / max by ($instance_label) (vectorized_instance_network_bytes_per_sec{$instance_label=~\"$instance_value\"}))",
+          "instant": true,
+          "range": false,
+          "refId": ""
+        }
+      ],
+      "title": "Net RX",
+      "transformations": [],
+      "transparent": false,
+      "type": "gauge"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "$DS_PROMETHEUS"
+      },
+      "description": "Highest outbound network vs host NIC bandwidth across all nodes",
+      "fieldConfig": {
+        "defaults": {
+          "decimals": 1,
+          "max": 100,
+          "min": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 60
+              },
+              {
+                "color": "red",
+                "value": 80
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 4,
+        "x": 20,
+        "y": 28
+      },
+      "id": 107,
+      "options": null,
+      "repeatDirection": "h",
+      "targets": [
+        {
+          "expr": "max(100 * (sum by ($instance_label) (irate(vectorized_network_bytes_sent{$instance_label=~\"$instance_value\"}[$__rate_interval]))) / max by ($instance_label) (vectorized_instance_network_bytes_per_sec{$instance_label=~\"$instance_value\"}))",
+          "instant": true,
+          "range": false,
+          "refId": ""
+        }
+      ],
+      "title": "Net TX",
+      "transformations": [],
+      "transparent": false,
+      "type": "gauge"
+    },
+    {
+      "collapsed": true,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 33
+      },
+      "id": 0,
+      "panels": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "$DS_PROMETHEUS"
+          },
+          "description": "Maximum reactor utilization per node (highest shard)",
+          "fieldConfig": {
+            "defaults": {
+              "decimals": 1,
+              "max": 100,
+              "min": 0,
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  },
+                  {
+                    "color": "yellow",
+                    "value": 60
+                  },
+                  {
+                    "color": "red",
+                    "value": 80
+                  }
+                ]
+              }
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 24,
+            "x": 0,
+            "y": 33
+          },
+          "options": {
+            "orientation": "auto",
+            "reduceOptions": {
+              "calcs": [],
+              "values": true
+            },
+            "showThresholdLabels": false,
+            "showThresholdMarkers": true
+          },
+          "repeatDirection": "h",
+          "targets": [
+            {
+              "expr": "max by ($instance_label) (vectorized_reactor_utilization{$instance_label=~\"$instance_value\"})",
+              "instant": true,
+              "legendFormat": "{{$instance_label}}",
+              "range": false,
+              "refId": ""
+            }
+          ],
+          "title": "Reactor Utilization by Instance",
+          "transformations": [],
+          "transparent": false,
+          "type": "gauge"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "$DS_PROMETHEUS"
+          },
+          "description": "Per-shard reactor utilization (load factor) for each instance",
+          "fieldConfig": {
+            "defaults": {
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "transparent",
+                    "value": null
+                  }
+                ]
+              }
+            },
+            "overrides": [
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "Utilization"
+                },
+                "properties": [
+                  {
+                    "id": "unit",
+                    "value": "percent"
+                  }
+                ]
+              }
+            ]
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 24,
+            "x": 0,
+            "y": 41
+          },
+          "options": {
+            "cellHeight": "sm",
+            "footer": {
+              "countRows": false,
+              "reducer": [],
+              "show": false
+            },
+            "frameIndex": 0,
+            "showHeader": true,
+            "showTypeIcons": false,
+            "sortBy": [
+              {
+                "desc": true,
+                "displayName": "Utilization"
+              }
+            ]
+          },
+          "repeatDirection": "h",
+          "targets": [
+            {
+              "expr": "max by ($instance_label, shard) (vectorized_reactor_utilization{$instance_label=~\"$instance_value\"})",
+              "format": "table",
+              "instant": true,
+              "range": false,
+              "refId": ""
+            }
+          ],
+          "title": "Reactor Utilization by Shard",
+          "transformations": [
+            {
+              "id": "organize",
+              "options": {
+                "excludeByName": {
+                  "Time": true,
+                  "__name__": true
+                },
+                "indexByName": {
+                  "$instance_label": 0,
+                  "Value": 2,
+                  "shard": 1
+                },
+                "renameByName": {
+                  "$instance_label": "Instance",
+                  "Value": "Utilization",
+                  "shard": "Shard"
+                }
+              }
+            }
+          ],
+          "transparent": false,
+          "type": "table"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "$DS_PROMETHEUS"
+          },
+          "description": "Per-shard CPU utilization (0-100 range)",
+          "fieldConfig": {
+            "defaults": {
+              "max": 100,
+              "min": 0,
+              "unit": "percent"
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 8,
+            "x": 0,
+            "y": 49
+          },
+          "options": {
+            "legend": {
+              "calcs": [],
+              "displayMode": "list",
+              "placement": "bottom",
+              "showLegend": true
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "asc"
+            }
+          },
+          "repeatDirection": "h",
+          "targets": [
+            {
+              "expr": "vectorized_reactor_utilization{$instance_label=~\"$instance_value\"}",
+              "legendFormat": "{{$instance_label}} - shard {{shard}}",
+              "refId": ""
+            }
+          ],
+          "title": "CPU Utilization by Shard",
+          "transformations": [],
+          "transparent": false,
+          "type": "timeseries"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "$DS_PROMETHEUS"
+          },
+          "description": "Average CPU utilization across all shards per instance",
+          "fieldConfig": {
+            "defaults": {
+              "max": 100,
+              "min": 0,
+              "unit": "percent"
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 8,
+            "x": 8,
+            "y": 49
+          },
+          "options": {
+            "legend": {
+              "calcs": [],
+              "displayMode": "list",
+              "placement": "bottom",
+              "showLegend": true
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "asc"
+            }
+          },
+          "repeatDirection": "h",
+          "targets": [
+            {
+              "expr": "avg by ($instance_label) (vectorized_reactor_utilization{$instance_label=~\"$instance_value\"})",
+              "legendFormat": "{{$instance_label}} (avg)",
+              "refId": ""
+            }
+          ],
+          "title": "CPU Utilization by Instance",
+          "transformations": [],
+          "transparent": false,
+          "type": "timeseries"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "$DS_PROMETHEUS"
+          },
+          "description": "Rate of tasks processed per second",
+          "fieldConfig": {
+            "defaults": {
+              "unit": "ops"
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 8,
+            "x": 16,
+            "y": 49
+          },
+          "options": {
+            "legend": {
+              "calcs": [],
+              "displayMode": "list",
+              "placement": "bottom",
+              "showLegend": true
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "asc"
+            }
+          },
+          "repeatDirection": "h",
+          "targets": [
+            {
+              "expr": "rate(vectorized_reactor_tasks_processed{$instance_label=~\"$instance_value\"}[$__rate_interval])",
+              "legendFormat": "{{$instance_label}} - shard {{shard}}",
+              "refId": ""
+            }
+          ],
+          "title": "Task Processing Rate",
+          "transformations": [],
+          "transparent": false,
+          "type": "timeseries"
+        }
+      ],
+      "title": "Reactor / CPU",
+      "type": "row"
+    },
+    {
+      "collapsed": true,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 58
+      },
+      "id": 0,
+      "panels": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "$DS_PROMETHEUS"
+          },
+          "description": "",
+          "fieldConfig": {
+            "defaults": {
+              "mappings": [
+                {
+                  "options": {
+                    "0": {
+                      "color": "green",
+                      "index": 0,
+                      "text": "IO properties in use"
+                    },
+                    "1": {
+                      "color": "red",
+                      "index": 1,
+                      "text": "These metrics will be uniformly zero since this system isn't using IO properties"
+                    }
+                  },
+                  "type": "value"
+                }
+              ]
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 1,
+            "w": 24,
+            "x": 0,
+            "y": 58
+          },
+          "options": {
+            "colorMode": "background_solid",
+            "graphMode": "none",
+            "justifyMode": "auto",
+            "orientation": "auto",
+            "reduceOptions": {
+              "calcs": []
+            },
+            "text": {
+              "valueSize": 14
+            },
+            "textMode": "value"
+          },
+          "repeatDirection": "h",
+          "targets": [
+            {
+              "expr": "max(vectorized_host_metrics_info{$instance_label=~\"$instance_value\",data_has_io_queue=\"0\"} or absent(vectorized_host_metrics_info{$instance_label=~\"$instance_value\"}) or vector(0))",
+              "instant": true,
+              "range": false,
+              "refId": ""
+            }
+          ],
+          "title": "",
+          "transformations": [],
+          "transparent": false,
+          "type": "stat"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "$DS_PROMETHEUS"
+          },
+          "description": "IO queue consumption per node (sum of shards)",
+          "fieldConfig": {
+            "defaults": {
+              "decimals": 1,
+              "max": 100,
+              "min": 0,
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  },
+                  {
+                    "color": "yellow",
+                    "value": 60
+                  },
+                  {
+                    "color": "red",
+                    "value": 80
+                  }
+                ]
+              }
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 24,
+            "x": 0,
+            "y": 59
+          },
+          "options": {
+            "orientation": "auto",
+            "reduceOptions": {
+              "calcs": [],
+              "values": true
+            },
+            "showThresholdLabels": false,
+            "showThresholdMarkers": true
+          },
+          "repeatDirection": "h",
+          "targets": [
+            {
+              "expr": "sum by ($instance_label) ((irate(vectorized_io_queue_consumption{$instance_label=~\"$instance_value\"}[$__rate_interval])) * 100)",
+              "instant": true,
+              "legendFormat": "{{$instance_label}}",
+              "range": false,
+              "refId": ""
+            }
+          ],
+          "title": "IO Queue Consumption by Instance",
+          "transformations": [],
+          "transparent": false,
+          "type": "gauge"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "$DS_PROMETHEUS"
+          },
+          "description": "Per-shard, per-class IO queue consumption (load factor) for each instance",
+          "fieldConfig": {
+            "defaults": {
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "transparent",
+                    "value": null
+                  }
+                ]
+              }
+            },
+            "overrides": [
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "Consumption"
+                },
+                "properties": [
+                  {
+                    "id": "unit",
+                    "value": "percent"
+                  }
+                ]
+              }
+            ]
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 24,
+            "x": 0,
+            "y": 67
+          },
+          "options": {
+            "cellHeight": "sm",
+            "footer": {
+              "countRows": false,
+              "reducer": [],
+              "show": false
+            },
+            "frameIndex": 0,
+            "showHeader": true,
+            "showTypeIcons": false,
+            "sortBy": [
+              {
+                "desc": true,
+                "displayName": "Consumption"
+              }
+            ]
+          },
+          "repeatDirection": "h",
+          "targets": [
+            {
+              "expr": "max by ($instance_label, shard, class) (irate(vectorized_io_queue_consumption{$instance_label=~\"$instance_value\"}[$__rate_interval])) * 100",
+              "format": "table",
+              "instant": true,
+              "range": false,
+              "refId": ""
+            }
+          ],
+          "title": "IO Queue Consumption by Shard",
+          "transformations": [
+            {
+              "id": "organize",
+              "options": {
+                "excludeByName": {
+                  "Time": true,
+                  "__name__": true
+                },
+                "indexByName": {
+                  "$instance_label": 0,
+                  "Value": 3,
+                  "class": 2,
+                  "shard": 1
+                },
+                "renameByName": {
+                  "$instance_label": "Instance",
+                  "Value": "Consumption",
+                  "class": "Class",
+                  "shard": "Shard"
+                }
+              }
+            }
+          ],
+          "transparent": false,
+          "type": "table"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "$DS_PROMETHEUS"
+          },
+          "description": "IO queue consumption rate per instance and class (summed across shards)",
+          "fieldConfig": {
+            "defaults": {
+              "max": 1,
+              "min": 0,
+              "unit": "percentunit"
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 8,
+            "x": 0,
+            "y": 75
+          },
+          "options": {
+            "legend": {
+              "calcs": [],
+              "displayMode": "list",
+              "placement": "bottom",
+              "showLegend": true
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "asc"
+            }
+          },
+          "repeatDirection": "h",
+          "targets": [
+            {
+              "expr": "sum by ($instance_label, class) (rate(vectorized_io_queue_consumption{$instance_label=~\"$instance_value\"}[$__rate_interval]))",
+              "legendFormat": "{{$instance_label}} - {{class}}",
+              "refId": ""
+            }
+          ],
+          "title": "IO Queue Consumption",
+          "transformations": [],
+          "transparent": false,
+          "type": "timeseries"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "$DS_PROMETHEUS"
+          },
+          "description": "Operations sitting in the IO scheduler queue, not yet submitted to the kernel (time-integrated counter; rate gives the average queued depth, summed across shards per instance and class)",
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short"
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 8,
+            "x": 8,
+            "y": 75
+          },
+          "options": {
+            "legend": {
+              "calcs": [],
+              "displayMode": "list",
+              "placement": "bottom",
+              "showLegend": true
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "asc"
+            }
+          },
+          "repeatDirection": "h",
+          "targets": [
+            {
+              "expr": "sum by ($instance_label, class) (rate(vectorized_io_queue_integrated_queue_length{$instance_label=~\"$instance_value\"}[$__rate_interval]))",
+              "legendFormat": "{{$instance_label}} - {{class}}",
+              "refId": ""
+            }
+          ],
+          "title": "IO Queue Length",
+          "transformations": [],
+          "transparent": false,
+          "type": "timeseries"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "$DS_PROMETHEUS"
+          },
+          "description": "Rate of disk I/O operations per second per instance and class",
+          "fieldConfig": {
+            "defaults": {
+              "unit": "ops"
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 8,
+            "x": 16,
+            "y": 75
+          },
+          "options": {
+            "legend": {
+              "calcs": [],
+              "displayMode": "list",
+              "placement": "bottom",
+              "showLegend": true
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "asc"
+            }
+          },
+          "repeatDirection": "h",
+          "targets": [
+            {
+              "expr": "sum by ($instance_label, class) (rate(vectorized_io_queue_total_operations{$instance_label=~\"$instance_value\"}[$__rate_interval]))",
+              "legendFormat": "{{$instance_label}} - {{class}}",
+              "refId": ""
+            }
+          ],
+          "title": "IO Queue Operations Rate",
+          "transformations": [],
+          "transparent": false,
+          "type": "timeseries"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "$DS_PROMETHEUS"
+          },
+          "description": "Rate of bytes transferred to/from disk per second per instance and class",
+          "fieldConfig": {
+            "defaults": {
+              "unit": "Bps"
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 8,
+            "x": 0,
+            "y": 83
+          },
+          "options": {
+            "legend": {
+              "calcs": [],
+              "displayMode": "list",
+              "placement": "bottom",
+              "showLegend": true
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "asc"
+            }
+          },
+          "repeatDirection": "h",
+          "targets": [
+            {
+              "expr": "sum by ($instance_label, class) (rate(vectorized_io_queue_total_bytes{$instance_label=~\"$instance_value\"}[$__rate_interval]))",
+              "legendFormat": "{{$instance_label}} - {{class}}",
+              "refId": ""
+            }
+          ],
+          "title": "IO Queue Bytes Throughput",
+          "transformations": [],
+          "transparent": false,
+          "type": "timeseries"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "$DS_PROMETHEUS"
+          },
+          "description": "Operations that have left the IO scheduler and been submitted to the kernel but not yet reaped (time-integrated counter; rate gives the average in-flight depth, summed across shards per instance and class)",
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short"
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 8,
+            "x": 8,
+            "y": 83
+          },
+          "options": {
+            "legend": {
+              "calcs": [],
+              "displayMode": "list",
+              "placement": "bottom",
+              "showLegend": true
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "asc"
+            }
+          },
+          "repeatDirection": "h",
+          "targets": [
+            {
+              "expr": "sum by ($instance_label, class) (rate(vectorized_io_queue_integrated_disk_queue_length{$instance_label=~\"$instance_value\"}[$__rate_interval]))",
+              "legendFormat": "{{$instance_label}} - {{class}}",
+              "refId": ""
+            }
+          ],
+          "title": "Disk Queue Length",
+          "transformations": [],
+          "transparent": false,
+          "type": "timeseries"
+        }
+      ],
+      "title": "IO Scheduler",
+      "type": "row"
+    },
+    {
+      "collapsed": true,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 92
+      },
+      "id": 0,
+      "panels": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "$DS_PROMETHEUS"
+          },
+          "description": "Data-disk read IOPS per instance from host diskstats, with the instance read IOPS capacity as a dotted line",
+          "fieldConfig": {
+            "defaults": {
+              "unit": "ops"
+            },
+            "overrides": [
+              {
+                "matcher": {
+                  "id": "byRegexp",
+                  "options": "^Host capacity$"
+                },
+                "properties": [
+                  {
+                    "id": "custom.lineStyle",
+                    "value": {
+                      "dash": [
+                        0,
+                        10
+                      ],
+                      "fill": "dot"
+                    }
+                  },
+                  {
+                    "id": "custom.showPoints",
+                    "value": "never"
+                  }
+                ]
+              }
+            ]
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 8,
+            "x": 0,
+            "y": 92
+          },
+          "options": {
+            "legend": {
+              "calcs": [],
+              "displayMode": "list",
+              "placement": "bottom",
+              "showLegend": true
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "asc"
+            }
+          },
+          "repeatDirection": "h",
+          "targets": [
+            {
+              "expr": "sum by ($instance_label) (irate(vectorized_host_diskstats_reads{$instance_label=~\"$instance_value\",data_disk=\"1\"}[$__rate_interval]))",
+              "legendFormat": "{{$instance_label}}",
+              "refId": ""
+            },
+            {
+              "expr": "max by ($instance_label) (vectorized_instance_read_iops{$instance_label=~\"$instance_value\"})",
+              "legendFormat": "Host capacity",
+              "refId": ""
+            }
+          ],
+          "title": "Read IOPS (host)",
+          "transformations": [],
+          "transparent": false,
+          "type": "timeseries"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "$DS_PROMETHEUS"
+          },
+          "description": "Data-disk read bytes/s per instance from host diskstats",
+          "fieldConfig": {
+            "defaults": {
+              "unit": "Bps"
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 8,
+            "x": 8,
+            "y": 92
+          },
+          "options": {
+            "legend": {
+              "calcs": [],
+              "displayMode": "list",
+              "placement": "bottom",
+              "showLegend": true
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "asc"
+            }
+          },
+          "repeatDirection": "h",
+          "targets": [
+            {
+              "expr": "sum by ($instance_label) (rate(vectorized_host_diskstats_bytes_read{$instance_label=~\"$instance_value\",data_disk=\"1\"}[$__rate_interval]))",
+              "legendFormat": "{{$instance_label}}",
+              "refId": ""
+            }
+          ],
+          "title": "Read Bytes (host)",
+          "transformations": [],
+          "transparent": false,
+          "type": "timeseries"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "$DS_PROMETHEUS"
+          },
+          "description": "Average data-disk read IO size (bytes per operation) per instance, from host diskstats",
+          "fieldConfig": {
+            "defaults": {
+              "unit": "bytes"
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 8,
+            "x": 16,
+            "y": 92
+          },
+          "options": {
+            "legend": {
+              "calcs": [],
+              "displayMode": "list",
+              "placement": "bottom",
+              "showLegend": true
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "asc"
+            }
+          },
+          "repeatDirection": "h",
+          "targets": [
+            {
+              "expr": "(sum by ($instance_label) (rate(vectorized_host_diskstats_bytes_read{$instance_label=~\"$instance_value\",data_disk=\"1\"}[$__rate_interval]))) / (sum by ($instance_label) (irate(vectorized_host_diskstats_reads{$instance_label=~\"$instance_value\",data_disk=\"1\"}[$__rate_interval])))",
+              "legendFormat": "{{$instance_label}}",
+              "refId": ""
+            }
+          ],
+          "title": "Read IO Size (host)",
+          "transformations": [],
+          "transparent": false,
+          "type": "timeseries"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "$DS_PROMETHEUS"
+          },
+          "description": "Seastar AIO read IOPS per instance",
+          "fieldConfig": {
+            "defaults": {
+              "unit": "ops"
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 8,
+            "x": 0,
+            "y": 100
+          },
+          "options": {
+            "legend": {
+              "calcs": [],
+              "displayMode": "list",
+              "placement": "bottom",
+              "showLegend": true
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "asc"
+            }
+          },
+          "repeatDirection": "h",
+          "targets": [
+            {
+              "expr": "sum by ($instance_label) (rate(vectorized_reactor_aio_reads{$instance_label=~\"$instance_value\"}[$__rate_interval]))",
+              "legendFormat": "{{$instance_label}}",
+              "refId": ""
+            }
+          ],
+          "title": "Read IOPS (aio)",
+          "transformations": [],
+          "transparent": false,
+          "type": "timeseries"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "$DS_PROMETHEUS"
+          },
+          "description": "Seastar AIO read bytes/s per instance",
+          "fieldConfig": {
+            "defaults": {
+              "unit": "Bps"
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 8,
+            "x": 8,
+            "y": 100
+          },
+          "options": {
+            "legend": {
+              "calcs": [],
+              "displayMode": "list",
+              "placement": "bottom",
+              "showLegend": true
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "asc"
+            }
+          },
+          "repeatDirection": "h",
+          "targets": [
+            {
+              "expr": "sum by ($instance_label) (rate(vectorized_reactor_aio_bytes_read{$instance_label=~\"$instance_value\"}[$__rate_interval]))",
+              "legendFormat": "{{$instance_label}}",
+              "refId": ""
+            }
+          ],
+          "title": "Read Bytes (aio)",
+          "transformations": [],
+          "transparent": false,
+          "type": "timeseries"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "$DS_PROMETHEUS"
+          },
+          "description": "Average seastar AIO read IO size (bytes per operation) per instance",
+          "fieldConfig": {
+            "defaults": {
+              "unit": "bytes"
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 8,
+            "x": 16,
+            "y": 100
+          },
+          "options": {
+            "legend": {
+              "calcs": [],
+              "displayMode": "list",
+              "placement": "bottom",
+              "showLegend": true
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "asc"
+            }
+          },
+          "repeatDirection": "h",
+          "targets": [
+            {
+              "expr": "(sum by ($instance_label) (rate(vectorized_reactor_aio_bytes_read{$instance_label=~\"$instance_value\"}[$__rate_interval]))) / (sum by ($instance_label) (rate(vectorized_reactor_aio_reads{$instance_label=~\"$instance_value\"}[$__rate_interval])))",
+              "legendFormat": "{{$instance_label}}",
+              "refId": ""
+            }
+          ],
+          "title": "Read IO Size (aio)",
+          "transformations": [],
+          "transparent": false,
+          "type": "timeseries"
+        }
+      ],
+      "title": "Disk Read IO",
+      "type": "row"
+    },
+    {
+      "collapsed": true,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 109
+      },
+      "id": 0,
+      "panels": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "$DS_PROMETHEUS"
+          },
+          "description": "Data-disk write IOPS per instance from host diskstats, with the instance write IOPS capacity as a dotted line",
+          "fieldConfig": {
+            "defaults": {
+              "unit": "ops"
+            },
+            "overrides": [
+              {
+                "matcher": {
+                  "id": "byRegexp",
+                  "options": "^Host capacity$"
+                },
+                "properties": [
+                  {
+                    "id": "custom.lineStyle",
+                    "value": {
+                      "dash": [
+                        0,
+                        10
+                      ],
+                      "fill": "dot"
+                    }
+                  },
+                  {
+                    "id": "custom.showPoints",
+                    "value": "never"
+                  }
+                ]
+              }
+            ]
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 8,
+            "x": 0,
+            "y": 109
+          },
+          "options": {
+            "legend": {
+              "calcs": [],
+              "displayMode": "list",
+              "placement": "bottom",
+              "showLegend": true
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "asc"
+            }
+          },
+          "repeatDirection": "h",
+          "targets": [
+            {
+              "expr": "sum by ($instance_label) (irate(vectorized_host_diskstats_writes{$instance_label=~\"$instance_value\",data_disk=\"1\"}[$__rate_interval]))",
+              "legendFormat": "{{$instance_label}}",
+              "refId": ""
+            },
+            {
+              "expr": "max by ($instance_label) (vectorized_instance_write_iops{$instance_label=~\"$instance_value\"})",
+              "legendFormat": "Host capacity",
+              "refId": ""
+            }
+          ],
+          "title": "Write IOPS (host)",
+          "transformations": [],
+          "transparent": false,
+          "type": "timeseries"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "$DS_PROMETHEUS"
+          },
+          "description": "Data-disk write bytes/s per instance from host diskstats",
+          "fieldConfig": {
+            "defaults": {
+              "unit": "Bps"
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 8,
+            "x": 8,
+            "y": 109
+          },
+          "options": {
+            "legend": {
+              "calcs": [],
+              "displayMode": "list",
+              "placement": "bottom",
+              "showLegend": true
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "asc"
+            }
+          },
+          "repeatDirection": "h",
+          "targets": [
+            {
+              "expr": "sum by ($instance_label) (rate(vectorized_host_diskstats_bytes_written{$instance_label=~\"$instance_value\",data_disk=\"1\"}[$__rate_interval]))",
+              "legendFormat": "{{$instance_label}}",
+              "refId": ""
+            }
+          ],
+          "title": "Write Bytes (host)",
+          "transformations": [],
+          "transparent": false,
+          "type": "timeseries"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "$DS_PROMETHEUS"
+          },
+          "description": "Average data-disk write IO size (bytes per operation) per instance, from host diskstats",
+          "fieldConfig": {
+            "defaults": {
+              "unit": "bytes"
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 8,
+            "x": 16,
+            "y": 109
+          },
+          "options": {
+            "legend": {
+              "calcs": [],
+              "displayMode": "list",
+              "placement": "bottom",
+              "showLegend": true
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "asc"
+            }
+          },
+          "repeatDirection": "h",
+          "targets": [
+            {
+              "expr": "(sum by ($instance_label) (rate(vectorized_host_diskstats_bytes_written{$instance_label=~\"$instance_value\",data_disk=\"1\"}[$__rate_interval]))) / (sum by ($instance_label) (irate(vectorized_host_diskstats_writes{$instance_label=~\"$instance_value\",data_disk=\"1\"}[$__rate_interval])))",
+              "legendFormat": "{{$instance_label}}",
+              "refId": ""
+            }
+          ],
+          "title": "Write IO Size (host)",
+          "transformations": [],
+          "transparent": false,
+          "type": "timeseries"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "$DS_PROMETHEUS"
+          },
+          "description": "Seastar AIO write IOPS per instance",
+          "fieldConfig": {
+            "defaults": {
+              "unit": "ops"
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 8,
+            "x": 0,
+            "y": 117
+          },
+          "options": {
+            "legend": {
+              "calcs": [],
+              "displayMode": "list",
+              "placement": "bottom",
+              "showLegend": true
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "asc"
+            }
+          },
+          "repeatDirection": "h",
+          "targets": [
+            {
+              "expr": "sum by ($instance_label) (rate(vectorized_reactor_aio_writes{$instance_label=~\"$instance_value\"}[$__rate_interval]))",
+              "legendFormat": "{{$instance_label}}",
+              "refId": ""
+            }
+          ],
+          "title": "Write IOPS (aio)",
+          "transformations": [],
+          "transparent": false,
+          "type": "timeseries"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "$DS_PROMETHEUS"
+          },
+          "description": "Seastar AIO write bytes/s per instance",
+          "fieldConfig": {
+            "defaults": {
+              "unit": "Bps"
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 8,
+            "x": 8,
+            "y": 117
+          },
+          "options": {
+            "legend": {
+              "calcs": [],
+              "displayMode": "list",
+              "placement": "bottom",
+              "showLegend": true
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "asc"
+            }
+          },
+          "repeatDirection": "h",
+          "targets": [
+            {
+              "expr": "sum by ($instance_label) (rate(vectorized_reactor_aio_bytes_write{$instance_label=~\"$instance_value\"}[$__rate_interval]))",
+              "legendFormat": "{{$instance_label}}",
+              "refId": ""
+            }
+          ],
+          "title": "Write Bytes (aio)",
+          "transformations": [],
+          "transparent": false,
+          "type": "timeseries"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "$DS_PROMETHEUS"
+          },
+          "description": "Average seastar AIO write IO size (bytes per operation) per instance",
+          "fieldConfig": {
+            "defaults": {
+              "unit": "bytes"
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 8,
+            "x": 16,
+            "y": 117
+          },
+          "options": {
+            "legend": {
+              "calcs": [],
+              "displayMode": "list",
+              "placement": "bottom",
+              "showLegend": true
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "asc"
+            }
+          },
+          "repeatDirection": "h",
+          "targets": [
+            {
+              "expr": "(sum by ($instance_label) (rate(vectorized_reactor_aio_bytes_write{$instance_label=~\"$instance_value\"}[$__rate_interval]))) / (sum by ($instance_label) (rate(vectorized_reactor_aio_writes{$instance_label=~\"$instance_value\"}[$__rate_interval])))",
+              "legendFormat": "{{$instance_label}}",
+              "refId": ""
+            }
+          ],
+          "title": "Write IO Size (aio)",
+          "transformations": [],
+          "transparent": false,
+          "type": "timeseries"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "$DS_PROMETHEUS"
+          },
+          "description": "Segment-appender disk writes completed per second per instance",
+          "fieldConfig": {
+            "defaults": {
+              "unit": "ops"
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 8,
+            "x": 0,
+            "y": 125
+          },
+          "options": {
+            "legend": {
+              "calcs": [],
+              "displayMode": "list",
+              "placement": "bottom",
+              "showLegend": true
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "asc"
+            }
+          },
+          "repeatDirection": "h",
+          "targets": [
+            {
+              "expr": "sum by ($instance_label) (rate(vectorized_segment_appender_writes_completed{$instance_label=~\"$instance_value\"}[$__rate_interval]))",
+              "legendFormat": "{{$instance_label}}",
+              "refId": ""
+            }
+          ],
+          "title": "Write IOPS (appender)",
+          "transformations": [],
+          "transparent": false,
+          "type": "timeseries"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "$DS_PROMETHEUS"
+          },
+          "description": "Segment-appender bytes written per second per instance",
+          "fieldConfig": {
+            "defaults": {
+              "unit": "Bps"
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 8,
+            "x": 8,
+            "y": 125
+          },
+          "options": {
+            "legend": {
+              "calcs": [],
+              "displayMode": "list",
+              "placement": "bottom",
+              "showLegend": true
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "asc"
+            }
+          },
+          "repeatDirection": "h",
+          "targets": [
+            {
+              "expr": "sum by ($instance_label) (rate(vectorized_segment_appender_bytes_written{$instance_label=~\"$instance_value\"}[$__rate_interval]))",
+              "legendFormat": "{{$instance_label}}",
+              "refId": ""
+            }
+          ],
+          "title": "Write Bytes (appender)",
+          "transformations": [],
+          "transparent": false,
+          "type": "timeseries"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "$DS_PROMETHEUS"
+          },
+          "description": "Average segment-appender write size (bytes per write) per instance",
+          "fieldConfig": {
+            "defaults": {
+              "unit": "bytes"
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 8,
+            "x": 16,
+            "y": 125
+          },
+          "options": {
+            "legend": {
+              "calcs": [],
+              "displayMode": "list",
+              "placement": "bottom",
+              "showLegend": true
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "asc"
+            }
+          },
+          "repeatDirection": "h",
+          "targets": [
+            {
+              "expr": "(sum by ($instance_label) (rate(vectorized_segment_appender_bytes_written{$instance_label=~\"$instance_value\"}[$__rate_interval]))) / (sum by ($instance_label) (rate(vectorized_segment_appender_writes_completed{$instance_label=~\"$instance_value\"}[$__rate_interval])))",
+              "legendFormat": "{{$instance_label}}",
+              "refId": ""
+            }
+          ],
+          "title": "Write IO Size (appender)",
+          "transformations": [],
+          "transparent": false,
+          "type": "timeseries"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "$DS_PROMETHEUS"
+          },
+          "description": "Segment-appender append requests per second per instance (before merging/splitting into disk writes)",
+          "fieldConfig": {
+            "defaults": {
+              "unit": "ops"
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 8,
+            "x": 0,
+            "y": 133
+          },
+          "options": {
+            "legend": {
+              "calcs": [],
+              "displayMode": "list",
+              "placement": "bottom",
+              "showLegend": true
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "asc"
+            }
+          },
+          "repeatDirection": "h",
+          "targets": [
+            {
+              "expr": "sum by ($instance_label) (rate(vectorized_segment_appender_appends_requested{$instance_label=~\"$instance_value\"}[$__rate_interval]))",
+              "legendFormat": "{{$instance_label}}",
+              "refId": ""
+            }
+          ],
+          "title": "Write IOPS (requested)",
+          "transformations": [],
+          "transparent": false,
+          "type": "timeseries"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "$DS_PROMETHEUS"
+          },
+          "description": "Segment-appender bytes requested per second per instance",
+          "fieldConfig": {
+            "defaults": {
+              "unit": "Bps"
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 8,
+            "x": 8,
+            "y": 133
+          },
+          "options": {
+            "legend": {
+              "calcs": [],
+              "displayMode": "list",
+              "placement": "bottom",
+              "showLegend": true
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "asc"
+            }
+          },
+          "repeatDirection": "h",
+          "targets": [
+            {
+              "expr": "sum by ($instance_label) (rate(vectorized_segment_appender_bytes_requested{$instance_label=~\"$instance_value\"}[$__rate_interval]))",
+              "legendFormat": "{{$instance_label}}",
+              "refId": ""
+            }
+          ],
+          "title": "Write Bytes (requested)",
+          "transformations": [],
+          "transparent": false,
+          "type": "timeseries"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "$DS_PROMETHEUS"
+          },
+          "description": "Average requested append size (bytes per request) per instance",
+          "fieldConfig": {
+            "defaults": {
+              "unit": "bytes"
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 8,
+            "x": 16,
+            "y": 133
+          },
+          "options": {
+            "legend": {
+              "calcs": [],
+              "displayMode": "list",
+              "placement": "bottom",
+              "showLegend": true
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "asc"
+            }
+          },
+          "repeatDirection": "h",
+          "targets": [
+            {
+              "expr": "(sum by ($instance_label) (rate(vectorized_segment_appender_bytes_requested{$instance_label=~\"$instance_value\"}[$__rate_interval]))) / (sum by ($instance_label) (rate(vectorized_segment_appender_appends_requested{$instance_label=~\"$instance_value\"}[$__rate_interval])))",
+              "legendFormat": "{{$instance_label}}",
+              "refId": ""
+            }
+          ],
+          "title": "Write IO Size (requested)",
+          "transformations": [],
+          "transparent": false,
+          "type": "timeseries"
+        }
+      ],
+      "title": "Disk Write IO",
+      "type": "row"
+    },
+    {
+      "collapsed": true,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 142
+      },
+      "id": 0,
+      "panels": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "$DS_PROMETHEUS"
+          },
+          "description": "Available-memory load factor per node",
+          "fieldConfig": {
+            "defaults": {
+              "decimals": 1,
+              "max": 100,
+              "min": 0,
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  },
+                  {
+                    "color": "yellow",
+                    "value": 60
+                  },
+                  {
+                    "color": "red",
+                    "value": 80
+                  }
+                ]
+              }
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 24,
+            "x": 0,
+            "y": 142
+          },
+          "options": {
+            "orientation": "auto",
+            "reduceOptions": {
+              "calcs": [],
+              "values": true
+            },
+            "showThresholdLabels": false,
+            "showThresholdMarkers": true
+          },
+          "repeatDirection": "h",
+          "targets": [
+            {
+              "expr": "100 * (sum by ($instance_label) (vectorized_memory_total_memory{$instance_label=~\"$instance_value\"}) - sum by ($instance_label) (vectorized_memory_available_memory{$instance_label=~\"$instance_value\"})) / (0.9 * sum by ($instance_label) (vectorized_memory_total_memory{$instance_label=~\"$instance_value\"}))",
+              "instant": true,
+              "legendFormat": "{{$instance_label}}",
+              "range": false,
+              "refId": ""
+            }
+          ],
+          "title": "Available Memory Load Factor by Instance",
+          "transformations": [],
+          "transparent": false,
+          "type": "gauge"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "$DS_PROMETHEUS"
+          },
+          "description": "Per-instance memory totals and available-memory load factor",
+          "fieldConfig": {
+            "defaults": {
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "transparent",
+                    "value": null
+                  }
+                ]
+              }
+            },
+            "overrides": [
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "Total"
+                },
+                "properties": [
+                  {
+                    "id": "unit",
+                    "value": "bytes"
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "Available"
+                },
+                "properties": [
+                  {
+                    "id": "unit",
+                    "value": "bytes"
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "Load Factor"
+                },
+                "properties": [
+                  {
+                    "id": "unit",
+                    "value": "percent"
+                  }
+                ]
+              }
+            ]
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 24,
+            "x": 0,
+            "y": 150
+          },
+          "options": {
+            "cellHeight": "sm",
+            "footer": {
+              "countRows": false,
+              "reducer": [],
+              "show": false
+            },
+            "frameIndex": 0,
+            "showHeader": true,
+            "showTypeIcons": false,
+            "sortBy": [
+              {
+                "desc": true,
+                "displayName": "Load Factor"
+              }
+            ]
+          },
+          "repeatDirection": "h",
+          "targets": [
+            {
+              "expr": "sum by ($instance_label) (vectorized_memory_total_memory{$instance_label=~\"$instance_value\"})",
+              "format": "table",
+              "instant": true,
+              "range": false,
+              "refId": "total"
+            },
+            {
+              "expr": "sum by ($instance_label) (vectorized_memory_available_memory{$instance_label=~\"$instance_value\"})",
+              "format": "table",
+              "instant": true,
+              "range": false,
+              "refId": "avail"
+            },
+            {
+              "expr": "100 * (sum by ($instance_label) (vectorized_memory_total_memory{$instance_label=~\"$instance_value\"}) - sum by ($instance_label) (vectorized_memory_available_memory{$instance_label=~\"$instance_value\"})) / (0.9 * sum by ($instance_label) (vectorized_memory_total_memory{$instance_label=~\"$instance_value\"}))",
+              "format": "table",
+              "instant": true,
+              "range": false,
+              "refId": "lf"
+            }
+          ],
+          "title": "Memory by Instance",
+          "transformations": [
+            {
+              "id": "joinByField",
+              "options": {
+                "byField": "$instance_label",
+                "mode": "outer"
+              }
+            },
+            {
+              "id": "organize",
+              "options": {
+                "excludeByName": {
+                  "Time": true,
+                  "Value": true,
+                  "__name__": true
+                },
+                "indexByName": {
+                  "$instance_label": 0,
+                  "Value #avail": 2,
+                  "Value #lf": 3,
+                  "Value #total": 1
+                },
+                "renameByName": {
+                  "$instance_label": "Instance",
+                  "Value #avail": "Available",
+                  "Value #lf": "Load Factor",
+                  "Value #total": "Total"
+                }
+              }
+            }
+          ],
+          "transparent": false,
+          "type": "table"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "$DS_PROMETHEUS"
+          },
+          "description": "Lowest available memory across shards per instance, with the per-shard total memory budget as a dotted line",
+          "fieldConfig": {
+            "defaults": {
+              "min": 0,
+              "unit": "bytes"
+            },
+            "overrides": [
+              {
+                "matcher": {
+                  "id": "byRegexp",
+                  "options": "^.* \\(total\\)$"
+                },
+                "properties": [
+                  {
+                    "id": "custom.lineStyle",
+                    "value": {
+                      "dash": [
+                        0,
+                        10
+                      ],
+                      "fill": "dot"
+                    }
+                  },
+                  {
+                    "id": "custom.showPoints",
+                    "value": "never"
+                  }
+                ]
+              }
+            ]
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 8,
+            "x": 0,
+            "y": 158
+          },
+          "options": {
+            "legend": {
+              "calcs": [],
+              "displayMode": "list",
+              "placement": "bottom",
+              "showLegend": true
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "asc"
+            }
+          },
+          "repeatDirection": "h",
+          "targets": [
+            {
+              "expr": "min by ($instance_label) (vectorized_memory_available_memory{$instance_label=~\"$instance_value\"})",
+              "legendFormat": "{{$instance_label}}",
+              "refId": ""
+            },
+            {
+              "expr": "max by ($instance_label) (vectorized_memory_total_memory{$instance_label=~\"$instance_value\"})",
+              "legendFormat": "{{$instance_label}} (total)",
+              "refId": ""
+            }
+          ],
+          "title": "Available Memory by Instance",
+          "transformations": [],
+          "transparent": false,
+          "type": "timeseries"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "$DS_PROMETHEUS"
+          },
+          "description": "Available memory per shard, with the per-shard total memory budget as a dotted line (one per instance)",
+          "fieldConfig": {
+            "defaults": {
+              "min": 0,
+              "unit": "bytes"
+            },
+            "overrides": [
+              {
+                "matcher": {
+                  "id": "byRegexp",
+                  "options": "^.* \\(total\\)$"
+                },
+                "properties": [
+                  {
+                    "id": "custom.lineStyle",
+                    "value": {
+                      "dash": [
+                        0,
+                        10
+                      ],
+                      "fill": "dot"
+                    }
+                  },
+                  {
+                    "id": "custom.showPoints",
+                    "value": "never"
+                  }
+                ]
+              }
+            ]
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 8,
+            "x": 8,
+            "y": 158
+          },
+          "options": {
+            "legend": {
+              "calcs": [],
+              "displayMode": "list",
+              "placement": "bottom",
+              "showLegend": true
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "asc"
+            }
+          },
+          "repeatDirection": "h",
+          "targets": [
+            {
+              "expr": "vectorized_memory_available_memory{$instance_label=~\"$instance_value\"}",
+              "legendFormat": "{{$instance_label}} - shard {{shard}}",
+              "refId": ""
+            },
+            {
+              "expr": "max by ($instance_label) (vectorized_memory_total_memory{$instance_label=~\"$instance_value\"})",
+              "legendFormat": "{{$instance_label}} (total)",
+              "refId": ""
+            }
+          ],
+          "title": "Available Memory by Shard",
+          "transformations": [],
+          "transparent": false,
+          "type": "timeseries"
+        }
+      ],
+      "title": "Memory",
+      "type": "row"
+    },
+    {
+      "collapsed": true,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 167
+      },
+      "id": 0,
+      "panels": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "$DS_PROMETHEUS"
+          },
+          "description": "Kafka connection load factor per node",
+          "fieldConfig": {
+            "defaults": {
+              "decimals": 1,
+              "max": 100,
+              "min": 0,
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  },
+                  {
+                    "color": "yellow",
+                    "value": 60
+                  },
+                  {
+                    "color": "red",
+                    "value": 80
+                  }
+                ]
+              }
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 24,
+            "x": 0,
+            "y": 167
+          },
+          "options": {
+            "orientation": "auto",
+            "reduceOptions": {
+              "calcs": [],
+              "values": true
+            },
+            "showThresholdLabels": false,
+            "showThresholdMarkers": true
+          },
+          "repeatDirection": "h",
+          "targets": [
+            {
+              "expr": "max by ($instance_label) (100 * sum by ($instance_label) (vectorized_kafka_rpc_active_connections{$instance_label=~\"$instance_value\"}) / ((1000 * (sum by ($instance_label) (vectorized_memory_allocated_memory{$instance_label=~\"$instance_value\"} + vectorized_memory_free_memory{$instance_label=~\"$instance_value\"}) / (1024 * 1024 * 1024))) - clamp_min((1000 * (sum by ($instance_label) (vectorized_memory_allocated_memory{$instance_label=~\"$instance_value\"} + vectorized_memory_free_memory{$instance_label=~\"$instance_value\"}) / (1024 * 1024 * 1024))) - (3000 * count by ($instance_label) (vectorized_memory_allocated_memory{$instance_label=~\"$instance_value\"})), 0)))",
+              "instant": true,
+              "legendFormat": "{{$instance_label}}",
+              "range": false,
+              "refId": ""
+            }
+          ],
+          "title": "Connection Load Factor by Instance",
+          "transformations": [],
+          "transparent": false,
+          "type": "gauge"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "$DS_PROMETHEUS"
+          },
+          "description": "Active Kafka connections vs the calculated per-node limit",
+          "fieldConfig": {
+            "defaults": {
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "transparent",
+                    "value": null
+                  }
+                ]
+              }
+            },
+            "overrides": [
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "Connections"
+                },
+                "properties": [
+                  {
+                    "id": "unit",
+                    "value": "short"
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "Shard Limit (3000/core)"
+                },
+                "properties": [
+                  {
+                    "id": "unit",
+                    "value": "short"
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "Memory Limit (1000/GiB)"
+                },
+                "properties": [
+                  {
+                    "id": "unit",
+                    "value": "short"
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "Max Connections"
+                },
+                "properties": [
+                  {
+                    "id": "unit",
+                    "value": "short"
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "Load Factor"
+                },
+                "properties": [
+                  {
+                    "id": "unit",
+                    "value": "percent"
+                  }
+                ]
+              }
+            ]
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 24,
+            "x": 0,
+            "y": 175
+          },
+          "id": 103,
+          "options": null,
+          "repeatDirection": "h",
+          "targets": [
+            {
+              "expr": "sum by ($instance_label) (vectorized_kafka_rpc_active_connections{$instance_label=~\"$instance_value\"})",
+              "format": "table",
+              "instant": true,
+              "range": false,
+              "refId": "conn"
+            },
+            {
+              "expr": "(3000 * count by ($instance_label) (vectorized_memory_allocated_memory{$instance_label=~\"$instance_value\"}))",
+              "format": "table",
+              "instant": true,
+              "range": false,
+              "refId": "shardcap"
+            },
+            {
+              "expr": "(1000 * (sum by ($instance_label) (vectorized_memory_allocated_memory{$instance_label=~\"$instance_value\"} + vectorized_memory_free_memory{$instance_label=~\"$instance_value\"}) / (1024 * 1024 * 1024)))",
+              "format": "table",
+              "instant": true,
+              "range": false,
+              "refId": "memcap"
+            },
+            {
+              "expr": "((1000 * (sum by ($instance_label) (vectorized_memory_allocated_memory{$instance_label=~\"$instance_value\"} + vectorized_memory_free_memory{$instance_label=~\"$instance_value\"}) / (1024 * 1024 * 1024))) - clamp_min((1000 * (sum by ($instance_label) (vectorized_memory_allocated_memory{$instance_label=~\"$instance_value\"} + vectorized_memory_free_memory{$instance_label=~\"$instance_value\"}) / (1024 * 1024 * 1024))) - (3000 * count by ($instance_label) (vectorized_memory_allocated_memory{$instance_label=~\"$instance_value\"})), 0))",
+              "format": "table",
+              "instant": true,
+              "range": false,
+              "refId": "maxconn"
+            },
+            {
+              "expr": "100 * sum by ($instance_label) (vectorized_kafka_rpc_active_connections{$instance_label=~\"$instance_value\"}) / ((1000 * (sum by ($instance_label) (vectorized_memory_allocated_memory{$instance_label=~\"$instance_value\"} + vectorized_memory_free_memory{$instance_label=~\"$instance_value\"}) / (1024 * 1024 * 1024))) - clamp_min((1000 * (sum by ($instance_label) (vectorized_memory_allocated_memory{$instance_label=~\"$instance_value\"} + vectorized_memory_free_memory{$instance_label=~\"$instance_value\"}) / (1024 * 1024 * 1024))) - (3000 * count by ($instance_label) (vectorized_memory_allocated_memory{$instance_label=~\"$instance_value\"})), 0))",
+              "format": "table",
+              "instant": true,
+              "range": false,
+              "refId": "lf"
+            }
+          ],
+          "title": "Connection Details",
+          "transformations": [
+            {
+              "id": "joinByField",
+              "options": {
+                "byField": "$instance_label",
+                "mode": "outer"
+              }
+            },
+            {
+              "id": "organize",
+              "options": {
+                "excludeByName": {
+                  "Time": true,
+                  "Value": true,
+                  "__name__": true
+                },
+                "indexByName": {
+                  "$instance_label": 0,
+                  "Value #conn": 1,
+                  "Value #lf": 5,
+                  "Value #maxconn": 4,
+                  "Value #memcap": 3,
+                  "Value #shardcap": 2
+                },
+                "renameByName": {
+                  "$instance_label": "Instance",
+                  "Value #conn": "Connections",
+                  "Value #lf": "Load Factor",
+                  "Value #maxconn": "Max Connections",
+                  "Value #memcap": "Memory Limit (1000/GiB)",
+                  "Value #shardcap": "Shard Limit (3000/core)"
+                }
+              }
+            }
+          ],
+          "transparent": false,
+          "type": "table"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "$DS_PROMETHEUS"
+          },
+          "description": "Currently active Kafka RPC connections per shard (limit: min(3000/shard, 1000/GiB of memory))",
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short"
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 8,
+            "x": 0,
+            "y": 183
+          },
+          "options": {
+            "legend": {
+              "calcs": [],
+              "displayMode": "list",
+              "placement": "bottom",
+              "showLegend": true
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "asc"
+            }
+          },
+          "repeatDirection": "h",
+          "targets": [
+            {
+              "expr": "vectorized_kafka_rpc_active_connections{$instance_label=~\"$instance_value\"}",
+              "legendFormat": "{{$instance_label}} - shard {{shard}}",
+              "refId": ""
+            }
+          ],
+          "title": "Active Kafka Connections by Shard",
+          "transformations": [],
+          "transparent": false,
+          "type": "timeseries"
+        }
+      ],
+      "title": "Connections",
+      "type": "row"
+    }
+  ],
+  "refresh": "30s",
+  "schemaVersion": 36,
+  "style": "dark",
+  "tags": [
+    "redpanda",
+    "performance",
+    "load-factor",
+    "generated"
+  ],
+  "templating": {
+    "list": [
+      {
+        "auto": false,
+        "auto_count": 30,
+        "auto_min": "10s",
+        "hide": 2,
+        "id": "00000000-0000-0000-0000-000000000000",
+        "includeAll": false,
+        "label": "Datasource",
+        "multi": false,
+        "name": "DS_PROMETHEUS",
+        "query": "prometheus",
+        "skipUrlSync": false,
+        "type": "datasource"
+      },
+      {
+        "allValue": ".*",
+        "auto": false,
+        "auto_count": 30,
+        "auto_min": "10s",
+        "current": {
+          "selected": true,
+          "text": "All",
+          "value": "$__all"
+        },
+        "datasource": {
+          "type": "prometheus",
+          "uid": "$DS_PROMETHEUS"
+        },
+        "hide": 0,
+        "id": "00000000-0000-0000-0000-000000000000",
+        "includeAll": true,
+        "label": "Instance",
+        "multi": true,
+        "name": "instance_value",
+        "query": "label_values(vectorized_reactor_utilization, $instance_label)",
+        "refresh": 2,
+        "skipUrlSync": false,
+        "sort": 1,
+        "type": "query"
+      },
+      {
+        "auto": false,
+        "auto_count": 30,
+        "auto_min": "10s",
+        "current": {
+          "selected": true,
+          "text": "instance",
+          "value": "instance"
+        },
+        "hide": 0,
+        "id": "00000000-0000-0000-0000-000000000000",
+        "includeAll": false,
+        "label": "Instance Label",
+        "multi": false,
+        "name": "instance_label",
+        "options": [
+          {
+            "selected": true,
+            "text": "instance",
+            "value": "instance"
+          },
+          {
+            "selected": false,
+            "text": "pod",
+            "value": "pod"
+          }
+        ],
+        "query": "instance, pod",
+        "skipUrlSync": false,
+        "type": "custom"
+      }
+    ]
+  },
+  "time": {
+    "from": "now-1h",
+    "to": "now"
+  },
+  "timepicker": {
+    "refresh_intervals": [
+      "1s",
+      "5s",
+      "10s",
+      "30s",
+      "1m",
+      "5m",
+      "15m",
+      "30m",
+      "1h",
+      "2h",
+      "1d"
+    ]
+  },
+  "timezone": "browser",
+  "title": "Redpanda - Load Factor",
+  "uid": "redpanda-single-load-factor"
+}

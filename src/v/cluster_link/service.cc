@@ -29,6 +29,8 @@
 #include "cluster_link/replication/deps.h"
 #include "cluster_link/replication/mux_remote_consumer.h"
 #include "cluster_link/replication/types.h"
+#include "cluster_link/schema_registry_sync/mirroring_task.h"
+#include "cluster_link/schema_registry_sync/unavailable_source_reader.h"
 #include "cluster_link/security_migrator.h"
 #include "cluster_link/shadow_linking_rpc_service.h"
 #include "cluster_link/source_topic_syncer.h"
@@ -39,6 +41,7 @@
 #include "kafka/server/group_router.h"
 #include "kafka/server/snc_quota_manager.h"
 #include "model/fundamental.h"
+#include "schema/registry.h"
 
 #include <seastar/coroutine/switch_to.hh>
 
@@ -1057,6 +1060,7 @@ service::service(
   ss::sharded<cluster::security_frontend>* security_fe,
   ss::sharded<kafka::data::rpc::client>* kafka_data_rpc_client,
   ss::sharded<cluster::id_allocator_frontend>* id_alloc,
+  pandaproxy::schema_registry::api* schema_registry,
   ss::smp_service_group smp_group,
   ss::scheduling_group scheduling_group)
   : _self(self)
@@ -1075,6 +1079,7 @@ service::service(
   , _security_fe(security_fe)
   , _kafka_data_rpc_client(kafka_data_rpc_client)
   , _id_allocator_frontend(id_alloc)
+  , _schema_registry_api(schema_registry)
   , _smp_group(smp_group)
   , _scheduling_group(scheduling_group)
   , _queue(_scheduling_group, [](const std::exception_ptr& ex) {
@@ -1293,6 +1298,17 @@ ss::future<> service::maybe_start_manager() {
     co_await _manager->register_task_factory<source_topic_syncer_factory>();
     co_await _manager->register_task_factory<group_mirroring_task_factory>();
     co_await _manager->register_task_factory<security_migrator_factory>();
+
+    // The destination Schema Registry and source reader factory are owned by
+    // the service so they outlive the tasks. The source reader is unavailable
+    // until the real HTTP client is wired.
+    _schema_registry_dest = schema::registry::make_default(
+      _schema_registry_api);
+    _source_reader_factory = std::make_unique<
+      schema_registry_sync::unavailable_source_reader_factory>();
+    co_await _manager
+      ->register_task_factory<schema_registry_sync::mirroring_task_factory>(
+        _schema_registry_dest.get(), _source_reader_factory.get());
 
     // Register notifications before the manager starts.  The manager will
     // have a constructed the underlying workqueue to start in a paused

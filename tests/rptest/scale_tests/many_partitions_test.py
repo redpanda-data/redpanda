@@ -1020,6 +1020,16 @@ class ManyPartitionsTest(PreallocNodesTest):
             }
         )
 
+        # CORE-15812: a cloud-topic partition read is latency-bound on a
+        # per-object metastore lookup + footer read + object-store GET. At the
+        # default fetch_max_read_concurrency=1 a fetch reads its partitions
+        # serially, so at this scale (thousands of small partitions) the
+        # per-read round-trips cannot keep up and the consumer-group consumer
+        # times out. A little concurrency pipelines the per-partition reads and
+        # hides the latency.
+        if cloud_topics_enabled:
+            self.redpanda.add_extra_rp_conf({"fetch_max_read_concurrency": 4})
+
         self.redpanda.start()
 
         self.logger.info("Entering topic creation")

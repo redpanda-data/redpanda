@@ -608,6 +608,14 @@ public:
         return _registry.get_subject_schema(sub, version);
     }
 
+    ss::future<chunked_vector<pandaproxy::schema_registry::subject_version>>
+    list_subject_versions(
+      std::function<bool(const pandaproxy::schema_registry::context_subject&)>
+        filter,
+      pandaproxy::schema_registry::include_deleted inc_del) const override {
+        return _registry.list_subject_versions(std::move(filter), inc_del);
+    }
+
     ss::future<pandaproxy::schema_registry::context_schema_id> create_schema(
       pandaproxy::schema_registry::subject_schema unparsed) override {
         return _registry.create_schema(std::move(unparsed));

@@ -10,6 +10,7 @@
  */
 #include "kafka/server/handlers/handler_interface.h"
 
+#include "kafka/protocol/api_key_table.h"
 #include "kafka/server/handlers/handlers.h"
 #include "kafka/server/response.h"
 
@@ -129,44 +130,37 @@ struct handler_holder {
       H::handle};
 };
 
-template<typename... Ts>
-constexpr auto make_lut(type_list<Ts...>) {
-    constexpr int max_index = std::max({Ts::api::key...});
-    static_assert(max_index < sizeof...(Ts) * 10, "LUT is too sparse");
-
-    std::array<handler, max_index + 1> lut{};
-    ((lut[Ts::api::key] = &handler_holder<Ts>::instance), ...);
-
+template<typename... Std, typename... Rsv>
+constexpr auto make_lut(type_list<Std...>, type_list<Rsv...>) {
+    api_key_table<handler> lut{};
+    ((lut[Std::api::key] = &handler_holder<Std>::instance), ...);
+    ((lut[Rsv::api::key] = &handler_holder<Rsv>::instance), ...);
     return lut;
 }
 
 static const auto& handlers() {
-    static constexpr auto lut = make_lut(request_types{});
+    static constexpr auto lut = make_lut(
+      handler_request_types{}, redpanda_handler_request_types{});
     return lut;
 }
 
 std::optional<handler> handler_for_key(kafka::api_key key) noexcept {
-    const auto& lut = handlers();
-    if (key >= (short)0 && key < (short)lut.size()) {
-        // We have already checked the bounds above so it is safe to use []
-        // instead of at()
-        // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-constant-array-index)
-        if (auto handler = lut[key]) {
-            return handler;
-        }
+    // *slot rejects keys that are in range but have no registered handler.
+    if (auto* slot = handlers().find(key); slot != nullptr && *slot) {
+        return *slot;
     }
     return std::nullopt;
 }
 
 std::optional<api_key> api_name_to_key(std::string_view name) noexcept {
-    for (const auto& handler : handlers()) {
-        if (handler && name == handler->name()) {
-            return handler->key();
-        }
+    auto* slot = handlers().find_if(
+      [&](api_key, handler h) { return h && name == h->name(); });
+    if (slot != nullptr) {
+        return (*slot)->key();
     }
     return std::nullopt;
 }
 
-size_t max_api_key() noexcept { return max_api_key(request_types{}); }
+size_t max_api_key() noexcept { return max_api_key(handler_request_types{}); }
 
 } // namespace kafka

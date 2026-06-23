@@ -9,6 +9,7 @@
 
 #include "bytes/iobuf_parser.h"
 #include "container/chunked_circular_buffer.h"
+#include "container/chunked_vector.h"
 #include "model/adl_serde.h"
 #include "model/metadata.h"
 #include "model/tests/random_batch.h"
@@ -132,11 +133,11 @@ struct test_consumer {
     std::vector<model::offset> _config_offsets;
 };
 
-SEASTAR_THREAD_TEST_CASE(test_config_extracting_reader) {
+SEASTAR_THREAD_TEST_CASE(test_config_extracting) {
     auto cfg_1 = random_configuration();
     auto cfg_2 = random_configuration();
     using batches_t = chunked_circular_buffer<model::record_batch>;
-    chunked_circular_buffer<model::record_batch> all_batches;
+    chunked_vector<model::record_batch> all_batches;
 
     // serialize to batches
     // use adl
@@ -168,9 +169,8 @@ SEASTAR_THREAD_TEST_CASE(test_config_extracting_reader) {
 
     raft::details::for_each_ref_extract_configuration(
       model::offset(100),
-      model::make_memory_record_batch_reader(std::move(all_batches)),
-      test_consumer(model::offset(100)),
-      model::no_timeout)
+      std::move(all_batches),
+      test_consumer(model::offset(100)))
       .then([&cfg_1, &cfg_2](auto res) {
           auto& [offsets, configurations] = res;
           BOOST_REQUIRE_EQUAL(offsets[0], model::offset(101));

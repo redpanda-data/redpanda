@@ -54,6 +54,7 @@ go_test(
         "config_test.go",
         "create_test.go",
         "mapper_test.go",
+        "status_test.go",
         "types_test.go",
         "update_test.go",
     ],
@@ -71,5 +72,6 @@ go_test(
         "@in_gopkg_yaml_v2//:yaml_v2",
         "@org_golang_google_protobuf//reflect/protoreflect",
         "@org_golang_google_protobuf//types/known/durationpb",
+        "@org_golang_google_protobuf//types/known/timestamppb",
     ],
 )

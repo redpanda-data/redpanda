@@ -397,12 +397,63 @@ SEASTAR_THREAD_TEST_CASE(partition_status_serialiaztion_test) {
       .leader_id = model::node_id(123),
       .revision_id = model::revision_id(1024),
       .size_bytes = 4096,
+      .high_watermark = kafka::offset(500),
+      .log_start_offset = kafka::offset(100),
     };
     auto original = status;
 
     auto result = serialize_roundtrip_rpc(std::move(status));
 
     BOOST_CHECK(result == original);
+}
+
+// Verify that partition_status v6 data (without log_start_offset) is safely
+// decoded by the current v7 reader, leaving log_start_offset as nullopt.
+SEASTAR_THREAD_TEST_CASE(partition_status_v7_log_start_offset_compat_test) {
+    struct partition_status_v6
+      : serde::envelope<
+          partition_status_v6,
+          serde::version<6>,
+          serde::compat_version<0>> {
+        model::partition_id id;
+        model::term_id term;
+        std::optional<model::node_id> leader_id;
+        model::revision_id revision_id;
+        size_t size_bytes{0};
+        std::optional<uint8_t> under_replicated_replicas;
+        std::optional<size_t> reclaimable_size_bytes;
+        uint32_t shard{0};
+        std::optional<cluster::followers_stats> followers_stats;
+        kafka::offset high_watermark{42};
+        std::optional<int64_t> cloud_topic_max_gc_eligible_epoch;
+
+        auto serde_fields() {
+            return std::tie(
+              id,
+              term,
+              leader_id,
+              revision_id,
+              size_bytes,
+              under_replicated_replicas,
+              reclaimable_size_bytes,
+              shard,
+              followers_stats,
+              high_watermark,
+              cloud_topic_max_gc_eligible_epoch);
+        }
+    };
+
+    partition_status_v6 old{};
+    old.id = model::partition_id(1);
+    old.term = model::term_id(2);
+    old.high_watermark = kafka::offset(100);
+
+    auto buf = serde::to_iobuf(std::move(old));
+    auto result = serde::from_iobuf<cluster::partition_status>(buf.copy());
+
+    BOOST_CHECK_EQUAL(result.id, model::partition_id(1));
+    BOOST_CHECK_EQUAL(result.high_watermark, kafka::offset(100));
+    BOOST_CHECK(!result.log_start_offset.has_value());
 }
 
 struct partition_status_v0 {

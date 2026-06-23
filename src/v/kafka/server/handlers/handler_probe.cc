@@ -27,37 +27,43 @@ namespace kafka {
 
 handler_probe_manager::handler_probe_manager()
   : _metrics()
-  , _probes(max_api_key() + 2) {
-    const auto unknown_handler_key = max_api_key() + 1;
+  , _probes()
+  , _unknown_probe() {
     const bool handler_latency_all
       = config::shard_local_cfg().kafka_handler_latency_all();
-    for (size_t i = 0; i < _probes.size(); i++) {
-        auto key = api_key(i);
+
+    _probes.for_each([&](api_key key, handler_probe& probe) {
         auto handler = handler_for_key(key);
 
-        if (handler || i == unknown_handler_key) {
-            bool enable_histogram
-              = handler_latency_all
-                || (handler && (*handler)->has_latency_histogram());
+        if (handler) {
+            bool enable_histogram = handler_latency_all
+                                    || (*handler)->has_latency_histogram();
 
             if (enable_histogram) {
-                _probes[i].enable_histogram();
+                probe.enable_histogram();
             }
 
-            _probes[i].setup_metrics(_metrics, key);
+            probe.setup_metrics(_metrics, key);
 
             if (key == produce_api::key || key == fetch_api::key) {
-                _probes[i].setup_public_metrics(_public_metrics, key);
+                probe.setup_public_metrics(_public_metrics, key);
             }
         }
+    });
+
+    // Preserve prior behavior for the unknown-handler probe: histogram enabled
+    // only when latency-all is set, and labelled "unknown_handler" because
+    // handler_for_key returns nullopt for this synthetic key.
+    if (handler_latency_all) {
+        _unknown_probe.enable_histogram();
     }
+    _unknown_probe.setup_metrics(_metrics, api_key(max_api_key() + 1));
 }
 
 handler_probe& handler_probe_manager::get_probe(api_key key) {
     if (!handler_for_key(key)) {
-        return _probes.back();
+        return _unknown_probe;
     }
-
     return _probes[key];
 }
 

@@ -77,6 +77,14 @@ public:
         co_return co_await reader->get_subject_schema(
           sub, version, ppsr::include_deleted::no);
     }
+    ss::future<chunked_vector<ppsr::subject_version>> list_subject_versions(
+      std::function<bool(const ppsr::context_subject&)> filter,
+      ppsr::include_deleted inc_del) const override {
+        auto [reader, _] = co_await service();
+        co_return co_await reader->list_subject_versions(
+          std::move(filter), inc_del);
+    }
+
     ss::future<ppsr::context_schema_id>
     create_schema(ppsr::subject_schema schema) override {
         auto ctx = schema.sub().ctx;
@@ -199,6 +207,12 @@ public:
     ss::future<ppsr::stored_schema> get_subject_schema(
       ppsr::context_subject,
       std::optional<ppsr::schema_version>) const override {
+        throw std::logic_error(
+          "invalid attempted usage of a disabled schema registry");
+    }
+    ss::future<chunked_vector<ppsr::subject_version>> list_subject_versions(
+      std::function<bool(const ppsr::context_subject&)>,
+      ppsr::include_deleted) const override {
         throw std::logic_error(
           "invalid attempted usage of a disabled schema registry");
     }

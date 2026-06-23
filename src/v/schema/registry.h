@@ -15,6 +15,8 @@
 #include "pandaproxy/schema_registry/schema_getter.h"
 #include "pandaproxy/schema_registry/types.h"
 
+#include <functional>
+
 namespace schema {
 /**
  * A wrapper around the schema registry implementation within Redpanda.
@@ -68,6 +70,16 @@ public:
       get_subject_schema(
         pandaproxy::schema_registry::context_subject,
         std::optional<pandaproxy::schema_registry::schema_version>) const = 0;
+
+    /// Lists every (subject, version) whose subject matches `filter`. The
+    /// predicate must be pure and copyable (it runs on each registry shard).
+    virtual ss::future<
+      chunked_vector<pandaproxy::schema_registry::subject_version>>
+    list_subject_versions(
+      std::function<bool(const pandaproxy::schema_registry::context_subject&)>
+        filter,
+      pandaproxy::schema_registry::include_deleted) const = 0;
+
     virtual ss::future<pandaproxy::schema_registry::context_schema_id>
       create_schema(pandaproxy::schema_registry::subject_schema) = 0;
 

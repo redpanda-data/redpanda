@@ -612,6 +612,7 @@ class ShadowLinkConfigurations(google.protobuf.message.Message):
     CONSUMER_OFFSET_SYNC_OPTIONS_FIELD_NUMBER: builtins.int
     SECURITY_SYNC_OPTIONS_FIELD_NUMBER: builtins.int
     SCHEMA_REGISTRY_SYNC_OPTIONS_FIELD_NUMBER: builtins.int
+    ROLE_SYNC_OPTIONS_FIELD_NUMBER: builtins.int
 
     @property
     def client_options(self) -> Global___ShadowLinkClientOptions:
@@ -633,13 +634,17 @@ class ShadowLinkConfigurations(google.protobuf.message.Message):
     def schema_registry_sync_options(self) -> Global___SchemaRegistrySyncOptions:
         """Schema Registry sync options"""
 
-    def __init__(self, *, client_options: Global___ShadowLinkClientOptions | None=..., topic_metadata_sync_options: Global___TopicMetadataSyncOptions | None=..., consumer_offset_sync_options: Global___ConsumerOffsetSyncOptions | None=..., security_sync_options: Global___SecuritySettingsSyncOptions | None=..., schema_registry_sync_options: Global___SchemaRegistrySyncOptions | None=...) -> None:
+    @property
+    def role_sync_options(self) -> Global___RoleSyncOptions:
+        """Role sync options"""
+
+    def __init__(self, *, client_options: Global___ShadowLinkClientOptions | None=..., topic_metadata_sync_options: Global___TopicMetadataSyncOptions | None=..., consumer_offset_sync_options: Global___ConsumerOffsetSyncOptions | None=..., security_sync_options: Global___SecuritySettingsSyncOptions | None=..., schema_registry_sync_options: Global___SchemaRegistrySyncOptions | None=..., role_sync_options: Global___RoleSyncOptions | None=...) -> None:
         ...
 
-    def HasField(self, field_name: typing.Literal['client_options', b'client_options', 'consumer_offset_sync_options', b'consumer_offset_sync_options', 'schema_registry_sync_options', b'schema_registry_sync_options', 'security_sync_options', b'security_sync_options', 'topic_metadata_sync_options', b'topic_metadata_sync_options']) -> builtins.bool:
+    def HasField(self, field_name: typing.Literal['client_options', b'client_options', 'consumer_offset_sync_options', b'consumer_offset_sync_options', 'role_sync_options', b'role_sync_options', 'schema_registry_sync_options', b'schema_registry_sync_options', 'security_sync_options', b'security_sync_options', 'topic_metadata_sync_options', b'topic_metadata_sync_options']) -> builtins.bool:
         ...
 
-    def ClearField(self, field_name: typing.Literal['client_options', b'client_options', 'consumer_offset_sync_options', b'consumer_offset_sync_options', 'schema_registry_sync_options', b'schema_registry_sync_options', 'security_sync_options', b'security_sync_options', 'topic_metadata_sync_options', b'topic_metadata_sync_options']) -> None:
+    def ClearField(self, field_name: typing.Literal['client_options', b'client_options', 'consumer_offset_sync_options', b'consumer_offset_sync_options', 'role_sync_options', b'role_sync_options', 'schema_registry_sync_options', b'schema_registry_sync_options', 'security_sync_options', b'security_sync_options', 'topic_metadata_sync_options', b'topic_metadata_sync_options']) -> None:
         ...
 Global___ShadowLinkConfigurations: typing_extensions.TypeAlias = ShadowLinkConfigurations
 
@@ -1207,6 +1212,43 @@ class SecuritySettingsSyncOptions(google.protobuf.message.Message):
     def ClearField(self, field_name: typing.Literal['acl_filters', b'acl_filters', 'effective_interval', b'effective_interval', 'interval', b'interval', 'paused', b'paused']) -> None:
         ...
 Global___SecuritySettingsSyncOptions: typing_extensions.TypeAlias = SecuritySettingsSyncOptions
+
+@typing.final
+class RoleSyncOptions(google.protobuf.message.Message):
+    """Options for syncing RBAC roles"""
+    DESCRIPTOR: google.protobuf.descriptor.Descriptor
+    INTERVAL_FIELD_NUMBER: builtins.int
+    EFFECTIVE_INTERVAL_FIELD_NUMBER: builtins.int
+    PAUSED_FIELD_NUMBER: builtins.int
+    ROLE_NAME_FILTERS_FIELD_NUMBER: builtins.int
+    paused: builtins.bool
+    "Allows user to pause the role sync task.  If paused, then the task will\n    enter the 'paused' state and will not sync roles from the source cluster\n    "
+
+    @property
+    def interval(self) -> google.protobuf.duration_pb2.Duration:
+        """Sync interval
+        If 0 provided, defaults to 30 seconds
+        """
+
+    @property
+    def effective_interval(self) -> google.protobuf.duration_pb2.Duration:
+        """The effective interval for the task"""
+
+    @property
+    def role_name_filters(self) -> google.protobuf.internal.containers.RepeatedCompositeFieldContainer[Global___NameFilter]:
+        """Filters selecting which roles to shadow by name.  Defaults to empty: no
+        roles are synced until at least one include filter is added
+        """
+
+    def __init__(self, *, interval: google.protobuf.duration_pb2.Duration | None=..., effective_interval: google.protobuf.duration_pb2.Duration | None=..., paused: builtins.bool=..., role_name_filters: collections.abc.Iterable[Global___NameFilter] | None=...) -> None:
+        ...
+
+    def HasField(self, field_name: typing.Literal['effective_interval', b'effective_interval', 'interval', b'interval']) -> builtins.bool:
+        ...
+
+    def ClearField(self, field_name: typing.Literal['effective_interval', b'effective_interval', 'interval', b'interval', 'paused', b'paused', 'role_name_filters', b'role_name_filters']) -> None:
+        ...
+Global___RoleSyncOptions: typing_extensions.TypeAlias = RoleSyncOptions
 
 @typing.final
 class AuthenticationConfiguration(google.protobuf.message.Message):

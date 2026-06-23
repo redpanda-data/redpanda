@@ -25,11 +25,26 @@ using namespace std::chrono_literals;
 namespace transform::testing {
 ss::future<> fake_sink::write(ss::chunked_fifo<model::record_batch> batches) {
     co_await _cork.wait();
+    if (_fail) {
+        throw std::runtime_error(
+          "failure to produce transform data: Current node is not a leader "
+          "for partition");
+    }
     for (auto& batch : batches) {
         for (auto& r : batch.copy_records()) {
             _records.push_back(std::move(r));
         }
     }
+    _cond_var.broadcast();
+}
+
+void fake_sink::fail_writes() {
+    _fail = true;
+    _cond_var.broadcast();
+}
+
+void fake_sink::resume_writes() {
+    _fail = false;
     _cond_var.broadcast();
 }
 

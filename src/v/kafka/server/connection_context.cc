@@ -170,7 +170,7 @@ connection_context::connection_context(
   bool enable_authorizer,
   std::optional<security::tls::mtls_state> mtls_state,
   config::binding<uint32_t> max_request_size,
-  config::conversion_binding<std::vector<bool>, std::vector<ss::sstring>>
+  config::conversion_binding<api_key_table<bool>, std::vector<ss::sstring>>
     kafka_throughput_controlled_api_keys) noexcept
   : _hook(hook)
   , _closed_list(closed_list)

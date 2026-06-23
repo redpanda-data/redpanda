@@ -205,11 +205,37 @@ void consensus::setup_metrics() {
 }
 
 void consensus::setup_public_metrics() {
+    namespace sm = ss::metrics;
+
     if (config::shard_local_cfg().disable_public_metrics()) {
         return;
     }
 
     _probe->setup_public_metrics(_log->config().ntp());
+
+    // Expose the leadership gauge for the controller group on the public
+    // endpoint so external consumers can identify the controller leader.
+    // Restricted to the controller to avoid a per-partition public series for
+    // every raft group.
+    if (_log->config().ntp() != model::controller_ntp) {
+        return;
+    }
+
+    // Public metrics carry redpanda_-prefixed label names, unlike the internal
+    // (bare) labels used by setup_metrics.
+    const auto& ntp = _log->config().ntp();
+    auto labels = {
+      metrics::make_namespaced_label("namespace")(ntp.ns()),
+      metrics::make_namespaced_label("topic")(ntp.tp.topic()),
+      metrics::make_namespaced_label("partition")(ntp.tp.partition())};
+    _public_metrics.add_group(
+      prometheus_sanitize::metrics_name("raft"),
+      {sm::make_gauge(
+         "leader_for",
+         [this] { return is_elected_leader(); },
+         sm::description("Indicates if this node is the controller leader"),
+         labels)
+         .aggregate({sm::shard_label})});
 }
 
 void consensus::do_step_down(std::string_view ctx) {
@@ -2026,6 +2052,8 @@ consensus::do_append_entries(append_entries_request&& r) {
     // follower (§5.2)
     maybe_update_leader(r.source_node());
 
+    auto refresh_hbeat = ss::defer([this] { _hbeat = clock_type::now(); });
+
     // raft.pdf: Reply false if log doesn’t contain an entry at
     // prevLogIndex whose term matches prevLogTerm (§5.3)
     // broken into 3 sections
@@ -2281,11 +2309,6 @@ consensus::do_append_entries(append_entries_request&& r) {
     // success. copy entries for each subsystem
 
     try {
-        auto deferred = ss::defer([this] {
-            // we do not want to include our disk flush latency into
-            // the leader vote timeout
-            _hbeat = clock_type::now();
-        });
         validate_offset_translator_delta(request_metadata, lstats);
 
         // simulate disk error
@@ -2949,30 +2972,12 @@ ss::future<storage::append_result> consensus::disk_append(
     auto cfg = storage::log_append_config{
       // no fsync explicit on a per write, we verify at the end to
       // batch fsync
-      storage::log_append_config::fsync::no,
-      model::timeout_clock::now() + _disk_timeout()};
-
-    class consumer {
-    public:
-        consumer(storage::log_appender appender)
-          : _appender(std::move(appender)) {}
-
-        ss::future<ss::stop_iteration> operator()(model::record_batch& batch) {
-            auto ret = co_await _appender(batch);
-            co_return ret;
-        }
-
-        auto end_of_stream() { return _appender.end_of_stream(); }
-
-    private:
-        storage::log_appender _appender;
-    };
+      storage::log_append_config::fsync::no};
 
     return details::for_each_ref_extract_configuration(
              _log->offsets().dirty_offset,
-             model::make_chunked_memory_record_batch_reader(std::move(batches)),
-             consumer(_log->make_appender(cfg)),
-             cfg.timeout)
+             std::move(batches),
+             _log->make_appender(cfg))
       .then([this, should_update_last_quorum_idx](
               std::tuple<ret_t, chunked_vector<offset_configuration>> t) {
           auto& [ret, configurations] = t;

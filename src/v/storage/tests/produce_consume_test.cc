@@ -22,8 +22,7 @@ TEST(ProduceConsumeTest, produce_consume_concurrency) {
     builder | storage::start();
 
     storage::log_append_config app_cfg{
-      .should_fsync = storage::log_append_config::fsync::no,
-      .timeout = model::no_timeout};
+      .should_fsync = storage::log_append_config::fsync::no};
     auto log = builder.get_log();
     auto range = boost::irange(0, 1000);
 

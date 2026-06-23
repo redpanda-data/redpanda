@@ -27,6 +27,11 @@ namespace kafka {
 /// Kafka API key.
 using api_key = named_type<int16_t, struct kafka_api_key>;
 
+/// Base of the reserved key range for Redpanda-specific Kafka APIs. Keys at or
+/// above this value are not part of the standard Kafka protocol and are
+/// dispatched/metered through the reserved region of api_key_indexed_array.
+inline constexpr api_key redpanda_api_key_base{15000};
+
 /// Kafka API version.
 using api_version = named_type<int16_t, struct kafka_api_version>;
 

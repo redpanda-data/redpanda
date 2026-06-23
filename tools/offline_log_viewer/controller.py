@@ -180,11 +180,17 @@ def read_topic_properties_serde(rdr: Reader, version):
 
 
 def read_iceberg_mode(rdr: Reader):
+    # Discriminant is serialized as int32_t (serde_enum_serialized_t), matching
+    # the original iceberg_mode::variant enum encoding.
     variant = rdr.read_serde_enum()
-    protobuf_value = None
-    if variant == 3:
-        protobuf_value = rdr.read_string()
-    return {"variant": variant, "protobuf_value": protobuf_value}
+    if variant == 3:  # value_schema_latest
+        protobuf_name = rdr.read_string()
+        subject = rdr.read_string()
+        return {"variant": variant, "protobuf_name": protobuf_name, "subject": subject}
+    if variant == 4:  # wire_canonical_string: serde envelope containing config string
+        envelope = rdr.read_envelope(lambda rdr, _: {"config": rdr.read_string()})
+        return {"variant": variant, "config": envelope["config"]}
+    return {"variant": variant}
 
 
 def read_topic_config(rdr: Reader, version):

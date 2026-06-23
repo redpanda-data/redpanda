@@ -10,6 +10,7 @@
  */
 #pragma once
 
+#include "kafka/protocol/type_list.h"
 #include "kafka/server/handlers/add_offsets_to_txn.h"
 #include "kafka/server/handlers/add_partitions_to_txn.h"
 #include "kafka/server/handlers/alter_client_quotas.h"
@@ -31,6 +32,7 @@
 #include "kafka/server/handlers/describe_groups.h"
 #include "kafka/server/handlers/describe_log_dirs.h"
 #include "kafka/server/handlers/describe_producers.h"
+#include "kafka/server/handlers/describe_redpanda_roles.h"
 #include "kafka/server/handlers/describe_transactions.h"
 #include "kafka/server/handlers/describe_user_scram_credentials.h"
 #include "kafka/server/handlers/end_txn.h"
@@ -57,12 +59,10 @@
 #include "kafka/server/handlers/txn_offset_commit.h"
 
 namespace kafka {
-template<typename... Ts>
-struct type_list {};
 
 template<typename... Requests>
 requires(KafkaApiHandler<Requests>, ...)
-using make_request_types = type_list<Requests...>;
+using make_handler_request_types = type_list<Requests...>;
 
 /*
  * This set of handlers defines what the kafka server supports. If you are
@@ -70,7 +70,7 @@ using make_request_types = type_list<Requests...>;
  * kafka/protocol/flex_versions.cc which define properties about the protocol
  * itself as shared between our client and server.
  */
-using request_types = make_request_types<
+using handler_request_types = make_handler_request_types<
   produce_handler,
   fetch_handler,
   list_offsets_handler,
@@ -116,6 +116,11 @@ using request_types = make_request_types<
   describe_cluster_handler,
   describe_user_scram_credentials_handler,
   alter_user_scram_credentials_handler>;
+
+// Handler counterparts of kafka::redpanda_request_types (the reserved-range
+// APIs). Feeds the reserved region of the dispatch LUT.
+using redpanda_handler_request_types
+  = make_handler_request_types<describe_redpanda_roles_handler>;
 
 template<typename... RequestTypes>
 static constexpr size_t max_api_key(type_list<RequestTypes...>) {

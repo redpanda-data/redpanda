@@ -299,6 +299,7 @@ redpanda_cc_btest(
     deps = [
         "//src/v/bytes:iobuf_parser",
         "//src/v/container:chunked_circular_buffer",
+        "//src/v/container:chunked_vector",
         "//src/v/model",
         "//src/v/model/tests:random",
         "//src/v/raft",

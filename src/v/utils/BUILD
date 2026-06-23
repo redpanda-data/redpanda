@@ -477,6 +477,7 @@ redpanda_cc_library(
         "//src/v/serde:iobuf",
         "//src/v/serde:optional",
         "//src/v/ssx:sformat",
+        "@boost//:iterator",
     ],
 )
 

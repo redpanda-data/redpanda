@@ -15,6 +15,7 @@
 
 #include <seastar/core/future.hh>
 
+#include <functional>
 #include <map>
 
 namespace schema {
@@ -62,6 +63,12 @@ public:
       pandaproxy::schema_registry::context_subject sub,
       std::optional<pandaproxy::schema_registry::schema_version> version)
       const override;
+
+    ss::future<chunked_vector<pandaproxy::schema_registry::subject_version>>
+    list_subject_versions(
+      std::function<bool(const pandaproxy::schema_registry::context_subject&)>
+        filter,
+      pandaproxy::schema_registry::include_deleted inc_del) const override;
 
     ss::future<pandaproxy::schema_registry::context_schema_id> create_schema(
       pandaproxy::schema_registry::subject_schema unparsed) override;

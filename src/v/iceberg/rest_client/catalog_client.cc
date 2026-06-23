@@ -12,7 +12,7 @@
 
 #include "absl/strings/str_join.h"
 #include "absl/strings/strip.h"
-#include "bytes/iobuf_parser.h"
+#include "bytes/iobuf.h"
 #include "bytes/streambuf.h"
 #include "config/types.h"
 #include "datalake/credential_manager.h"
@@ -27,6 +27,7 @@
 #include "iceberg/table_requests_json.h"
 #include "json/istreamwrapper.h"
 #include "ssx/future-util.h"
+#include "strings/utf8.h"
 
 #include <seastar/core/sleep.hh>
 #include <seastar/coroutine/as_future.hh>
@@ -59,9 +60,12 @@ void maybe_log_payload_as_json(
         return;
     }
     auto buf = serialize_payload_as_json(payload);
-    iobuf_parser p(std::move(buf));
-    const auto logged_size = std::min(p.bytes_left(), 4_KiB);
-    vlogl(l, lvl, "{}: {}", msg, p.read_string_safe(logged_size));
+    vlogl(
+      l,
+      lvl,
+      "{}: {}",
+      msg,
+      utf8_sanitize(buf.share(0, 4_KiB)).linearize_to_string());
 }
 
 static constexpr std::string_view json_content_type = "application/json";

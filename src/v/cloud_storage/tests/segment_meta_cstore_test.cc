@@ -17,6 +17,8 @@
 #include "utils/delta_for.h"
 #include "utils/human.h"
 
+#include <seastar/util/log.hh>
+
 #include <boost/test/tools/old/interface.hpp>
 #include <boost/test/unit_test.hpp>
 

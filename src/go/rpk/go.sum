@@ -14,8 +14,8 @@ buf.build/gen/go/redpandadata/common/protocolbuffers/go v1.36.11-20260323171043-
 buf.build/gen/go/redpandadata/common/protocolbuffers/go v1.36.11-20260323171043-6e06f84ad823.1/go.mod h1:3w7EzexwlL6PIFGbbeKZ0yHfUlAmI0aBVzF/QoFb8Cg=
 buf.build/gen/go/redpandadata/core/connectrpc/go v1.19.1-20260409143030-36db7bac51c2.2 h1:SEwSVRuX4g6P79wde2y0EuBD46EMb/vuOKOXIiCNWCM=
 buf.build/gen/go/redpandadata/core/connectrpc/go v1.19.1-20260409143030-36db7bac51c2.2/go.mod h1:9yQAJXFjjbVbBGlABqSz1eNtIPLhrbf5FU795I1u5Sg=
-buf.build/gen/go/redpandadata/core/protocolbuffers/go v1.36.11-20260409143030-36db7bac51c2.1 h1:QBkqRLTqXkOxSTvKsf8ww7rRtucQUW/2wljnxpnQ3yU=
-buf.build/gen/go/redpandadata/core/protocolbuffers/go v1.36.11-20260409143030-36db7bac51c2.1/go.mod h1:5sjUVquVwNxt3Q/EhE/UW0BBJ5sgPiaVTw8//wxRULI=
+buf.build/gen/go/redpandadata/core/protocolbuffers/go v1.36.11-20260608080241-5b0ab84ea082.1 h1:lLdtkh1oXeNO0XDgsarqJ9iR2/RfypaQxz33/D3Z2d0=
+buf.build/gen/go/redpandadata/core/protocolbuffers/go v1.36.11-20260608080241-5b0ab84ea082.1/go.mod h1:5sjUVquVwNxt3Q/EhE/UW0BBJ5sgPiaVTw8//wxRULI=
 buf.build/gen/go/redpandadata/dataplane/connectrpc/go v1.19.1-20260409091301-5e03d1b04513.2 h1:8t4xNuFJqh2mW4RPa6sVjL+Bm6ONZq7Gj3PsCPMNUFM=
 buf.build/gen/go/redpandadata/dataplane/connectrpc/go v1.19.1-20260409091301-5e03d1b04513.2/go.mod h1:EN4XJHrOIY8SoHVk9NuZf9I4DtlmhSq6ixlNhbCR+L4=
 buf.build/gen/go/redpandadata/dataplane/protocolbuffers/go v1.36.11-20260409091301-5e03d1b04513.1 h1:vbHgxorgH6giQxyTPtd+rHkke0E8w5VU1bQC5WjV6qY=

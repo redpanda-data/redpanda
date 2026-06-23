@@ -478,6 +478,7 @@ redpanda_cc_btest(
         "//src/v/utils:delta_for",
         "@boost//:numeric_conversion",
         "@boost//:test",
+        "@seastar",
         "@seastar//:testing",
     ],
 )

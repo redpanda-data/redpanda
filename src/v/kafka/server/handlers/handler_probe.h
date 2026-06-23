@@ -11,6 +11,7 @@
 
 #pragma once
 
+#include "kafka/protocol/api_key_table.h"
 #include "kafka/protocol/types.h"
 #include "metrics/metrics.h"
 #include "utils/log_hist.h"
@@ -27,7 +28,7 @@ class handler_probe {
 public:
     using hist_t = log_hist_internal;
 
-    explicit handler_probe();
+    handler_probe();
     handler_probe(const handler_probe&) = delete;
     handler_probe& operator=(const handler_probe&) = delete;
     handler_probe(handler_probe&&) = delete;
@@ -104,7 +105,10 @@ public:
 private:
     metrics::internal_metric_groups _metrics;
     metrics::public_metric_groups _public_metrics;
-    std::vector<handler_probe> _probes;
+    api_key_table<handler_probe> _probes;
+    // Collects metrics for requests whose api key has no registered handler.
+    // Not a real key, so it lives outside the table.
+    handler_probe _unknown_probe;
 };
 
 } // namespace kafka

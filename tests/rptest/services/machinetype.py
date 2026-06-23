@@ -39,6 +39,37 @@ class MachineTypeName(str, Enum):
     N2D_STANDARD_16 = "n2d-standard-16"
     N2D_STANDARD_32 = "n2d-standard-32"
 
+    # GCP X86 (C4, Intel - v3 tiers)
+    C4_STANDARD_4_LSSD = "c4-standard-4-lssd"
+    C4_STANDARD_8_LSSD = "c4-standard-8-lssd"
+    C4_STANDARD_16_LSSD = "c4-standard-16-lssd"
+    C4_STANDARD_24_LSSD = "c4-standard-24-lssd"
+    C4_STANDARD_32_LSSD = "c4-standard-32-lssd"
+    C4_STANDARD_48_LSSD = "c4-standard-48-lssd"
+    C4_STANDARD_96_LSSD = "c4-standard-96-lssd"
+    C4_STANDARD_144_LSSD = "c4-standard-144-lssd"
+    C4_STANDARD_192_LSSD = "c4-standard-192-lssd"
+    C4_STANDARD_288_LSSD = "c4-standard-288-lssd"
+
+    # GCP X86 (C4D, AMD)
+    C4D_STANDARD_8_LSSD = "c4d-standard-8-lssd"
+    C4D_STANDARD_16_LSSD = "c4d-standard-16-lssd"
+    C4D_STANDARD_32_LSSD = "c4d-standard-32-lssd"
+    C4D_STANDARD_48_LSSD = "c4d-standard-48-lssd"
+    C4D_STANDARD_64_LSSD = "c4d-standard-64-lssd"
+    C4D_STANDARD_96_LSSD = "c4d-standard-96-lssd"
+    C4D_STANDARD_192_LSSD = "c4d-standard-192-lssd"
+    C4D_STANDARD_384_LSSD = "c4d-standard-384-lssd"
+
+    # GCP ARM (C4A, Axion)
+    C4A_STANDARD_4_LSSD = "c4a-standard-4-lssd"
+    C4A_STANDARD_8_LSSD = "c4a-standard-8-lssd"
+    C4A_STANDARD_16_LSSD = "c4a-standard-16-lssd"
+    C4A_STANDARD_32_LSSD = "c4a-standard-32-lssd"
+    C4A_STANDARD_48_LSSD = "c4a-standard-48-lssd"
+    C4A_STANDARD_64_LSSD = "c4a-standard-64-lssd"
+    C4A_STANDARD_72_LSSD = "c4a-standard-72-lssd"
+
     @classmethod
     def list(cls):
         return list(map(lambda c: c.value, cls))
@@ -87,6 +118,85 @@ MachineTypeConfigs = {
     MachineTypeName.N2D_STANDARD_4: MachineTypeConfig(num_shards=3, memory=16 * GiB),
     MachineTypeName.N2D_STANDARD_16: MachineTypeConfig(num_shards=15, memory=64 * GiB),
     MachineTypeName.N2D_STANDARD_32: MachineTypeConfig(num_shards=31, memory=128 * GiB),
+    # GCP X86 (C4, Intel - v3 tiers): num_shards = vCPU - 1, reserving one core
+    # for housekeeping (matches the N2/N2D convention)
+    MachineTypeName.C4_STANDARD_4_LSSD: MachineTypeConfig(
+        num_shards=3, memory=15 * GiB
+    ),
+    MachineTypeName.C4_STANDARD_8_LSSD: MachineTypeConfig(
+        num_shards=7, memory=30 * GiB
+    ),
+    MachineTypeName.C4_STANDARD_16_LSSD: MachineTypeConfig(
+        num_shards=15, memory=60 * GiB
+    ),
+    MachineTypeName.C4_STANDARD_24_LSSD: MachineTypeConfig(
+        num_shards=23, memory=90 * GiB
+    ),
+    MachineTypeName.C4_STANDARD_32_LSSD: MachineTypeConfig(
+        num_shards=31, memory=120 * GiB
+    ),
+    MachineTypeName.C4_STANDARD_48_LSSD: MachineTypeConfig(
+        num_shards=47, memory=180 * GiB
+    ),
+    MachineTypeName.C4_STANDARD_96_LSSD: MachineTypeConfig(
+        num_shards=95, memory=360 * GiB
+    ),
+    MachineTypeName.C4_STANDARD_144_LSSD: MachineTypeConfig(
+        num_shards=143, memory=540 * GiB
+    ),
+    MachineTypeName.C4_STANDARD_192_LSSD: MachineTypeConfig(
+        num_shards=191, memory=720 * GiB
+    ),
+    MachineTypeName.C4_STANDARD_288_LSSD: MachineTypeConfig(
+        num_shards=287, memory=1080 * GiB
+    ),
+    # GCP X86 (C4D, AMD)
+    MachineTypeName.C4D_STANDARD_8_LSSD: MachineTypeConfig(
+        num_shards=7, memory=31 * GiB
+    ),
+    MachineTypeName.C4D_STANDARD_16_LSSD: MachineTypeConfig(
+        num_shards=15, memory=62 * GiB
+    ),
+    MachineTypeName.C4D_STANDARD_32_LSSD: MachineTypeConfig(
+        num_shards=31, memory=124 * GiB
+    ),
+    MachineTypeName.C4D_STANDARD_48_LSSD: MachineTypeConfig(
+        num_shards=47, memory=186 * GiB
+    ),
+    MachineTypeName.C4D_STANDARD_64_LSSD: MachineTypeConfig(
+        num_shards=63, memory=248 * GiB
+    ),
+    MachineTypeName.C4D_STANDARD_96_LSSD: MachineTypeConfig(
+        num_shards=95, memory=372 * GiB
+    ),
+    MachineTypeName.C4D_STANDARD_192_LSSD: MachineTypeConfig(
+        num_shards=191, memory=744 * GiB
+    ),
+    MachineTypeName.C4D_STANDARD_384_LSSD: MachineTypeConfig(
+        num_shards=383, memory=1488 * GiB
+    ),
+    # GCP ARM (C4A, Axion)
+    MachineTypeName.C4A_STANDARD_4_LSSD: MachineTypeConfig(
+        num_shards=3, memory=16 * GiB
+    ),
+    MachineTypeName.C4A_STANDARD_8_LSSD: MachineTypeConfig(
+        num_shards=7, memory=32 * GiB
+    ),
+    MachineTypeName.C4A_STANDARD_16_LSSD: MachineTypeConfig(
+        num_shards=15, memory=64 * GiB
+    ),
+    MachineTypeName.C4A_STANDARD_32_LSSD: MachineTypeConfig(
+        num_shards=31, memory=128 * GiB
+    ),
+    MachineTypeName.C4A_STANDARD_48_LSSD: MachineTypeConfig(
+        num_shards=47, memory=192 * GiB
+    ),
+    MachineTypeName.C4A_STANDARD_64_LSSD: MachineTypeConfig(
+        num_shards=63, memory=256 * GiB
+    ),
+    MachineTypeName.C4A_STANDARD_72_LSSD: MachineTypeConfig(
+        num_shards=71, memory=288 * GiB
+    ),
 }
 
 

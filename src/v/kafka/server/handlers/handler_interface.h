@@ -115,7 +115,7 @@ using handler = const handler_interface*;
  * any_hanlder is guaranteed to be non-null if the optional as a value.
  *
  * This method looks up the handler in a table populated by all handlers
- * in kafka::request_types.
+ * in kafka::handler_request_types.
  *
  * @param key the API key for the handler
  * @return std::optional<handler> the handler, if any

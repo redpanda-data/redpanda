@@ -101,6 +101,24 @@ ss::future<ppsr::schema_getter*> schema::fake_registry::getter() const {
     maybe_throw_injected_failure();
     co_return &_store;
 }
+ss::future<chunked_vector<ppsr::subject_version>>
+schema::fake_registry::list_subject_versions(
+  std::function<bool(const ppsr::context_subject&)> filter,
+  ppsr::include_deleted inc_del) const {
+    maybe_throw_injected_failure();
+    chunked_vector<ppsr::subject_version> out;
+    for (const auto& s : _store.schemas) {
+        if (!filter(s.schema.sub())) {
+            continue;
+        }
+        if (!inc_del && s.deleted) {
+            continue;
+        }
+        out.emplace_back(s.schema.sub(), s.version);
+    }
+    co_return out;
+}
+
 ss::future<ppsr::context_schema_id>
 schema::fake_registry::create_schema(ppsr::subject_schema unparsed) {
     maybe_throw_injected_failure();

@@ -112,7 +112,7 @@ struct append_op final : opfuzz::op {
     const char* name() const final { return "append"; }
     ss::future<> invoke(opfuzz::op_context ctx) final {
         storage::log_append_config append_cfg{
-          storage::log_append_config::fsync::no, model::no_timeout};
+          storage::log_append_config::fsync::no};
         auto batches = co_await model::test::make_random_batches(
           model::offset(0), 10);
         vlog(
@@ -168,7 +168,7 @@ struct append_op_foreign final : opfuzz::op {
               return ss::smp::submit_to(
                 0, [rdr = std::move(p.first), cnt = p.second, ctx]() mutable {
                     storage::log_append_config append_cfg{
-                      storage::log_append_config::fsync::no, model::no_timeout};
+                      storage::log_append_config::fsync::no};
                     auto validator = append_offsets_validator(
                       ctx.log, cnt, false);
                     return std::move(rdr)
@@ -185,7 +185,7 @@ struct append_multi_term_op final : opfuzz::op {
     const char* name() const final { return "append_with_multiple_terms"; }
     ss::future<> invoke(opfuzz::op_context ctx) final {
         storage::log_append_config append_cfg{
-          storage::log_append_config::fsync::no, model::no_timeout};
+          storage::log_append_config::fsync::no};
         auto batches = co_await model::test::make_random_batches(
           model::offset(0), 10);
         const size_t mid = batches.size() / 2;

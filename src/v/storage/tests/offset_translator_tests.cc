@@ -346,8 +346,7 @@ struct fuzz_checker {
               : _self(self)
               , _appender(self._log->make_appender(
                   storage::log_append_config{
-                    .should_fsync = storage::log_append_config::fsync::no,
-                    .timeout = model::no_timeout})) {}
+                    .should_fsync = storage::log_append_config::fsync::no})) {}
 
             ss::future<ss::stop_iteration>
             operator()(model::record_batch& batch) {

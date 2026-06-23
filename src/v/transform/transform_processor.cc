@@ -18,6 +18,7 @@
 #include "model/timestamp.h"
 #include "model/transform.h"
 #include "random/simple_time_jitter.h"
+#include "ssx/abort_source.h"
 #include "ssx/future-util.h"
 #include "wasm/engine.h"
 
@@ -342,19 +343,50 @@ ss::future<> processor::run_transform_loop() {
 ss::future<> processor::run_all_producers(
   absl::flat_hash_map<model::output_topic_index, kafka::offset>
     latest_committed) {
-    return ss::parallel_for_each(
-      _outputs, [this, committed = std::move(latest_committed)](auto& entry) {
+    // parallel_for_each captures the first exception but waits for every loop
+    // to finish before resolving, and a producer loop only exits when its abort
+    // source fires. Drive the loops off a composite source that aborts when
+    // either the processor stops (_as) or a producer fails (local_producer_as,
+    // our "a producer failed" signal), so the first failure unwinds its
+    // siblings promptly instead of leaving them spinning forever.
+    ss::abort_source local_producer_as;
+    ssx::composite_abort_source producers_as(_as, local_producer_as);
+
+    std::exception_ptr failure;
+    co_await ss::parallel_for_each(
+      _outputs,
+      [this,
+       &failure,
+       &local_producer_as,
+       &producers_as,
+       committed = std::move(latest_committed)](auto& entry) {
           output& out = entry.second;
           return run_producer_loop(
-            out.index, &out.queue, out.sink.get(), committed.at(out.index));
+                   out.index,
+                   &out.queue,
+                   out.sink.get(),
+                   committed.at(out.index),
+                   producers_as.as())
+            .handle_exception([&failure,
+                               &local_producer_as](std::exception_ptr ep) {
+                if (!local_producer_as.abort_requested()) {
+                    failure = std::move(ep);
+                    local_producer_as.request_abort_ex(
+                      std::make_exception_ptr(processor_shutdown_exception()));
+                }
+            });
       });
+    if (failure) {
+        std::rethrow_exception(failure);
+    }
 }
 
 ss::future<> processor::run_producer_loop(
   model::output_topic_index index,
   transfer_queue<transformed_output>* queue,
   sink* sink,
-  kafka::offset last_committed) {
+  kafka::offset last_committed,
+  ss::abort_source& as) {
     vlog(
       _logger.debug,
       "starting producer {} - last committed: {}",
@@ -364,8 +396,8 @@ ss::future<> processor::run_producer_loop(
     // to suppress records until we've reached the previous offset we've
     // committed.
     bool suppress = true;
-    while (!_as.abort_requested()) {
-        auto popped = co_await queue->pop_all(&_as);
+    while (!as.abort_requested()) {
+        auto popped = co_await queue->pop_all(&as);
         if (popped.empty()) {
             continue;
         }
