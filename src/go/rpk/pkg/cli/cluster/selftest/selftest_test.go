@@ -49,9 +49,9 @@ func TestWatchSelfTest(t *testing.T) {
 	require.NoError(t, err)
 
 	out := buf.String()
-	// While running, the progress line is printed; once every node is idle
-	// the loop prints the final status and returns.
-	require.Contains(t, out, "Node 0 is still running disk self test")
+	// A spinner reports progress while a node is still running; once every
+	// node is idle the spinner stops and the final status is printed.
+	require.Contains(t, out, "Running self-test")
 	require.Contains(t, out, "All nodes are idle with no cached test results")
 }
 

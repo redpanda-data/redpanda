@@ -13,7 +13,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"reflect"
 	"time"
 
 	"github.com/redpanda-data/common-go/rpadmin"
@@ -147,29 +146,25 @@ type selfTestStatusClient interface {
 	SelfTestStatus(context.Context) ([]rpadmin.SelfTestNodeReport, error)
 }
 
-// watchSelfTest polls the self-test status every interval, printing each
-// update, until no node is still running a test. It backs the --watch flag of
+// watchSelfTest polls the self-test status every interval, showing a spinner
+// with elapsed time while a test is still running. Once every node is idle it
+// stops the spinner and prints the final status. It backs the --watch flag of
 // 'rpk cluster self-test start'.
 func watchSelfTest(ctx context.Context, cl selfTestStatusClient, f config.OutFormatter, w io.Writer, interval time.Duration) error {
-	var last []rpadmin.SelfTestNodeReport
+	s := out.NewSpinner(ctx, "Running self-test", out.WithOutput(w), out.WithElapsedTime())
 	for {
 		reports, err := cl.SelfTestStatus(ctx)
 		if err != nil {
+			s.Fail("Self-test status query failed")
 			return fmt.Errorf("unable to query self-test status: %w", err)
 		}
-		// Only reprint when something changed to avoid spamming the
-		// terminal with identical status on every poll.
-		if !reflect.DeepEqual(reports, last) {
-			if err := printSelfTestStatus(f, reports, w); err != nil {
-				return err
-			}
-			last = reports
-		}
 		if len(runningNodes(reports)) == 0 {
-			return nil
+			s.Success("Self-test complete")
+			return printSelfTestStatus(f, reports, w)
 		}
 		select {
 		case <-ctx.Done():
+			s.Stop()
 			return ctx.Err()
 		case <-time.After(interval):
 		}
