@@ -106,7 +106,7 @@ func newProduceCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 				opts = append(opts, kgo.RecordDeliveryTimeout(timeout))
 				opts = append(opts, kgo.ProduceRequestTimeout(timeout+5*time.Second))
 			}
-			if partition >= 0 {
+			if partition >= 0 || formatUsesPartition(inFormat) {
 				opts = append(opts, kgo.RecordPartitioner(kgo.ManualPartitioner()))
 			}
 			if maxMessageBytes >= 0 {
@@ -259,7 +259,7 @@ func newProduceCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 	cmd.Flags().StringVarP(&compression, "compression", "z", "snappy", "Compression to use for producing batches (none, gzip, snappy, lz4, zstd)")
 	cmd.Flags().IntVar(&acks, "acks", -1, "Number of acks required for producing (-1=all, 0=none, 1=leader)")
 	cmd.Flags().DurationVar(&timeout, "delivery-timeout", 0, "Per-record delivery timeout, if non-zero, min 1s")
-	cmd.Flags().Int32VarP(&partition, "partition", "p", -1, "Partition to directly produce to, if non-negative (also allows %p parsing to set partitions)")
+	cmd.Flags().Int32VarP(&partition, "partition", "p", -1, "Partition to directly produce to, if non-negative")
 	cmd.Flags().Int32Var(&maxMessageBytes, "max-message-bytes", -1, "If non-negative, maximum size of a record batch before compression")
 
 	cmd.Flags().StringVarP(&inFormat, "format", "f", "%v\n", "Input record format")
@@ -338,6 +338,25 @@ func serdeFromTopicName(ctx context.Context, cl *rpsr.Client, topic, suffix, pro
 	return newSerde, nil
 }
 
+// formatUsesPartition reports whether the produce input format references the
+// record partition via a %p escape, so we can enable the manual partitioner
+// even when --partition is unset. The %%, %{ and %} escapes are literals rather
+// than directives, so "%%p" returns false while "%p" returns true.
+func formatUsesPartition(format string) bool {
+	for i := 0; i < len(format); i++ {
+		if format[i] != '%' || i+1 >= len(format) {
+			continue
+		}
+		switch format[i+1] {
+		case '%', '{', '}':
+			i++ // skip the escaped character so it is not re-examined
+		case 'p':
+			return true
+		}
+	}
+	return false
+}
+
 const helpProduce = `Produce records to a topic.
 
 Producing records reads from STDIN, parses input according to --format, and
@@ -366,7 +385,7 @@ Percent encoding reads into specific values of a record:
     %V    value length
     %h    begin the header specification
     %H    number of headers
-    %p    partition (if using the --partition flag)
+    %p    partition
 
 Three escapes exist to parse characters that are used to modify the previous
 escapes:
@@ -480,7 +499,7 @@ A key and value, separated by a space and ending in newline:
     -f '%k %v\n'
 A four byte topic, four byte key, and four byte value:
     -f '%T{4}%K{4}%V{4}%t%k%v'
-A value to a specific partition, if using a non-negative --partition flag:
+A value to a specific partition, parsed from the input with %p:
     -f '%p %v\n'
 A big-endian uint16 key size, the text " foo ", and then that key:
     -f '%K{big16} foo %k'
@@ -496,10 +515,9 @@ directly on as an argument, or in the input text through %t. A parsed topic
 takes precedence over the default passed in topic. If no topic is specified
 directly and no topic is parsed, this command will quit with an error.
 
-The input format can parse partitions to produce directly to with %p. Doing so
-requires specifying a non-negative --partition flag. Any parsed partition
-takes precedence over the --partition flag; specifying the flag is the main
-requirement for being able to directly control which partition to produce to.
+The input format can parse partitions to produce directly to with %p. Using %p
+enables direct partitioning on its own; the --partition flag is not required.
+Any parsed partition takes precedence over the --partition flag.
 
 You can also specify an output format to write when a record is produced
 successfully. The output format follows the same formatting rules as the topic
