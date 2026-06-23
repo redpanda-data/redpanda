@@ -692,16 +692,22 @@ get_integer_query_param(const ss::http::request& req, std::string_view key) {
 } // namespace
 
 void admin_server::configure_metrics_route() {
+    // Warn when a single metric family aggregates to more than this many
+    // series, which usually signals unbounded metric label cardinality (a bug).
+    constexpr size_t aggregation_warn_threshold = 10000;
+
     ss::prometheus::config private_config;
     private_config.prefix = "vectorized";
     private_config.handle = ss::metrics::default_handle();
     private_config.route = "/metrics";
+    private_config.aggregation_warn_threshold = aggregation_warn_threshold;
     ss::prometheus::add_prometheus_routes(_server, private_config).get();
 
     ss::prometheus::config public_config;
     public_config.prefix = "redpanda";
     public_config.handle = metrics::public_metrics_handle;
     public_config.route = "/public_metrics";
+    public_config.aggregation_warn_threshold = aggregation_warn_threshold;
     ss::prometheus::add_prometheus_routes(_server, public_config).get();
 }
 

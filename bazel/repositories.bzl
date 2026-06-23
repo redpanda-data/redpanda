@@ -2,6 +2,7 @@
 This module contains the sources for all third party dependencies.
 """
 
+load("@bazel_tools//tools/build_defs/repo:git.bzl", "git_repository")
 load("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
 load("@toolchains_llvm//toolchain:sysroot.bzl", "sysroot")
 
@@ -160,13 +161,16 @@ def data_dependency():
         url = "https://github.com/redpanda-data/CRoaring/archive/c433d1c70c10fb2e40f049e019e2abbcafa6e69d.tar.gz",
     )
 
-    # branch: v26.2.x
-    http_archive(
+    # Temporarily pinned to a WillemKauf/seastar fork branch
+    # (metrics-aggregation-warning-v26.2.x) that adds chunked_vector /
+    # chunked_hash_map and the prometheus aggregation-cardinality warning.
+    # NOTE: push this commit to the fork before building, and restore the
+    # redpanda-data/seastar http_archive pin once the change is merged upstream.
+    git_repository(
         name = "seastar",
         build_file = "//bazel/thirdparty:seastar.BUILD",
-        sha256 = "e800bfbfeaf514ad90cb480aa5e317c01c514f99ed97ee0ac2ef3c9c55dc43a5",
-        strip_prefix = "seastar-5d474c884fb54f1bbef9fe9bfada0eb48feb47b5",
-        url = "https://github.com/redpanda-data/seastar/archive/5d474c884fb54f1bbef9fe9bfada0eb48feb47b5.tar.gz",
+        commit = "4b7ee76dc0283c2277fed52974187b1ec8301235",
+        remote = "https://github.com/WillemKauf/seastar.git",
     )
 
     http_archive(
