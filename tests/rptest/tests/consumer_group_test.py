@@ -27,7 +27,7 @@ from confluent_kafka import (
     TopicPartition,
 )
 from confluent_kafka.admin import AdminClient
-from ducktape.mark import ignore, parametrize
+from ducktape.mark import ignore, matrix, parametrize
 from ducktape.utils.util import wait_until
 from kafka import KafkaConsumer
 from kafka import errors as kerr
@@ -49,9 +49,15 @@ from rptest.services.redpanda import (
     LoggingConfig,
     MetricsEndpoint,
     RedpandaService,
+    get_cloud_storage_type,
 )
 from rptest.services.rpk_producer import RpkProducer
 from rptest.services.verifiable_consumer import VerifiableConsumer
+from rptest.tests.read_replica_e2e_test import (
+    READ_REPLICA_LOG_ALLOW_LIST,
+    ReadReplicaE2EBase,
+    get_hwm_per_partition,
+)
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.util import wait_until_result
 from rptest.utils.mode_checks import skip_debug_mode
@@ -2008,4 +2014,171 @@ class ConsumerGroupOffsetResetTest(RedpandaTest):
         tp = self.list_consumer_group_offsets(topic.name).topic_partitions[0]
         assert tp.offset == INVALID_OFFSET, (
             f"Expected offset '{INVALID_OFFSET}' but got '{tp.offset}', instead"
+        )
+
+
+class ReadReplicaConsumerLagTest(ReadReplicaE2EBase):
+    """
+    Regression test: consumer-group lag metrics must reflect the real,
+    cloud-aware high watermark for read-replica topics.
+
+    Bug: build_partition_status() reports a partition's high watermark as
+    from_log_offset(p.high_watermark()). For a read replica the local raft
+    log holds only the synced manifest (no data batches), so that value
+    translates to ~0 in the Kafka offset space — instead of the real cloud
+    high watermark (next_cloud_offset). The health-report HWM consumed by
+    group_manager's lag metric is therefore 0, and the reported lag collapses
+    to 0 regardless of the committed offset.
+
+    The Kafka-visible HWM (rpk / list_offsets) is NOT affected, because it
+    goes through replicated_partition::high_watermark() -> kafka_high_watermark(),
+    which has a read-replica branch returning next_cloud_offset().
+
+    This test pins the committed offset to 0 so the reported lag reduces to
+    exactly the health-report HWM:
+
+        lag = max(hwm_report - max(committed=0, log_start_offset~0), 0)
+            = hwm_report
+
+    With the fix (build_partition_status using kafka_high_watermark()),
+    hwm_report == kafka_hwm and the asserted lag == kafka_hwm. On the unfixed
+    code hwm_report == 0, so this assertion FAILS — which is the proof that
+    the bug is real.
+
+    Lives alongside the single-cluster test_group_lag_metrics_* tests above,
+    but in its own class because it needs the read-replica (tiered storage +
+    second cluster) setup from ReadReplicaE2EBase.
+    """
+
+    LAG_COLLECTION_INTERVAL = 5
+    GROUP = "rr-consumer-lag-group"
+
+    # 3 nodes: source broker (1) + producer (1) + read-replica broker (1).
+    # The consumer is an in-process confluent_kafka client, not a ducktape
+    # service, so it needs no node of its own.
+    @cluster(num_nodes=3, log_allow_list=READ_REPLICA_LOG_ALLOW_LIST)
+    @matrix(cloud_storage_type=get_cloud_storage_type(docker_use_arbitrary=True))
+    def test_group_lag_metrics_read_replica(self, cloud_storage_type):
+        num_messages = 1000
+        partition = 0
+
+        # Source: tiered-storage topic with data; then a synced read replica.
+        # Single partition keeps the offset arithmetic unambiguous.
+        self._setup_read_replica(
+            num_messages=num_messages,
+            partition_count=1,
+            num_source_brokers=1,
+            num_rrr_brokers=1,
+            replication_factor=1,
+        )
+
+        rr = self.second_cluster
+        assert rr is not None
+
+        # The consumer group lives on the read-replica cluster, so the lag
+        # metric is collected there — enable it there.
+        rr.set_cluster_config(
+            {
+                "enable_consumer_group_metrics": ["consumer_lag"],
+                "consumer_group_lag_collection_interval_sec": self.LAG_COLLECTION_INTERVAL,
+            }
+        )
+
+        # Kafka-visible HWM on the read replica (via list_offsets). This is the
+        # CORRECT, cloud-aware HWM and proves the data is really readable.
+        id_to_hwm = wait_until_result(
+            lambda: get_hwm_per_partition(rr, self.topic_name, 1),
+            timeout_sec=60,
+            backoff_sec=2,
+        )
+        kafka_hwm = id_to_hwm[partition]
+        # Guard against a false pass: the final assertion is lag == kafka_hwm,
+        # and the bug makes the reported lag 0. If kafka_hwm were also 0 (data
+        # not yet synced to the replica) that assertion would trivially hold
+        # (0 == 0) even on buggy code. Requiring kafka_hwm > 0 ensures the
+        # comparison actually distinguishes the bug (0) from the fix
+        # (kafka_hwm). We don't assert an exact count: the producer overshoots
+        # num_messages and only uploaded/synced offsets reach the replica.
+        assert kafka_hwm > 0, (
+            f"expected a non-zero Kafka HWM on the read replica, got {kafka_hwm}"
+        )
+
+        # Create the group on the read replica and force its committed offset
+        # to 0. With committed == 0 the reported lag reduces to exactly the
+        # health-report HWM, so the metric value below directly reveals it.
+        consumer = Consumer(
+            {
+                "bootstrap.servers": rr.brokers(),
+                "group.id": self.GROUP,
+                "auto.offset.reset": "earliest",
+                "enable.auto.commit": False,
+            }
+        )
+        try:
+            consumer.subscribe([self.topic_name])
+            # Poll once to join the group and get the partition assigned.
+            consumer.poll(timeout=30)
+            consumer.commit(
+                offsets=[TopicPartition(self.topic_name, partition, 0)],
+                asynchronous=False,
+            )
+            committed = consumer.committed(
+                [TopicPartition(self.topic_name, partition)]
+            )[0].offset
+        finally:
+            consumer.close()
+
+        assert committed == 0, f"expected committed offset 0, got {committed}"
+        self.logger.info(
+            f"read replica: Kafka HWM={kafka_hwm}, committed={committed}, "
+            f"expected (Kafka-visible) lag={kafka_hwm}"
+        )
+
+        def get_group_lag(metric_name: str) -> float | None:
+            samples = rr.metrics_samples(
+                [metric_name],
+                rr.started_nodes(),
+                MetricsEndpoint.PUBLIC_METRICS,
+            )
+            if metric_name not in samples:
+                return None
+            group_samples = (
+                samples[metric_name]
+                .label_filter({"redpanda_group": self.GROUP})
+                .samples
+            )
+            if not group_samples:
+                return None
+            return max(s.value for s in group_samples)
+
+        # Wait until the metric is being collected for this group at all
+        # (gives at least one collection cycle after the commit).
+        wait_until(
+            lambda: get_group_lag("redpanda_kafka_consumer_group_lag_max") is not None,
+            timeout_sec=self.LAG_COLLECTION_INTERVAL * 2 + 30,
+            backoff_sec=self.LAG_COLLECTION_INTERVAL,
+            err_msg="consumer_group_lag_max metric never appeared for the group",
+        )
+
+        # With committed == 0 the reported lag equals the health-report HWM.
+        # It must equal the real, Kafka-visible HWM. On the unfixed code the
+        # health-report HWM for a read replica is 0 (the local manifest-log
+        # position), so this fails with lag_max == 0 — the proof of the bug.
+        def lag_matches_cloud_hwm() -> bool:
+            lag_max = get_group_lag("redpanda_kafka_consumer_group_lag_max")
+            lag_sum = get_group_lag("redpanda_kafka_consumer_group_lag_sum")
+            self.logger.info(
+                f"observed lag_max={lag_max}, lag_sum={lag_sum}, expected={kafka_hwm}"
+            )
+            return lag_max == kafka_hwm and lag_sum == kafka_hwm
+
+        wait_until(
+            lag_matches_cloud_hwm,
+            timeout_sec=self.LAG_COLLECTION_INTERVAL * 2 + 30,
+            backoff_sec=self.LAG_COLLECTION_INTERVAL,
+            err_msg=(
+                f"consumer-group lag did not reflect the cloud HWM "
+                f"({kafka_hwm}) for the read replica. A reported lag of 0 "
+                f"means the health-report HWM is 0 (read-replica HWM bug)."
+            ),
         )
