@@ -46,6 +46,30 @@ func fillRpkNodeConfig(path, mode string) *config.RedpandaYaml {
 	return y
 }
 
+func TestCurrentMode(t *testing.T) {
+	configPath := "/etc/redpanda/redpanda.yaml"
+	tests := []struct {
+		name string
+		mode string
+		exp  string
+	}{
+		{name: "reports prod", mode: config.ModeProd, exp: config.ModeProd},
+		{name: "reports dev", mode: config.ModeDev, exp: config.ModeDev},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			fs := afero.NewMemMapFs()
+			bs, err := yaml.Marshal(fillRpkNodeConfig(configPath, tt.mode))
+			require.NoError(t, err)
+			require.NoError(t, afero.WriteFile(fs, configPath, bs, 0o644))
+
+			got, err := currentMode(fs, new(config.Params))
+			require.NoError(t, err)
+			require.Equal(t, tt.exp, got)
+		})
+	}
+}
+
 func TestModeCommand(t *testing.T) {
 	configPath := "/etc/redpanda/redpanda.yaml"
 	tests := []struct {

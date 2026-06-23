@@ -768,6 +768,27 @@ schema_registry: {}
 	}
 }
 
+func TestMode(t *testing.T) {
+	for _, tt := range []struct {
+		name      string
+		developer bool
+		recovery  bool
+		exp       string
+	}{
+		{name: "prod by default", exp: ModeProd},
+		{name: "developer_mode reports dev", developer: true, exp: ModeDev},
+		{name: "recovery reports recovery", recovery: true, exp: ModeRecovery},
+		{name: "recovery takes precedence over dev", developer: true, recovery: true, exp: ModeRecovery},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			y := DevDefault()
+			y.Redpanda.DeveloperMode = tt.developer
+			y.Redpanda.RecoveryModeEnabled = tt.recovery
+			require.Equal(t, tt.exp, y.Mode())
+		})
+	}
+}
+
 func TestSetMode(t *testing.T) {
 	fillRpkNodeConfig := func(mode string) func() *RedpandaYaml {
 		return func() *RedpandaYaml {
