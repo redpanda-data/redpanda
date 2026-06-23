@@ -19,6 +19,7 @@ import (
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/out"
 	"github.com/spf13/afero"
 	"github.com/spf13/cobra"
+	"github.com/twmb/franz-go/pkg/kadm"
 	"github.com/twmb/franz-go/pkg/kerr"
 	"github.com/twmb/franz-go/pkg/kmsg"
 	"go.uber.org/zap"
@@ -51,6 +52,7 @@ func newAlterConfigCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 
 		dry       bool
 		noConfirm bool
+		re        bool
 	)
 
 	cmd := &cobra.Command{
@@ -68,6 +70,11 @@ Incremental altering supports four operations:
   3) Appending a new value to a list-of-values key
   4) Subtracting (removing) an existing value from a list-of-values key
 
+The --regex flag (-r) opts into parsing the input topics as regular expressions
+and altering any non-internal topic that matches any of the expressions. The
+topic list command accepts the same input regex format, which lets you preview
+which topics will be altered.
+
 The --dry option will validate whether the requested configuration change is
 valid, but does not apply it.
 Use the flag '--no-confirm' to avoid the confirmation prompt.`,
@@ -84,6 +91,12 @@ Use the flag '--no-confirm' to avoid the confirmation prompt.`,
 			cl, err := kafka.NewFranzClient(fs, p)
 			out.MaybeDie(err, "unable to initialize kafka client: %v", err)
 			defer cl.Close()
+
+			if re {
+				adm := kadm.NewClient(cl)
+				topics, err = regexTopics(adm, topics)
+				out.MaybeDie(err, "unable to filter topics by regex: %v", err)
+			}
 
 			if len(topics) == 0 {
 				out.Exit("No topics specified.")
@@ -210,6 +223,7 @@ Use the flag '--no-confirm' to avoid the confirmation prompt.`,
 
 	cmd.Flags().BoolVar(&dry, "dry", false, "Dry run: validate the alter request, but do not apply")
 	cmd.Flags().BoolVar(&noConfirm, "no-confirm", false, "Disable confirmation prompt")
+	cmd.Flags().BoolVarP(&re, "regex", "r", false, "Parse topics as regex; alter any topic that matches any input topic expression")
 
 	p.InstallFormatFlag(cmd)
 	return cmd
