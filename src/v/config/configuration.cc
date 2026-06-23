@@ -1270,6 +1270,16 @@ configuration::configuration()
       "only be used to debug unexpected problems.",
       {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
       false)
+  , controller_log_learner_recovery_rate_enabled(
+      *this,
+      "controller_log_learner_recovery_rate_enabled",
+      "Whether the controller raft group (raft0) honors "
+      "`raft_learner_recovery_rate`. When `false` (default) the controller log "
+      "replicates to new learners without throttling. When `true`, "
+      "controller-log recovery is subject to the same per-node recovery bucket "
+      "as user partitions.",
+      {.needs_restart = needs_restart::yes, .visibility = visibility::tunable},
+      false)
   , raft_smp_max_non_local_requests(
       *this,
       "raft_smp_max_non_local_requests",
