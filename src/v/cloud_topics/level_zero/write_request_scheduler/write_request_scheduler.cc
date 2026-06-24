@@ -224,6 +224,12 @@ schedule_result<Clock> scheduler_context<Clock>::try_schedule_upload(
 
     // First check round-robin: is it this shard's turn within the group?
     auto grp_size = get_group_size(gid);
+    if (grp_size == 0) {
+        // A concurrent split/merge on another shard moved every shard out of
+        // `gid` between reading the group id above and counting its members,
+        // leaving the group momentarily empty from our view.
+        return {schedule_action::skip, std::nullopt, gid};
+    }
     auto current_ix = group.ix.load();
     auto shard_index_in_group = get_shard_index_in_group(shard, gid);
 
