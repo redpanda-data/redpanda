@@ -24,6 +24,7 @@ namespace kafka {
 using namespace std::chrono_literals;
 
 class fetch_memory_units;
+struct memory_units_allocation;
 
 /***
  * This service handles allocating/releasing semaphore units for the fetch path.
@@ -66,8 +67,12 @@ public:
      * \param require_min_units If true then at least \ref min_units will be
      * allocated regardless of the units available in \ref memory_sem and \ref
      * memory_fetch_sem.
+     *
+     * The returned \ref memory_units_allocation also reports whether the memory
+     * semaphores were allowed to go negative in order to satisfy \ref
+     * require_max_batch_size.
      */
-    fetch_memory_units allocate_memory_units(
+    memory_units_allocation allocate_memory_units(
       const model::ktp& ktp,
       size_t max_bytes,
       size_t max_batch_size,
@@ -166,6 +171,18 @@ private:
 
     fetch_memory_units_manager::units _units;
     fetch_memory_units_manager::local_instance_fn _local_instance_fn;
+};
+
+/***
+ * Result of \ref fetch_memory_units_manager::allocate_memory_units.
+ */
+struct [[nodiscard]] memory_units_allocation {
+    /// The allocated memory units.
+    fetch_memory_units units;
+    /// True if more units were reserved than the memory semaphores had
+    /// available (allowing them to go negative) in order to satisfy \ref
+    /// require_max_batch_size.
+    bool exceeded_available_units;
 };
 
 } // namespace kafka
