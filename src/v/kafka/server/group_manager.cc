@@ -2087,8 +2087,23 @@ ss::future<> group_manager::collect_consumer_lag_metrics() {
                 if (partition_it == topic_it->second.end()) {
                     continue;
                 }
+                // Clamp committed offset to log_start_offset when known:
+                // a stale commit below log_start_offset means no consumable
+                // backlog exists and should not inflate lag. The log start
+                // offset is reported by the partition leader alongside the
+                // high watermark; it is absent when the leader runs an older
+                // version, in which case we fall back to the raw committed
+                // offset.
+                auto effective_offset = offset;
+                if (auto lso_topic_it = part_offsets.log_start_offsets.find(tp);
+                    lso_topic_it != part_offsets.log_start_offsets.end()) {
+                    if (auto lso_it = lso_topic_it->second.find(partition);
+                        lso_it != lso_topic_it->second.end()) {
+                        effective_offset = std::max(offset, lso_it->second);
+                    }
+                }
                 lag part_lag{static_cast<lag>(
-                  std::max(partition_it->second() - offset(), 0L))};
+                  std::max(partition_it->second() - effective_offset(), 0L))};
                 lag_metrics.sum += part_lag;
                 lag_metrics.max = std::max(lag_metrics.max, part_lag);
             }
