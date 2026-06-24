@@ -16,6 +16,7 @@
 #include "config/configuration.h"
 #include "config/node_config.h"
 #include "container/chunked_vector.h"
+#include "kafka/protocol/errors.h"
 #include "kafka/protocol/schemata/metadata_response.h"
 #include "kafka/protocol/types.h"
 #include "kafka/server/errors.h"
@@ -157,7 +158,31 @@ metadata_response::topic make_topic_response_from_topic_metadata(
         auto lt = get_leader_term(tp_ns, p_as.id, md_cache, replicas);
         if (lt && !is_node_isolated && p.error_code == error_code::none) {
             p.leader_id = lt->leader.value_or(no_leader);
-            p.leader_epoch = leader_epoch_from_term(lt->term);
+
+            if (lt->term.has_value()) {
+                p.leader_epoch = leader_epoch_from_term(lt->term);
+            } else {
+                // We don't have term information for the partition, so submit a
+                // stale guess of term 0. We deliberately avoid the invalid
+                // epoch (-1): the Java client treats -1 as a signal to drop its
+                // cached leader epochs, which interferes with truncation
+                // detection (KIP-320). Term 0 is parsed as an ordinary (stale)
+                // epoch instead.
+                p.leader_epoch = leader_epoch_from_term(model::term_id(0));
+
+                // Pair the stale guess with an error so clients refetch
+                // metadata.
+                //
+                // Franz go skips processing the partition altogether if there
+                // is an error, regardless of the term, opting to retry later.
+                // https://github.com/twmb/franz-go/blob/8268a5d078c01d29ca0daa1748fac264e0fc2f11/pkg/kgo/metadata.go#L1011
+                //
+                // The Java client still parses the stale guess from above, but
+                // also treats this error as a signal to request another update
+                // immediately.
+                // https://github.com/apache/kafka/blob/5db02ead60fbc937b3c51a51ecd6e93936dddf88/clients/src/main/java/org/apache/kafka/clients/Metadata.java#L306-L310
+                p.error_code = error_code::leader_not_available;
+            }
         }
         if (is_node_isolated && p.error_code == error_code::none) {
             auto replicas_for_sfuffle = replicas;
@@ -171,6 +196,11 @@ metadata_response::topic make_topic_response_from_topic_metadata(
                     break;
                 }
             }
+
+            // An isolated node only has a stale guess at leadership, so apply
+            // the same term 0 + error as the missing-term case above.
+            p.leader_epoch = leader_epoch_from_term(model::term_id(0));
+            p.error_code = error_code::leader_not_available;
         }
         p.replica_nodes = std::move(replicas);
         p.isr_nodes = p.replica_nodes;
