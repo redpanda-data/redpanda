@@ -1349,7 +1349,8 @@ remote::initiate_multipart_upload(
   const cloud_storage_clients::bucket_name& bucket,
   const cloud_storage_clients::object_key& key,
   size_t part_size,
-  ss::lowres_clock::duration timeout) {
+  ss::lowres_clock::duration timeout,
+  ss::abort_source* as) {
     auto guard = _gate.hold();
 
     const auto bucket_parts = cloud_storage_clients::parse_bucket_name(bucket);
@@ -1390,7 +1391,7 @@ remote::initiate_multipart_upload(
 
     // Create the multipart_upload with the wrapped state
     auto upload = ss::make_shared<cloud_storage_clients::multipart_upload>(
-      std::move(wrapped_state), part_size, log);
+      std::move(wrapped_state), part_size, log, as);
 
     co_return upload;
 }

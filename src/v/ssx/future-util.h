@@ -486,6 +486,64 @@ seastar::future<T...> with_timeout_abortable(
     return result;
 }
 
+/// \brief Wait for a future, or until an abort source fires, whichever first.
+///
+/// Like \ref with_timeout_abortable but with no deadline: resolves with \p f,
+/// or fails with the abort source's exception (abort_requested_exception by
+/// default) when \p as fires. Aborting does not cancel the wrapped future -- it
+/// keeps running and its result is ignored once we stop waiting.
+///
+/// \param f future to wait for
+/// \param as abort source
+template<typename... T>
+seastar::future<T...>
+with_abort(seastar::future<T...> f, seastar::abort_source& as) {
+    if (f.available()) {
+        return f;
+    }
+
+    struct state {
+        seastar::promise<T...> done;
+        seastar::abort_source::subscription sub;
+        bool settled{false};
+
+        explicit state(seastar::abort_source& as) {
+            try {
+                as.check();
+            } catch (...) {
+                settled = true;
+                done.set_to_current_exception();
+                return;
+            }
+            auto maybe_sub = as.subscribe(
+              [this,
+               &as](const std::optional<std::exception_ptr>& ex) noexcept {
+                  settled = true;
+                  done.set_exception(ex.value_or(as.get_default_exception()));
+              });
+            vassert(
+              maybe_sub,
+              "abort_source was just checked, subscribe cannot fail here");
+            sub = std::move(*maybe_sub);
+        }
+    };
+
+    auto st = std::make_unique<state>(as);
+    auto result = st->done.get_future();
+
+    background = f.then_wrapped([st = std::move(st)](auto&& f) {
+        // Unsubscribe first so a late abort cannot set `done` after we forward.
+        st->sub = seastar::abort_source::subscription{};
+        if (st->settled) {
+            f.ignore_ready_future();
+        } else {
+            f.forward_to(std::move(st->done));
+        }
+    });
+
+    return result;
+}
+
 // Create a ready future with template deduction.
 //
 // In most cases you should not need specify a template parameter using this

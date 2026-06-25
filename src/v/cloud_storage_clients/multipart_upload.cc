@@ -16,6 +16,7 @@
 #include "net/connection.h"
 #include "ssx/future-util.h"
 
+#include <seastar/core/shared_future.hh>
 #include <seastar/core/timed_out_error.hh>
 #include <seastar/coroutine/as_future.hh>
 #include <seastar/coroutine/exception.hh>
@@ -92,10 +93,27 @@ private:
 multipart_upload::multipart_upload(
   ss::shared_ptr<multipart_upload_state> state,
   size_t part_size,
-  ss::logger& logger)
+  ss::logger& logger,
+  ss::abort_source* as)
   : _state(std::move(state))
   , _part_size(part_size)
-  , _logger(logger) {}
+  , _logger(logger)
+  , _abort_source(as) {}
+
+ss::future<> multipart_upload::with_op_abort(ss::future<> op) {
+    if (_abort_source == nullptr) {
+        return op;
+    }
+    // The op holds _state by raw pointer and keeps running after abort ends
+    // the caller's wait, so _state must outlive the wait or the running op
+    // would use-after-free. Observe op via a shared_future: the returned
+    // handle is the caller's abortable wait; a detached continuation holds
+    // _state on the other.
+    auto shared = ss::make_lw_shared<ss::shared_future<>>(std::move(op));
+    ssx::background = shared->get_future().then_wrapped(
+      [shared, state = _state](ss::future<> f) { f.ignore_ready_future(); });
+    return ssx::with_abort(shared->get_future(), *_abort_source);
+}
 
 multipart_upload::~multipart_upload() {
     vassert(
@@ -132,7 +150,7 @@ ss::future<> multipart_upload::put(iobuf data) {
               _logger.debug,
               "Initializing multipart upload for first part (size: {})",
               _part_size);
-            co_await _state->initialize_multipart();
+            co_await with_op_abort(_state->initialize_multipart());
             _multipart_initialized = true;
         }
 
@@ -141,7 +159,8 @@ ss::future<> multipart_upload::put(iobuf data) {
           "Uploading part {} (size: {})",
           _part_number,
           part_data.size_bytes());
-        co_await _state->upload_part(_part_number++, std::move(part_data));
+        co_await with_op_abort(
+          _state->upload_part(_part_number++, std::move(part_data)));
     }
 }
 
@@ -159,7 +178,8 @@ ss::future<> multipart_upload::complete() {
           _logger.debug,
           "Small file optimization: using single put_object (size: {})",
           _buffer.size_bytes());
-        co_await _state->upload_as_single_object(std::move(_buffer));
+        co_await with_op_abort(
+          _state->upload_as_single_object(std::move(_buffer)));
         co_return;
     }
 
@@ -170,8 +190,8 @@ ss::future<> multipart_upload::complete() {
           "Uploading final part {} (size: {})",
           _part_number,
           _buffer.size_bytes());
-        auto fut = co_await ss::coroutine::as_future(
-          _state->upload_part(_part_number++, std::move(_buffer)));
+        auto fut = co_await ss::coroutine::as_future(with_op_abort(
+          _state->upload_part(_part_number++, std::move(_buffer))));
         if (fut.failed()) {
             auto ex = fut.get_exception();
             vlogl(
@@ -189,7 +209,7 @@ ss::future<> multipart_upload::complete() {
       "Completing multipart upload ({} parts)",
       _part_number - 1);
     auto fut = co_await ss::coroutine::as_future(
-      _state->complete_multipart_upload());
+      with_op_abort(_state->complete_multipart_upload()));
     if (fut.failed()) {
         auto ex = fut.get_exception();
         vlogl(
@@ -217,7 +237,7 @@ ss::future<> multipart_upload::abort() {
 
     vlog(_logger.debug, "Aborting multipart upload");
     try {
-        co_await _state->abort_multipart_upload();
+        co_await with_op_abort(_state->abort_multipart_upload());
     } catch (...) {
         // Log but don't propagate abort failures - we're already aborting
         vlog(
@@ -229,7 +249,7 @@ ss::future<> multipart_upload::abort() {
 
 ss::future<> multipart_upload::abort_on_error() {
     auto fut = co_await ss::coroutine::as_future(
-      _state->abort_multipart_upload());
+      with_op_abort(_state->abort_multipart_upload()));
     if (fut.failed()) {
         vlog(
           _logger.warn,

@@ -146,3 +146,49 @@ SEASTAR_THREAD_TEST_CASE(with_timeout_abortable_custom_ex_test) {
         seastar::manual_clock::advance(40ms);
     }
 }
+
+SEASTAR_THREAD_TEST_CASE(with_abort_test) {
+    // future already ready -> value, abort never consulted
+    {
+        seastar::abort_source as;
+        auto res = ssx::with_abort(seastar::make_ready_future<int>(7), as);
+        BOOST_CHECK_EQUAL(res.get(), 7);
+    }
+
+    // future completes before any abort -> value
+    {
+        auto f = seastar::sleep<seastar::manual_clock>(50ms).then(
+          [] { return seastar::make_ready_future<int>(123); });
+        seastar::abort_source as;
+        auto res = ssx::with_abort(std::move(f), as);
+
+        seastar::manual_clock::advance(50ms);
+        BOOST_CHECK_EQUAL(res.get(), 123);
+    }
+
+    // abort before the future completes -> abort_requested_exception
+    {
+        auto f = seastar::sleep<seastar::manual_clock>(150ms).then(
+          [] { return seastar::make_ready_future<int>(123); });
+        seastar::abort_source as;
+        auto res = ssx::with_abort(std::move(f), as);
+
+        as.request_abort();
+        BOOST_CHECK_THROW(res.get(), seastar::abort_requested_exception);
+        // f has to resolve or LSAN thinks there are leaks
+        seastar::manual_clock::advance(150ms);
+    }
+
+    // already aborted at call time -> abort_requested_exception
+    {
+        seastar::abort_source as;
+        as.request_abort();
+        auto f = seastar::sleep<seastar::manual_clock>(50ms).then(
+          [] { return seastar::make_ready_future<int>(123); });
+        auto res = ssx::with_abort(std::move(f), as);
+
+        BOOST_CHECK_THROW(res.get(), seastar::abort_requested_exception);
+        // f has to resolve or LSAN thinks there are leaks
+        seastar::manual_clock::advance(50ms);
+    }
+}
