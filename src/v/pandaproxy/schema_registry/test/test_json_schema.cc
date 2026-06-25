@@ -151,9 +151,11 @@ static const auto error_test_cases = std::to_array({
 {
   "$comment": "the root schema is valid but the bundled schema is not",
   "$defs": {
-      "$comment": "dialect is unkown",
+    "bundled": {
+      "$comment": "dialect is unknown",
       "$id": "https://example.com/mismatch_id",
       "$schema": "http://json-schema.org/draft-3000/schema#"
+    }
   }
 }
 )",
@@ -162,19 +164,62 @@ static const auto error_test_cases = std::to_array({
       "bundled schema without a known dialect: "
       "'http://json-schema.org/draft-3000/schema#'"}},
   error_test_case{
+    // The bundled schema declares draft-04, where "exclusiveMinimum" must be a
+    // boolean; the numeric value is valid under the root's 2020-12 metaschema
+    // (so the root is valid and "$defs" is walked) but invalid once the walk
+    // re-validates the bundled schema against its own dialect.
     R"(
 {
   "$comment": "the root schema is valid but the bundled schema is not",
   "$defs": {
+    "bundled": {
       "$comment": "schema is invalid",
-      "$id": "https://example.com/mismatch_id",
-      "type": "potato"
+      "id": "https://example.com/mismatch_id",
+      "$schema": "http://json-schema.org/draft-04/schema#",
+      "exclusiveMinimum": 5
+    }
   }
 }
 )",
     pps::error_info{
       pps::error_code::schema_invalid,
-      R"(bundled schema is invalid. Invalid json schema: '{"$comment":"schema is invalid","$id":"https://example.com/mismatch_id","type":"potato"}'. Error: '/type: Must be valid against at least one schema, but found no matching schemas')"}},
+      R"(bundled schema is invalid. Invalid json schema: '{"$comment":"schema is invalid","$schema":"http://json-schema.org/draft-04/schema#","exclusiveMinimum":5,"id":"https://example.com/mismatch_id"}'. Error: '/exclusiveMinimum: Expected boolean, found uint64')"}},
+  // the walk must descend into array positions: a bundled schema under "allOf"
+  // with an unknown dialect is reached and rejected
+  error_test_case{
+    R"(
+{
+  "allOf": [
+    {
+      "$id": "https://example.com/bundled",
+      "$schema": "http://json-schema.org/draft-3000/schema#"
+    }
+  ]
+}
+)",
+    pps::error_info{
+      pps::error_code::schema_invalid,
+      "bundled schema without a known dialect: "
+      "'http://json-schema.org/draft-3000/schema#'"}},
+  // the walk must descend into the tuple-array form of "items" (the
+  // single-or-array fallthrough): the array value forces the dialect to
+  // 2019-09, where "items" may be a tuple, and the bundled element is reached
+  error_test_case{
+    R"(
+{
+  "type": "array",
+  "items": [
+    {
+      "$id": "https://example.com/bundled",
+      "$schema": "http://json-schema.org/draft-3000/schema#"
+    }
+  ]
+}
+)",
+    pps::error_info{
+      pps::error_code::schema_invalid,
+      "bundled schema without a known dialect: "
+      "'http://json-schema.org/draft-3000/schema#'"}},
 });
 SEASTAR_THREAD_TEST_CASE(test_make_invalid_json_schema) {
     for (const auto& data : error_test_cases) {
@@ -269,6 +314,111 @@ static constexpr auto valid_test_cases = std::to_array<std::string_view>({
     "id":{
       "type":"string"
     }
+  }
+})json",
+  // Keyword-named properties and out-of-dialect keywords must be treated as
+  // ordinary names, not schema keywords (CORE-16282). Each registers cleanly;
+  // before the fix these were misread as the "id"/"$id"/"$ref" keyword.
+  //
+  // the exact reported schema: a property named "id" under draft-04
+  R"json(
+{
+  "$schema": "http://json-schema.org/draft-04/schema#",
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": ["string", "null"],
+      "description": "The ID of the element"
+    }
+  }
+})json",
+  // draft-06 (and later) use "$id" as the identifier, so a property named "id"
+  // is an ordinary name here -- only draft-04 has the "id" collision
+  R"json(
+{
+  "$schema": "http://json-schema.org/draft-06/schema#",
+  "type": "object",
+  "properties": {
+    "id": { "type": "string" }
+  }
+})json",
+  // a property named "id" nested under "definitions"/"patternProperties" is
+  // also just a property name
+  R"json(
+{
+  "$schema": "http://json-schema.org/draft-04/schema#",
+  "definitions": {
+    "elem": {
+      "type": "object",
+      "properties": { "id": { "type": "string" } }
+    }
+  },
+  "patternProperties": {
+    "^x-": { "properties": { "id": { "type": "integer" } } }
+  }
+})json",
+  // other reserved keyword names used as property names must not be treated as
+  // keywords either (their values are subschemas)
+  R"json(
+{
+  "$schema": "http://json-schema.org/draft-04/schema#",
+  "type": "object",
+  "properties": {
+    "$ref": { "type": "string" },
+    "$schema": { "type": "string" }
+  }
+})json",
+  // from draft-06 the identifier keyword is "$id" (not "id"), so a property
+  // named "$id" is the >=draft6 analogue of the reported bug and must likewise
+  // be treated as a property name, not the schema identifier
+  R"json(
+{
+  "$schema": "http://json-schema.org/draft-06/schema#",
+  "type": "object",
+  "properties": {
+    "$id": { "type": "string" }
+  }
+})json",
+  // keyword classification is dialect-aware: "$defs" was only introduced in
+  // draft 2019-09, so under draft-04 it is an ordinary member and must not be
+  // walked as a map of subschemas. If it were, the walk would treat the inner
+  // object as a bundled schema (it has the draft-04 "id" keyword) and reject it
+  // for the invalid "type", but draft-04 ignores the unknown "$defs", so the
+  // schema is valid.
+  R"json(
+{
+  "$schema": "http://json-schema.org/draft-04/schema#",
+  "$defs": {
+    "notAKeywordInDraft4": {
+      "id": "https://example.com/x",
+      "type": "potato"
+    }
+  }
+})json",
+  // dialect gating again, for an array position: "prefixItems" only exists from
+  // 2020-12, so under draft-07 it is an ordinary member and is not walked --
+  // the bundled element with an unknown dialect is never reached, so the schema
+  // is valid (were it walked, the unknown dialect would be rejected)
+  R"json(
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "prefixItems": [
+    {
+      "$id": "https://example.com/bundled",
+      "$schema": "http://json-schema.org/draft-3000/schema#"
+    }
+  ]
+})json",
+  // dialect gating for a removed keyword: "additionalItems" was dropped in
+  // 2020-12, so it is an ordinary member there and is not walked -- the bundled
+  // value with an unknown dialect is never reached, so the schema is valid
+  // (under an earlier draft, where it is a keyword, it would be rejected)
+  R"json(
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalItems": {
+    "$id": "https://example.com/bundled",
+    "$schema": "http://json-schema.org/draft-3000/schema#"
   }
 })json",
 });

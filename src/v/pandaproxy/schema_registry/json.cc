@@ -47,8 +47,10 @@
 #include <jsoncons_ext/jsonschema/jsonschema.hpp>
 #include <rapidjson/error/en.h>
 
+#include <array>
 #include <exception>
 #include <filesystem>
+#include <optional>
 #include <ranges>
 #include <string_view>
 #include <type_traits>
@@ -2260,6 +2262,105 @@ constexpr const char* id_keyword(json_schema_dialect jsd) {
     return "$id";
 }
 
+// Where a subschema can appear relative to a keyword. Used to walk a schema
+// without mistaking a property name for a keyword: e.g. under "properties" the
+// keys are arbitrary names and only the values are subschemas, so the keyword
+// position of an enclosing schema (such as "id"/"$id") must not be looked up
+// against those names.
+enum class subschema_position : uint8_t {
+    // not a subschema-bearing keyword, do not descend
+    none,
+    // value is a subschema, or an array of subschemas (e.g. "not", "allOf",
+    // "items"); descend by shape
+    schema,
+    // value is a map of name -> subschema (e.g. "properties", "$defs"); descend
+    // into the values, never the map itself
+    map,
+};
+
+// A subschema-bearing keyword and the dialects it applies to. The
+// json_schema_dialect enum is ordered chronologically (draft4 < draft6 < ... <
+// draft202012), so the keyword applies from `since` up to (and including)
+// `until`.
+struct keyword_spec {
+    std::string_view name;
+    subschema_position position;
+    json_schema_dialect since;
+    // last dialect the keyword applies to; nullopt means "from `since` onward
+    // forever" (including future dialects). Set only for keywords that a later
+    // draft removed, so they are not walked in dialects that ignore them.
+    std::optional<json_schema_dialect> until = std::nullopt;
+
+    constexpr bool applies_to(json_schema_dialect dialect) const {
+        return dialect >= since && (!until || dialect <= *until);
+    }
+};
+
+// Classify a keyword by where subschemas appear under it, for the given
+// dialect. The table is organised as a spec changelog: one row per keyword,
+// grouped by the draft that introduced it. A key that is not a keyword in
+// `dialect` (e.g.
+// "$defs" under draft-04) returns `none`, so it is treated as an ordinary name
+// rather than a schema position.
+//
+// NOTE: when adding a new json_schema_dialect, review this table for keywords
+// that dialect introduces.
+constexpr subschema_position
+classify_keyword(json_schema_dialect dialect, std::string_view key) {
+    using enum subschema_position;
+    using enum json_schema_dialect;
+    constexpr auto specs = std::to_array<keyword_spec>({
+      // draft-04 core vocabulary
+      {.name = "properties", .position = map, .since = draft4},
+      {.name = "patternProperties", .position = map, .since = draft4},
+      {.name = "additionalProperties", .position = schema, .since = draft4},
+      {.name = "items", .position = schema, .since = draft4},
+      // "additionalItems" was removed in 2020-12 and "dependencies" split into
+      // "dependentSchemas"/"dependentRequired" in 2019-09; bound them so they
+      // are not walked in later dialects that treat the name as opaque data.
+      {.name = "additionalItems",
+       .position = schema,
+       .since = draft4,
+       .until = draft201909},
+      {.name = "dependencies",
+       .position = map,
+       .since = draft4,
+       .until = draft7},
+      {.name = "allOf", .position = schema, .since = draft4},
+      {.name = "anyOf", .position = schema, .since = draft4},
+      {.name = "oneOf", .position = schema, .since = draft4},
+      {.name = "not", .position = schema, .since = draft4},
+      // ("definitions" is intentionally left unbounded: 2020-12 schemas
+      // commonly still use it as a definitions container.)
+      {.name = "definitions", .position = map, .since = draft4},
+      // draft-06
+      {.name = "propertyNames", .position = schema, .since = draft6},
+      {.name = "contains", .position = schema, .since = draft6},
+      // draft-07
+      {.name = "if", .position = schema, .since = draft7},
+      {.name = "then", .position = schema, .since = draft7},
+      {.name = "else", .position = schema, .since = draft7},
+      // 2019-09
+      {.name = "$defs", .position = map, .since = draft201909},
+      {.name = "dependentSchemas", .position = map, .since = draft201909},
+      {.name = "unevaluatedProperties",
+       .position = schema,
+       .since = draft201909},
+      {.name = "unevaluatedItems", .position = schema, .since = draft201909},
+      {.name = "contentSchema", .position = schema, .since = draft201909},
+      // 2020-12
+      {.name = "prefixItems", .position = schema, .since = draft202012},
+    });
+
+    auto spec = std::ranges::find_if(specs, [&](const keyword_spec& s) {
+        return s.name == key && s.applies_to(dialect);
+    });
+    if (spec != specs.end()) {
+        return spec->position;
+    }
+    return none;
+}
+
 // Work item for iterative schema collection.
 struct collect_work_item {
     jsoncons::uri base_uri;
@@ -2348,24 +2449,60 @@ void process_work_item(
                             .string();
     }
 
-    // lambda to scan the object for more bundled schemas and $refs
-    auto collect_and_fix = [&](const auto& key, auto& value) {
-        work_stack.push_back(
-          {item.base_uri, item.obj_ptr / key, &value, item.dialect});
+    // lambda to enqueue a nested subschema for scanning
+    auto push_schema =
+      [&](jsoncons::jsonpointer::json_pointer ptr, jsoncons::ojson& value) {
+          work_stack.push_back(
+            {.base_uri = item.base_uri,
+             .obj_ptr = std::move(ptr),
+             .obj = &value,
+             .dialect = item.dialect});
+      };
+    // enqueue every object element of an array position (e.g. "allOf")
+    auto push_array_schemas = [&](
+                                const jsoncons::jsonpointer::json_pointer& base,
+                                jsoncons::ojson& arr) {
+        for (auto i = 0u; i < arr.size(); ++i) {
+            if (arr[i].is_object()) {
+                push_schema(base / i, arr[i]);
+            }
+        }
+    };
+    // enqueue every object value of a map position (e.g. "properties"); the
+    // keys are arbitrary names, only the values are subschemas
+    auto push_map_schemas = [&](
+                              const jsoncons::jsonpointer::json_pointer& base,
+                              jsoncons::ojson& obj) {
+        for (auto& m : obj.object_range()) {
+            if (m.value().is_object()) {
+                push_schema(base / m.key(), m.value());
+            }
+        }
     };
 
-    // Iteratively scan the object for more bundled schemas and $refs
+    // Iteratively scan the object for more bundled schemas and $refs. Only
+    // descend into genuine subschema positions: under keywords like
+    // "properties" the keys are arbitrary property names, so they must not be
+    // treated as schemas (otherwise a property named "id"/"$id"/"$ref" would be
+    // misread as the corresponding keyword).
     for (auto& e : item.obj->object_range()) {
         const auto& key = e.key();
         auto& value = e.value();
-        if (value.is_object()) {
-            collect_and_fix(key, value);
-        } else if (value.is_array()) {
-            for (auto i = 0u; i < value.size(); ++i) {
-                if (value[i].is_object()) {
-                    collect_and_fix(i, value[i]);
-                }
+        switch (classify_keyword(item.dialect, key)) {
+        case subschema_position::none:
+            break;
+        case subschema_position::map:
+            if (value.is_object()) {
+                push_map_schemas(item.obj_ptr / key, value);
             }
+            break;
+        case subschema_position::schema:
+            if (value.is_object()) {
+                push_schema(item.obj_ptr / key, value);
+            } else if (value.is_array()) {
+                push_array_schemas(item.obj_ptr / key, value);
+            }
+            break;
         }
     }
 }
