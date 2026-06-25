@@ -148,3 +148,13 @@ redpanda_cc_library(
         "@seastar",
     ],
 )
+
+redpanda_cc_library(
+    name = "chunk_data_source",
+    hdrs = ["chunk_data_source.h"],
+    deps = [
+        "//src/v/base",
+        "@fmt",
+        "@seastar",
+    ],
+)
