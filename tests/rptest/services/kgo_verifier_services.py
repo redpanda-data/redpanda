@@ -1222,7 +1222,7 @@ class ProduceStatus:
         bad_offsets=0,
         max_offsets_produced=dict(),
         restarts=0,
-        latency=None,
+        latency: dict[str, float] | None = None,
         active=False,
         failed_transactions=0,
         aborted_transaction_msgs=0,
