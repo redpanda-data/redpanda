@@ -168,10 +168,18 @@ class DatalakeTableNameTest(RedpandaTest):
                         for row in spark.run_query_fetch_all("SHOW TABLES IN redpanda")
                     ]
                 except pyhive.exc.OperationalError as e:
-                    if "NoSuchNamespaceException" in str(e):
-                        # Purging the last table deletes all files under the
-                        # namespace prefix in S3, so the namespace disappears.
-                        # An absent namespace means the table is gone too.
+                    # Purging the last table deletes all files under the
+                    # namespace prefix in S3, so the namespace disappears.
+                    # An absent namespace means the table is gone too.
+                    # JDBC-backed catalogs report NoSuchNamespaceException.
+                    # HadoopCatalog instead gets FileNotFoundException from
+                    # S3AFileSystem and wraps it as RuntimeIOException
+                    # ("Failed to list tables under: <ns>").
+                    msg = str(e)
+                    if (
+                        "NoSuchNamespaceException" in msg
+                        or "Failed to list tables" in msg
+                    ):
                         return True
                     raise
 
