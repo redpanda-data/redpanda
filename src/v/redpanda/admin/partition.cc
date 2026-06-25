@@ -318,8 +318,15 @@ admin_server::cancel_partition_reconfig_handler(
     const auto ntp = parse_ntp_from_request(req->param);
 
     if (ntp == model::controller_ntp) {
-        throw ss::httpd::bad_request_exception(
-          fmt::format("Can't cancel controller reconfiguration"));
+        if (need_redirect_to_leader(model::controller_ntp, _metadata_cache)) {
+            throw co_await redirect_to_leader(*req, model::controller_ntp);
+        }
+        vlog(
+          adminlog.info,
+          "Requesting cancelling of controller partition reconfiguration");
+        auto err = co_await _controller->cancel_raft0_reconfiguration();
+        co_await throw_on_error(*req, err, model::controller_ntp);
+        co_return ss::json::json_void();
     }
     vlog(
       adminlog.debug,

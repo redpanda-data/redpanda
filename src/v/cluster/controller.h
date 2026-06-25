@@ -293,6 +293,8 @@ public:
     ss::future<result<partition_state_reply>>
     do_get_controller_partition_state(model::node_id id);
 
+    ss::future<std::error_code> cancel_raft0_reconfiguration();
+
     static bytes invariants_key();
 
     ss::future<cluster::error_info>

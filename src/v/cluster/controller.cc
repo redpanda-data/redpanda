@@ -1294,6 +1294,22 @@ controller::do_get_controller_partition_state(model::node_id target_node) {
             .then(&rpc::get_ctx_data<partition_state_reply>);
       });
 }
+
+ss::future<std::error_code> controller::cancel_raft0_reconfiguration() {
+    return ss::smp::submit_to(controller_stm_shard, [this] {
+        if (!_raft0->is_elected_leader()) {
+            return ss::make_ready_future<std::error_code>(
+              make_error_code(errc::not_leader));
+        }
+        vlog(
+          clusterlog.info,
+          "Requesting cancellation of controller (raft0) reconfiguration");
+        // Cancel with the revision of the config being cancelled; if it gets
+        // bumped, another completely unrelated config change can get skipped.
+        return _raft0->cancel_configuration_change(
+          _raft0->config().revision_id());
+    });
+}
 /**
  * Validate that:
  * - node_id never changes
