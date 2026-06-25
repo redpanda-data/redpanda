@@ -36,16 +36,22 @@ struct partition_offsets_request
 struct partition_offsets_reply
   : serde::envelope<
       partition_offsets_reply,
-      serde::version<0>,
+      serde::version<1>,
       serde::compat_version<0>> {
     using rpc_adl_exempt = std::true_type;
 
     using offsets = chunked_hash_map<
       model::topic,
       chunked_hash_map<model::partition_id, kafka::offset>>;
+    // High watermark per partition.
     offsets data;
+    // Kafka log start offset (first readable offset) per partition. Populated
+    // alongside `data` by the partition leader. Empty when the reply comes from
+    // an older node that predates this field, in which case lag is computed
+    // without clamping the committed offset.
+    offsets log_start_offsets;
 
-    auto serde_fields() { return std::tie(data); }
+    auto serde_fields() { return std::tie(data, log_start_offsets); }
 };
 
 } // namespace kafka

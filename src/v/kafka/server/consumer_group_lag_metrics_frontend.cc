@@ -116,6 +116,9 @@ consumer_group_lag_metrics_frontend::get_partition_offsets(
           for (const auto& [topic, data] : res.data) {
               acc.data[topic].insert(data.begin(), data.end());
           }
+          for (const auto& [topic, data] : res.log_start_offsets) {
+              acc.log_start_offsets[topic].insert(data.begin(), data.end());
+          }
           return acc;
       });
 }
@@ -141,6 +144,8 @@ consumer_group_lag_metrics_frontend::get_local_partition_offsets(
               if (part.has_value()) {
                   reply.data[ktp.tp()][ktp.partition()] = kafka::offset{
                     part->high_watermark()()};
+                  reply.log_start_offsets[ktp.tp()][ktp.partition()]
+                    = kafka::offset{part->start_offset()()};
               }
           });
           return reply;
@@ -150,6 +155,12 @@ consumer_group_lag_metrics_frontend::get_local_partition_offsets(
           for (const auto& [t, ps] : rep.data) {
               for (const auto [p, o] : ps) {
                   auto& acc_off = acc.data[t][p];
+                  acc_off = std::max(acc_off, o);
+              }
+          }
+          for (const auto& [t, ps] : rep.log_start_offsets) {
+              for (const auto [p, o] : ps) {
+                  auto& acc_off = acc.log_start_offsets[t][p];
                   acc_off = std::max(acc_off, o);
               }
           }
