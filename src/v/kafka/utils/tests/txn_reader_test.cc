@@ -372,7 +372,8 @@ TEST_F_CORO(seastar_test, UncleanDestroy) {
     class asserting_reader final : public model::record_batch_reader::impl {
     public:
         asserting_reader()
-          : _resources_initalized(true) {}
+          : impl(needs_finally::yes)
+          , _resources_initalized(true) {}
 
         ~asserting_reader() {
             vassert(
@@ -393,7 +394,7 @@ TEST_F_CORO(seastar_test, UncleanDestroy) {
 
         fmt::iterator format_to(fmt::iterator it) const final { return it; }
 
-        ss::future<> finally() noexcept final {
+        ss::future<> do_finally() noexcept final {
             _resources_initalized = false;
             return ss::now();
         }

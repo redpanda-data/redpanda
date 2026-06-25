@@ -92,7 +92,7 @@ public:
 
     std::optional<private_flags> get_flags() const final;
 
-    ss::future<> finally() noexcept final;
+    ss::future<> do_finally() noexcept final;
 
     /// Reset the reader for reuse from the cache. The new config's
     /// start_offset must equal next_read_lower_bound().

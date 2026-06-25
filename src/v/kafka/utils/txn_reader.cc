@@ -182,7 +182,8 @@ std::unique_ptr<model::record_batch_reader::impl> make_txn_filtered_reader(
 read_committed_reader::read_committed_reader(
   std::unique_ptr<aborted_transaction_tracker> tracker,
   model::record_batch_reader reader)
-  : _tracker(std::move(tracker))
+  : impl(needs_finally::yes)
+  , _tracker(std::move(tracker))
   , _underlying(std::move(reader).release()) {}
 
 fmt::iterator read_committed_reader::format_to(fmt::iterator it) const {
@@ -193,7 +194,7 @@ bool read_committed_reader::is_end_of_stream() const {
     return _underlying->is_end_of_stream();
 }
 
-ss::future<> read_committed_reader::finally() noexcept {
+ss::future<> read_committed_reader::do_finally() noexcept {
     return _underlying->finally();
 }
 

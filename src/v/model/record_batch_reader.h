@@ -14,6 +14,7 @@
 #include "base/format_to.h"
 #include "base/likely.h"
 #include "base/seastarx.h"
+#include "base/vassert.h"
 #include "container/chunked_circular_buffer.h"
 #include "container/chunked_vector.h"
 #include "model/record.h"
@@ -24,7 +25,6 @@
 #include <seastar/core/do_with.hh>
 #include <seastar/core/future.hh>
 #include <seastar/core/sharded.hh>
-#include <seastar/coroutine/generator.hh>
 #include <seastar/util/noncopyable_function.hh>
 #include <seastar/util/optimized_optional.hh>
 #include <seastar/util/variant_utils.hh>
@@ -60,12 +60,37 @@ public:
 
     class impl {
     public:
-        impl() noexcept = default;
+        // Subclasses must declare their destruction contract explicitly:
+        //   yes -- has non-trivial do_finally() async cleanup; ~impl
+        //          dasserts in debug builds that finally() ran before
+        //          destruction.
+        //   no  -- do_finally() is the default no-op (or otherwise safe to
+        //          skip), and the impl can be dropped at any time.
+        enum class needs_finally : bool {
+            no = false,
+            yes = true,
+        };
+
+        explicit impl(needs_finally n) noexcept
+#ifndef NDEBUG
+          : _finally_satisfied(n == needs_finally::no)
+#endif
+        {
+            (void)n;
+        }
+
         impl(impl&& o) noexcept = default;
         impl& operator=(impl&& o) noexcept = default;
         impl(const impl& o) = delete;
         impl& operator=(const impl& o) = delete;
-        virtual ~impl() noexcept = default;
+        virtual ~impl() noexcept {
+#ifndef NDEBUG
+            dassert(
+              _finally_satisfied,
+              "record_batch_reader::impl that opted in to needs_finally::yes "
+              "was destroyed without finally() being called");
+#endif
+        }
 
         using private_flags = record_batch_reader::private_flags;
 
@@ -90,7 +115,14 @@ public:
               });
         }
 
-        virtual ss::future<> finally() noexcept { return ss::now(); }
+        // NVI wrapper: records that cleanup ran (see _finally_satisfied)
+        // and dispatches to the subclass's do_finally().
+        ss::future<> finally() noexcept {
+#ifndef NDEBUG
+            _finally_satisfied = true;
+#endif
+            return do_finally();
+        }
 
         /// Meant for non-owning iteration of the data. If you need to own the
         /// batches, please use consume() below
@@ -112,55 +144,6 @@ public:
             return ss::do_with(std::move(c), [this, tm](ReferenceConsumer& c) {
                 return do_peek_each_ref(c, tm);
             });
-        }
-
-        static seastar::coroutine::experimental::generator<model::record_batch>
-        generator(
-          std::unique_ptr<impl> impl, timeout_clock::time_point timeout) {
-            auto gen = slice_generator(std::move(impl), timeout);
-            while (auto slice = co_await gen()) {
-                for (auto& batch : slice->get()) {
-                    co_yield std::move(batch);
-                }
-            }
-        }
-
-        static seastar::coroutine::experimental::generator<data_t>
-        slice_generator(
-          std::unique_ptr<impl> impl, timeout_clock::time_point timeout) {
-            std::exception_ptr eptr;
-            try {
-                while (!impl->is_end_of_stream()) {
-                    co_yield ss::visit(
-                      co_await impl->do_load_slice(timeout),
-                      [](data_t&& d) { return std::move(d); },
-                      [](foreign_data_t d) {
-                          // Make a copy for the cross-shard case, this is dead
-                          // code anyways now that iobuf uses an atomic
-                          // ref-count and we've removed the foreign data
-                          // readers.
-                          data_t copy;
-                          for (auto& batch : *d.buffer) {
-                              copy.push_back(batch.copy());
-                          }
-                          return copy;
-                      });
-                }
-            } catch (...) {
-                eptr = std::current_exception();
-            }
-            try {
-                co_await impl->finally();
-            } catch (...) {
-                if (eptr) {
-                    throw seastar::nested_exception(
-                      eptr, std::current_exception());
-                }
-                throw;
-            }
-            if (eptr) {
-                std::rethrow_exception(eptr);
-            }
         }
 
     private:
@@ -252,7 +235,22 @@ public:
                    })
               .then([&consumer] { return consumer.end_of_stream(); });
         }
+
+        // Subclasses with non-trivial async cleanup override this; the
+        // default no-op is safe to skip. Private so it's only reachable
+        // through the finally() NVI wrapper.
+        virtual ss::future<> do_finally() noexcept { return ss::now(); }
+
         storage_t _slice;
+
+#ifndef NDEBUG
+        // Debug-only state tracking the destruction contract. Default true
+        // (the no-op do_finally case is fine to skip). The
+        // requires_finally constructor sets it false in opt-in subclass
+        // constructors; finally() sets it back to true. ~impl dasserts on
+        // it.
+        bool _finally_satisfied{true};
+#endif
     };
 
 public:
@@ -346,38 +344,6 @@ public:
     auto peek_each_ref(
       ReferenceConsumer consumer, timeout_clock::time_point timeout) & {
         return _impl->peek_each_ref(std::move(consumer), timeout);
-    }
-
-    /*
-     * Create a coroutine generator from the reader.
-     *
-     *    auto gen = std::move(reader).generator(model::no_timeout);
-     *    while (std::optional<model::record_batch> batch = co_await gen()) {
-     *        ...
-     *    }
-     *
-     * When end of stream is reached std::nullopt will be returned.
-     */
-    seastar::coroutine::experimental::generator<model::record_batch>
-    generator(timeout_clock::time_point timeout) && {
-        return impl::generator(std::move(_impl), timeout);
-    }
-
-    /*
-     * Create a coroutine generator from the reader of chunks of batches.
-     *
-     *    auto gen = std::move(reader).slice_generator(model::no_timeout);
-     *    while (auto batches = co_await gen()) {
-     *        for (const model::record_batch& batch : *batches) {
-     *            ...
-     *        }
-     *    }
-     *
-     * When end of stream is reached std::nullopt will be returned.
-     */
-    seastar::coroutine::experimental::generator<data_t>
-    slice_generator(timeout_clock::time_point timeout) && {
-        return impl::slice_generator(std::move(_impl), timeout);
     }
 
     std::unique_ptr<impl> release() && { return std::move(_impl); }

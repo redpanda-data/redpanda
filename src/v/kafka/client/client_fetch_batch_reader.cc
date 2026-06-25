@@ -27,7 +27,8 @@ public:
       model::topic_partition tp,
       model::offset first,
       model::offset last)
-      : _client{client}
+      : impl(needs_finally::no)
+      , _client{client}
       , _tp{std::move(tp)}
       , _next_offset{first}
       , _last_offset{last}

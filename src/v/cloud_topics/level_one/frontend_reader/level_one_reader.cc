@@ -42,7 +42,8 @@ level_one_log_reader_impl::level_one_log_reader_impl(
   l1::metastore* metastore,
   l1::io* io_interface,
   level_one_reader_probe* probe)
-  : _config(cfg)
+  : impl(needs_finally::yes)
+  , _config(cfg)
   , _ntp(std::move(ntp))
   , _tidp(tidp)
   , _next_offset(cfg.start_offset)
@@ -511,7 +512,7 @@ bool level_one_log_reader_impl::is_end_of_stream() const {
     return _end_of_stream;
 }
 
-ss::future<> level_one_log_reader_impl::finally() noexcept {
+ss::future<> level_one_log_reader_impl::do_finally() noexcept {
     return close_current_stream();
 }
 

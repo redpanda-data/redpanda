@@ -17,16 +17,19 @@ ss::future<std::optional<consumer_metadata>> build_from_reader(
   model::record_batch_reader reader,
   l1::object_builder* builder,
   reconciler_probe* probe) {
-    auto gen = std::move(reader).slice_generator(model::no_timeout);
     auto build_duration = probe->measure_object_build_duration();
     co_await builder->start_partition(tidp);
     build_duration->stop();
-    auto read_duration = probe->measure_l0_read_duration();
-    consumer_metadata metadata;
-    while (auto batches = co_await gen()) {
-        read_duration->stop();
-        build_duration->start();
-        for (auto& batch : batches->get()) {
+
+    struct reconciler_consumer {
+        consumer_metadata metadata;
+        l1::object_builder* builder;
+        std::unique_ptr<reconciler_probe::hist_t::measurement> read_duration;
+        std::unique_ptr<reconciler_probe::hist_t::measurement> build_duration;
+
+        ss::future<ss::stop_iteration> operator()(model::record_batch batch) {
+            read_duration->stop();
+            build_duration->start();
             if (metadata.base_offset == kafka::offset::min()) {
                 metadata.base_offset = model::offset_cast(batch.base_offset());
             }
@@ -40,13 +43,26 @@ ss::future<std::optional<consumer_metadata>> build_from_reader(
             }
             ++metadata.batch_count;
             co_await builder->add_batch(std::move(batch));
+            build_duration->stop();
+            read_duration->start();
+            co_return ss::stop_iteration::no;
         }
-        build_duration->stop();
-        read_duration->start();
-    }
-    co_return metadata.batch_count == 0
-      ? std::nullopt
-      : std::make_optional(std::move(metadata));
+
+        std::optional<consumer_metadata> end_of_stream() {
+            if (metadata.batch_count == 0) {
+                return std::nullopt;
+            }
+            return std::move(metadata);
+        }
+    };
+
+    co_return co_await std::move(reader).consume(
+      reconciler_consumer{
+        .builder = builder,
+        .read_duration = probe->measure_l0_read_duration(),
+        .build_duration = std::move(build_duration),
+      },
+      model::no_timeout);
 }
 
 } // namespace cloud_topics::reconciler

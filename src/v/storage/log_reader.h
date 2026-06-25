@@ -159,7 +159,7 @@ public:
 
     virtual std::optional<private_flags> get_flags() const final;
 
-    ss::future<> finally() noexcept final { return _iterator.close(); }
+    ss::future<> do_finally() noexcept final { return _iterator.close(); }
 
     fmt::iterator format_to(fmt::iterator it) const final {
         return fmt::format_to(it, "storage::log_reader. config {}", _config);

@@ -271,7 +271,13 @@ log_reader::log_reader(
   local_log_reader_config config,
   probe& probe,
   ss::lw_shared_ptr<const storage::offset_translator_state> tr) noexcept
-  : _lease(std::move(l))
+  // log_reader has non-trivial cleanup (closing the segment iterator),
+  // but its own destructor vassert(!_iterator.reader, ...) is more precise:
+  // it only fires when the iterator is actually open, whereas
+  // needs_finally::yes would also fire on empty leases. We rely on the
+  // self-vassert instead.
+  : impl(needs_finally::no)
+  , _lease(std::move(l))
   , _iterator({})                      // overwritten in reset() below
   , _config(empty_local_reader_config) // overwritten in reset() below
   , _probe(probe)

@@ -11,6 +11,8 @@
 #include "model/tests/random_batch.h"
 #include "test_utils/test.h"
 
+#include <stdexcept>
+
 template<typename... Offsets>
 chunked_circular_buffer<model::record_batch> make_batches(Offsets... o) {
     chunked_circular_buffer<model::record_batch> batches;
@@ -27,51 +29,6 @@ auto copy_batches(const Container& batches) {
         copy.push_back(batch.copy());
     }
     return copy;
-}
-
-TEST_CORO(RecordBatchReaderGenerator, EmptyReader) {
-    auto reader = model::make_empty_record_batch_reader();
-    auto gen = std::move(reader).generator(model::no_timeout);
-    while (auto batch = co_await gen()) {
-        ASSERT_TRUE_CORO(false) << "No batches expected";
-    }
-    auto slice_gen = model::make_empty_record_batch_reader().slice_generator(
-      model::no_timeout);
-    while (auto batch = co_await slice_gen()) {
-        ASSERT_TRUE_CORO(false) << "No batches expected";
-    }
-}
-
-TEST_CORO(RecordBatchReaderGenerator, SmallSetMemory) {
-    auto batches = make_batches(1, 2, 3, 4);
-    auto r0 = make_memory_record_batch_reader(copy_batches(batches));
-    auto r1 = make_memory_record_batch_reader(copy_batches(batches));
-    auto r2 = make_memory_record_batch_reader(copy_batches(batches));
-
-    auto r0_materialized = co_await model::consume_reader_to_chunked_vector(
-      std::move(r0), model::no_timeout);
-
-    chunked_vector<model::record_batch> r1_materialized;
-    auto gen1 = std::move(r1).generator(model::no_timeout);
-    while (auto batch = co_await gen1()) {
-        r1_materialized.push_back(std::move(batch->get()));
-    }
-
-    chunked_vector<model::record_batch> r2_materialized;
-    auto gen2 = std::move(r2).slice_generator(model::no_timeout);
-    while (auto batches = co_await gen2()) {
-        for (auto& batch : batches->get()) {
-            r2_materialized.push_back(std::move(batch));
-        }
-    }
-
-    ASSERT_EQ_CORO(r0_materialized.size(), 4);
-    ASSERT_EQ_CORO(r1_materialized.size(), r0_materialized.size());
-    ASSERT_EQ_CORO(r2_materialized.size(), r0_materialized.size());
-    for (int i = 0; i < 4; ++i) {
-        ASSERT_EQ_CORO(r1_materialized[i], r0_materialized[i]);
-        ASSERT_EQ_CORO(r2_materialized[i], r0_materialized[i]);
-    }
 }
 
 TEST_CORO(RecordBatchReaderReadahead, BasicReadahead) {
@@ -98,12 +55,9 @@ TEST_CORO(RecordBatchReaderReadahead, EmptyReader) {
     auto reader = model::make_readahead_record_batch_reader(
       model::make_empty_record_batch_reader());
 
-    auto gen = std::move(reader).generator(model::no_timeout);
-    int count = 0;
-    while (auto batch = co_await gen()) {
-        ++count;
-    }
-    ASSERT_EQ_CORO(count, 0);
+    auto materialized = co_await model::consume_reader_to_chunked_vector(
+      std::move(reader), model::no_timeout);
+    ASSERT_TRUE_CORO(materialized.empty());
 }
 
 TEST_CORO(RecordBatchReaderReadahead, SingleBatch) {
@@ -119,20 +73,44 @@ TEST_CORO(RecordBatchReaderReadahead, SingleBatch) {
     ASSERT_EQ_CORO(materialized[0].base_offset(), model::offset(100));
 }
 
-TEST_CORO(RecordBatchReaderReadahead, GeneratorAPI) {
-    // Test readahead reader with generator API
-    auto batches = make_batches(1, 2, 3);
+TEST_CORO(RecordBatchReaderReadahead, ConsumerThrowMidIteration) {
+    // Regression test: when a consumer throws partway through iteration
+    // the readahead_reader may have an in-flight prefetch buffered. The
+    // rvalue consume() overload's .finally chain must run finally() on
+    // the impl (which drains the prefetch) before destruction; otherwise
+    // the prefetch's continuation can fire on freed memory.
+    int slices_emitted = 0;
+    auto underlying = model::make_generating_record_batch_reader(
+      [&slices_emitted]()
+        -> ss::future<model::record_batch_reader::data_t> {
+          model::record_batch_reader::data_t batches;
+          if (slices_emitted < 5) {
+              batches.emplace_back(
+                model::test::make_random_batch(
+                  model::offset(slices_emitted), 1, true));
+              ++slices_emitted;
+          }
+          return ss::make_ready_future<model::record_batch_reader::data_t>(
+            std::move(batches));
+      });
     auto reader = model::make_readahead_record_batch_reader(
-      make_memory_record_batch_reader(copy_batches(batches)));
+      std::move(underlying));
 
-    chunked_vector<model::record_batch> materialized;
-    auto gen = std::move(reader).generator(model::no_timeout);
-    while (auto batch = co_await gen()) {
-        materialized.push_back(std::move(batch->get()));
-    }
+    struct throwing_consumer {
+        int seen = 0;
+        ss::future<ss::stop_iteration> operator()(model::record_batch) {
+            if (++seen == 2) {
+                return ss::make_exception_future<ss::stop_iteration>(
+                  std::runtime_error("test throw"));
+            }
+            return ss::make_ready_future<ss::stop_iteration>(
+              ss::stop_iteration::no);
+        }
+        void end_of_stream() {}
+    };
 
-    ASSERT_EQ_CORO(materialized.size(), 3);
-    ASSERT_EQ_CORO(materialized[0].base_offset(), model::offset(1));
-    ASSERT_EQ_CORO(materialized[1].base_offset(), model::offset(2));
-    ASSERT_EQ_CORO(materialized[2].base_offset(), model::offset(3));
+    EXPECT_THROW(
+      co_await std::move(reader).consume(
+        throwing_consumer{}, model::no_timeout),
+      std::runtime_error);
 }
