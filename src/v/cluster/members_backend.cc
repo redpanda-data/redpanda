@@ -658,10 +658,14 @@ ss::future<> members_backend::reconcile_raft0_updates() {
         } catch (const ss::broken_condition_variable& e) {
             co_return;
         }
-
-        vlog(
-          clusterlog.trace, "raft_0 updates_size: {}", _raft0_updates.size());
-
+        static ss::logger::rate_limit rate(5s);
+        vloglr(
+          clusterlog,
+          ss::logger::level::info,
+          rate,
+          "raft_0 updates: {}",
+          fmt::join(_raft0_updates, ", "));
+        // check the _raft0_updates as the predicate may not longer hold
         // drop updates that need no raft0 change.
         std::erase_if(
           _raft0_updates, [](const members_manager::node_update& u) {
