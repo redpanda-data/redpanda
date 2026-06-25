@@ -590,6 +590,14 @@ struct subject_version {
       , version{v} {}
     context_subject sub;
     schema_version version;
+
+    friend bool
+    operator==(const subject_version&, const subject_version&) = default;
+
+    template<typename H>
+    friend H AbslHashValue(H h, const subject_version& sv) {
+        return H::combine(std::move(h), sv.sub, sv.version);
+    }
 };
 
 // Very similar to topic_key_type, separate to avoid intermingling storage code
