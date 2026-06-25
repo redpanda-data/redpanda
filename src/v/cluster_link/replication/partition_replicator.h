@@ -74,7 +74,7 @@ public:
 
     partition_offsets_report get_partition_offsets_report() const;
 
-    ss::future<> maybe_synchronize_start_offset();
+    ss::future<bool> maybe_synchronize_start_offset();
 
     void set_data_probe(link_data_probe_ptr);
     void unset_data_probe();
@@ -85,6 +85,8 @@ public:
     bool shutdown_initiated() noexcept;
 
 private:
+    ss::future<> maybe_synchronize_start_offset_bg();
+
     struct replicate_ctx {
         ::model::offset begin;
         ::model::offset end;
@@ -128,6 +130,7 @@ private:
     ssx::semaphore _max_requests{
       max_in_flight_requests, "partition_replicator"};
     backoff_policy _backoff_policy;
+    backoff_policy _sync_backoff_policy;
     std::optional<replication_probe> _probe;
     link_data_probe_ptr _link_data_probe;
 };

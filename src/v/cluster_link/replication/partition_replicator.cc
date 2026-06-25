@@ -16,12 +16,18 @@
 
 #include <seastar/coroutine/switch_to.hh>
 
+#include <chrono>
+#include <exception>
+
 using namespace std::chrono_literals;
 
 namespace cluster_link::replication {
 
 static constexpr std::chrono::seconds base_backoff{1};
 static constexpr std::chrono::seconds max_backoff{10};
+
+static constexpr std::chrono::milliseconds base_sync_backoff{2500};
+static constexpr std::chrono::milliseconds max_sync_backoff{15000};
 
 partition_replicator::partition_replicator(
   const model::ntp& ntp,
@@ -42,6 +48,9 @@ partition_replicator::partition_replicator(
   , _backoff_policy(
       make_exponential_backoff_policy<ss::lowres_clock>(
         base_backoff, max_backoff))
+  , _sync_backoff_policy(
+      make_exponential_backoff_policy<ss::lowres_clock>(
+        base_sync_backoff, max_sync_backoff))
   , _probe{}
   , _link_data_probe{std::move(ldp)} {
     if (cfg.has_value()) {
@@ -76,6 +85,19 @@ ss::future<> partition_replicator::start() {
                                  ? ss::log_level::trace
                                  : ss::log_level::warn;
               vlogl(_log, log_level, "Error in fetch_and_replicate: {}", e);
+          });
+    });
+    ssx::repeat_until_gate_closed_or_aborted(_gate, _as, [this] {
+        return maybe_synchronize_start_offset_bg().handle_exception(
+          [this](const std::exception_ptr& e) {
+              auto log_level = ssx::is_shutdown_exception(e)
+                                 ? ss::log_level::trace
+                                 : ss::log_level::warn;
+              vlogl(
+                _log,
+                log_level,
+                "Error in maybe_synchronize_start_offset_bg: {}",
+                e);
           });
     });
 }
@@ -260,7 +282,6 @@ ss::future<> partition_replicator::fetch_and_replicate() {
         while (!_gate.is_closed() && !as.abort_requested()) {
             auto inflight_units = co_await ss::get_units(_max_requests, 1, as);
             auto data = co_await _source->fetch_next(as);
-            co_await maybe_synchronize_start_offset();
             if (data.batches.empty()) {
                 continue;
             }
@@ -319,19 +340,49 @@ ss::future<> partition_replicator::fetch_and_replicate() {
     }
 }
 
-ss::future<> partition_replicator::maybe_synchronize_start_offset() {
+ss::future<> partition_replicator::maybe_synchronize_start_offset_bg() {
+    while (!_gate.is_closed() && !_as.abort_requested()) {
+        auto sleep_for = _sync_backoff_policy.current_backoff_duration();
+        vlog(
+          _log.trace,
+          "(sync-start-offset) backing off for {}ms",
+          sleep_for / std::chrono::milliseconds{1});
+        try {
+            co_await ss::sleep_abortable(sleep_for, _as);
+            auto inflight = co_await ss::get_units(_max_requests, 1, _as);
+            auto truncated = co_await maybe_synchronize_start_offset();
+            // Reset the backoff when we made progress so a follow-up
+            // truncation is applied promptly; otherwise keep backing off.
+            if (truncated) {
+                _sync_backoff_policy.reset();
+            } else {
+                _sync_backoff_policy.next_backoff();
+            }
+        } catch (...) {
+            auto eptr = std::current_exception();
+            if (ssx::is_shutdown_exception(eptr)) {
+                vlog(_log.trace, "Shutdown exception in sync-start loop");
+                break;
+            }
+            vlog(_log.warn, "Error in sync-start loop: {}", eptr);
+            _sync_backoff_policy.next_backoff();
+        }
+    }
+}
+
+ss::future<bool> partition_replicator::maybe_synchronize_start_offset() {
     auto shadow_partition_hwm = _sink->high_watermark();
     auto shadow_partition_start_offset = _sink->start_offset();
     auto source_offsets = _source->get_offsets();
 
     if (!_sink->can_prefix_truncate()) {
         vlog(_log.trace, "Partition does not support prefix truncation");
-        co_return;
+        co_return false;
     }
 
     if (!source_offsets.has_value()) {
         vlog(_log.debug, "Source partition not reporting offsets");
-        co_return;
+        co_return false;
     }
 
     auto source_start_offset = source_offsets->source_start_offset;
@@ -344,7 +395,7 @@ ss::future<> partition_replicator::maybe_synchronize_start_offset() {
           "shadow: {}",
           source_start_offset,
           shadow_partition_start_offset);
-        co_return;
+        co_return false;
     }
 
     // The source partition may perform a prefix truncation that lands in the
@@ -367,7 +418,7 @@ ss::future<> partition_replicator::maybe_synchronize_start_offset() {
           source_start_offset,
           source_lso,
           shadow_partition_hwm);
-        co_return;
+        co_return false;
     }
 
     auto truncate_offset = std::max(_truncation_floor, source_start_offset);
@@ -378,6 +429,7 @@ ss::future<> partition_replicator::maybe_synchronize_start_offset() {
       truncate_offset);
 
     co_await prefix_truncate(truncate_offset);
+    co_return true;
 }
 
 ss::future<> partition_replicator::prefix_truncate(kafka::offset o) {

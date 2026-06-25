@@ -408,4 +408,34 @@ TEST_F_CORO(PartitionReplicatorFixture, TestNoStartOffsetOvershootOnResume) {
       5s, [&] { return _sink->start_offset() == kafka::offset(50); });
 }
 
+// Regression test for the prefix-truncation liveness fix. The shadow start
+// offset must be synchronized to a source prefix trim even when the replicator
+// is not actively fetching new data. Previously the synchronization ran only
+// immediately after a fetch returned, so a parked fetch (no new source data,
+// e.g. after a source-side disturbance) left a pending truncation unapplied
+// indefinitely, and the shadow start offset never caught up to the source. The
+// background synchronization loop decouples the trim from the fetch cycle.
+TEST_F_CORO(PartitionReplicatorFixture, TestSyncStartOffsetWhileFetchParked) {
+    // Replicate [0, 99]. The shadow partition catches up to the source and the
+    // fetch loop then parks because no further data is produced to the source.
+    for (int i = 0; i < 10; ++i) {
+        co_await push_data();
+    }
+    RPTEST_REQUIRE_EVENTUALLY_CORO(
+      5s, [&] { return _sink->last_replicated_offset() == kafka::offset(99); });
+
+    // No prefix trim has happened yet.
+    ASSERT_EQ_CORO(_sink->start_offset(), kafka::offset(0));
+
+    // The source is prefix-trimmed to offset 50. The shadow is already caught
+    // up (hwm 100 >= 50), so the truncation is immediately applicable -- but no
+    // new data will ever be fetched to drive it.
+    _source->set_reported_start_offset(kafka::offset(50));
+
+    // The background synchronization loop must apply the trim without any
+    // further fetch activity.
+    RPTEST_REQUIRE_EVENTUALLY_CORO(
+      20s, [&] { return _sink->start_offset() == kafka::offset(50); });
+}
+
 } // namespace cluster_link::replication
