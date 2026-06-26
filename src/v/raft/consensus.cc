@@ -1324,6 +1324,7 @@ consensus::interrupt_configuration_change(model::revision_id revision, Func f) {
 
 ss::future<std::error_code>
 consensus::cancel_configuration_change(model::revision_id revision) {
+    auto holder = _bg.hold();
     vlog(
       _ctxlog.info,
       "requested cancellation of current configuration change - {}",
@@ -1371,7 +1372,8 @@ consensus::cancel_configuration_change(model::revision_id revision) {
               }
           }
           return ss::make_ready_future<std::error_code>(ec);
-      });
+      })
+      .finally([holder = std::move(holder)] {});
 }
 
 ss::future<std::error_code>
@@ -1451,6 +1453,7 @@ ss::future<std::error_code> consensus::force_replace_configuration_replicated(
   std::vector<vnode> voters,
   std::vector<vnode> learners,
   model::revision_id new_revision) {
+    auto holder = _bg.hold();
     auto u = co_await acquire_op_lock_units();
     if (!u) {
         co_return u.error();
