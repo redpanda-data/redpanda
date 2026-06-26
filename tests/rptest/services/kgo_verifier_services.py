@@ -252,7 +252,7 @@ class KgoVerifierService(Service):
         # it is the one who actually replied to the `await_ready` calls.
         # Check that the PID we just launched is still running as a confirmation
         # that it is the one.
-        self._assert_running(node)
+        self.check_running(node)
         self._stopped = False
 
     def _await_ready(self, node: ClusterNode) -> None:
@@ -278,8 +278,19 @@ class KgoVerifierService(Service):
         else:
             return r.status_code == 200
 
-    def _assert_running(self, node: ClusterNode) -> None:
-        node.account.ssh_output(f"ps -p {self._pid}", allow_fail=False)
+    def _is_pid_running(self, node: ClusterNode) -> bool:
+        assert self._pid is not None, "worker must be started and not yet stopped"
+        return node.account.exists(f"/proc/{self._pid}")
+
+    def check_running(self, node: ClusterNode) -> None:
+        """
+        Raise if the remote process is not running.
+        """
+        if not self._is_pid_running(node):
+            raise RuntimeError(
+                f"{self.who_am_i()} on {node.name} exited unexpectedly "
+                f"(pid {self._pid} gone)"
+            )
 
     def stop_node(self, node: ClusterNode, **kwargs: Any) -> None:
         error = None
@@ -358,7 +369,8 @@ class KgoVerifierService(Service):
             return self._do_wait_node(node, timeout_sec)
         except:
             try:
-                self._remote(node, "print_stack")
+                if self._is_pid_running(node):
+                    self._remote(node, "print_stack")
             except Exception as e:
                 self._redpanda.logger.warning(
                     f"{self.who_am_i()} failed to print stacks during wait failure: {e}"
@@ -501,11 +513,18 @@ class StatusThread(threading.Thread):
     def run(self) -> None:
         try:
             self.poll_status()
-        except Exception as ex:
-            self._ex = ex
+        except Exception as poll_ex:
             self.logger.exception(
-                f"Error reading status from {self.who_am_i} on {self._node.name}"
+                f"Error reading status from {self.who_am_i} on {self._node.name}: {poll_ex}"
             )
+            # Prefer the worker-exit error when the status read failed because
+            # the process is already gone.
+            try:
+                self._parent.check_running(self._node)
+            except Exception as crash_ex:
+                self._ex = crash_ex
+            else:
+                self._ex = poll_ex
 
     def _ingest_status(self, worker_statuses: list[dict[str, Any]]) -> None:
         self.logger.debug(f"{self.who_am_i} status: {worker_statuses}")
