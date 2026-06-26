@@ -458,3 +458,101 @@ TEST(StateUpdateTest, TestPartialReset) {
     // pid 2: created with last_committed.
     ASSERT_NO_FATAL_FAILURE(check_partition(state, tp2, 99, {}));
 }
+
+namespace {
+size_t total_pending_entries(const topic_state& ts) {
+    size_t n = 0;
+    for (const auto& [_, p_state] : ts.pid_to_pending_files) {
+        n += p_state.pending_entries.size();
+    }
+    return n;
+}
+
+// Appends a single one-file pending entry for partition `p` at control-topic
+// offset `added_at`.
+void add_entry(
+  topic_state& ts,
+  model::partition_id p,
+  int64_t begin,
+  int64_t end,
+  model::offset added_at) {
+    auto ranges = make_pending_files({{begin, end}}, /*with_file=*/true);
+    ts.pid_to_pending_files[p].pending_entries.emplace_back(
+      pending_entry{
+        .data = std::move(ranges[0]), .added_pending_at = added_at});
+}
+} // namespace
+
+// Each entry is added by a separate control-topic batch, so each carries a
+// distinct added_pending_at; with one file per entry, the file budget maps to
+// a number of entries.
+TEST(CopyBoundedTest, TruncatesByControlOffsetWatermark) {
+    topic_state ts;
+    ts.revision = rev;
+    for (int i = 0; i < 5; ++i) {
+        add_entry(ts, pid, i * 10, i * 10 + 9, model::offset{1000 + i});
+    }
+
+    // Fewer than available: truncated to a downward-closed prefix, metadata
+    // preserved, and reported as bounded.
+    bool bounded = false;
+    auto chunk = ts.copy_bounded(3, bounded);
+    EXPECT_EQ(total_pending_entries(chunk), 3);
+    EXPECT_TRUE(bounded);
+    EXPECT_EQ(chunk.revision, rev);
+
+    // Exactly the limit, and more than available (equivalent to copy()): not
+    // bounded, nothing left out.
+    EXPECT_EQ(total_pending_entries(ts.copy_bounded(5, bounded)), 5);
+    EXPECT_FALSE(bounded);
+    EXPECT_EQ(total_pending_entries(ts.copy_bounded(100, bounded)), 5);
+    EXPECT_FALSE(bounded);
+}
+
+// Regression test: a subset commit must be downward-closed by added_pending_at
+// across partitions. Otherwise the Iceberg dedup watermark (the max committed
+// added_pending_at) would later cause the excluded earlier entries to be
+// silently skipped and dropped from the table.
+TEST(CopyBoundedTest, IsDownwardClosedAcrossPartitions) {
+    const model::partition_id pid0{0};
+    const model::partition_id pid1{1};
+    topic_state ts;
+    // Control offsets interleave across partitions: pid0@10, pid1@11, pid0@12,
+    // pid1@13.
+    add_entry(ts, pid0, 0, 9, model::offset{10});
+    add_entry(ts, pid1, 0, 9, model::offset{11});
+    add_entry(ts, pid0, 10, 19, model::offset{12});
+    add_entry(ts, pid1, 10, 19, model::offset{13});
+
+    // Budget of 2 files: the watermark lands at offset 11, so each partition
+    // keeps exactly its first (earliest) entry. A per-partition prefix that
+    // ignored offset ordering would instead keep both of one partition's
+    // entries (including offset 12) while dropping the other's offset-11 entry.
+    bool bounded = false;
+    auto chunk = ts.copy_bounded(2, bounded);
+    EXPECT_TRUE(bounded);
+    ASSERT_EQ(total_pending_entries(chunk), 2);
+    ASSERT_TRUE(chunk.pid_to_pending_files.contains(pid0));
+    ASSERT_TRUE(chunk.pid_to_pending_files.contains(pid1));
+    const auto& p0 = chunk.pid_to_pending_files.at(pid0).pending_entries;
+    const auto& p1 = chunk.pid_to_pending_files.at(pid1).pending_entries;
+    ASSERT_EQ(p0.size(), 1);
+    ASSERT_EQ(p1.size(), 1);
+    EXPECT_EQ(p0.front().added_pending_at, model::offset{10});
+    EXPECT_EQ(p1.front().added_pending_at, model::offset{11});
+}
+
+// A single control-offset batch is committed all-or-nothing: splitting it would
+// leave same-offset entries below the watermark, which the dedup would drop.
+TEST(CopyBoundedTest, IncludesWholeBatchEvenWhenOverLimit) {
+    topic_state ts;
+    // Five entries sharing one added_pending_at (one add_files_update batch).
+    for (int i = 0; i < 5; ++i) {
+        add_entry(ts, pid, i * 10, i * 10 + 9, model::offset{1000});
+    }
+    bool bounded = false;
+    EXPECT_EQ(total_pending_entries(ts.copy_bounded(1, bounded)), 5);
+    // The whole same-offset batch is included, so nothing is left over and the
+    // copy is not reported as bounded.
+    EXPECT_FALSE(bounded);
+}
