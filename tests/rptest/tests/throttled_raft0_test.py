@@ -14,15 +14,19 @@ Regression tests which require a throttled raft0 recovery.
 import re
 import signal
 import time
+from collections.abc import Callable
 from dataclasses import dataclass
 from enum import Enum
 from typing import Any
 
+from ducktape.cluster.cluster import ClusterNode
+from ducktape.errors import TimeoutError
 from ducktape.tests.test import TestContext
 from ducktape.utils.util import wait_until
 
 from rptest.clients.types import TopicSpec
 from rptest.services.cluster import cluster
+from rptest.services.redpanda import LoggingConfig
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.utils.node_operations import NodeDecommissionWaiter
 
@@ -47,6 +51,19 @@ _GROUP_CFG_UPDATE_UNSET_PATTERN = re.compile(
     rf"update\s*:\s*{_EMPTY_OPTIONAL}\s*,\s*version\s*:"
 )
 
+# A raft group_configuration renders as
+#   {current: {voters: [...], learners: [...]}, old: ..., revision: ...,
+#    update: ..., version: ...}
+# where each vnode is "{id: N, revision: M}" and `old` is either `none` or
+# another "{voters: [...], learners: [...]}" block. vnode lists use [] and
+# vnodes use {}, so "[^\]]*" safely captures a single list.
+_VNODE_ID_PATTERN = re.compile(r"id\s*:\s*(\d+)")
+_GROUP_NODES_PATTERN = (
+    r"{}\s*:\s*\{{voters\s*:\s*\[([^\]]*)\]\s*,\s*learners\s*:\s*\[([^\]]*)\]"
+)
+_GROUP_CFG_CURRENT_PATTERN = re.compile(_GROUP_NODES_PATTERN.format("current"))
+_GROUP_CFG_OLD_NODES_PATTERN = re.compile(_GROUP_NODES_PATTERN.format("old"))
+
 
 def is_old_config_set(cfg: str) -> bool:
     """given a raft configuration, do we have an old configuration"""
@@ -70,6 +87,54 @@ def raft_configuration_to_configuration_state(cfg: str) -> GroupConfigurationSta
 
 
 @dataclass
+class GroupNodes:
+    """voters and learners of a single raft configuration"""
+
+    voters: list[int]
+    learners: list[int]
+
+    def contains(self, node_id: int) -> bool:
+        return node_id in self.voters or node_id in self.learners
+
+
+@dataclass
+class RaftConfiguration:
+    """parsed raft group_configuration: the reconfiguration ``state`` plus the
+    ``current`` and (during a joint configuration) ``old`` voter/learner sets"""
+
+    state: GroupConfigurationState
+    current: GroupNodes
+    old: GroupNodes | None
+
+    def contains(self, node_id: int) -> bool:
+        """True if ``node_id`` appears in the current or old configuration"""
+        return self.current.contains(node_id) or (
+            self.old is not None and self.old.contains(node_id)
+        )
+
+
+def _parse_group_nodes(pattern: re.Pattern[str], cfg: str) -> GroupNodes | None:
+    m = pattern.search(cfg)
+    if m is None:
+        return None
+    return GroupNodes(
+        voters=[int(i) for i in _VNODE_ID_PATTERN.findall(m.group(1))],
+        learners=[int(i) for i in _VNODE_ID_PATTERN.findall(m.group(2))],
+    )
+
+
+def parse_raft_configuration(cfg: str) -> RaftConfiguration:
+    """parse a raft group_configuration string into its reconfiguration state
+    and current/old voter and learner sets"""
+    return RaftConfiguration(
+        state=raft_configuration_to_configuration_state(cfg),
+        current=_parse_group_nodes(_GROUP_CFG_CURRENT_PATTERN, cfg)
+        or GroupNodes(voters=[], learners=[]),
+        old=_parse_group_nodes(_GROUP_CFG_OLD_NODES_PATTERN, cfg),
+    )
+
+
+@dataclass
 class TimeoutConfig:
     timeout_s: int
     backoff_s: int
@@ -78,6 +143,86 @@ class TimeoutConfig:
 SHORT_TIMEOUT = TimeoutConfig(timeout_s=30, backoff_s=2)
 MEDIUM_TIMEOUT = TimeoutConfig(timeout_s=60, backoff_s=2)
 LONG_TIMEOUT = TimeoutConfig(timeout_s=120, backoff_s=2)
+
+
+# ── scripted membership operations ──────────────────────────────────────
+
+
+@dataclass
+class AddNode:
+    """Start a node into the cluster. ``node_id`` pins the broker id (else it
+    is auto-assigned); ``node`` pins which ducktape node to start (else the
+    next free reserve node is used).
+
+    ``expect_learner`` optionally asserts whether the node becomes a raft0
+    learner after it registers: ``True`` waits for its (auto-assigned or
+    pinned) id to appear in the controller group_configuration learners list;
+    ``False`` asserts it does not become a learner within a short window (e.g.
+    because raft0 is already stuck on another in-flight add). ``None`` skips
+    the check."""
+
+    node_id: int | None = None
+    node: ClusterNode | None = None
+    expect_learner: bool | None = None
+
+
+@dataclass
+class DecommissionNode:
+    """Decommission a broker. Provide one of:
+
+    - ``node_id``: decommission that broker id;
+    - ``node``: decommission every id that ducktape node has been assigned;
+    - ``select_id``: a callable invoked with the test instance that returns the
+      broker id to decommission, computed from live cluster state (e.g.
+      ``lambda t: next(iter(t._raft0_learner_ids()))``). When set it overrides
+      both ``node_id`` and ``node``."""
+
+    node_id: int | None = None
+    node: ClusterNode | None = None
+    select_id: Callable[[], int] | None = None
+
+
+@dataclass
+class StopNode:
+    """Stop a running node. Exactly one of ``node_id`` / ``node`` must be
+    provided to identify the target."""
+
+    node_id: int | None = None
+    node: ClusterNode | None = None
+
+
+@dataclass
+class DropNodeData:
+    """Wipe a node's local data directory (the node should already be stopped).
+    Clears cached broker metadata so a subsequent add gets a fresh id. Exactly
+    one of ``node_id`` / ``node`` must be provided to identify the target."""
+
+    node_id: int | None = None
+    node: ClusterNode | None = None
+
+
+@dataclass
+class ThrottleRaft0:
+    """Set the controller (raft0) learner recovery rate to 0."""
+
+
+@dataclass
+class UnthrottleRaft0:
+    """Restore the controller (raft0) learner recovery rate."""
+
+
+Operation = (
+    AddNode
+    | DecommissionNode
+    | StopNode
+    | DropNodeData
+    | ThrottleRaft0
+    | UnthrottleRaft0
+)
+
+# raft_learner_recovery_rate values applied by the throttle operations
+_THROTTLED_RATE = 0
+_UNTHROTTLED_RATE = 100 * 1024 * 1024  # redpanda default: 100 MB/s
 
 
 class _StuckRaft0LearnerBase(RedpandaTest):
@@ -99,12 +244,23 @@ class _StuckRaft0LearnerBase(RedpandaTest):
     RESERVE_NODES = 1
 
     def __init__(self, test_context: TestContext, *args: Any, **kwargs: Any):
-        # One ducktape node per seed voter plus RESERVE_NODES held back as
-        # joiners. Joiner nodes are later reused (wiped + restarted) by some
-        # tests, so no extra node is needed for a rejoin under a fresh node id.
+        # Broker count is taken from each test's @cluster(num_nodes=...)
+        # decorator, so it is configurable per test case (seeds plus whatever
+        # reserve nodes the scenario needs as joiners / enqueued adds; joiner
+        # nodes are later reused — wiped + restarted — by some tests).
+        #
+        # Trace the raft/membership machinery these tests exercise while
+        # keeping everything else at INFO to limit log spam.
         super().__init__(
             test_context,
-            num_brokers=self.INITIAL_CLUSTER_SIZE + self.RESERVE_NODES,
+            num_brokers=test_context.expected_num_nodes,
+            log_config=LoggingConfig(
+                "info",
+                {
+                    "raft": "trace",
+                    "cluster": "trace",
+                },
+            ),
             *args,
             **kwargs,
         )
@@ -115,27 +271,12 @@ class _StuckRaft0LearnerBase(RedpandaTest):
 
     # ── helpers ─────────────────────────────────────────────────────────
 
-    def _controller_state(self) -> GroupConfigurationState | None:
-        """get the controller group configuration state from the controller leader"""
-        for node in self.redpanda.started_nodes():
-            try:
-                state = self.redpanda._admin.get_partition_state(
-                    "redpanda", "controller", 0, node=node
-                )
-            except Exception:
-                continue
+    def _leader_group_configuration(self) -> str | None:
+        """raft0 group_configuration string from the controller leader's view,
+        or None if no leader's view is currently reachable.
 
-            for replica in state.get("replicas", []):
-                raft_state = replica.get("raft_state", {})
-                # only consider the leaders perspective
-                if not raft_state.get("is_leader"):
-                    continue
-                cfg = raft_state.get("group_configuration", "")
-                return raft_configuration_to_configuration_state(cfg)
-        return None
-
-    def _node_in_raft0(self, node_id: int) -> bool:
-        """True if ``node_id`` is in the leader's raft0 group configuration"""
+        Read from the controller partition state
+        (v1/debug/partitions/redpanda/controller/0)."""
         for node in self.redpanda.started_nodes():
             try:
                 state = self.redpanda._admin.get_partition_state(
@@ -149,10 +290,45 @@ class _StuckRaft0LearnerBase(RedpandaTest):
                 if not rs.get("is_leader"):
                     continue
                 cfg = rs.get("group_configuration", "")
-                if not isinstance(cfg, str):
-                    continue
-                return f"id: {node_id}" in cfg
-        return False
+                return cfg if isinstance(cfg, str) else None
+        return None
+
+    def _raft0_configuration(self) -> RaftConfiguration | None:
+        """parsed raft0 group_configuration from the controller leader, or None
+        if no leader's view is currently reachable"""
+        cfg = self._leader_group_configuration()
+        if cfg is None:
+            return None
+        return parse_raft_configuration(cfg)
+
+    def _controller_state(self) -> GroupConfigurationState | None:
+        """get the controller group configuration state from the controller leader"""
+        config = self._raft0_configuration()
+        return config.state if config is not None else None
+
+    def _node_in_raft0(self, node_id: int) -> bool:
+        """True if ``node_id`` is in the leader's raft0 group configuration
+        (current or old)"""
+        config = self._raft0_configuration()
+        return config is not None and config.contains(node_id)
+
+    def _raft0_learner_ids(self) -> set[int]:
+        """node ids that are learners in the controller leader's current raft0
+        configuration (empty while raft0 is `simple`)"""
+        config = self._raft0_configuration()
+        if config is None:
+            return set()
+        return set(config.current.learners)
+
+    def _broker_ids(self) -> set[int]:
+        """node ids currently registered as cluster members"""
+        for node in self.redpanda.started_nodes():
+            try:
+                brokers = self.redpanda._admin.get_brokers(node=node)
+            except Exception:
+                continue
+            return {b["node_id"] for b in brokers if "node_id" in b}
+        return set()
 
     def _node_in_brokers(self, node_id: int) -> bool:
         """True if ``node_id`` is in the controller leader's broker list.
@@ -502,6 +678,238 @@ class StuckRaft0LearnerTest(_StuckRaft0LearnerBase):
             err_msg="raft0 did not return to simple after admin cancel",
         )
 
+    @cluster(num_nodes=4)
+    def test_repeated_new_id_learner_adds(self):
+        """
+        Recycle the same physical node into the cluster twice, wiping its disk
+        between attempts so it rejoins with a brand-new node id each time.
+
+        With a throttled (rate 0) controller learner recovery the first joiner
+        gets stuck as a raft0 learner, leaving raft0 `transitional`. While it is
+        stuck no further membership change can start, so the second joiner only
+        registers as a broker and never becomes a learner. Finally we cancel the
+        stuck add and clean up, asserting raft0 recovers to `simple`.
+
+        The joiner's node id is never read from its own (not-yet-ready) admin
+        endpoint; instead it is discovered from the controller leader's view:
+        the group_configuration learners list for the first (learner) join and
+        the broker list for the second.
+
+        Steps:
+        1. start a 3 node cluster with throttled raft0 learner rate
+        2. push controller commands to fill the log past snapshot
+        3. wipe the joiner's disk and start it with an auto-assigned id
+        4. via the controller group_configuration, wait for / assert it was
+           added as a raft0 learner; that learner id is the first joiner's id
+        5. kill the stuck learner
+        6. wipe + restart the joiner; it gets a second, distinct id. raft0 is
+           still stuck, so discover this id from the controller broker list (it
+           is not a learner). Kill it.
+        7. decommission both dead joiners; assert raft0 returns to `simple` and
+           both ids are gone
+        """
+        # 1. Start the first 3 of 4 allocated nodes; the 4th is the recycled
+        #    joiner.
+        seed_nodes = self.redpanda.nodes[: self.INITIAL_CLUSTER_SIZE]
+        joiner = self.redpanda.nodes[self.INITIAL_CLUSTER_SIZE]
+
+        self.logger.info(
+            f"[raft0-recycle] step 1: starting {len(seed_nodes)}-node "
+            f"cluster (seeds: {[n.name for n in seed_nodes]}); "
+            f"recycling {joiner.name} twice"
+        )
+        self.redpanda.set_seed_servers(seed_nodes)
+
+        self.redpanda.add_extra_rp_conf(
+            {
+                "internal_topic_replication_factor": self.INITIAL_CLUSTER_SIZE,
+                "raft_learner_recovery_rate": 0,
+                "controller_log_learner_recovery_rate_enabled": True,
+            }
+        )
+        self.redpanda.start(
+            nodes=seed_nodes, omit_seeds_on_idx_one=False, auto_assign_node_id=True
+        )
+        self.logger.info("[raft0-recycle] cluster up")
+
+        # 2. Add some non-bootstrap state to the controller log so that
+        #    catch-up actually has data to ship.
+        self.logger.info("[raft0-recycle] step 2: creating test topic")
+        topic = TopicSpec(replication_factor=3, partition_count=10)
+        self.client().create_topic(topic)
+
+        wait_until(
+            lambda: self._controller_state() == GroupConfigurationState.SIMPLE,
+            timeout_sec=SHORT_TIMEOUT.timeout_s,
+            backoff_sec=SHORT_TIMEOUT.backoff_s,
+            err_msg="raft0 did not start in simple state",
+        )
+        self.logger.info("[raft0-recycle] raft0 confirmed `simple`")
+
+        def start_fresh_joiner() -> None:
+            """wipe the joiner's disk and start it so it auto-assigns a new id"""
+            self.redpanda.clean_node(joiner, preserve_current_install=True)
+            self.redpanda.start_node(
+                joiner,
+                auto_assign_node_id=True,
+                omit_seeds_on_idx_one=False,
+                skip_readiness_check=True,
+            )
+
+        def kill_joiner() -> None:
+            self.redpanda.remove_from_started_nodes(
+                joiner, "intentionally killed mid-promotion"
+            )
+            self.redpanda.signal_redpanda(
+                joiner, signal=signal.SIGKILL, idempotent=True
+            )
+
+        # ── first recycle: joiner gets stuck as a raft0 learner ────────────
+        # 3. Wipe + start the joiner with an auto-assigned id.
+        self.logger.info(
+            f"[raft0-recycle] step 3: wiping {joiner.name} and starting it "
+            f"with an auto-assigned node id (first join)"
+        )
+        start_fresh_joiner()
+
+        # 4. The joiner's admin endpoint may not be up yet (skip_readiness),
+        #    so discover its id from the controller leader's partition state:
+        #    wait until raft0 is `transitional` and the group_configuration's
+        #    current learners list is non-empty (it is empty while `simple`).
+        self.logger.info(
+            "[raft0-recycle] step 4: waiting for the joiner to be added as a "
+            "raft0 learner (per controller group_configuration)"
+        )
+
+        # Capture the learner set inside the predicate so we assert on the same
+        # snapshot that satisfied the wait (a re-fetch could transiently race
+        # with leadership changes or return an empty set).
+        captured_learners: set[int] = set()
+
+        def first_learner_added() -> bool:
+            nonlocal captured_learners
+            if self._controller_state() != GroupConfigurationState.TRANSITIONAL:
+                return False
+            learners = self._raft0_learner_ids()
+            if not learners:
+                return False
+            captured_learners = learners
+            return True
+
+        wait_until(
+            first_learner_added,
+            timeout_sec=MEDIUM_TIMEOUT.timeout_s,
+            backoff_sec=MEDIUM_TIMEOUT.backoff_s,
+            err_msg="joiner was never added to raft0 as a learner",
+        )
+        assert len(captured_learners) == 1, (
+            f"expected exactly one raft0 learner, saw {sorted(captured_learners)}"
+        )
+        first_joiner_id = captured_learners.pop()
+        self.logger.info(
+            f"[raft0-recycle] step 4: joiner added as learner node_id={first_joiner_id}"
+        )
+
+        # 5. Kill the stuck learner.
+        self.logger.info(
+            f"[raft0-recycle] step 5: SIGKILLing stuck learner "
+            f"node_id={first_joiner_id}"
+        )
+        kill_joiner()
+
+        # ── second recycle: joiner rejoins with a new id while raft0 is stuck ─
+        # raft0 is still `transitional` on the dead first learner, so the second
+        # joiner cannot become a learner; it only registers as a broker. Hence
+        # we discover its id from the controller broker list, not raft0.
+        broker_ids_before = self._broker_ids()
+
+        # 6. Wipe + restart the joiner; it gets a second, distinct id.
+        self.logger.info(
+            f"[raft0-recycle] step 6: wiping {joiner.name} and starting it "
+            f"again with an auto-assigned node id (second join)"
+        )
+        start_fresh_joiner()
+
+        self.logger.info(
+            "[raft0-recycle] step 6: waiting for the second joiner to register "
+            "as a cluster member (per broker list)"
+        )
+
+        def second_broker_registered() -> bool:
+            return len(self._broker_ids() - broker_ids_before) >= 1
+
+        wait_until(
+            second_broker_registered,
+            timeout_sec=LONG_TIMEOUT.timeout_s,
+            backoff_sec=LONG_TIMEOUT.backoff_s,
+            err_msg="second joiner never registered in the cluster broker list",
+        )
+        new_broker_ids = self._broker_ids() - broker_ids_before
+        assert len(new_broker_ids) == 1, (
+            f"expected exactly one new broker, saw {sorted(new_broker_ids)}"
+        )
+        second_joiner_id = new_broker_ids.pop()
+        assert second_joiner_id != first_joiner_id, (
+            f"second joiner reused the first id {second_joiner_id}"
+        )
+        self.logger.info(
+            f"[raft0-recycle] step 6: second joiner registered as "
+            f"node_id={second_joiner_id}"
+        )
+
+        kill_joiner()
+
+        # 7. Recover. Decommission both recycled ids. Issuing both decommissions
+        #    up front stops the controller from trying to re-add either dead
+        #    broker as a learner while we wait (which would flip raft0 back to
+        #    `transitional`). Decommissioning the first — the stuck learner —
+        #    cancels its in-flight raft0 add, which is the behaviour under test.
+        dead_ids = (first_joiner_id, second_joiner_id)
+        for dead_id in dead_ids:
+            # re-resolve the controller each time: decommissioning can move
+            # leadership.
+            controller = self.redpanda.controller()
+            assert controller is not None, (
+                "no controller leader to send decommission to"
+            )
+            self.logger.info(
+                f"[raft0-recycle] step 7: decommissioning node_id={dead_id}"
+            )
+            self.redpanda._admin.decommission_broker(dead_id, node=controller)
+
+        for dead_id in dead_ids:
+            NodeDecommissionWaiter(
+                self.redpanda,
+                dead_id,
+                self.logger,
+                progress_timeout=MEDIUM_TIMEOUT.timeout_s,
+            ).wait_for_removal()
+
+        # raft0 must recover to `simple` with both recycled ids gone — proving
+        # the stuck learner's add was cancelled rather than locking membership.
+        wait_until(
+            lambda: (
+                self._controller_state() == GroupConfigurationState.SIMPLE
+                and not self._node_in_raft0(first_joiner_id)
+                and not self._node_in_raft0(second_joiner_id)
+            ),
+            timeout_sec=LONG_TIMEOUT.timeout_s,
+            backoff_sec=LONG_TIMEOUT.backoff_s,
+            err_msg=(
+                "raft0 did not return to simple after decommissioning both "
+                "recycled joiners — a stuck add was not cancelled"
+            ),
+        )
+        broker_ids = self._broker_ids()
+        assert first_joiner_id not in broker_ids, (
+            f"first joiner {first_joiner_id} still a member after decommission"
+        )
+        assert second_joiner_id not in broker_ids, (
+            f"second joiner {second_joiner_id} still a member after decommission"
+        )
+
+        self.logger.info("[raft0-recycle] all assertions passed — test PASSED")
+
 
 class Raft0CancelDrainsQueuedAddsTest(_StuckRaft0LearnerBase):
     """
@@ -780,4 +1188,413 @@ class SuccessiveCancelsClearDeadAddsTest(_StuckRaft0LearnerBase):
             timeout_sec=LONG_TIMEOUT.timeout_s,
             backoff_sec=LONG_TIMEOUT.backoff_s,
             err_msg="raft0 did not settle to simple with all dead adds cleared",
+        )
+
+
+class Raft0MembershipOpsTest(_StuckRaft0LearnerBase):
+    """Drive a scripted list of membership operations (add / decommission /
+    throttle / unthrottle raft0) and assert the cluster converges afterwards.
+
+    Operations are issued fire-and-continue (no per-op waiting), so throttled
+    additions intentionally pile up as stuck learners. Convergence is checked
+    once at the end: recovery is unthrottled, raft0 must settle back to
+    `simple`, decommissioned brokers must be gone, and the surviving membership
+    must equal the seeds plus the net additions.
+
+    The broker count is whatever each test's @cluster(num_nodes=...) reserves;
+    INITIAL_CLUSTER_SIZE of them are seeds and the rest are reserve nodes
+    available to AddNode operations."""
+
+    # every id a node has been assigned (a node recycled through wipes takes
+    # a new id each time). Lets us stop / drop / decommission a node by its
+    # ducktape handle even when the id was auto-assigned and the node's own
+    # admin is no longer reachable.
+    node_id_history: dict[ClusterNode, list[int]] = {}
+
+    def _start_seed_cluster(self) -> list[ClusterNode]:
+        seed_nodes = self.redpanda.nodes[: self.INITIAL_CLUSTER_SIZE]
+        self.logger.info(
+            f"[raft0-ops] starting {len(seed_nodes)}-node seed cluster "
+            f"(seeds: {[n.name for n in seed_nodes]})"
+        )
+        self.redpanda.set_seed_servers(seed_nodes)
+        self.redpanda.add_extra_rp_conf(
+            {
+                "internal_topic_replication_factor": self.INITIAL_CLUSTER_SIZE,
+                "controller_log_learner_recovery_rate_enabled": True,
+            }
+        )
+        # start unthrottled; the operation list drives throttling.
+        self.redpanda.start(
+            nodes=seed_nodes, omit_seeds_on_idx_one=False, auto_assign_node_id=True
+        )
+        # give the controller log some non-bootstrap state to ship.
+        self.client().create_topic(TopicSpec(replication_factor=3, partition_count=10))
+        wait_until(
+            lambda: self._controller_state() == GroupConfigurationState.SIMPLE,
+            timeout_sec=SHORT_TIMEOUT.timeout_s,
+            backoff_sec=SHORT_TIMEOUT.backoff_s,
+            err_msg="raft0 did not start in simple state",
+        )
+        return seed_nodes
+
+    def _set_recovery_rate(self, rate: int) -> None:
+        """patch raft_learner_recovery_rate on the controller without waiting
+        for every (possibly stuck) node to ack the new config."""
+        controller = self.redpanda.controller()
+        assert controller is not None, "no controller leader to set config on"
+        self.redpanda._admin.patch_cluster_config(
+            upsert={"raft_learner_recovery_rate": rate}, node=controller
+        )
+
+    def _assert_learner_expectation(
+        self, node_id: int, expect_learner: bool, idx: int
+    ) -> None:
+        """Assert whether ``node_id`` becomes a raft0 learner."""
+        if expect_learner:
+            wait_until(
+                lambda: (
+                    self._controller_state() == GroupConfigurationState.TRANSITIONAL
+                    and node_id in self._raft0_learner_ids()
+                ),
+                timeout_sec=MEDIUM_TIMEOUT.timeout_s,
+                backoff_sec=MEDIUM_TIMEOUT.backoff_s,
+                err_msg=f"op {idx}: node {node_id} never became a raft0 learner",
+            )
+            return
+        # expect_learner is False: it must NOT become a learner. Confirm by
+        # waiting for it to appear as a learner and requiring that to time out.
+        try:
+            wait_until(
+                lambda: node_id in self._raft0_learner_ids(),
+                timeout_sec=SHORT_TIMEOUT.timeout_s,
+                backoff_sec=SHORT_TIMEOUT.backoff_s,
+            )
+        except TimeoutError:
+            return
+        raise AssertionError(
+            f"op {idx}: node {node_id} unexpectedly became a raft0 learner"
+        )
+
+    def _run_operations(self, operations: list[Operation]) -> None:
+        """Execute a list of operations against an already-started cluster
+        (call ``_start_seed_cluster`` first)."""
+        seed_nodes = self.redpanda.nodes[: self.INITIAL_CLUSTER_SIZE]
+        # reserve ducktape nodes used to satisfy AddNode ops with no explicit node
+        reserve = list(self.redpanda.nodes[self.INITIAL_CLUSTER_SIZE :])
+        added_nodes: list[ClusterNode] = []
+        decommissioned_ids: set[int] = set()
+
+        # reverse index id -> node, for ops that target a node by id.
+        id_to_node: dict[int, ClusterNode] = {}
+
+        def resolve_node(
+            op: StopNode | DropNodeData, idx: int, what: str
+        ) -> ClusterNode:
+            if op.node is not None:
+                return op.node
+            if op.node_id is not None:
+                node = id_to_node.get(op.node_id) or self.redpanda.get_node_by_id(
+                    op.node_id
+                )
+                assert node is not None, (
+                    f"op {idx}: {what} could not resolve node for node_id={op.node_id}"
+                )
+                return node
+            raise AssertionError(f"op {idx}: {what} requires node_id or node")
+
+        def decommission_id(node_id: int, idx: int) -> None:
+            if node_id not in self._broker_ids():
+                self.logger.info(
+                    f"[raft0-ops] op {idx}: node_id={node_id} is not a member, "
+                    f"skipping decommission"
+                )
+                return
+            controller = self.redpanda.controller()
+            assert controller is not None, (
+                "no controller leader to send decommission to"
+            )
+            self.logger.info(f"[raft0-ops] op {idx}: decommissioning node_id={node_id}")
+            self.redpanda._admin.decommission_broker(node_id, node=controller)
+            decommissioned_ids.add(node_id)
+
+        for i, op in enumerate(operations):
+            if isinstance(op, ThrottleRaft0):
+                self.logger.info(
+                    f"[raft0-ops] op {i}: throttling raft0 recovery "
+                    f"(rate={_THROTTLED_RATE})"
+                )
+                self._set_recovery_rate(_THROTTLED_RATE)
+            elif isinstance(op, UnthrottleRaft0):
+                self.logger.info(
+                    f"[raft0-ops] op {i}: unthrottling raft0 recovery "
+                    f"(rate={_UNTHROTTLED_RATE})"
+                )
+                self._set_recovery_rate(_UNTHROTTLED_RATE)
+            elif isinstance(op, AddNode):
+                node = op.node
+                if node is None:
+                    assert reserve, f"op {i}: ran out of reserve nodes for AddNode"
+                    node = reserve.pop(0)
+                self.logger.info(
+                    f"[raft0-ops] op {i}: adding node {node.name} "
+                    f"({'node_id=' + str(op.node_id) if op.node_id else 'auto-assigned id'})"
+                )
+                broker_ids_before = self._broker_ids()
+                self.redpanda.clean_node(node, preserve_current_install=True)
+                self.redpanda.start_node(
+                    node,
+                    auto_assign_node_id=op.node_id is None,
+                    node_id_override=op.node_id,
+                    omit_seeds_on_idx_one=False,
+                    skip_readiness_check=True,
+                )
+
+                def _storage_is_present(node: ClusterNode) -> bool:
+                    storage = self.redpanda.storage(nodes=[node], sizes=True)
+                    return (
+                        len(storage.nodes) > 0
+                        and len(storage.nodes[0].partitions("redpanda", "controller"))
+                        > 0
+                    )
+
+                # Wait for the node to start and register its pid so we can stop it later.
+                wait_until(
+                    lambda n=node: self.redpanda.redpanda_pid(n) is not None
+                    and _storage_is_present(n),
+                    timeout_sec=SHORT_TIMEOUT.timeout_s,
+                )
+                added_nodes.append(node)
+                # Wait for the broker to register in the cluster member list and
+                # determine its (possibly auto-assigned) id. Registration is a
+                # controller-log append, so it completes even while raft0 learner
+                # recovery is throttled (the node just won't become a learner).
+                if op.node_id is not None:
+                    expected_id = op.node_id
+                    wait_until(
+                        lambda eid=expected_id: eid in self._broker_ids(),
+                        timeout_sec=LONG_TIMEOUT.timeout_s,
+                        backoff_sec=LONG_TIMEOUT.backoff_s,
+                        err_msg=(
+                            f"op {i}: added broker node_id={expected_id} never "
+                            f"appeared in the broker list"
+                        ),
+                    )
+                    assigned_id = op.node_id
+                else:
+                    wait_until(
+                        lambda before=broker_ids_before: bool(
+                            self._broker_ids() - before
+                        ),
+                        timeout_sec=LONG_TIMEOUT.timeout_s,
+                        backoff_sec=LONG_TIMEOUT.backoff_s,
+                        err_msg=(
+                            f"op {i}: added node {node.name} never appeared in "
+                            f"the broker list"
+                        ),
+                    )
+                    new_ids = self._broker_ids() - broker_ids_before
+                    assert len(new_ids) == 1, (
+                        f"op {i}: expected exactly one new broker, "
+                        f"saw {sorted(new_ids)}"
+                    )
+                    assigned_id = next(iter(new_ids))
+                self.node_id_history.setdefault(node, []).append(assigned_id)
+                id_to_node[assigned_id] = node
+                decommissioned_ids.discard(assigned_id)
+                self.logger.info(
+                    f"[raft0-ops] op {i}: node {node.name} registered as "
+                    f"node_id={assigned_id}"
+                )
+                if op.expect_learner is not None:
+                    self._assert_learner_expectation(assigned_id, op.expect_learner, i)
+            elif isinstance(op, StopNode):
+                node = resolve_node(op, i, "StopNode")
+                self.logger.info(f"[raft0-ops] op {i}: stopping node {node.name}")
+                self.redpanda.stop_node(node)
+            elif isinstance(op, DropNodeData):
+                node = resolve_node(op, i, "DropNodeData")
+                self.logger.info(
+                    f"[raft0-ops] op {i}: dropping data on node {node.name}"
+                )
+                self.redpanda.remove_local_data(node)
+            else:
+                # DecommissionNode. select_id (computed from live state) wins;
+                # otherwise by id, or by node -> every id that node has been
+                # assigned (a recycled node leaves a dead broker per
+                # incarnation; decommission them all).
+                if op.select_id is not None:
+                    target_ids = [op.select_id()]
+                elif op.node_id is not None:
+                    target_ids = [op.node_id]
+                elif op.node is not None:
+                    target_ids = list(self.node_id_history.get(op.node, []))
+                    if not target_ids:
+                        target_ids = [
+                            self.redpanda.node_id(op.node, force_refresh=True)
+                        ]
+                else:
+                    raise AssertionError(
+                        f"op {i}: DecommissionNode requires node_id, node, or select_id"
+                    )
+                for node_id in target_ids:
+                    decommission_id(node_id, i)
+
+        self._converge_after_operations(seed_nodes, added_nodes, decommissioned_ids)
+
+    def _converge_after_operations(
+        self,
+        seed_nodes: list[ClusterNode],
+        added_nodes: list[ClusterNode],
+        decommissioned_ids: set[int],
+    ) -> None:
+        # ensure recovery is not throttled so any pending learner adds can
+        # complete (or have been cancelled by decommission).
+        self._set_recovery_rate(_UNTHROTTLED_RATE)
+
+        # raft0 must settle back to `simple`: nothing left stuck in a
+        # reconfiguration.
+        wait_until(
+            lambda: self._controller_state() == GroupConfigurationState.SIMPLE,
+            timeout_sec=LONG_TIMEOUT.timeout_s,
+            backoff_sec=LONG_TIMEOUT.backoff_s,
+            err_msg="raft0 did not converge to `simple` after running operations",
+        )
+
+        # decommissioned brokers must be fully removed from membership.
+        for node_id in decommissioned_ids:
+            NodeDecommissionWaiter(
+                self.redpanda,
+                node_id,
+                self.logger,
+                progress_timeout=MEDIUM_TIMEOUT.timeout_s,
+            ).wait_for_removal()
+
+        # net membership = seeds + added-still-alive - decommissioned.
+        expected_member_ids = {
+            self.redpanda.node_id(n, force_refresh=True) for n in seed_nodes
+        }
+        for node in added_nodes:
+            try:
+                node_id = self.redpanda.node_id(node, force_refresh=True)
+            except Exception:
+                # a decommissioned node may no longer answer; it is excluded
+                # below regardless.
+                continue
+            expected_member_ids.add(node_id)
+        expected_member_ids -= decommissioned_ids
+
+        wait_until(
+            lambda: self._broker_ids() == expected_member_ids,
+            timeout_sec=LONG_TIMEOUT.timeout_s,
+            backoff_sec=LONG_TIMEOUT.backoff_s,
+            err_msg=(
+                f"membership did not converge to {sorted(expected_member_ids)}; "
+                f"current: {sorted(self._broker_ids())}"
+            ),
+        )
+        self.logger.info("[raft0-ops] cluster converged; membership as expected")
+
+    @cluster(num_nodes=5)
+    def test_interleaved_operations(self):
+        NEW_JOINER = 9
+        STUCK_JOINER = 10
+
+        self._start_seed_cluster()
+        self._run_operations(
+            [
+                AddNode(node_id=NEW_JOINER),
+                ThrottleRaft0(),
+                AddNode(node_id=STUCK_JOINER, expect_learner=True),
+                StopNode(node_id=STUCK_JOINER),
+                DecommissionNode(node_id=NEW_JOINER),
+                DecommissionNode(node_id=STUCK_JOINER),
+                UnthrottleRaft0(),
+            ]
+        )
+
+    @cluster(num_nodes=4)
+    def test_join_decommission_join(self):
+        self._start_seed_cluster()
+        new_joiner = self.redpanda.nodes[self.INITIAL_CLUSTER_SIZE]
+        new_joiner_id = 10
+        self._run_operations(
+            [
+                ThrottleRaft0(),
+                AddNode(node=new_joiner, node_id=new_joiner_id),
+                StopNode(node_id=new_joiner_id),
+                DropNodeData(node_id=new_joiner_id),
+                DecommissionNode(node_id=new_joiner_id),
+                AddNode(node=new_joiner, node_id=new_joiner_id),
+                DecommissionNode(node_id=new_joiner_id),
+                StopNode(node_id=new_joiner_id),
+                DropNodeData(node_id=new_joiner_id),
+                AddNode(node=new_joiner, node_id=new_joiner_id),
+                UnthrottleRaft0(),
+            ]
+        )
+
+    @cluster(num_nodes=4)
+    def test_readding_the_node_with_the_same_id(self):
+        self._start_seed_cluster()
+        new_joiner = self.redpanda.nodes[self.INITIAL_CLUSTER_SIZE]
+        new_joiner_id = 10
+        self._run_operations(
+            [
+                ThrottleRaft0(),
+                AddNode(node=new_joiner, node_id=new_joiner_id, expect_learner=True),
+                StopNode(node_id=new_joiner_id),
+                DropNodeData(node_id=new_joiner_id),
+                AddNode(node=new_joiner, node_id=new_joiner_id, expect_learner=True),
+                StopNode(node_id=new_joiner_id),
+                DropNodeData(node_id=new_joiner_id),
+                AddNode(node=new_joiner, node_id=new_joiner_id),
+                UnthrottleRaft0(),
+            ]
+        )
+
+    @cluster(num_nodes=4)
+    def test_ghost_broker(self):
+        self._start_seed_cluster()
+        new_joiner = self.redpanda.nodes[self.INITIAL_CLUSTER_SIZE]
+
+        self._run_operations(
+            [
+                ThrottleRaft0(),
+                AddNode(node=new_joiner, expect_learner=True),
+                StopNode(node=new_joiner),
+                DropNodeData(node=new_joiner),
+                UnthrottleRaft0(),
+                AddNode(node=new_joiner),
+                DecommissionNode(
+                    select_id=lambda: self.node_id_history.get(new_joiner, [])[0]
+                ),
+            ]
+        )
+
+    @cluster(num_nodes=4)
+    def test_repeated_new_id_learner_adds_via_ops(self):
+        """Operations-framework equivalent of test_repeated_new_id_learner_adds.
+
+        Recycle a single node twice (a distinct pinned id each time) while raft0
+        recovery is throttled. The first incarnation must become a stuck raft0
+        learner; the second, blocked behind the first, must only register as a
+        broker and never become a learner. Then decommission both dead ids and
+        let the cluster converge back to `simple`."""
+        self._start_seed_cluster()
+        joiner = self.redpanda.nodes[self.INITIAL_CLUSTER_SIZE]
+        FIRST_ID = 10
+        SECOND_ID = 11
+        self._run_operations(
+            [
+                ThrottleRaft0(),
+                AddNode(node=joiner, node_id=FIRST_ID, expect_learner=True),
+                StopNode(node_id=FIRST_ID),
+                DropNodeData(node_id=FIRST_ID),
+                AddNode(node=joiner, node_id=SECOND_ID, expect_learner=False),
+                StopNode(node_id=SECOND_ID),
+                DecommissionNode(node_id=FIRST_ID),
+                DecommissionNode(node_id=SECOND_ID),
+                UnthrottleRaft0(),
+            ]
         )
