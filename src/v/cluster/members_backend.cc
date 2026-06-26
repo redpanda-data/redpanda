@@ -618,6 +618,16 @@ void members_backend::stop_node_addition(model::node_id id) {
     std::erase_if(_updates, [id](update_meta& meta) {
         return meta.update.id == id && meta.update.type == update_t::added;
     });
+    // remove all pending raft0 additions related with this node, they are
+    // canceled by decommissioning
+    _raft0_updates.erase(
+      std::remove_if(
+        _raft0_updates.begin(),
+        _raft0_updates.end(),
+        [id](auto& update) {
+            return update.id == id && update.type == node_update_type::added;
+        }),
+      _raft0_updates.end());
 
     // sort updates to prioritize decommissions/recommissions over node
     // additions, use stable sort to keep de/recommissions order
