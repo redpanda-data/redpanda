@@ -439,8 +439,7 @@ get_cluster_uuid(storage::api& storage) {
 
 } // namespace
 
-ss::future<
-  checked<chunked_vector<mark_files_committed_update>, file_committer::errc>>
+ss::future<checked<file_committer::commit_result, file_committer::errc>>
 iceberg_file_committer::commit_topic_files_to_catalog(
   model::topic topic, const topics_state& state) const {
     vlog(datalake_log.debug, "Beginning commit for topic {}", topic);
@@ -455,12 +454,17 @@ iceberg_file_committer::commit_topic_files_to_catalog(
       tp_it == state.topic_to_state.end()
       || !tp_it->second.has_pending_entries()) {
         vlog(datalake_log.debug, "Topic {} has no pending entries", topic);
-        co_return chunked_vector<mark_files_committed_update>{};
+        co_return commit_result{};
     }
     // Make a copy up here so we don't have to worry about the state changing
     // underneath us. The STM should be robust enough to detect and reject
-    // concurrent changes that result in invalid state updates.
-    auto tp_state = tp_it->second.copy();
+    // concurrent changes that result in invalid state updates. The copy is
+    // bounded so that a large backlog is committed in chunks across multiple
+    // passes rather than materialized all at once. If the copy was bounded,
+    // report it so the caller can drain the remainder promptly.
+    bool topic_has_more = false;
+    auto tp_state = tp_it->second.copy_bounded(
+      max_files_per_commit_(), topic_has_more);
     auto topic_revision = tp_state.revision;
 
     // Main table (may not exist if all records so far were invalid and the
@@ -567,7 +571,7 @@ iceberg_file_committer::commit_topic_files_to_catalog(
           "No new data to mark committed for topic {} revision {}",
           topic,
           topic_revision);
-        co_return chunked_vector<mark_files_committed_update>{};
+        co_return commit_result{.has_more = topic_has_more};
     }
     chunked_vector<mark_files_committed_update> updates;
     updates.reserve(pending_commits.size());
@@ -642,7 +646,8 @@ iceberg_file_committer::commit_topic_files_to_catalog(
       main_table_files,
       dlq_table_files);
 
-    co_return updates;
+    co_return commit_result{
+      .updates = std::move(updates), .has_more = topic_has_more};
 }
 
 ss::future<checked<std::nullopt_t, file_committer::errc>>

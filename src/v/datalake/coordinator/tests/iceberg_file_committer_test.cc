@@ -96,7 +96,12 @@ public:
               return &feature_table.local();
           }())
       , manifest_io(remote(), bucket_name)
-      , committer(storage, catalog, manifest_io, config::mock_binding(false)) {
+      , committer(
+          storage,
+          catalog,
+          manifest_io,
+          config::mock_binding(false),
+          config::mock_binding<size_t>(10000)) {
         feature_table
           .invoke_on_all(
             [](features::feature_table& f) { f.testing_activate_all(); })
@@ -170,7 +175,7 @@ TEST_F(FileCommitterTest, TestCommit) {
     });
     auto res = committer.commit_topic_files_to_catalog(topic, state).get();
     ASSERT_FALSE(res.has_error());
-    auto updates = std::move(res.value());
+    auto updates = std::move(res.value().updates);
     ASSERT_EQ(updates.size(), 3);
     ASSERT_EQ(
       updates[0].tp, model::topic_partition(topic, model::partition_id{0}));
@@ -196,13 +201,13 @@ TEST_F(FileCommitterTest, TestMissingTable) {
     // is not there yet.
     auto res = committer.commit_topic_files_to_catalog(topic, state).get();
     ASSERT_FALSE(res.has_error());
-    ASSERT_EQ(res.value().size(), 0);
+    ASSERT_EQ(res.value().updates.size(), 0);
 
     create_table();
 
     res = committer.commit_topic_files_to_catalog(topic, state).get();
     ASSERT_FALSE(res.has_error());
-    ASSERT_TRUE(res.value().empty());
+    ASSERT_TRUE(res.value().updates.empty());
     load_res = catalog.load_table(table_ident).get();
     // The table should be created.
     ASSERT_FALSE(load_res.has_error());
@@ -214,7 +219,7 @@ TEST_F(FileCommitterTest, TestMissingTable) {
       {{{0, 100}}}, /*added_at=*/model::offset{1000}, /*with_files=*/true);
     res = committer.commit_topic_files_to_catalog(topic, state).get();
     ASSERT_FALSE(res.has_error());
-    ASSERT_EQ(1, res.value().size());
+    ASSERT_EQ(1, res.value().updates.size());
 
     load_res = catalog.load_table(table_ident).get();
     ASSERT_FALSE(load_res.has_error());
@@ -252,7 +257,7 @@ TEST_F(FileCommitterTest, TestMissingTopic) {
     topics_state state;
     auto res = committer.commit_topic_files_to_catalog(topic, state).get();
     ASSERT_FALSE(res.has_error());
-    ASSERT_TRUE(res.value().empty());
+    ASSERT_TRUE(res.value().updates.empty());
 
     // If our state didn't have the topic, we won't bother creating a table.
     auto load_res = catalog.load_table(table_ident).get();
@@ -388,7 +393,7 @@ TEST_F(FileCommitterTest, TestDeduplicateAllFiles) {
     ASSERT_TRUE(load_res.value().snapshots.has_value());
     ASSERT_EQ(1, load_res.value().snapshots.value().size());
 
-    auto updates = std::move(res.value());
+    auto updates = std::move(res.value().updates);
     ASSERT_EQ(updates.size(), 1);
     ASSERT_EQ(
       updates[0].tp, model::topic_partition(topic, model::partition_id{0}));
@@ -407,7 +412,7 @@ TEST_F(FileCommitterTest, TestDeduplicateAllFiles) {
     // This should result in a metadata update to be replicated, as presumably
     // the earlier one was not successfully replicated (e.g. because of a
     // leadership change).
-    updates = std::move(res.value());
+    updates = std::move(res.value().updates);
     ASSERT_EQ(updates.size(), 1);
     ASSERT_EQ(
       updates[0].tp, model::topic_partition(topic, model::partition_id{0}));
@@ -430,7 +435,7 @@ TEST_F(FileCommitterTest, TestDeduplicateSomeFiles) {
     ASSERT_TRUE(load_res.value().snapshots.has_value());
     ASSERT_EQ(1, load_res.value().snapshots.value().size());
 
-    auto updates = std::move(res.value());
+    auto updates = std::move(res.value().updates);
     ASSERT_EQ(updates.size(), 1);
     ASSERT_EQ(
       updates[0].tp, model::topic_partition(topic, model::partition_id{0}));
@@ -452,7 +457,7 @@ TEST_F(FileCommitterTest, TestDeduplicateSomeFiles) {
 
     // This should result in a metadata update to be replicated, as there are
     // new files committed.
-    updates = std::move(res.value());
+    updates = std::move(res.value().updates);
     ASSERT_EQ(updates.size(), 1);
     ASSERT_EQ(
       updates[0].tp, model::topic_partition(topic, model::partition_id{0}));
@@ -474,7 +479,7 @@ TEST_F(FileCommitterTest, TestDeduplicateFromAncestor) {
 
     auto res = committer.commit_topic_files_to_catalog(topic, state).get();
     ASSERT_FALSE(res.has_error());
-    auto updates = std::move(res.value());
+    auto updates = std::move(res.value().updates);
     ASSERT_EQ(updates.size(), 1);
     ASSERT_EQ(
       updates[0].tp, model::topic_partition(topic, model::partition_id{0}));
@@ -523,7 +528,7 @@ TEST_F(FileCommitterTest, TestDeduplicateFromAncestor) {
     res = committer.commit_topic_files_to_catalog(topic, state).get();
     ASSERT_FALSE(res.has_error());
 
-    updates = std::move(res.value());
+    updates = std::move(res.value().updates);
     ASSERT_EQ(updates.size(), 1);
     ASSERT_EQ(
       updates[0].tp, model::topic_partition(topic, model::partition_id{0}));
@@ -565,7 +570,11 @@ TEST_F(FileCommitterTest, TestDontDeduplicateFromOtherCluster) {
     auto new_storage = dummy_storage(feature_table);
     new_storage.set_cluster_uuid(new_cluster);
     iceberg_file_committer new_cluster_committer(
-      new_storage, catalog, manifest_io, config::mock_binding(false));
+      new_storage,
+      catalog,
+      manifest_io,
+      config::mock_binding(false),
+      config::mock_binding<size_t>(10000));
     res = new_cluster_committer
             .commit_topic_files_to_catalog(topic, new_cluster_state)
             .get();
@@ -725,4 +734,73 @@ TEST_F(FileCommitterTest, TestDontLoadMainTable) {
     };
     auto main_reqs = get_requests(is_main_request);
     ASSERT_EQ(0, main_reqs.size());
+}
+
+TEST_F(FileCommitterTest, TestChunkedCommitsAcrossPartitions) {
+    create_table();
+
+    constexpr int num_partitions = 3;
+    constexpr int adds_per_partition = 6;
+    constexpr size_t chunk_files = 2;
+    constexpr size_t total_files = num_partitions * adds_per_partition;
+
+    // Each (partition, round) is a separate control-topic batch with one file.
+    // Partition p uses a disjoint offset range so every file path is unique.
+    // Control offsets (added_pending_at) are assigned round-robin, so entries
+    // interleave across partitions (numbers below are control offsets):
+    //
+    //   p0:  0  3  6  9 12 15
+    //   p1:  1  4  7 10 13 16
+    //   p2:  2  5  8 11 14 17
+    //
+    // The chunking must ensure that when committing files from coordinator
+    // offset O, all files added at or before O are also committed.
+    topics_state state;
+    auto& tstate = state.topic_to_state[topic];
+    int64_t control_offset = 0;
+    for (int round = 0; round < adds_per_partition; ++round) {
+        for (int p = 0; p < num_partitions; ++p) {
+            const int64_t begin = (p * 100000) + (round * 100);
+            auto ranges = make_pending_files(
+              {{begin, begin + 99}}, /*with_file=*/true);
+            tstate.pid_to_pending_files[model::partition_id{p}]
+              .pending_entries.emplace_back(
+                pending_entry{
+                  .data = std::move(ranges[0]),
+                  .added_pending_at = model::offset{control_offset++}});
+        }
+    }
+
+    iceberg_file_committer chunked_committer(
+      storage,
+      catalog,
+      manifest_io,
+      config::mock_binding(false),
+      config::mock_binding<size_t>(chunk_files));
+
+    // Drain the backlog in chunks.
+    size_t passes = 0;
+    while (tstate.has_pending_entries()) {
+        ASSERT_LE(passes, total_files) << "drain did not converge";
+        ++passes;
+        auto res
+          = chunked_committer.commit_topic_files_to_catalog(topic, state).get();
+        ASSERT_FALSE(res.has_error());
+        auto updates = std::move(res.value().updates);
+        ASSERT_FALSE(updates.empty()) << "a pass committed nothing";
+        for (auto& update : updates) {
+            ASSERT_FALSE(update.apply(state).has_error());
+        }
+    }
+
+    // Chunking must actually have happened (not a single big commit).
+    ASSERT_GT(passes, 1u);
+
+    // The current snapshot should reference every file exactly once.
+    chunked_vector<ss::sstring> uris;
+    ASSERT_NO_FATAL_FAILURE(get_current_data_files(&uris));
+    ASSERT_EQ(uris.size(), total_files);
+    chunked_hash_set<ss::sstring> unique_uris;
+    unique_uris.insert(uris.begin(), uris.end());
+    ASSERT_EQ(unique_uris.size(), total_files);
 }
