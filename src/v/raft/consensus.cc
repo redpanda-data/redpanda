@@ -58,6 +58,7 @@
 #include <algorithm>
 #include <chrono>
 #include <exception>
+#include <expected>
 #include <iterator>
 #include <optional>
 #include <ranges>
@@ -1418,6 +1419,60 @@ ss::future<std::error_code> consensus::force_replace_configuration_locally(
         co_return errc::shutting_down;
     }
     co_return errc::success;
+}
+
+ss::future<std::expected<ssx::semaphore_units, std::error_code>>
+consensus::acquire_op_lock_units() {
+    return _op_lock.get_units()
+      .then([](ssx::semaphore_units u) {
+          return std::expected<ssx::semaphore_units, std::error_code>(
+            std::move(u));
+      })
+      .handle_exception_type([](const ss::broken_semaphore&) {
+          return std::expected<ssx::semaphore_units, std::error_code>(
+            std::unexpected(make_error_code(errc::shutting_down)));
+      });
+}
+
+ss::future<std::error_code> consensus::force_replace_configuration_replicated(
+  std::vector<vnode> voters,
+  std::vector<vnode> learners,
+  model::revision_id new_revision) {
+    auto u = co_await acquire_op_lock_units();
+    if (!u) {
+        co_return u.error();
+    }
+    if (!is_elected_leader()) {
+        co_return errc::not_leader;
+    }
+    // Deliberately skip the configuration_change_in_progress guard used by
+    // change_configuration: this replaces whatever configuration is current,
+    // including an in-flight one, by replicating a fresh configuration.
+    auto new_cfg = group_configuration(
+      std::move(voters), std::move(learners), new_revision);
+    vlog(
+      _ctxlog.info,
+      "Force replacing configuration (replicated) with: {}",
+      new_cfg);
+    // If this node is replicating a configuration that removes itself from the
+    // voter set, it must step down once the configuration is replicated so a
+    // remaining voter can take over leadership.
+    const bool self_removed = !new_cfg.is_voter(_self);
+    auto ec = co_await replicate_configuration(
+      std::move(u.value()), std::move(new_cfg));
+    if (ec || !self_removed) {
+        co_return ec;
+    }
+    auto units = co_await acquire_op_lock_units();
+    if (!units) {
+        co_return units.error();
+    }
+    vlog(
+      _ctxlog.info,
+      "Stepping down: forced reconfiguration removed this node from the voter "
+      "set");
+    do_step_down("forced-reconfiguration-self-removed");
+    co_return ec;
 }
 
 void consensus::try_updating_configuration_version(group_configuration& cfg) {
