@@ -303,6 +303,7 @@ redpanda_cc_library(
     deps = [
         ":translated_offset_range",
         "//src/v/container:chunked_hash_map",
+        "//src/v/container:chunked_vector",
         "//src/v/iceberg:manifest_entry",
         "//src/v/model",
         "//src/v/serde",

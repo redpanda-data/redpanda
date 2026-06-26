@@ -9,6 +9,11 @@
  */
 #include "datalake/coordinator/state.h"
 
+#include "container/chunked_vector.h"
+
+#include <optional>
+#include <queue>
+
 namespace datalake::coordinator {
 
 pending_entry pending_entry::copy() const {
@@ -45,6 +50,90 @@ topic_state topic_state::copy() const {
     result.lifecycle_state = lifecycle_state;
     result.total_kafka_bytes_processed = total_kafka_bytes_processed;
     result.last_committed_snapshot_id = last_committed_snapshot_id;
+    return result;
+}
+
+topic_state
+topic_state::copy_bounded(size_t max_files, bool& was_bounded) const {
+    was_bounded = false;
+    // Fast path: if every pending file already fits within the limit, there is
+    // nothing to bound, so skip building the merge below and copy as-is.
+    bool is_within_bound = [this, max_files] {
+        size_t total_files = 0;
+        for (const auto& [_, p_state] : pid_to_pending_files) {
+            for (const auto& e : p_state.pending_entries) {
+                total_files += e.data.files.size() + e.data.dlq_files.size();
+                if (total_files > max_files) {
+                    return false;
+                }
+            }
+        }
+        return true;
+    }();
+    if (is_within_bound) {
+        return copy();
+    }
+    topic_state result;
+    result.revision = revision;
+    result.lifecycle_state = lifecycle_state;
+    result.total_kafka_bytes_processed = total_kafka_bytes_processed;
+    result.last_committed_snapshot_id = last_committed_snapshot_id;
+
+    // Go through the partitions' state, ordering by offset added to the
+    // coordinator. Collect files in coordinator offset order so there's an
+    // exact offset-defined cutline that can be committed to the catalog that
+    // is represented by the returned topic state.
+    struct cursor {
+        model::partition_id pid;
+        const partition_state* p;
+        std::deque<pending_entry>::const_iterator iter;
+        std::deque<pending_entry>::const_iterator end;
+        model::offset offset() const { return iter->added_pending_at; }
+    };
+    auto offset_greater = [](const cursor& a, const cursor& b) {
+        return a.offset() > b.offset();
+    };
+    std::
+      priority_queue<cursor, chunked_vector<cursor>, decltype(offset_greater)>
+        fronts(offset_greater);
+    for (const auto& [id, p_state] : pid_to_pending_files) {
+        if (!p_state.pending_entries.empty()) {
+            fronts.push(
+              cursor{
+                .pid = id,
+                .p = &p_state,
+                .iter = p_state.pending_entries.begin(),
+                .end = p_state.pending_entries.end()});
+        }
+    }
+    std::optional<model::offset> accepted_up_to;
+    size_t files = 0;
+    while (!fronts.empty()) {
+        auto cur = fronts.top();
+        const auto& cur_entry = *cur.iter;
+        const size_t entry_files = cur_entry.data.files.size()
+                                   + cur_entry.data.dlq_files.size();
+        if (
+          accepted_up_to.has_value()
+          // Make sure we add all files added at `accepted_up_to` (ensuring if
+          // there were multiple added in the same offset we get them all),
+          // even if that means going above the file limit.
+          && cur_entry.added_pending_at != *accepted_up_to
+          && files + entry_files > max_files) {
+            break;
+        }
+        fronts.pop();
+        files += entry_files;
+        accepted_up_to = cur_entry.added_pending_at;
+        auto& p_result = result.pid_to_pending_files[cur.pid];
+        p_result.last_committed = cur.p->last_committed;
+        p_result.pending_entries.push_back(cur_entry.copy());
+        if (++cur.iter != cur.end) {
+            fronts.push(std::move(cur));
+        }
+    }
+    // If we stopped with cursors still queued, the limit left entries out.
+    was_bounded = !fronts.empty();
     return result;
 }
 
