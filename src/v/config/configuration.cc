@@ -4435,6 +4435,16 @@ configuration::configuration()
       "but may be useful if the Iceberg catalog does not support tags.",
       {.needs_restart = needs_restart::no, .visibility = visibility::user},
       false)
+  , datalake_coordinator_max_files_per_commit(
+      *this,
+      "datalake_coordinator_max_files_per_commit",
+      "Target maximum number of pending data files committed to an Iceberg "
+      "table in a single commit. A larger backlog is committed across multiple "
+      "passes to bound the memory used per commit. May be exceeded slightly to "
+      "avoid splitting files sharing a commit offset.",
+      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
+      10000,
+      {.min = 1})
   , iceberg_disable_automatic_snapshot_expiry(
       *this,
       "iceberg_disable_automatic_snapshot_expiry",

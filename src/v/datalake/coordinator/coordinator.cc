@@ -184,6 +184,7 @@ coordinator::run_until_term_change(model::term_id term) {
     auto reset_term_as = ss::defer([this] { term_as_.reset(); });
     vlog(datalake_log.debug, "Running coordinator loop in term {}", term);
     while (raft.is_leader() && term == raft.term()) {
+        bool has_more_to_commit = false;
         // Make a copy of the topics to reconcile, in case the map changes
         // during this call.
         // TODO: probably worth building a more robust scheduler.
@@ -232,7 +233,9 @@ coordinator::run_until_term_change(model::term_id term) {
             }
             // TODO: apply table retention periodically too.
 
-            auto updates = std::move(commit_res.value());
+            auto commit = std::move(commit_res.value());
+            has_more_to_commit |= commit.has_more;
+            auto& updates = commit.updates;
             if (!updates.empty()) {
                 storage::record_batch_builder builder(
                   model::record_batch_type::datalake_coordinator,
@@ -262,6 +265,11 @@ coordinator::run_until_term_change(model::term_id term) {
                     break;
                 }
             }
+        }
+        if (has_more_to_commit) {
+            // A commit left more pending files; start the next pass immediately
+            // instead of idling for a full commit interval.
+            continue;
         }
         auto sleep_res = co_await ss::coroutine::as_future(
           ssx::sleep_abortable(commit_interval_(), as_, term_as));
