@@ -75,8 +75,10 @@ ss::future<std::optional<block::filter_reader>> read_filter(
         co_return std::nullopt;
     }
     auto filter_handle = block::handle::from_iobuf(iter->value());
-    auto filter_contents = co_await read_block(file, filter_handle);
-    co_return block::filter_reader(std::move(filter_contents));
+    // filter_reader::open validates the block's CRC (and retains per-region
+    // CRCs) while reading only the tail, so no separate whole-block pass here.
+    co_return co_await block::filter_reader::open(
+      file, filter_handle.offset, filter_handle.size);
 }
 
 } // namespace
@@ -125,7 +127,7 @@ public:
         auto v = iiter->value();
         if (_filter) {
             auto handle = block::handle::from_iobuf(v.share());
-            if (!_filter->key_may_match(handle.offset, key)) {
+            if (!co_await _filter->key_may_match(handle.offset, key)) {
                 // Bloom filter says it's certainly not there.
                 co_return;
             }
