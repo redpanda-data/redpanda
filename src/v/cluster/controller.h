@@ -293,6 +293,14 @@ public:
     ss::future<result<partition_state_reply>>
     do_get_controller_partition_state(model::node_id id);
 
+    ss::future<std::error_code> cancel_raft0_reconfiguration();
+
+    /// Force the controller (raft0) configuration to the given replica set,
+    /// superseding any in-flight or enqueued reconfiguration. An operator
+    /// escape hatch for a wedged controller; unclean by design.
+    ss::future<std::error_code>
+    force_raft0_reconfiguration(std::vector<model::node_id> replicas);
+
     static bytes invariants_key();
 
     ss::future<cluster::error_info>

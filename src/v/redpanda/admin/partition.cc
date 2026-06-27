@@ -318,8 +318,15 @@ admin_server::cancel_partition_reconfig_handler(
     const auto ntp = parse_ntp_from_request(req->param);
 
     if (ntp == model::controller_ntp) {
-        throw ss::httpd::bad_request_exception(
-          fmt::format("Can't cancel controller reconfiguration"));
+        if (need_redirect_to_leader(model::controller_ntp, _metadata_cache)) {
+            throw co_await redirect_to_leader(*req, model::controller_ntp);
+        }
+        vlog(
+          adminlog.info,
+          "Requesting cancelling of controller partition reconfiguration");
+        auto err = co_await _controller->cancel_raft0_reconfiguration();
+        co_await throw_on_error(*req, err, model::controller_ntp);
+        co_return ss::json::json_void();
     }
     vlog(
       adminlog.debug,
@@ -474,14 +481,34 @@ admin_server::force_set_partition_replicas_handler(
     }
 
     auto ntp = parse_ntp_from_request(req->param);
-    if (ntp == model::controller_ntp) {
-        throw ss::httpd::bad_request_exception(
-          fmt::format("Can't reconfigure a controller"));
-    }
 
     auto doc = co_await parse_json_body(req.get());
     auto replicas = co_await validate_set_replicas(
       doc, _controller->get_topics_frontend().local());
+
+    if (ntp == model::controller_ntp) {
+        // Reconfiguring the controller group is dangerous and gated behind an
+        // explicit evil_mode flag. It forcibly replaces raft0's configuration,
+        // blowing away any in-flight or enqueued raft0 reconfiguration.
+        if (!admin::get_boolean_query_param(*req, "evil_mode")) {
+            throw ss::httpd::bad_request_exception(
+              "Refusing to reconfigure the controller; pass evil_mode=true to "
+              "force a raft0 reconfiguration");
+        }
+        std::vector<model::node_id> nodes;
+        nodes.reserve(replicas.size());
+        for (const auto& bs : replicas) {
+            nodes.push_back(bs.node_id);
+        }
+        vlog(
+          adminlog.warn,
+          "evil_mode: forcing controller (raft0) reconfiguration to {}",
+          nodes);
+        auto err = co_await _controller->force_raft0_reconfiguration(
+          std::move(nodes));
+        co_await throw_on_error(*req, err, model::controller_ntp);
+        co_return ss::json::json_void();
+    }
 
     const auto& topics = _controller->get_topics_state().local();
     const auto& in_progress = topics.updates_in_progress();

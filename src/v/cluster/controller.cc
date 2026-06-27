@@ -1294,6 +1294,50 @@ controller::do_get_controller_partition_state(model::node_id target_node) {
             .then(&rpc::get_ctx_data<partition_state_reply>);
       });
 }
+
+ss::future<std::error_code> controller::cancel_raft0_reconfiguration() {
+    return ss::smp::submit_to(controller_stm_shard, [this] {
+        if (!_raft0->is_elected_leader()) {
+            return ss::make_ready_future<std::error_code>(
+              make_error_code(errc::not_leader));
+        }
+        vlog(
+          clusterlog.info,
+          "Requesting cancellation of controller (raft0) reconfiguration");
+        // Cancel with the revision of the config being cancelled; if it gets
+        // bumped, another completely unrelated config change can get skipped.
+        return _raft0->cancel_configuration_change(
+          _raft0->config().revision_id());
+    });
+}
+
+ss::future<std::error_code>
+controller::force_raft0_reconfiguration(std::vector<model::node_id> replicas) {
+    return ss::smp::submit_to(
+      controller_stm_shard, [this, replicas = std::move(replicas)]() mutable {
+          if (!_raft0->is_elected_leader()) {
+              return ss::make_ready_future<std::error_code>(
+                make_error_code(errc::not_leader));
+          }
+          std::vector<raft::vnode> voters;
+          voters.reserve(replicas.size());
+          for (auto id : replicas) {
+              // raft0 vnodes always carry revision 0.
+              voters.emplace_back(id, model::revision_id{0});
+          }
+          vlog(
+            clusterlog.warn,
+            "Forcing controller (raft0) reconfiguration to {}",
+            replicas);
+          // Bump the revision past the current log tail so the members backend
+          // treats any raft0 update enqueued behind the wedge as stale and
+          // drops it.
+          return _raft0->force_replace_configuration_replicated(
+            std::move(voters),
+            {},
+            model::revision_id(model::next_offset(_raft0->dirty_offset())));
+      });
+}
 /**
  * Validate that:
  * - node_id never changes
