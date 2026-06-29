@@ -219,11 +219,14 @@ ss::future<response_ptr> offset_for_leader_epoch_handler::handle(
     //
     // cluster_action here is a fast path for brokers/superusers; a regular
     // consumer is expected to fail it and fall through to the per-topic
-    // describe checks below. quiet the authz log for the expected failure.
+    // describe checks below. quiet the authz log and skip auditing for
+    // this broker-internal probe on both allow and deny. the user-meaningful
+    // access decisions happen at the per-topic describe checks below.
     if (!ctx.authorized(
           security::acl_operation::cluster_action,
           security::default_cluster_name,
-          authz_quiet{true})) {
+          authz_quiet{true},
+          audit_authz_check::no)) {
         auto it = std::stable_partition(
           request.data.topics.begin(),
           request.data.topics.end(),
