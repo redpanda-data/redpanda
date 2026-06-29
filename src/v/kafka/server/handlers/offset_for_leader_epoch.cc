@@ -216,9 +216,14 @@ ss::future<response_ptr> offset_for_leader_epoch_handler::handle(
     std::vector<offset_for_leader_topic_result> unauthorized;
 
     // authorize
+    //
+    // cluster_action here is a fast path for brokers/superusers; a regular
+    // consumer is expected to fail it and fall through to the per-topic
+    // describe checks below. quiet the authz log for the expected failure.
     if (!ctx.authorized(
           security::acl_operation::cluster_action,
-          security::default_cluster_name)) {
+          security::default_cluster_name,
+          authz_quiet{true})) {
         auto it = std::stable_partition(
           request.data.topics.begin(),
           request.data.topics.end(),
