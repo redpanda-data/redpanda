@@ -127,7 +127,8 @@ struct coordinator_node {
           *snapshot_remover,
           commit_interval_ms.bind(),
           default_partition_spec.bind(),
-          disable_snapshot_expiry.bind()) {}
+          disable_snapshot_expiry.bind(),
+          max_pending_files.bind()) {}
 
     ss::future<checked<std::nullopt_t, coordinator::errc>>
     remove_tombstone(const model::topic&, model::revision_id) {
@@ -147,6 +148,7 @@ struct coordinator_node {
     config::mock_property<ss::sstring> default_partition_spec{
       "(hour(redpanda.timestamp))"};
     config::mock_property<bool> disable_snapshot_expiry{false};
+    config::mock_property<size_t> max_pending_files{100000};
     cluster::data_migrations::migrated_resources mr;
     cluster::topic_table topic_table;
     datalake::binary_type_resolver type_resolver;
@@ -473,6 +475,48 @@ TEST_F(CoordinatorTest, TestAddFilesHappyPath) {
               c->stm.state(), tp00, std::nullopt, total_expected_00));
         }
     }
+}
+
+TEST_F(CoordinatorTest, TestBackpressure) {
+    opt_ref leader_opt;
+    ASSERT_NO_FATAL_FAILURE(wait_for_leader(leader_opt).get());
+    auto& leader = leader_opt->get();
+    // Shed load once two pending files accumulate.
+    leader.max_pending_files.update(2);
+    const auto tp00 = tp(0, 0);
+    const model::revision_id rev0{1};
+    register_in_topic_tables(tp00.topic, rev0);
+    leader.ensure_table(tp00.topic, rev0);
+
+    // First two single-file adds are under the threshold and accepted (the
+    // check sees the count from before the add).
+    for (const auto& v : {pairs_t{{0, 100}}, pairs_t{{101, 200}}}) {
+        auto add_res = leader.crd
+                         .sync_add_files(
+                           tp00,
+                           rev0,
+                           make_pending_files(v, /*with_file=*/true))
+                         .get();
+        ASSERT_FALSE(add_res.has_error()) << add_res.error();
+        wait_for_apply().get();
+    }
+
+    // Two pending files now meet the threshold, so further requests are shed.
+    auto add_res = leader.crd
+                     .sync_add_files(
+                       tp00,
+                       rev0,
+                       make_pending_files({{201, 300}}, /*with_file=*/true))
+                     .get();
+    ASSERT_TRUE(add_res.has_error());
+    ASSERT_EQ(add_res.error(), coordinator::errc::failed);
+
+    // Fetching offsets is not rejected: the offsets are still useful for lag
+    // reporting, so the request succeeds with the backpressure flag set to tell
+    // the translator to hold off on new translation.
+    auto last_res = leader.crd.sync_get_last_added_offsets(tp00, rev0).get();
+    ASSERT_FALSE(last_res.has_error()) << last_res.error();
+    ASSERT_TRUE(last_res.value().backpressure);
 }
 
 TEST_F(CoordinatorTest, TestLastAddedHappyPath) {
