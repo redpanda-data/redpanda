@@ -204,7 +204,7 @@ class NodeStorage:
         self.ns[ns] = n
         return n
 
-    def partitions(self, ns, topic):
+    def partitions(self, ns: str, topic: str) -> list[Partition]:
         if ns in self.ns:
             if topic in self.ns[ns].topics:
                 parts = self.ns[ns].topics[topic].partitions
@@ -234,7 +234,7 @@ class ClusterStorage:
     def add_node(self, node_storage: NodeStorage) -> None:
         self.nodes.append(node_storage)
 
-    def partitions(self, ns, topic):
+    def partitions(self, ns: str, topic: str) -> "itertools.chain[Partition]":
         return itertools.chain(*map(lambda n: n.partitions(ns, topic), self.nodes))
 
     def segments_by_node(
