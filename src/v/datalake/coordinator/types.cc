@@ -86,7 +86,11 @@ operator<<(std::ostream& o, const add_translated_data_files_request& request) {
 std::ostream&
 operator<<(std::ostream& o, const fetch_latest_translated_offset_reply& reply) {
     fmt::print(
-      o, "{{errc: {}, offset: {}}}", reply.errc, reply.last_added_offset);
+      o,
+      "{{errc: {}, offset: {}, backpressure: {}}}",
+      reply.errc,
+      reply.last_added_offset,
+      reply.backpressure);
     return o;
 }
 
