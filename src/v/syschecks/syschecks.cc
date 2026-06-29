@@ -82,7 +82,7 @@ void memory(bool ignore) {
         return;
     }
     auto line = fmt::format(
-      "Memory: '{}' below recommended: '{}'", shard_mem, kMinMemory);
+      "Memory: '{}' below minimum: '{}'", shard_mem, kMinMemory);
     checklog.error(line.c_str());
     if (!ignore) {
         throw std::runtime_error(line);
