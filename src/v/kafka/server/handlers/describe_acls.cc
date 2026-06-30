@@ -11,6 +11,7 @@
 #include "kafka/server/handlers/describe_acls.h"
 
 #include "cluster/security_frontend.h"
+#include "container/chunked_hash_map.h"
 #include "kafka/protocol/errors.h"
 #include "kafka/server/handlers/details/security.h"
 #include "kafka/server/request_context.h"
@@ -30,7 +31,7 @@ static void fill_response(
     /*
      * collapse common acls by pattern
      */
-    absl::flat_hash_map<
+    chunked_hash_map<
       security::resource_pattern,
       chunked_vector<security::acl_entry>>
       entries;
