@@ -134,7 +134,8 @@ iobuf filter_builder::finish() {
             ss::cpu_to_le(offset)));
     }
     _filter.append(
-      std::bit_cast<std::array<uint8_t, sizeof(uint32_t)>>(offsets_start));
+      std::bit_cast<std::array<uint8_t, sizeof(uint32_t)>>(
+        ss::cpu_to_le(offsets_start)));
     // Save the encoding parameter for backwards compatibility
     _filter.append(
       std::bit_cast<std::array<uint8_t, sizeof(uint8_t)>>(_filter_base_lg));
