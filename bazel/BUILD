@@ -94,3 +94,8 @@ config_setting(
         ":antithesis": "true",
     },
 )
+
+config_setting(
+    name = "s390x",
+    constraint_values = ["@platforms//cpu:s390x"],
+)
