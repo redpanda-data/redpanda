@@ -473,6 +473,17 @@ ss::future<> partition::start(
     _partition_properties_stm
       = _raft->stm_manager()->get<cluster::partition_properties_stm>();
 
+    // Feed the partition's durable storage mode into the log's ntp_config and
+    // keep it up to date as the STM applies changes. Reading replicated STM
+    // state is always safe; writes (which require the partition_mode feature)
+    // are gated separately. Until partition_mode is set, partition_mode() is
+    // `unset` and ntp_config falls back to the topic-config-derived mode.
+    if (_partition_properties_stm) {
+        _partition_properties_stm->set_partition_mode_change_callback(
+          [this] { update_partition_mode(); });
+        update_partition_mode();
+    }
+
     // Start the probe after the partition is fully initialised
     _probe.setup_metrics(ntp);
 
@@ -1758,6 +1769,14 @@ partition::force_abort_replica_set_update(model::revision_id rev) {
     return _raft->abort_configuration_change(rev);
 }
 consensus_ptr partition::raft() const { return _raft; }
+
+void partition::update_partition_mode() {
+    if (!_partition_properties_stm) {
+        return;
+    }
+    _raft->log()->set_partition_mode(
+      _partition_properties_stm->partition_mode());
+}
 
 ss::future<result<model::offset>> partition::set_writes_disabled(
   partition_properties_stm::writes_disabled disable,

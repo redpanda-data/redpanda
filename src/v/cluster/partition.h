@@ -425,6 +425,11 @@ private:
     // dirty so that it gets reuploaded
     ss::future<> restart_archiver(bool should_notify_topic_config);
 
+    // Push the partition's durable storage mode (partition_properties_stm) into
+    // the log's ntp_config, so ntp_config::partition_mode() reflects it. Called
+    // at start and whenever the STM signals a change.
+    void update_partition_mode();
+
     consensus_ptr _raft; // never null
     ss::shared_ptr<cluster::log_eviction_stm> _log_eviction_stm;
     ss::shared_ptr<cluster::rm_stm> _rm_stm;
