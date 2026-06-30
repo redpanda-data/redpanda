@@ -66,6 +66,7 @@ enum class feature : std::uint64_t {
     membership_change_controller_cmds = 1ULL << 22U,
     controller_snapshots = 1ULL << 23U,
     cloud_storage_manifest_format_v2 = 1ULL << 24U,
+    topic_storage_mode_migration = 1ULL << 25U,
     force_partition_reconfiguration = 1ULL << 26U,
     delete_records = 1ULL << 29U,
     raft_coordinated_recovery = 1ULL << 31U,
@@ -431,6 +432,12 @@ inline constexpr std::array feature_schema{
     release_version::v24_3_1,
     "partition_properties_stm",
     feature::partition_properties_stm,
+    feature_spec::available_policy::always,
+    feature_spec::prepare_policy::always},
+  feature_spec{
+    release_version::v26_3_1,
+    "topic_storage_mode_migration",
+    feature::topic_storage_mode_migration,
     feature_spec::available_policy::always,
     feature_spec::prepare_policy::always},
   feature_spec{
