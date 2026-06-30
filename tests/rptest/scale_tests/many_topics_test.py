@@ -10,6 +10,7 @@
 import concurrent.futures
 import json
 import random
+import re
 import subprocess
 import sys
 import threading
@@ -46,6 +47,20 @@ from rptest.util import firewall_blocked, inject_remote_script
 from rptest.utils.node_operations import NodeOpsExecutor
 from rptest.utils.scale_parameters import ScaleParameters
 from ducktape.cluster.cluster import ClusterNode
+
+# At ~40k partitions, a Prometheus scrape (/metrics, /public_metrics) of the admin
+# shard makes Seastar's metric_aggregate_by_labels build a per-request
+# unordered_map<label_key, labels_value> whose hash-table rehash exceeds the 128 KiB
+# oversized-allocation threshold. The WARN is non-fatal but trips raise_on_bad_logs.
+# The harness scrapes metrics throughout every lifecycle test, so allow it for all of
+# them. The 208896-byte size is deterministic for this profile's metric cardinality;
+# matching it exactly avoids masking unrelated oversized allocations on the admin shard.
+# Root cause / tracking: CORE-16754, CORE-16433.
+MANY_TOPICS_LOG_ALLOW_LIST = RESTART_LOG_ALLOW_LIST + [
+    re.compile(
+        r"\[shard \d+:admi\] seastar_memory - oversized allocation: 208896 bytes"
+    ),
+]
 
 HTTP_GET_HEADERS = {"Accept": "application/vnd.schemaregistry.v1+json"}
 
@@ -1157,15 +1172,15 @@ class ManyTopicsTest(RedpandaTest):
         self._swarm_producers = []
         self._current_profile = None
 
-    @cluster(num_nodes=16, log_allow_list=RESTART_LOG_ALLOW_LIST)
+    @cluster(num_nodes=16, log_allow_list=MANY_TOPICS_LOG_ALLOW_LIST)
     def test_restart_safely(self):
         self._lifecycle_test_impl(self._restart_safely)
 
-    @cluster(num_nodes=16, log_allow_list=RESTART_LOG_ALLOW_LIST)
+    @cluster(num_nodes=16, log_allow_list=MANY_TOPICS_LOG_ALLOW_LIST)
     def test_restart_unsafely(self):
         self._lifecycle_test_impl(self._restart_unsafely)
 
-    @cluster(num_nodes=16, log_allow_list=RESTART_LOG_ALLOW_LIST)
+    @cluster(num_nodes=16, log_allow_list=MANY_TOPICS_LOG_ALLOW_LIST)
     def test_rolling_restarts(self):
         self._lifecycle_test_impl(
             # It takes ~4mins to safely restart a node, hence, we limit the total
@@ -1173,32 +1188,32 @@ class ManyTopicsTest(RedpandaTest):
             lambda: self._rolling_restarts(max_nodes=3),
         )
 
-    @cluster(num_nodes=16, log_allow_list=RESTART_LOG_ALLOW_LIST)
+    @cluster(num_nodes=16, log_allow_list=MANY_TOPICS_LOG_ALLOW_LIST)
     def test_decommission_node_safely(self):
         self._lifecycle_test_impl(
             self._decommission_node_safely, needs_standby_node=True
         )
 
-    @cluster(num_nodes=16, log_allow_list=RESTART_LOG_ALLOW_LIST)
+    @cluster(num_nodes=16, log_allow_list=MANY_TOPICS_LOG_ALLOW_LIST)
     def test_decommission_node_unsafely(self):
         self._lifecycle_test_impl(self._decommission_node_unsafely)
 
-    @cluster(num_nodes=16, log_allow_list=RESTART_LOG_ALLOW_LIST)
+    @cluster(num_nodes=16, log_allow_list=MANY_TOPICS_LOG_ALLOW_LIST)
     def test_block_s3_on_all_nodes(self):
         self._target_port = 9000
         self._lifecycle_test_impl(self._isolate_all_nodes)
 
-    @cluster(num_nodes=16, log_allow_list=RESTART_LOG_ALLOW_LIST)
+    @cluster(num_nodes=16, log_allow_list=MANY_TOPICS_LOG_ALLOW_LIST)
     def test_isolate_random_node_from_cluster(self):
         self._target_port = 33145
         self._lifecycle_test_impl(self._isolate_random_node)
 
-    @cluster(num_nodes=16, log_allow_list=RESTART_LOG_ALLOW_LIST)
+    @cluster(num_nodes=16, log_allow_list=MANY_TOPICS_LOG_ALLOW_LIST)
     def test_isolate_random_node_from_clients(self):
         self._target_port = 9092
         self._lifecycle_test_impl(self._isolate_random_node)
 
-    @cluster(num_nodes=11, log_allow_list=RESTART_LOG_ALLOW_LIST)
+    @cluster(num_nodes=11, log_allow_list=MANY_TOPICS_LOG_ALLOW_LIST)
     def test_topic_swarm(self):
         """Test creates 40,000 topics, validates partitions and replicas,
         produces 100 messages to each topic using batches, consumes
@@ -1321,7 +1336,7 @@ class ManyTopicsTest(RedpandaTest):
         return
 
     # TODO: This test can be re-enabled once CORE-10448 is fixed
-    # @cluster(num_nodes=11, log_allow_list=RESTART_LOG_ALLOW_LIST)
+    # @cluster(num_nodes=11, log_allow_list=MANY_TOPICS_LOG_ALLOW_LIST)
     def _test_wide_consumer_request(self):
         """
         This test creates 40k topics and producers. Each producer will produce
@@ -1370,7 +1385,7 @@ class ManyTopicsTest(RedpandaTest):
             s.wait(int(running_time_sec))
 
     # TODO: This test can be re-enabled once CORE-10448 is fixed
-    # @cluster(num_nodes=17, log_allow_list=RESTART_LOG_ALLOW_LIST)
+    # @cluster(num_nodes=17, log_allow_list=MANY_TOPICS_LOG_ALLOW_LIST)
     def _test_large_consumer_group(self):
         """
         This test creates 40k topics, producers, and consumers. Where each
@@ -1418,7 +1433,7 @@ class ManyTopicsTest(RedpandaTest):
             # account for up to one-third delays
             s.wait(running_time_sec * 2)
 
-    @cluster(num_nodes=16, log_allow_list=RESTART_LOG_ALLOW_LIST)
+    @cluster(num_nodes=16, log_allow_list=MANY_TOPICS_LOG_ALLOW_LIST)
     def test_many_topics_throughput(self):
         """Test creates 40k topics, uses client-swarm to
         generate a workload, then validates high watermark values.
