@@ -56,6 +56,7 @@ RPC_TEMPLATE = """
 #include <array>
 #include <functional>
 #include <chrono>
+#include <optional>
 #include <tuple>
 #include <cstdint>
 
@@ -79,24 +80,13 @@ public:
     virtual ~{{service_name}}_service() noexcept = default;
 
     void setup_metrics() final {
-        namespace sm = ss::metrics;
-        auto service_label = sm::label("service");
-        auto method_label = sm::label("method");
-      {%- for method in methods %}
-        {
-            std::vector<ss::metrics::label_instance> labels{
-              service_label("{{service_name}}"),
-              method_label("{{method.name}}")};
-            _metrics.add_group(
-              prometheus_sanitize::metrics_name("internal_rpc"),
-              {sm::make_histogram(
-                "latency",
-                [this] { return _methods[{{loop.index-1}}].probes.latency_hist().internal_histogram_logform(); },
-                sm::description("Internal RPC service latency"),
-                labels),
-                }, {}, {sm::shard_label, method_label});
-        }
-      {%- endfor %}
+        // Watch `enable_development_metrics` so the per-method internal RPC
+        // latency metrics can be registered/deregistered at runtime without a
+        // restart.
+        _development_metrics_binding.emplace(
+          config::shard_local_cfg().enable_development_metrics.bind());
+        _development_metrics_binding->watch([this] { update_metrics(); });
+        update_metrics();
     }
 
     ss::scheduling_group& get_scheduling_group() override {
@@ -141,6 +131,35 @@ private:
     }
     {%- endfor %}
 
+    void update_metrics() {
+        _metrics.clear();
+        for (auto& m : _methods) {
+            m.probes.reset_latency_hist();
+        }
+        if (!config::shard_local_cfg().enable_development_metrics()) {
+            return;
+        }
+        namespace sm = ss::metrics;
+        auto service_label = sm::label("service");
+        auto method_label = sm::label("method");
+      {%- for method in methods %}
+        {
+            _methods[{{loop.index-1}}].probes.enable_latency_hist();
+            std::vector<ss::metrics::label_instance> labels{
+              service_label("{{service_name}}"),
+              method_label("{{method.name}}")};
+            _metrics.add_group(
+              prometheus_sanitize::metrics_name("internal_rpc"),
+              {sm::make_histogram(
+                "latency",
+                [this] { return _methods[{{loop.index-1}}].probes.latency_hist()->internal_histogram_logform(); },
+                sm::description("Internal RPC service latency"),
+                labels),
+                }, {}, {sm::shard_label, method_label});
+        }
+      {%- endfor %}
+    }
+
     ss::scheduling_group _sc;
     ss::smp_service_group _ssg;
     std::array<::rpc::method, {{methods|length}}> _methods{%raw %}{{{% endraw %}
@@ -151,6 +170,7 @@ private:
       {%- endfor %}
     {% raw %}}}{% endraw %};
     metrics::internal_metric_groups _metrics;
+    std::optional<config::binding<bool>> _development_metrics_binding;
 };
 
 class {{service_name}}_client_protocol {% if final_protocol %}final{% endif %} {

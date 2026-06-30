@@ -586,6 +586,14 @@ configuration::configuration()
       "endpoint.",
       base_property::metadata{},
       false)
+  , enable_development_metrics(
+      *this,
+      "enable_development_metrics",
+      "Enable registering development-oriented metrics on the internal "
+      "`/metrics` endpoint, such as the per-method internal RPC latency "
+      "histograms.",
+      {.needs_restart = needs_restart::no},
+      false)
   , aggregate_metrics(
       *this,
       "aggregate_metrics",

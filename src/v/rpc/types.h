@@ -37,6 +37,7 @@
 #include <cstdint>
 #include <iosfwd>
 #include <limits>
+#include <memory>
 #include <type_traits>
 #include <vector>
 
@@ -418,12 +419,21 @@ class method_probes {
 public:
     using hist_t = log_hist_internal;
 
-    hist_t& latency_hist() { return _latency_hist; }
-    const hist_t& latency_hist() const { return _latency_hist; }
+    hist_t* latency_hist() { return _latency_hist.get(); }
+    const hist_t* latency_hist() const { return _latency_hist.get(); }
+
+    /// Lazily allocate the latency histogram. Called from the generated
+    /// `setup_metrics` only when the metric is actually being registered.
+    void enable_latency_hist() {
+        if (!_latency_hist) {
+            _latency_hist = std::make_unique<hist_t>();
+        }
+    }
+
+    void reset_latency_hist() { _latency_hist.reset(); }
 
 private:
-    // roughly 208 bytes
-    hist_t _latency_hist;
+    std::unique_ptr<hist_t> _latency_hist{nullptr};
 };
 
 /// \brief most method implementations will be codegenerated

@@ -183,6 +183,7 @@ struct configuration final : public config_store {
     property<std::optional<ss::sstring>> cluster_id;
     property<bool> disable_metrics;
     property<bool> disable_public_metrics;
+    property<bool> enable_development_metrics;
     property<bool> aggregate_metrics;
     property<std::vector<ss::sstring>> enable_consumer_group_metrics;
     property<std::chrono::seconds> consumer_group_lag_collection_interval;
