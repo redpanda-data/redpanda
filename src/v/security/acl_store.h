@@ -10,14 +10,15 @@
  */
 #pragma once
 #include "absl/container/flat_hash_map.h"
-#include "absl/container/node_hash_map.h"
 #include "absl/hash/hash.h"
+#include "container/chunked_hash_map.h"
 #include "container/chunked_vector.h"
 #include "container/radix_tree.h"
 #include "security/acl.h"
 #include "security/acl_entry_set.h"
 
 #include <functional>
+#include <memory>
 #include <string_view>
 #include <tuple>
 
@@ -25,9 +26,11 @@ namespace security {
 
 /*
  * A lightweight, non-owning reference to one (pattern, entry set) pair held by
- * an acl_store. `_acls` is a node-based map, so these references stay valid
- * across inserts and erasures of *other* patterns; they are invalidated only
- * when this pattern itself is erased (see acl_store::find()).
+ * an acl_store. The pair lives in a heap-allocated node owned by `_acls` via a
+ * unique_ptr, so these references stay valid across inserts and erasures of
+ * *other* patterns (the map may relocate the unique_ptr, but never the node it
+ * points at); they are invalidated only when this pattern itself is erased (see
+ * acl_store::find()).
  */
 struct acl_entry_set_match {
     std::reference_wrapper<const resource_pattern> resource;
@@ -62,11 +65,12 @@ public:
     chunked_vector<acl_binding> acls(const acl_binding_filter&) const;
 
     /**
-     * WARNING: The returned acl_matches holds references into `_acls`. Because
-     * `_acls` is node-based these survive inserts and removals of *other*
-     * patterns, but reset_bindings() (or erasing a referenced pattern) frees
-     * the referents. Do not use an acl_matches across a yield point or any
-     * acl_store mutation: doing so may result in UNDEFINED BEHAVIOR.
+     * WARNING: The returned acl_matches holds references into `_acls`. The
+     * entry sets live in heap-owned nodes, so these survive inserts and
+     * removals of *other* patterns, but reset_bindings() (or erasing a
+     * referenced pattern) frees the referents. Do not use an acl_matches across
+     * a yield point or any acl_store mutation: doing so may result in UNDEFINED
+     * BEHAVIOR.
      */
     acl_matches find(resource_type, const ss::sstring&) const;
 
@@ -87,19 +91,36 @@ private:
     };
 
     /*
-     * Normalize a resource_pattern or resource_pattern_probe to a common key:
-     * the name is viewed as bytes so a probe and the resource_pattern it stands
-     * in for produce an identical key. Sharing this between the hash and the
-     * equality keeps the two consistent and enables allocation-free
-     * heterogeneous lookups.
+     * The (pattern, entry set) pair, heap-allocated and owned by `_acls` so its
+     * address is stable for as long as the pattern lives. The prefix index and
+     * acl_matches reference these fields directly (see acl_entry_set_match), so
+     * they must not move when other patterns are added or removed.
+     */
+    struct acls_node {
+        resource_pattern pattern;
+        acl_entry_set entries;
+    };
+
+    /*
+     * Normalize a resource_pattern, a resource_pattern_probe, or a stored
+     * acls_node to a common key: the name is viewed as bytes so a probe and the
+     * resource_pattern it stands in for produce an identical key. Sharing this
+     * between the hash and the equality keeps the two consistent and enables
+     * allocation-free heterogeneous lookups.
      */
     static std::tuple<resource_type, std::string_view, pattern_type>
     pattern_key(const auto& p) {
         return {p.resource(), p.name(), p.pattern()};
     }
+    static std::tuple<resource_type, std::string_view, pattern_type>
+    pattern_key(const std::unique_ptr<acls_node>& n) {
+        return pattern_key(n->pattern);
+    }
 
     struct resource_pattern_hash {
         using is_transparent = void;
+        // absl::HashOf already mixes well; tell unordered_dense not to re-mix.
+        using is_avalanching = void;
         size_t operator()(const auto& p) const {
             return absl::HashOf(pattern_key(p));
         }
@@ -112,25 +133,26 @@ private:
     };
 
     /*
-     * A node-based map so references to elements survive inserts and erasures
-     * of other patterns. This lets the prefix index hold direct references to
-     * the (pattern, entry set) pairs here (see acl_entry_set_match) without
-     * being invalidated when unrelated ACLs are added or removed.
+     * A chunked_hash_set with heap-owned acls_nodes so references to elements
+     * survive inserts and erasures of other patterns. This lets the prefix
+     * index hold direct references to the (pattern, entry set) pairs here (see
+     * acl_entry_set_match) without being invalidated when unrelated ACLs are
+     * added or removed.
      */
-    using container_type = absl::node_hash_map<
-      resource_pattern,
-      acl_entry_set,
+    using container_type = chunked_hash_set<
+      std::unique_ptr<acls_node>,
       resource_pattern_hash,
       resource_pattern_eq>;
 
     /*
-     * INVARIANT: `_prefix_index` holds references into the elements of `_acls`.
-     * Node stability keeps them valid across inserts and across erasing *other*
-     * patterns, but erasing a prefixed pattern that the index references leaves
-     * a dangling reference -> use-after-free in find(). So any erasure of an
-     * `_acls` key MUST drop the corresponding `_prefix_index` entry in the same
-     * step. remove_bindings() (the only key-erasing path) does exactly this
-     * when it prunes an emptied pattern; reset_bindings() clears both.
+     * INVARIANT: `_prefix_index` holds references into the `acls_node`s that
+     * `_acls` owns. The unique_ptr indirection keeps them valid across inserts
+     * and across erasing *other* patterns, but erasing a prefixed pattern that
+     * the index references frees its node -> use-after-free in find(). So any
+     * erasure of an `_acls` key MUST drop the corresponding `_prefix_index`
+     * entry in the same step. remove_bindings() (the only element-erasing path)
+     * does exactly this when it prunes an emptied pattern; reset_bindings()
+     * clears both.
      */
     container_type _acls;
 
@@ -142,10 +164,11 @@ private:
      * and the stored match references each entry set directly, so no further
      * `_acls` lookup is needed.
      *
-     * The references are stable because `_acls` is node-based, so the index is
-     * maintained incrementally: add inserts a reference to the new pattern,
-     * remove drops it when (and only when) it prunes the emptied pattern from
-     * `_acls`, and reset rebuilds alongside `_acls`.
+     * The references are stable because each entry set lives in a heap-owned
+     * acls_node, so the index is maintained incrementally: add inserts a
+     * reference to the new pattern, remove drops it when (and only when) it
+     * prunes the emptied pattern from `_acls`, and reset rebuilds alongside
+     * `_acls`. There are few resource types, so this map stays tiny.
      */
     absl::flat_hash_map<resource_type, radix_tree<acl_entry_set_match>>
       _prefix_index;
@@ -155,13 +178,19 @@ private:
     /// set it was added to so callers may rehash(); does not rehash itself.
     acl_entry_set& insert_binding(const acl_binding& binding) {
         const auto& pattern = binding.pattern();
-        auto [it, inserted] = _acls.try_emplace(pattern);
-        it->second.insert(binding.entry());
-        if (inserted && pattern.pattern() == pattern_type::prefixed) {
-            _prefix_index[pattern.resource()].insert(
-              it->first.name(), acl_entry_set_match{it->first, it->second});
+        if (auto it = _acls.find(pattern); it != _acls.end()) {
+            (*it)->entries.insert(binding.entry());
+            return (*it)->entries;
         }
-        return it->second;
+        auto [it, _] = _acls.insert(std::make_unique<acls_node>(pattern));
+        auto& node = **it;
+        node.entries.insert(binding.entry());
+        if (pattern.pattern() == pattern_type::prefixed) {
+            _prefix_index[pattern.resource()].insert(
+              node.pattern.name(),
+              acl_entry_set_match{node.pattern, node.entries});
+        }
+        return node.entries;
     }
 };
 

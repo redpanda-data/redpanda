@@ -143,6 +143,7 @@ redpanda_cc_library(
         "//src/v/bytes",
         "//src/v/bytes:random",
         "//src/v/config",
+        "//src/v/container:chunked_hash_map",
         "//src/v/container:chunked_vector",
         "//src/v/container:radix_tree",
         "//src/v/crypto",
