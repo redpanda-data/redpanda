@@ -349,6 +349,24 @@ redpanda_cc_gtest(
 )
 
 redpanda_cc_gtest(
+    name = "reconciler_test",
+    timeout = "short",
+    srcs = [
+        "reconciler_test.cc",
+    ],
+    cpu = 1,
+    deps = [
+        "//src/v/base",
+        "//src/v/ssx:future_util",
+        "//src/v/ssx:reconciler",
+        "//src/v/test_utils:async",
+        "//src/v/test_utils:gtest",
+        "@googletest//:gtest",
+        "@seastar",
+    ],
+)
+
+redpanda_cc_gtest(
     name = "single_fiber_executor_test",
     timeout = "short",
     srcs = [

@@ -188,6 +188,20 @@ redpanda_cc_library(
 )
 
 redpanda_cc_library(
+    name = "reconciler",
+    hdrs = [
+        "reconciler.h",
+    ],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":future_util",
+        ":sleep_abortable",
+        "//src/v/base",
+        "@seastar",
+    ],
+)
+
+redpanda_cc_library(
     name = "sleep_abortable",
     hdrs = [
         "sleep_abortable.h",
