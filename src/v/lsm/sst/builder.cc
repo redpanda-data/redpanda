@@ -11,6 +11,7 @@
 #include "hashing/crc32c.h"
 #include "lsm/sst/footer.h"
 
+#include <seastar/core/byteorder.hh>
 #include <seastar/core/coroutine.hh>
 
 namespace lsm::sst {
@@ -81,8 +82,11 @@ builder::write_raw_block(iobuf buf, compression_type comp_type) {
     buf.append(std::to_array({std::to_underlying(comp_type)}));
     crc::crc32c crc;
     crc_extend_iobuf(crc, buf);
+    // The reader decodes this CRC with ioarray::read_fixed32 (little-endian),
+    // so store it little-endian to round-trip on big-endian hosts too.
     buf.append(
-      std::bit_cast<std::array<uint8_t, sizeof(crc.value())>>(crc.value()));
+      std::bit_cast<std::array<uint8_t, sizeof(crc.value())>>(
+        ss::cpu_to_le(crc.value())));
     _written_bytes += buf.size_bytes();
     co_await _writer->append(std::move(buf));
     co_return h;
