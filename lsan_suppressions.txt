@@ -6,3 +6,8 @@ leak:fips/self_test.c
 # This suppression should be revisited/removed once both OpenSSL
 # versions have been updated.
 leak:crypto/mem.c
+
+# alien::message_queue::_pending is a boost::lockfree::queue<work_item*>,
+# where tagged pointers are used to mask addresses. LSan interprets memory
+# (which are pointed to by these tagged pointers) as leaked.
+leak:seastar::alien::message_queue
