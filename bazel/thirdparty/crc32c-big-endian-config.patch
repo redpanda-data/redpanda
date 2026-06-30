@@ -1,0 +1,19 @@
+Set BYTE_ORDER_BIG_ENDIAN from the compiler's byte-order macros instead of
+hardcoding it to 0. The crc32c portable implementation reads input words via
+ReadUint32LE, whose big-endian branch is only compiled when
+BYTE_ORDER_BIG_ENDIAN is non-zero. Hardcoding 0 makes the LE memcpy path run on
+big-endian hosts (e.g. s390x), producing incorrect CRC32C values and breaking
+Kafka record-batch validation. Deriving the value from __BYTE_ORDER__ keeps the
+config correct on every target arch.
+
+--- a/BUILD.bazel
++++ b/BUILD.bazel
+@@ -76,7 +76,7 @@
+     outs = ["crc32c/crc32c_config.h"],
+     cmd = """
+ sed -e 's/#cmakedefine01/#define/' \
+-    -e 's/ BYTE_ORDER_BIG_ENDIAN/ BYTE_ORDER_BIG_ENDIAN 0/' \
++    -e 's/ BYTE_ORDER_BIG_ENDIAN/ BYTE_ORDER_BIG_ENDIAN (__BYTE_ORDER__ == __ORDER_BIG_ENDIAN__)/' \
+     -e 's/ HAVE_BUILTIN_PREFETCH/ HAVE_BUILTIN_PREFETCH 0/' \
+     -e 's/ HAVE_MM_PREFETCH/ HAVE_MM_PREFETCH 0/' \
+     -e 's/ HAVE_SSE42/ HAVE_SSE42 1/' \

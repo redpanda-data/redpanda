@@ -21,6 +21,13 @@ bazel_dep(name = "gazelle", version = "0.45.0")
 bazel_dep(name = "abseil-cpp", version = "20250814.1")
 bazel_dep(name = "bazel_skylib", version = "1.8.2")
 bazel_dep(name = "crc32c", version = "1.1.0")
+single_version_override(
+    module_name = "crc32c",
+    patch_strip = 1,
+    patches = [
+        "//bazel/thirdparty:crc32c-big-endian-config.patch",
+    ],
+)
 bazel_dep(name = "fmt", version = "12.1.0")
 bazel_dep(name = "googletest", version = "1.17.0")
 bazel_dep(name = "lexy", version = "2025.05.0")
