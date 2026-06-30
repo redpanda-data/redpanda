@@ -97,7 +97,7 @@ private:
      * they must not move when other patterns are added or removed.
      */
     struct acls_node {
-        resource_pattern pattern;
+        const resource_pattern pattern;
         acl_entry_set entries;
     };
 
