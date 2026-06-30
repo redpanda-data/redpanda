@@ -12,6 +12,7 @@ quick:
   - tests/
   - transactions/
   - cfr_tests/
+  - utils/skip_in_cdt_test.py
 
   excluded:
   - tests/rpk_tuner_test.py
