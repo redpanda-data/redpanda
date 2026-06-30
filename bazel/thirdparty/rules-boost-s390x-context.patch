@@ -1,0 +1,29 @@
+--- a/boost.BUILD
++++ b/boost.BUILD
+@@ -24,6 +24,14 @@
+ )
+ 
+ config_setting(
++    name = "linux_s390x",
++    constraint_values = [
++        "@platforms//os:linux",
++        "@platforms//cpu:s390x",
++    ],
++)
++
++config_setting(
+     name = "linux_aarch64",
+     constraint_values = [
+         "@platforms//os:linux",
+@@ -106,6 +114,11 @@
+         "libs/context/src/asm/make_ppc64_sysv_elf_gas.S",
+         "libs/context/src/asm/ontop_ppc64_sysv_elf_gas.S",
+     ],
++    ":linux_s390x": [
++        "libs/context/src/asm/jump_s390x_sysv_elf_gas.S",
++        "libs/context/src/asm/make_s390x_sysv_elf_gas.S",
++        "libs/context/src/asm/ontop_s390x_sysv_elf_gas.S",
++    ],
+     ":linux_x86_64": [
+         "libs/context/src/asm/jump_x86_64_sysv_elf_gas.S",
+         "libs/context/src/asm/make_x86_64_sysv_elf_gas.S",

@@ -9,6 +9,10 @@ archive_override(
     integrity = "sha256-wQsxOxZh1tluc6AXj+ncsYhBSl03uC+hPhBrU6JkupI=",
     strip_prefix = "rules_boost-f5b0f8c904f2487d8f5a9a956d4388724e627210",
     urls = ["https://github.com/nelhage/rules_boost/archive/f5b0f8c904f2487d8f5a9a956d4388724e627210.tar.gz"],
+    patch_strip = 1,
+    patches = [
+        "//bazel/thirdparty:rules-boost-s390x-context.patch",
+    ],
 )
 
 non_module_boost_repositories = use_extension("@com_github_nelhage_rules_boost//:boost/repositories.bzl", "non_module_dependencies")
