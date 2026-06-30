@@ -11,6 +11,8 @@
 
 #include "serde/parquet/schema.h"
 
+#include "base/vassert.h"
+
 #include <ranges>
 #include <stdexcept>
 #include <variant>

@@ -22,6 +22,8 @@
 
 #include <boost/iterator/counting_iterator.hpp>
 #include <boost/iterator/transform_iterator.hpp>
+#include <fmt/ostream.h>
+#include <fmt/ranges.h>
 
 #include <utility>
 
@@ -238,3 +240,14 @@ private:
 };
 
 } // namespace archival
+
+// inclusive_offset_range is a range, so with <fmt/ranges.h> in scope (pulled in
+// transitively via seastar's chunked containers) fmt would format it as a range
+// instead of via its operator<<. Disable fmt's range formatter.
+template<>
+struct fmt::formatter<archival::inclusive_offset_range>
+  : fmt::ostream_formatter {};
+
+template<>
+struct fmt::range_format_kind<archival::inclusive_offset_range, char>
+  : std::integral_constant<fmt::range_format, fmt::range_format::disabled> {};

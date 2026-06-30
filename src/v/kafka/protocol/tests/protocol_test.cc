@@ -7,6 +7,7 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
+#include "base/external_fmt.h"
 #include "kafka/protocol/add_offsets_to_txn.h"
 #include "kafka/protocol/add_partitions_to_txn.h"
 #include "kafka/protocol/alter_client_quotas.h"

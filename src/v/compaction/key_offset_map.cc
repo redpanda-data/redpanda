@@ -10,7 +10,7 @@
  */
 #include "compaction/key_offset_map.h"
 
-#include "container/chunked_vector_async.h"
+#include <seastar/core/chunked_vector_async.hh>
 
 namespace compaction {
 
@@ -189,7 +189,7 @@ size_t hash_key_offset_map::size() const { return size_; }
 size_t hash_key_offset_map::capacity() const { return capacity_; }
 
 seastar::future<> hash_key_offset_map::initialize(size_t size_bytes) {
-    co_await chunked_vector_clear_async(entries_);
+    co_await ss::chunked_vector_clear_async(entries_);
     while (entries_.memory_size() < size_bytes) {
         const auto required_size = size_bytes - entries_.memory_size();
         const auto required_entries = std::max(
@@ -218,7 +218,7 @@ seastar::future<> hash_key_offset_map::initialize(size_t size_bytes) {
 }
 
 seastar::future<> hash_key_offset_map::reset() {
-    co_await chunked_vector_fill_async(entries_, entry{});
+    co_await ss::chunked_vector_fill_async(entries_, entry{});
     size_ = 0;
     max_offset_ = model::offset{};
     search_count_ = 0;

@@ -35,6 +35,7 @@ redpanda_cc_library(
         ":iobuf",
         "//src/v/base",
         "@abseil-cpp//absl/container:inlined_vector",
+        "@fmt",
         "@seastar",
     ],
 )

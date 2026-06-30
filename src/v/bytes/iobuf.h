@@ -20,6 +20,9 @@
 
 #include <seastar/core/temporary_buffer.hh>
 
+#include <fmt/ostream.h>
+#include <fmt/ranges.h>
+
 #include <array>
 #include <cstddef>
 #include <cstdint>
@@ -507,3 +510,13 @@ inline void iobuf::trim_back(size_t n) {
 }
 
 iobuf iobuf_copy(iobuf::iterator_consumer& in, size_t len);
+
+// iobuf is a range (of fragments), so with <fmt/ranges.h> in scope (pulled in
+// transitively via seastar's chunked containers) fmt would format it as a dump
+// of every fragment. Disable fmt's range formatter and format via operator<<.
+template<>
+struct fmt::formatter<iobuf> : fmt::ostream_formatter {};
+
+template<>
+struct fmt::range_format_kind<iobuf, char>
+  : std::integral_constant<fmt::range_format, fmt::range_format::disabled> {};

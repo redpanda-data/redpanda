@@ -15,12 +15,11 @@ redpanda_cc_library(
     name = "chunked_vector",
     hdrs = [
         "chunked_vector.h",
-        "chunked_vector_async.h",
     ],
     visibility = ["//visibility:public"],
     deps = [
         "//src/v/base",
-        "@fmt",
+        "@seastar",
     ],
 )
 

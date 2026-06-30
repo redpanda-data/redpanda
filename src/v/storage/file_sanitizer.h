@@ -431,7 +431,7 @@ private:
             return "unknown";
         }
 
-        return fmt::format("{}", _appender_ptr->_inflight);
+        return fmt::format("[{}]", fmt::join(_appender_ptr->_inflight, ", "));
     }
 
     ss::sstring maybe_dump_appender_pending_flushes() const {
@@ -439,7 +439,7 @@ private:
             return "unknown";
         }
 
-        return fmt::format("{}", _appender_ptr->_flush_ops);
+        return fmt::format("[{}]", fmt::join(_appender_ptr->_flush_ops, ", "));
     }
 
 private:
