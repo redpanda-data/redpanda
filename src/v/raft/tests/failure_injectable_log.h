@@ -116,6 +116,8 @@ public:
 
     void set_overrides(storage::ntp_config::default_overrides) final;
 
+    void set_partition_mode(model::redpanda_storage_mode) final;
+
     bool notify_compaction_update() final;
 
     int64_t compaction_backlog() final;
