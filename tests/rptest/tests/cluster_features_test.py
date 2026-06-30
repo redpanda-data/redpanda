@@ -1235,6 +1235,11 @@ PERTURB_ACKNOWLEDGED_FEATURES = frozenset(
         # Iceberg extended-mode topic-config gate; exercising it needs Iceberg
         # topic setup orthogonal to the finalization behavior under test.
         "iceberg_extended_mode_config",
+        # Downgrade-safe by inspection: most of the functionality this gates is
+        # not present yet, so nothing writes the new partition_mode command while
+        # an upgrade is unfinalized. A follow-up PR exercises the gate for real
+        # once the migration trigger lands.
+        "topic_mode_migration",
     }
 )
 
@@ -1397,12 +1402,13 @@ class ManualFinalizationUpgradeTest(UnfinalizedUpgradeMixin, FeaturesTestBase):
         self._exercise_tiered_cloud_topics()
         self._exercise_shadow_link_role_sync()
         self._exercise_fetch_controller_snapshot_rpc()
-        # The other two v26.2-gated features are cluster-linking features that
-        # need a second (source) cluster, so they are acknowledged rather than
-        # exercised here; see PERTURB_ACKNOWLEDGED_FEATURES for why each stays
-        # downgrade-safe (shadow_link_sr_api_sync is covered by
+        # The remaining gated features are acknowledged rather than exercised
+        # here; see PERTURB_ACKNOWLEDGED_FEATURES for why each stays
+        # downgrade-safe. Two are v26.2 cluster-linking features needing a second
+        # (source) cluster (shadow_link_sr_api_sync is covered by
         # ShadowLinkUnfinalizedUpgradeTest; batch_mirror_topic_status is safe by
-        # inspection).
+        # inspection); topic_mode_migration is v26.3-gated and gates nothing
+        # user-visible until the migration trigger lands.
 
     def _exercise_tiered_cloud_topics(self):
         """tiered_cloud_topics gate: creating a topic with the tiered_v2
