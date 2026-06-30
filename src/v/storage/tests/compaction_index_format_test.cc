@@ -110,7 +110,9 @@ TEST_F(compacted_topic_fixture, format_verification_max_key) {
         + vint::vint_size(42) + vint::vint_size(66) + 1 + 2);
     iobuf_parser p(data.share(0, data.size_bytes()));
 
-    const size_t entry = p.consume_type<uint16_t>(); // SIZE
+    // The on-disk entry size is little-endian; decode it the same way the
+    // production reader does so this check is correct on big-endian hosts.
+    const size_t entry = reflection::adl<uint16_t>{}.from(p); // SIZE
 
     ASSERT_EQ(
       entry,
