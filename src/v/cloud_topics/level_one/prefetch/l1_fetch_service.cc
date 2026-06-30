@@ -116,14 +116,26 @@ l1_fetch_service::stream_entry* l1_fetch_service::find_reusable(
     // `start` falls within the range the stream has already produced or is
     // about to produce next: [read_start, position()]. This covers the warm
     // consecutive-fetch case where the producer has read ahead of the consumer
-    // (position() > start) as well as an exact-position resume. A `drained`
-    // (exhausted) stream is still reusable for offsets it already produced into
-    // the cache; only an errored stream is excluded.
+    // (position() > start) as well as an exact-position resume. Only an errored
+    // stream is excluded outright.
+    //
+    // An exhausted stream is special: it reached end-of-stream and stopped
+    // re-querying the metastore, so it will never produce past
+    // produced_through() even though its position() sits one offset beyond
+    // that. Cap its reusable range at produced_through() so an offset it can
+    // never deliver spins a fresh stream instead of parking the reader on a
+    // stream that will never advance. This is the L0->L1 boundary case: a
+    // stream exhausts at the last reconciled offset, then reconciliation
+    // advances LRO and a new L1 object covers the boundary offset; a fresh
+    // stream re-queries the metastore and downloads it.
     for (auto& e : it->second) {
         if (e->stream->error() != nullptr) {
             continue;
         }
-        if (start >= e->read_start && start <= e->stream->position()) {
+        auto reuse_end = e->stream->is_exhausted()
+                           ? e->stream->produced_through()
+                           : e->stream->position();
+        if (start >= e->read_start && start <= reuse_end) {
             return e.get();
         }
     }

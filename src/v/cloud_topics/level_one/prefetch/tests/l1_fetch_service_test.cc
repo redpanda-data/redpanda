@@ -584,6 +584,68 @@ TEST_F_CORO(l1_fetch_service_test, warm_get_reader_reuses_stream) {
     co_await svc.stop();
 }
 
+// Regression: a stream that exhausts at the current end-of-data (the metastore
+// reports nothing past its last object) must NOT be reused for an offset it can
+// never produce once reconciliation later adds an L1 object covering that
+// offset. This is the L0->L1 boundary case: a consumer reads up to the last
+// reconciled offset, the stream exhausts there and stops re-querying the
+// metastore, then LRO advances and the boundary offset becomes L1-resident.
+// Reusing the exhausted stream parks the reader forever; the service must spin
+// a fresh stream that re-queries the metastore and downloads the new object.
+TEST_F_CORO(
+  l1_fetch_service_test, exhausted_stream_not_reused_after_lro_advance) {
+    auto tidp = make_tidp();
+    // First reconciled object covers offsets [0, 7].
+    co_await make_l1_object(
+      _metastore, tidp, make_batches(model::offset{0}, 8));
+
+    counting_metastore meta(&_metastore);
+    l1_fetch_service svc(
+      &meta,
+      &_io,
+      _cache.get(),
+      _budget,
+      _max_streams,
+      _idle_timeout,
+      _max_in_flight,
+      _fill_watermark,
+      make_pacer_config());
+    co_await svc.start();
+
+    // Read [0,7] to completion: the stream produces every batch, then queries
+    // the metastore at offset 8, finds nothing, and marks itself exhausted.
+    auto rdr1 = co_await svc.get_reader(
+      tidp, make_cfg(kafka::offset{0}, kafka::offset{7}));
+    auto data1 = co_await drain(std::move(rdr1));
+    ASSERT_EQ_CORO(data1.size(), 8u);
+
+    // Wait for the producer to issue the end-of-stream query at offset 8 (the
+    // second forwards call) so the stream is exhausted before LRO advances.
+    for (int i = 0; i < 200 && meta.forwards_calls() < 2; ++i) {
+        co_await ss::sleep(10ms);
+    }
+    ASSERT_GE_CORO(meta.forwards_calls(), 2u);
+    ASSERT_EQ_CORO(svc.stream_count(tidp), 1u);
+
+    // Reconciliation advances LRO: a new object now covers [8, 15].
+    co_await make_l1_object(
+      _metastore, tidp, make_batches(model::offset{8}, 8));
+
+    // Read [8,15]. The exhausted stream can never produce these offsets, so the
+    // service must spin a fresh stream. A regression reuses the exhausted
+    // stream and the reader hangs until the bounded deadline, returning no
+    // data.
+    auto rdr2 = co_await svc.get_reader(
+      tidp, make_cfg(kafka::offset{8}, kafka::offset{15}));
+    auto data2 = co_await drain_bounded(std::move(rdr2), 5s);
+
+    ASSERT_EQ_CORO(data2.size(), 8u);
+    ASSERT_EQ_CORO(data2.front().base_offset(), model::offset{8});
+    ASSERT_EQ_CORO(data2.back().last_offset(), model::offset{15});
+
+    co_await svc.stop();
+}
+
 // A reader at a fresh offset on a fresh partition that has data should be
 // served end-to-end (cold fill -> serve).
 TEST_F_CORO(l1_fetch_service_test, cold_fill_serves_all_batches) {
