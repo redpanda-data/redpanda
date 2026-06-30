@@ -126,16 +126,17 @@ iobuf filter_builder::finish() {
     if (!_keys.empty()) {
         generate_filter();
     }
-    // Append array of per-filter offsets
+    // Append array of per-filter offsets. These fixed32s are read back through
+    // block::contents::read_fixed32, which round-trips host byte order, so they
+    // must be written in native byte order (matching the block builder) rather
+    // than little-endian.
     uint32_t offsets_start = _filter.size_bytes();
     for (const auto& offset : std::exchange(_filter_offsets, {})) {
         _filter.append(
-          std::bit_cast<std::array<uint8_t, sizeof(offset)>>(
-            ss::cpu_to_le(offset)));
+          std::bit_cast<std::array<uint8_t, sizeof(offset)>>(offset));
     }
     _filter.append(
-      std::bit_cast<std::array<uint8_t, sizeof(uint32_t)>>(
-        ss::cpu_to_le(offsets_start)));
+      std::bit_cast<std::array<uint8_t, sizeof(uint32_t)>>(offsets_start));
     // Save the encoding parameter for backwards compatibility
     _filter.append(
       std::bit_cast<std::array<uint8_t, sizeof(uint8_t)>>(_filter_base_lg));
