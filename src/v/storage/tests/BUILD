@@ -780,6 +780,20 @@ redpanda_cc_gtest(
 )
 
 redpanda_cc_gtest(
+    name = "ntp_config_test",
+    timeout = "short",
+    srcs = [
+        "ntp_config_test.cc",
+    ],
+    deps = [
+        "//src/v/model",
+        "//src/v/storage",
+        "@googletest//:gtest",
+        "@googletest//:gtest_main",
+    ],
+)
+
+redpanda_cc_gtest(
     name = "log_retention_test",
     timeout = "short",
     srcs = [

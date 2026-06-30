@@ -21,6 +21,7 @@
 #include <seastar/core/sstring.hh>
 
 #include <optional>
+#include <stdexcept>
 
 namespace storage {
 using with_cache = ss::bool_class<struct log_cache_tag>;
@@ -247,40 +248,84 @@ public:
                                      : topic_recovery_enabled::no;
     }
 
+    // The storage mode the topic config requests (the "desired" mode). `unset`
+    // for a legacy topic that uses shadow_indexing_mode instead of
+    // storage_mode.
+    model::redpanda_storage_mode topic_storage_mode() const {
+        return _overrides ? _overrides->storage_mode
+                          : model::redpanda_storage_mode::unset;
+    }
+
+    // The partition's own durable storage mode (the "actual" mode), recorded in
+    // partition_properties and pushed in via set_partition_storage_mode().
+    // Falls back to topic_storage_mode() when unset (not yet bootstrapped).
+    // Serving/behavior accessors key on partition_storage_mode rather than
+    // topic_storage_mode. On a storage mode switch that needs migration,
+    // partition_storage_mode is advanced to match topic_storage_mode only once
+    // the migration completes.
+    model::redpanda_storage_mode partition_storage_mode() const {
+        return resolve_partition_storage_mode(_partition_storage_mode);
+    }
+
+    // Resolve a durable partition_storage_mode value the way
+    // partition_storage_mode() does, for asking what a mode would mean before
+    // it is applied.
+    model::redpanda_storage_mode
+    resolve_partition_storage_mode(model::redpanda_storage_mode m) const {
+        return m != model::redpanda_storage_mode::unset ? m
+                                                        : topic_storage_mode();
+    }
+
+    void set_partition_storage_mode(model::redpanda_storage_mode m) {
+        _partition_storage_mode = m;
+    }
+
+    // True while the partition is mid tiered->cloud migration: the topic config
+    // requests a cloud storage mode (topic_storage_mode) but the partition's
+    // durable partition_storage_mode is still tiered.  The partition is served
+    // as tiered until partition_storage_mode is advanced to match.
+    bool is_migrating() const {
+        const auto tm = topic_storage_mode();
+        return (tm == model::redpanda_storage_mode::cloud
+                || tm == model::redpanda_storage_mode::tiered_cloud)
+               && partition_storage_mode()
+                    == model::redpanda_storage_mode::tiered;
+    }
+
     bool is_archival_enabled() const {
-        if (_overrides == nullptr) {
-            return false;
-        }
-        // Explicit tiered
-        if (_overrides->storage_mode == model::redpanda_storage_mode::tiered) {
+        using enum model::redpanda_storage_mode;
+        switch (partition_storage_mode()) {
+        case tiered:
             return true;
-        }
-        // Explicit local or cloud
-        if (_overrides->storage_mode != model::redpanda_storage_mode::unset) {
+        case local:
+        case cloud:
+        case tiered_cloud:
             return false;
+        case unset:
+            // Legacy shadow_indexing topic: no storage mode was ever recorded,
+            // so the shadow_indexing flags are the answer.
+            return _overrides && _overrides->shadow_indexing_mode
+                   && model::is_archival_enabled(
+                     _overrides->shadow_indexing_mode.value());
         }
-        // Unset, fall back to legacy shadow_indexing
-        return _overrides->shadow_indexing_mode
-               && model::is_archival_enabled(
-                 _overrides->shadow_indexing_mode.value());
+        throw std::invalid_argument("unknown redpanda_storage_mode");
     }
 
     bool is_remote_fetch_enabled() const {
-        if (_overrides == nullptr) {
-            return false;
-        }
-        // Explicit tiered
-        if (_overrides->storage_mode == model::redpanda_storage_mode::tiered) {
+        using enum model::redpanda_storage_mode;
+        switch (partition_storage_mode()) {
+        case tiered:
             return true;
-        }
-        // Explicit local or cloud
-        if (_overrides->storage_mode != model::redpanda_storage_mode::unset) {
+        case local:
+        case cloud:
+        case tiered_cloud:
             return false;
+        case unset:
+            return _overrides && _overrides->shadow_indexing_mode
+                   && model::is_fetch_enabled(
+                     _overrides->shadow_indexing_mode.value());
         }
-        // Unset, fall back to legacy shadow_indexing
-        return _overrides->shadow_indexing_mode
-               && model::is_fetch_enabled(
-                 _overrides->shadow_indexing_mode.value());
+        throw std::invalid_argument("unknown redpanda_storage_mode");
     }
 
     bool is_read_replica_mode_enabled() const {
@@ -302,23 +347,23 @@ public:
      * both reads and writes to S3, and is not a read replica.
      */
     bool is_tiered_storage() const {
-        if (_overrides == nullptr) {
+        if (is_read_replica_mode_enabled()) {
             return false;
         }
-        if (_overrides->read_replica.value_or(false)) {
-            return false;
-        }
-        // Explicit tiered
-        if (_overrides->storage_mode == model::redpanda_storage_mode::tiered) {
+        using enum model::redpanda_storage_mode;
+        switch (partition_storage_mode()) {
+        case tiered:
             return true;
-        }
-        // Explicit local or cloud
-        if (_overrides->storage_mode != model::redpanda_storage_mode::unset) {
+        case local:
+        case cloud:
+        case tiered_cloud:
             return false;
+        case unset:
+            return _overrides
+                   && _overrides->shadow_indexing_mode
+                        == model::shadow_indexing_mode::full;
         }
-        // Unset, fall back to legacy shadow_indexing
-        return _overrides->shadow_indexing_mode
-               == model::shadow_indexing_mode::full;
+        throw std::invalid_argument("unknown redpanda_storage_mode");
     }
 
     bool remote_delete() const {
@@ -439,17 +484,14 @@ public:
     }
 
     bool cloud_topic_enabled() const {
-        return _overrides
-               && (_overrides->storage_mode
-                     == model::redpanda_storage_mode::cloud
-                   || _overrides->storage_mode
-                        == model::redpanda_storage_mode::tiered_cloud);
+        const auto mode = partition_storage_mode();
+        return mode == model::redpanda_storage_mode::cloud
+               || mode == model::redpanda_storage_mode::tiered_cloud;
     }
 
     bool is_tiered_cloud() const {
-        return _overrides
-               && _overrides->storage_mode
-                    == model::redpanda_storage_mode::tiered_cloud;
+        return partition_storage_mode()
+               == model::redpanda_storage_mode::tiered_cloud;
     }
 
     std::optional<double> min_cleanable_dirty_ratio() const {
@@ -510,6 +552,13 @@ private:
     /// This revision is used to construct cloud storage paths. It differs from
     /// _topic_revision in case of recovered topics or read replicas.
     model::initial_revision_id _remote_rev{0};
+
+    /// The partition's own durable storage mode, fed from partition_properties
+    /// (see partition_storage_mode()). `unset` until bootstrapped, when the
+    /// mode accessors fall back to the topic-config-derived
+    /// topic_storage_mode().
+    model::redpanda_storage_mode _partition_storage_mode
+      = model::redpanda_storage_mode::unset;
 
 public:
     // in storage/types.cc
