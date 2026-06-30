@@ -83,10 +83,10 @@ struct adl {
             }
             return adl<value_type>{}.from(in);
         } else if constexpr (is_sstring) {
-            return in.read_string(in.template consume_type<int32_t>());
+            return in.read_string(adl<int32_t>{}.from(in));
         } else if constexpr (is_vector) {
             using value_type = typename type::value_type;
-            int32_t n = in.template consume_type<int32_t>();
+            int32_t n = adl<int32_t>{}.from(in);
             std::vector<value_type> ret;
             ret.reserve(n);
             while (n-- > 0) {
@@ -95,7 +95,7 @@ struct adl {
             return ret;
         } else if constexpr (is_chunked_vector || is_chunked_fifo) {
             using value_type = typename type::value_type;
-            int32_t n = in.template consume_type<int32_t>();
+            int32_t n = adl<int32_t>{}.from(in);
             type ret;
             while (n-- > 0) {
                 ret.push_back(adl<value_type>{}.from(in));
@@ -103,7 +103,7 @@ struct adl {
             return ret;
         } else if constexpr (is_btree_set) {
             using value_type = typename type::value_type;
-            int32_t n = in.template consume_type<int32_t>();
+            int32_t n = adl<int32_t>{}.from(in);
             absl::btree_set<value_type> ret;
             while (n-- > 0) {
                 ret.insert(adl<value_type>{}.from(in));
@@ -111,14 +111,14 @@ struct adl {
             return ret;
         } else if constexpr (is_circular_buffer) {
             using value_type = typename type::value_type;
-            int32_t n = in.template consume_type<int32_t>();
+            int32_t n = adl<int32_t>{}.from(in);
             ss::circular_buffer<value_type> ret;
             while (n-- > 0) {
                 ret.push_back(adl<value_type>{}.from(in));
             }
             return ret;
         } else if constexpr (is_iobuf) {
-            return in.share(in.template consume_type<int32_t>());
+            return in.share(adl<int32_t>{}.from(in));
         } else if constexpr (is_enum) {
             using e_type = std::underlying_type_t<type>;
             return static_cast<type>(adl<e_type>{}.from(in));
