@@ -31,6 +31,7 @@
 #include "raft/fwd.h"
 #include "raft/state_machine_manager.h"
 #include "ssx/future-util.h"
+#include "ssx/sformat.h"
 #include "ssx/when_all.h"
 #include "storage/ntp_config.h"
 
@@ -53,6 +54,12 @@ partition::partition(
   ss::sharded<cloud_topics::state_accessors>* ct_state)
   : _raft(std::move(r))
   , _cloud_topics_state(ct_state)
+  , _partition_storage_mode_apply(
+      _partition_storage_mode_gate,
+      clusterlog,
+      ssx::sformat("{} partition_storage_mode apply", _raft->ntp()),
+      [this] { return apply_partition_storage_mode(); },
+      _as)
   , _probe(std::make_unique<replicated_partition_probe>(*this))
   , _feature_table(feature_table)
   , _archival_conf(std::move(archival_conf))
@@ -522,6 +529,31 @@ ss::future<> partition::start(
         co_await _cloud_storage_partition->start();
     }
 
+    // Feed the partition's durable storage mode into the log's ntp_config and
+    // keep it up to date as the STM applies changes. Reading replicated STM
+    // state is always safe; writes (which require the partition_storage_mode
+    // feature) are gated separately. Until partition_storage_mode is set,
+    // partition_storage_mode() is `unset` and ntp_config falls back to the
+    // topic-config-derived mode.
+    //
+    // Registered here, rather than as soon as the stm is available, because the
+    // callback's apply can build an archiver, and an archiver holds the
+    // manifest view constructed above.
+    if (_partition_properties_stm) {
+        // Notify rather than reconcile inline: this fires on the raft apply /
+        // snapshot-restore fiber, which must not block on stopping the archiver
+        // -- that stop waits on archiver fibers which themselves wait for
+        // archival_metadata_stm to apply, and apply cannot proceed while the
+        // callback is blocked.
+        _partition_properties_stm->set_partition_storage_mode_change_callback(
+          [this] { _partition_storage_mode_apply.notify(); });
+        // Synchronously for the initial load: the archiver decision below reads
+        // ntp_config, so the mode has to be in place before it runs rather than
+        // deferred to a fiber that may not have run yet.
+        _raft->log()->set_partition_storage_mode(
+          _partition_properties_stm->partition_storage_mode());
+    }
+
     {
         auto archiver_reset_guard = co_await ssx::with_timeout_abortable(
           ss::get_units(_archiver_reset_mutex, 1),
@@ -548,6 +580,12 @@ ss::future<> partition::stop() {
     auto partition_ntp = ntp();
     vlog(clusterlog.debug, "Stopping partition: {}", partition_ntp);
     _as.request_abort();
+
+    // Before the archiver teardown below, so nothing is mid-rebuild while we
+    // stop it. Closed after _as is aborted, so an in-flight loop stops retrying
+    // and gives up on the reset mutex rather than restarting the archiver we
+    // are stopping.
+    co_await _partition_storage_mode_gate.close();
 
     unregister_flush_hook(_archiver_flush_subscription);
 
@@ -1758,6 +1796,34 @@ partition::force_abort_replica_set_update(model::revision_id rev) {
     return _raft->abort_configuration_change(rev);
 }
 consensus_ptr partition::raft() const { return _raft; }
+
+ss::future<> partition::apply_partition_storage_mode() {
+    const auto& ntp_cfg = _raft->log()->config();
+    const auto durable = _partition_properties_stm->partition_storage_mode();
+    const auto current = ntp_cfg.partition_storage_mode();
+    const auto effective = ntp_cfg.resolve_partition_storage_mode(durable);
+
+    if (current != effective) {
+        vlog(
+          clusterlog.info,
+          "{}: partition_storage_mode {} -> {}",
+          _raft->ntp(),
+          current,
+          effective);
+    } else {
+        vlog(
+          clusterlog.debug,
+          "{}: recording partition_storage_mode {}, effective mode unchanged",
+          _raft->ntp(),
+          durable);
+    }
+
+    _raft->log()->set_partition_storage_mode(durable);
+
+    if (should_construct_archiver() != static_cast<bool>(_archiver)) {
+        co_await restart_archiver(true);
+    }
+}
 
 ss::future<result<model::offset>> partition::set_writes_disabled(
   partition_properties_stm::writes_disabled disable,

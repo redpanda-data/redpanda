@@ -2500,6 +2500,7 @@ redpanda_cc_library(
         "//src/v/ssx:minimum_interval_timer",
         "//src/v/ssx:mutex",
         "//src/v/ssx:rate_limited_function",
+        "//src/v/ssx:reconciler",
         "//src/v/ssx:semaphore",
         "//src/v/ssx:sformat",
         "//src/v/ssx:single_sharded",

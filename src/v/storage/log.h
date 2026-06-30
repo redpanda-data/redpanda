@@ -226,6 +226,12 @@ public:
     /// topic/partition-level overrides
     virtual void set_overrides(ntp_config::default_overrides) = 0;
 
+    /// Mutates the partition_storage_mode stored in the log's ntp_config: the
+    /// partition's own durable storage mode, fed from partition_properties.
+    /// Abstract rather than defaulted, like set_overrides: a wrapping log that
+    /// silently dropped this would report a stale storage mode from config().
+    virtual void set_partition_storage_mode(model::redpanda_storage_mode) = 0;
+
     /// Notifies the log about a possible change to the log compaction config.
     /// Returns true if the log compaction changed.
     virtual bool notify_compaction_update() = 0;

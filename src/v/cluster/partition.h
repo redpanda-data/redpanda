@@ -23,11 +23,13 @@
 #include "model/record_batch_reader.h"
 #include "model/timeout_clock.h"
 #include "raft/replicate.h"
+#include "ssx/reconciler.h"
 #include "storage/ntp_config.h"
 #include "storage/translating_reader.h"
 #include "storage/types.h"
 #include "utils/notification_list.h"
 
+#include <seastar/core/gate.hh>
 #include <seastar/core/shared_ptr.hh>
 
 namespace cloud_topics {
@@ -425,6 +427,10 @@ private:
     // dirty so that it gets reuploaded
     ss::future<> restart_archiver(bool should_notify_topic_config);
 
+    // Move ntp_config to the STM's partition_storage_mode and restart the
+    // archiver if needed. Driven by _partition_storage_mode_apply.
+    ss::future<> apply_partition_storage_mode();
+
     consensus_ptr _raft; // never null
     ss::shared_ptr<cluster::log_eviction_stm> _log_eviction_stm;
     ss::shared_ptr<cluster::rm_stm> _rm_stm;
@@ -432,6 +438,10 @@ private:
     ss::shared_ptr<partition_properties_stm> _partition_properties_stm;
     ss::sharded<cloud_topics::state_accessors>* _cloud_topics_state;
     ss::abort_source _as;
+    // Holds the apply loop triggered by the stm's partition_storage_mode
+    // callback; closed in stop() before the archiver is torn down.
+    ss::gate _partition_storage_mode_gate;
+    ssx::reconciler _partition_storage_mode_apply;
     partition_probe _probe;
     ss::sharded<features::feature_table>& _feature_table;
     ss::lw_shared_ptr<const archival::configuration> _archival_conf;

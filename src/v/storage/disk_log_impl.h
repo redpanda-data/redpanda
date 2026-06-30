@@ -171,6 +171,7 @@ public:
     size_t size_bytes() const override { return _probe->partition_size(); }
     uint64_t size_bytes_after_offset(model::offset o) const override;
     void set_overrides(ntp_config::default_overrides) final;
+    void set_partition_storage_mode(model::redpanda_storage_mode) final;
     bool notify_compaction_update() final;
 
     int64_t compaction_backlog() final;
