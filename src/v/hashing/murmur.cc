@@ -9,10 +9,22 @@
 
 #include "hashing/murmur.h"
 
+#include <bit>
+
 // adapted from original:
 // https://github.com/aappleby/smhasher/blob/master/src/MurmurHash3.h
 
 namespace {
+
+// MurmurHash3 reads each block as a little-endian word. Convert from
+// little-endian to host order so the hash matches on big-endian platforms.
+template<typename T>
+inline __attribute__((always_inline)) T le_block_to_host(T k) {
+    if constexpr (std::endian::native == std::endian::big) {
+        return std::byteswap(k);
+    }
+    return k;
+}
 inline uint32_t rotl32(uint32_t x, int8_t r) {
     return (x << r) | (x >> (32 - r));
 }
@@ -46,13 +58,13 @@ inline __attribute__((always_inline)) uint32_t
 getblock32(const uint32_t* p, int i) {
     uint32_t k;
     std::memcpy(&k, reinterpret_cast<const char*>(p + i), sizeof(k));
-    return k;
+    return le_block_to_host(k);
 }
 inline __attribute__((always_inline)) uint64_t
 getblock64(const uint64_t* p, int i) {
     uint64_t k;
     std::memcpy(&k, reinterpret_cast<const char*>(p + i), sizeof(k));
-    return k;
+    return le_block_to_host(k);
 }
 namespace x86_32 {
 const uint32_t c1 = 0xcc9e2d51;
@@ -138,7 +150,9 @@ uint32_t murmurhash3_x86_32(const iobuf& data, uint32_t seed) {
           frag_begin,
           frag_begin + torn_remaining_capacity,
           torn_block_data_end);
-        x86_32::consume_block(h1, torn_block);
+        // torn_block is assembled byte-wise; read it as a little-endian word to
+        // match getblock32.
+        x86_32::consume_block(h1, le_block_to_host(torn_block));
 
         // rest of full blocks in fragment
         auto blocks_begin = frag_begin + torn_remaining_capacity;
