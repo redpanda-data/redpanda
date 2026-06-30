@@ -329,6 +329,9 @@ cc_library(
         "include/seastar/core/cacheline.hh",
         "include/seastar/core/checked_ptr.hh",
         "include/seastar/core/chunked_fifo.hh",
+        "include/seastar/core/chunked_hash_map.hh",
+        "include/seastar/core/chunked_vector.hh",
+        "include/seastar/core/chunked_vector_async.hh",
         "include/seastar/core/circular_buffer.hh",
         "include/seastar/core/circular_buffer_fixed_capacity.hh",
         "include/seastar/core/condition-variable.hh",
@@ -652,6 +655,7 @@ cc_library(
     ],
     deps = [
         ":metrics_cc_proto",
+        "@abseil-cpp//absl/hash",
         "@boost//:algorithm",
         "@boost//:asio",
         "@boost//:endian",
@@ -663,6 +667,7 @@ cc_library(
         "@lksctp",
         "@lz4",
         "@protobuf",
+        "@unordered_dense",
         "@yaml-cpp",
     ] + select({
         ":use_io_uring": ["@liburing"],

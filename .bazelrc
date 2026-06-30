@@ -6,6 +6,13 @@ common --@toolchains_llvm//toolchain/config:compiler-rt=False
 build --linkopt --unwindlib=libgcc
 build --linkopt -stdlib=libc++
 
+# Keep external dependency headers on -isystem include paths so their warnings
+# are not promoted by Redpanda's -Werror settings, and so headers can be
+# included with angle brackets (e.g. seastar's chunked_hash_map.hh includes
+# <absl/hash/hash.h>).
+build --features=external_include_paths
+build --host_features=external_include_paths
+
 common:clang-21 --extra_toolchains=@next_llvm_toolchain//:all
 
 # llvm 22.1.0
