@@ -296,8 +296,9 @@ ss::future<std::variant<footer, size_t>> footer::read(iobuf buf) {
               buf.size_bytes())));
     }
     iobuf_const_parser parser(buf);
-    auto footer_size
-      = iobuf_parser(buf.tail(sizeof(uint32_t))).consume_type<uint32_t>();
+    // footer_size is written little-endian via as_bytes/cpu_to_le.
+    auto footer_size = ss::le_to_cpu(
+      iobuf_parser(buf.tail(sizeof(uint32_t))).consume_type<uint32_t>());
     if (buf.size_bytes() >= (footer_size + sizeof(uint32_t))) {
         iobuf_parser p(buf.share(
           buf.size_bytes() - sizeof(uint32_t) - footer_size, footer_size));
@@ -310,7 +311,8 @@ ss::future<std::variant<footer, size_t>> footer::read(iobuf buf) {
                   "expected footer data type, got: {}",
                   std::to_underlying(dt))));
         }
-        auto size = p.consume_type<uint32_t>();
+        // size is written little-endian via as_bytes/cpu_to_le.
+        auto size = ss::le_to_cpu(p.consume_type<uint32_t>());
         if (size != p.bytes_left()) {
             co_await ss::coroutine::return_exception(
               std::runtime_error(
