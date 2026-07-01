@@ -109,6 +109,7 @@
         "rptest/tests/datalake/batching_test.py",
         "rptest/tests/datalake/blocked_catalog_test.py",
         "rptest/tests/datalake/cluster_restore_test.py",
+        "rptest/tests/datalake/coordinator_backpressure_test.py",
         "rptest/tests/datalake/coordinator_retention_test.py",
         "rptest/tests/datalake/databricks_test.py",
         "rptest/tests/datalake/datalake_dlq_test.py",
