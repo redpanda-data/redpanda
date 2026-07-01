@@ -111,12 +111,29 @@ adjacent_segment_merger::run(run_quota_t quota) {
     }
 
     if (!_archiver.ntp_config().is_archival_enabled()) {
-        // This should never happen because we should not have been constructed
-        // for a read replica topic: this is a double-check for safety.
+        // remote.write is disabled, so there is nothing to merge into tiered
+        // storage.
         vlog(
           _ctxlog.error,
           "Adjacent segment merging refusing to run on topic with remote.write "
           "disabled");
+        co_return result;
+    }
+
+    if (_archiver.ntp_config().is_migrating()) {
+        // A partition mid tiered->cloud migration must not merge: the
+        // cutover-last mirror imports the manifest into the cloud-topics
+        // metastore by trim-front + append-tail only and cannot reflect an
+        // in-place segment rewrite -- a merge would replace already-mirrored
+        // segments and GC the originals, dangling the L1 extents. Merging
+        // resumes as native cloud-topic compaction after cutover.
+        // partition_mode is still tiered during migration, so
+        // is_archival_enabled() above stays true and does not suspend us --
+        // this check does.
+        vlog(
+          _ctxlog.debug,
+          "Adjacent segment merging suspended: partition is migrating "
+          "tiered->cloud");
         co_return result;
     }
 

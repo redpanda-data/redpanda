@@ -41,6 +41,18 @@ public:
         invalid,
     };
 
+    /// Whether the segment has an aborted-transaction (.tx) manifest, resolved
+    /// from the source segment_meta at mirror time so the L1 read path can skip
+    /// the object-storage probe where the answer is already known. Mirrors what
+    /// native tiered storage knows without a probe (see remote_segment.cc): a
+    /// v3 segment records its .tx size in metadata_size_hint (0 => none), and a
+    /// compacted segment has no aborted batches by construction; only v1/v2
+    /// non-compacted segments are unknowable without looking. Duplicated here
+    /// (rather than reusing the cloud_topics l1 enum) to keep cluster/archival
+    /// independent of cloud_topics; the sink maps it onto
+    /// l1::tx_manifest_state.
+    enum class tx_manifest_state { unknown, absent, present };
+
     /// One tiered-storage segment to register as an imported L1 extent. Carries
     /// the segment's location (ts_path) and data descriptor (delta/term) plus
     /// the per-segment timestamp/size/offset bounds needed to build the
@@ -48,7 +60,6 @@ public:
     /// (the archiver addresses by ntp; the sink resolves ntp -> the L1
     /// topic_id_partition).
     struct imported_segment {
-        model::topic_id_partition tidp;
         model::term_id term;
         model::timestamp max_timestamp;
         size_t size_bytes{0};
@@ -63,6 +74,8 @@ public:
         // for a compacted front hole (base_kafka_offset stays put while the
         // first surviving batch sits past it).
         model::offset_delta delta_base;
+        // Whether this segment has a .tx manifest (resolved from segment_meta).
+        tx_manifest_state tx_state{tx_manifest_state::unknown};
     };
 
     /// The partition's current L1 offsets -- the mirror's durable progress
@@ -79,19 +92,17 @@ public:
     /// base and marks it migrating. Segments must be contiguous and connect at
     /// next_offset; idempotent against already-present extents.
     virtual ss::future<errc>
-      append_imported(chunked_vector<imported_segment>) = 0;
-
+    append_imported(const model::ntp&, chunked_vector<imported_segment>) = 0;
 
     /// The partition's current L1 offsets, or nullopt if it has no L1 state
     /// yet.
     virtual ss::future<std::optional<offsets>>
-    get_offsets(const model::topic_id_partition&) = 0;
+    get_offsets(const model::ntp&) = 0;
 
-    /// Mark the partition's offline migration_phase complete (cutover
+    /// Clear the partition's offline migrating flag (cutover
     /// finalize). The migrating phase is set implicitly by the first
     /// append_imported.
-    virtual ss::future<errc>
-    mark_complete(const model::topic_id_partition&) = 0;
+    virtual ss::future<errc> mark_complete(const model::ntp&) = 0;
 };
 
 } // namespace archival

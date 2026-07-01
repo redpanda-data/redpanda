@@ -54,6 +54,21 @@ redpanda_cc_gtest(
     ],
 )
 
+redpanda_cc_gtest(
+    name = "migration_segment_test",
+    timeout = "short",
+    srcs = [
+        "migration_segment_test.cc",
+    ],
+    deps = [
+        "//src/v/cloud_storage:types",
+        "//src/v/cluster",
+        "//src/v/model",
+        "//src/v/test_utils:gtest",
+        "@googletest//:gtest",
+    ],
+)
+
 redpanda_cc_btest(
     name = "archival_metadata_stm_test",
     timeout = "short",

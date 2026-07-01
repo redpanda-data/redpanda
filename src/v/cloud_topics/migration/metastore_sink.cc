@@ -13,6 +13,7 @@
 // common/object_id.h) and the migrating flag (via metastore/state.h),
 // whose packages are not directly visible here.
 #include "cloud_topics/level_one/metastore/metastore.h"
+#include "cluster/metadata_cache.h"
 
 #include <map>
 
@@ -32,10 +33,48 @@ errc to_errc(l1::metastore::errc e) {
     }
     return errc::invalid;
 }
+
+// Map the archiver-side .tx-presence state onto the l1 read-path enum. The two
+// enums are kept separate so cluster/archival need not depend on cloud_topics;
+// this is the single point that bridges them.
+l1::tx_manifest_state
+to_l1_tx_state(archival::migration_metastore::tx_manifest_state s) {
+    using src = archival::migration_metastore::tx_manifest_state;
+    switch (s) {
+    case src::unknown:
+        return l1::tx_manifest_state::unknown;
+    case src::absent:
+        return l1::tx_manifest_state::absent;
+    case src::present:
+        return l1::tx_manifest_state::present;
+    }
+    return l1::tx_manifest_state::unknown;
+}
 } // namespace
 
+std::optional<model::topic_id_partition>
+migration_metastore_sink::resolve(const model::ntp& ntp) const {
+    auto cfg = _md->get_topic_cfg(
+      model::topic_namespace_view{ntp.ns, ntp.tp.topic});
+    if (!cfg || !cfg->tp_id.has_value()) {
+        return std::nullopt;
+    }
+    return model::topic_id_partition{*cfg->tp_id, ntp.tp.partition};
+}
+
 ss::future<errc> migration_metastore_sink::append_imported(
-  chunked_vector<imported_segment> segs) {
+  const model::ntp& ntp, chunked_vector<imported_segment> segs) {
+    auto tidp = resolve(ntp);
+    if (!tidp.has_value()) {
+        co_return errc::invalid;
+    }
+    // Mark the partition migrating before importing: the metastore only adopts
+    // a fresh partition's log at the imported extents' (non-zero) base when it
+    // is migrating. Idempotent, so it is safe to repeat on every batch (only
+    // the first import, against an empty partition, depends on it).
+    if (auto res = co_await _ms.set_migrating(*tidp, true); !res.has_value()) {
+        co_return to_errc(res.error());
+    }
     // Register the imported segments through the normal object-builder /
     // add_objects path. Imported objects reference existing TS segments (no L1
     // write to reserve), so they go through the builder's add_imported entry,
@@ -45,21 +84,17 @@ ss::future<errc> migration_metastore_sink::append_imported(
         co_return to_errc(builder_res.error());
     }
     auto& builder = *builder_res.value();
-    // Term starts must be strictly monotonic per partition; collapse to one
-    // entry per distinct term at its lowest offset.
-    chunked_hash_map<
-      model::topic_id_partition,
-      std::map<model::term_id, kafka::offset>>
-      term_min;
+    // Term starts must be strictly monotonic; collapse to one entry per
+    // distinct term at its lowest offset.
+    std::map<model::term_id, kafka::offset> term_min;
     for (auto& s : segs) {
-        auto& tmap = term_min[s.tidp];
-        auto it = tmap.find(s.term);
-        if (it == tmap.end() || s.base_kafka_offset < it->second) {
-            tmap[s.term] = s.base_kafka_offset;
+        auto it = term_min.find(s.term);
+        if (it == term_min.end() || s.base_kafka_offset < it->second) {
+            term_min[s.term] = s.base_kafka_offset;
         }
         auto added = builder.add_imported(
           l1::metastore::object_metadata::ntp_metadata{
-            .tidp = s.tidp,
+            .tidp = *tidp,
             .base_offset = s.base_kafka_offset,
             .last_offset = s.last_kafka_offset,
             .max_timestamp = s.max_timestamp,
@@ -69,6 +104,7 @@ ss::future<errc> migration_metastore_sink::append_imported(
               .ts_path = l1::ts_segment_path{std::move(s.ts_path)},
               .segment_term = s.term,
               .delta_base = s.delta_base,
+              .tx_state = to_l1_tx_state(s.tx_state),
             },
           });
         if (!added.has_value()) {
@@ -76,11 +112,9 @@ ss::future<errc> migration_metastore_sink::append_imported(
         }
     }
     l1::metastore::term_offset_map_t terms;
-    for (const auto& [tidp, tmap] : term_min) {
-        for (const auto& [term, off] : tmap) {
-            terms[tidp].push_back(
-              l1::metastore::term_offset{.term = term, .first_offset = off});
-        }
+    for (const auto& [term, off] : term_min) {
+        terms[*tidp].push_back(
+          l1::metastore::term_offset{.term = term, .first_offset = off});
     }
     auto res = co_await _ms.add_objects(builder, terms);
     if (!res.has_value()) {
@@ -96,8 +130,12 @@ ss::future<errc> migration_metastore_sink::append_imported(
 }
 
 ss::future<std::optional<archival::migration_metastore::offsets>>
-migration_metastore_sink::get_offsets(const model::topic_id_partition& tidp) {
-    auto res = co_await _ms.get_offsets(tidp);
+migration_metastore_sink::get_offsets(const model::ntp& ntp) {
+    auto tidp = resolve(ntp);
+    if (!tidp.has_value()) {
+        co_return std::nullopt;
+    }
+    auto res = co_await _ms.get_offsets(*tidp);
     if (!res.has_value()) {
         co_return std::nullopt;
     }
@@ -108,9 +146,13 @@ migration_metastore_sink::get_offsets(const model::topic_id_partition& tidp) {
 }
 
 ss::future<errc>
-migration_metastore_sink::mark_complete(const model::topic_id_partition& tidp) {
+migration_metastore_sink::mark_complete(const model::ntp& ntp) {
+    auto tidp = resolve(ntp);
+    if (!tidp.has_value()) {
+        co_return errc::invalid;
+    }
     // Cutover clears the migrating flag: the partition is now a cloud topic.
-    auto res = co_await _ms.set_migrating(tidp, false);
+    auto res = co_await _ms.set_migrating(*tidp, false);
     if (!res.has_value()) {
         co_return to_errc(res.error());
     }

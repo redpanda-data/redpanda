@@ -120,9 +120,11 @@ ss::future<> app::construct(
     // The migration mirror runs in the archiver (cluster) but writes to the L1
     // metastore (here); inject the sink so the archiver can reach it without
     // cluster depending on cloud_topics.
-    co_await construct_service(migration_sink, ss::sharded_parameter([this] {
-                                   return &replicated_metastore.local();
-                               }));
+    co_await construct_service(
+      migration_sink,
+      ss::sharded_parameter([this] { return &replicated_metastore.local(); }),
+      ss::sharded_parameter(
+        [&metadata_cache] { return &metadata_cache->local(); }));
     co_await controller->get_partition_manager().invoke_on_all(
       [this](cluster::partition_manager& pm) {
           pm.set_migration_metastore(&migration_sink.local());

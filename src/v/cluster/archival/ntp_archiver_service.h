@@ -290,6 +290,16 @@ public:
     /// STM manifest.
     ss::future<> apply_spillover();
 
+    // One pass of the tiered->cloud migration mirror: while the partition is
+    // migrating (ntp_config::is_migrating()) and the injected migration
+    // metastore sink is available, forward-append the archival manifest's
+    // segments into the L1 metastore as imported extents, then cut over once
+    // the mirror covers the manifest tail. Retention and GC are suspended while
+    // migrating, so the import target only ever grows and the mirror never has
+    // to retract. Runs leader-only in housekeeping; idempotent against the L1
+    // state.
+    ss::future<> run_migration_mirror();
+
     // Request a flush operation of all current local data to cloud storage.
     // This function can be used in combination with wait() to block until the
     // flush operation is complete.
