@@ -31,8 +31,8 @@ template<
   typename Key,
   typename Value,
   typename Hash = std::conditional_t<
-    detail::has_absl_hash<Key>,
-    detail::avalanching_absl_hash<Key>,
+    ss::internal::has_absl_hash<Key>,
+    ss::internal::avalanching_absl_hash<Key>,
     ankerl::unordered_dense::hash<Key>>,
   typename EqualTo = std::equal_to<Key>>
 class chunked_kv_cache {

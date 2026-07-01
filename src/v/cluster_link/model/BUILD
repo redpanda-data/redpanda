@@ -19,6 +19,7 @@ redpanda_cc_library(
         "//src/v/base",
         "//src/v/cluster_link:errc",
         "//src/v/container:chunked_hash_map",
+        "//src/v/container:chunked_vector",
         "//src/v/kafka/protocol",
         "//src/v/model",
         "//src/v/serde",

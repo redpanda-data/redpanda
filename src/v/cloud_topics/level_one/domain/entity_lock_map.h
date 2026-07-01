@@ -12,6 +12,7 @@
 #include "absl/container/btree_set.h"
 #include "base/seastarx.h"
 #include "container/chunked_hash_map.h"
+#include "container/chunked_vector.h"
 #include "ssx/checkpoint_mutex.h"
 
 #include <seastar/core/future.hh>

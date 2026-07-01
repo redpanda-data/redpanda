@@ -1,19 +1,6 @@
 load("//bazel:test.bzl", "redpanda_cc_bench", "redpanda_cc_gtest", "redpanda_test_cc_library")
 
 redpanda_cc_gtest(
-    name = "chunked_hash_map_test",
-    timeout = "short",
-    srcs = [
-        "chunked_hash_map_test.cc",
-    ],
-    deps = [
-        "//src/v/container:chunked_hash_map",
-        "//src/v/test_utils:gtest",
-        "@googletest//:gtest",
-    ],
-)
-
-redpanda_cc_gtest(
     name = "contiguous_range_map_test",
     timeout = "short",
     srcs = [
