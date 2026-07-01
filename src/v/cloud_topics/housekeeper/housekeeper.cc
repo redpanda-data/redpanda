@@ -119,6 +119,21 @@ ss::future<> housekeeper::do_loop() {
     simple_time_jitter<ss::lowres_clock> jitter(_loop_interval());
     co_await ss::sleep_abortable<ss::lowres_clock>(jitter.next_duration(), _as);
     try {
+        // CT housekeeping runs only on cloud topics. A partition served as
+        // tiered storage -- plain tiered, or still migrating tiered->cloud
+        // (partition_mode is still tiered until cutover) -- has an idle
+        // ctp_stm; running housekeeping would force epoch/placeholder
+        // maintenance that seeds a meaningless reconciled offset and pins
+        // local-log GC, freezing retention. Skip until it becomes a cloud topic
+        // (cutover), which is also where the reconciler picks it up.
+        if (!_l0_metastore->is_cloud_topic(_tidp)) {
+            vlog(
+              cd_log.trace,
+              "{}: not a cloud topic (served as tiered storage), skipping "
+              "housekeeping",
+              _tidp);
+            co_return;
+        }
         co_await do_housekeeping();
         co_await do_bump_epoch();
     } catch (...) {

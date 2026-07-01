@@ -80,6 +80,17 @@ public:
         virtual ss::future<> sync_to_next_placeholder(
           const model::topic_id_partition& tidp,
           ss::abort_source*) noexcept = 0;
+
+        // Whether the partition is a cloud topic that CT housekeeping should
+        // run against. False for a partition served as tiered storage: a plain
+        // tiered partition (which carries a pre-installed idle ctp_stm) or one
+        // still migrating tiered->cloud (partition_mode is still tiered, so
+        // cloud_topic_enabled() is false until cutover). Its ctp_stm is idle
+        // and housekeeping would seed a meaningless reconciled offset and pin
+        // GC.
+        virtual bool is_cloud_topic(const model::topic_id_partition&) {
+            return true;
+        }
     };
 
     // A wrapper around a source of configuration for a give topic id +
@@ -126,8 +137,13 @@ public:
 
     ss::future<> do_bump_epoch();
 
-private:
+    // Run a single iteration of the housekeeping loop (sleep + the migration
+    // guard + do_housekeeping + do_bump_epoch).
+    //
+    // Public for testing.
     ss::future<> do_loop();
+
+private:
     ss::future<kafka::offset> do_bytes_retention(size_t size);
     ss::future<kafka::offset> do_time_retention(std::chrono::milliseconds);
     // Syncs the start offset from L0 metadata storage to L1 metastore.

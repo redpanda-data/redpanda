@@ -125,6 +125,11 @@ public:
         co_return;
     }
 
+    bool is_cloud_topic(const model::topic_id_partition& tidp) override {
+        auto& state = _state->at(tidp);
+        return state.partition->get_ntp_config().cloud_topic_enabled();
+    }
+
 private:
     ctp_stm_api get_api(const model::topic_id_partition& tidp) {
         auto& state = _state->at(tidp);

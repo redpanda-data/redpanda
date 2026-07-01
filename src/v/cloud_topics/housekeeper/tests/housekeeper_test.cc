@@ -95,6 +95,12 @@ public:
         co_return;
     }
 
+    bool is_cloud_topic(const model::topic_id_partition&) override {
+        return _is_cloud_topic;
+    }
+
+    void set_is_cloud_topic(bool v) { _is_cloud_topic = v; }
+
     void set_max_allowed_start_offset(kafka::offset offset) {
         _max_allowed_start_offset = offset;
     }
@@ -129,6 +135,8 @@ private:
     model::topic_id_partition _tidp;
     kafka::offset _start_offset;
     kafka::offset _max_allowed_start_offset;
+
+    bool _is_cloud_topic{true};
 
     // Epoch-related state
     std::optional<cloud_topics::cluster_epoch> _estimated_inactive_epoch
@@ -303,6 +311,8 @@ public:
     }
 
     void reset_epoch_call_tracking() { _l0_metastore.reset_call_tracking(); }
+
+    void set_is_cloud_topic(bool v) { _l0_metastore.set_is_cloud_topic(v); }
 
 private:
     model::topic_id_partition _tidp{
@@ -815,6 +825,37 @@ TEST_F(HousekeeperTest, BumpEpochIdleTriggersAdvance) {
     housekeeper.do_bump_epoch().get();
     ASSERT_EQ(advance_epoch_calls().size(), 1);
     EXPECT_EQ(advance_epoch_calls()[0], cloud_topics::cluster_epoch{5});
+    EXPECT_EQ(sync_to_next_placeholder_calls(), 1);
+}
+
+TEST_F(HousekeeperTest, MigratingPartitionSkipsHousekeeping) {
+    // A partition still migrating from tiered storage is not yet a cloud topic
+    // (partition_mode is still tiered), is served from TS, and its ctp_stm is
+    // idle; CT housekeeping must not run against it -- do_bump_epoch would seed
+    // a meaningless reconciled offset and pin local-log GC. do_loop gates on
+    // is_cloud_topic().
+    auto housekeeper = make_housekeeper({});
+
+    // The idle scenario that WOULD force an epoch advance + sync on a cloud
+    // topic (cf. BumpEpochIdleTriggersAdvance): a stable inactive epoch.
+    set_estimated_inactive_epoch(cloud_topics::cluster_epoch{1});
+    set_current_cluster_epoch(cloud_topics::cluster_epoch{5});
+    set_is_cloud_topic(false);
+
+    // Even the second iteration (which forces advance + sync on a cloud topic)
+    // must be skipped entirely while served as tiered storage.
+    housekeeper.do_loop().get();
+    housekeeper.do_loop().get();
+    EXPECT_TRUE(advance_epoch_calls().empty());
+    EXPECT_EQ(sync_to_next_placeholder_calls(), 0);
+
+    // Control: once it cuts over to a cloud topic, the same idle scenario
+    // advances.
+    set_is_cloud_topic(true);
+    reset_epoch_call_tracking();
+    housekeeper.do_loop().get(); // re-initializes _last_epoch
+    housekeeper.do_loop().get(); // idle -> forces advance + sync
+    ASSERT_EQ(advance_epoch_calls().size(), 1);
     EXPECT_EQ(sync_to_next_placeholder_calls(), 1);
 }
 
