@@ -19,7 +19,6 @@ go_library(
         "//src/go/rpk/pkg/osutil",
         "//src/go/rpk/pkg/out",
         "//src/go/rpk/pkg/plugin",
-        "//src/go/rpk/pkg/publicapi",
         "//src/go/rpk/pkg/redpanda",
         "@com_github_spf13_afero//:afero",
         "@com_github_spf13_cobra//:cobra",
@@ -37,10 +36,8 @@ go_test(
     embed = [":ai"],
     deps = [
         "//src/go/rpk/pkg/config",
-        "@build_buf_gen_go_redpandadata_cloud_protocolbuffers_go//redpanda/api/controlplane/v1:controlplane",
         "@com_github_spf13_afero//:afero",
         "@com_github_spf13_cobra//:cobra",
         "@com_github_stretchr_testify//require",
-        "@org_golang_google_protobuf//proto",
     ],
 )

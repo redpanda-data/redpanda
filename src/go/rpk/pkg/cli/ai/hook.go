@@ -10,93 +10,21 @@
 package ai
 
 import (
-	"context"
-	"fmt"
-	"os"
 	"slices"
-	"strings"
 
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cobraext"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
-	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/publicapi"
-	"github.com/spf13/afero"
 	"github.com/spf13/cobra"
 	"go.uber.org/zap"
 )
 
-// The rpk ai plugin reads the following environment variables and flag:
-//
-//   - envAuthToken: bearer token forwarded as Authorization to the AI
-//     Gateway. rpk reads the cached token off the active cloud profile
-//     and exports it; a missing or stale token is reported by the
-//     gateway as a 401, at which point the user runs `rpk cloud login`.
-//   - envEndpoint: AI Gateway v2 base URL. rpk resolves it from the
-//     active cloud profile's cached AIGatewayURL (or falls back to a
-//     publicapi lookup) and exports it before exec.
-//   - flagEndpoint: same intent as envEndpoint, but on the command
-//     line. rpk only watches for it so we can skip the cluster lookup;
-//     the flag is parsed and consumed by the plugin itself.
-//
-// Any explicit value the user supplies (env or flag) wins — rpk only
-// fills in missing pieces.
-const (
-	envAuthToken = "RPAI_TOKEN"
-	envEndpoint  = "RPAI_ENDPOINT"
-
-	flagEndpoint = "rpai-endpoint"
-)
-
-// Exports RPAI_TOKEN and RPAI_ENDPOINT for the child plugin using cached
-// values from rpk.yaml and the profile's AIGatewayURL (no OAuth refresh).
-// Skips env var writes if the vars are already set or --rpai-endpoint is
-// present.
-func resolveAndInjectEnv(ctx context.Context, fs afero.Fs, p *config.Params, pluginArgs []string) error {
-	cfg, err := p.Load(fs)
-	if err != nil {
-		return fmt.Errorf("unable to load rpk config: %w", err)
-	}
-
-	if os.Getenv(envAuthToken) == "" {
-		// Mirrors the lookup chain in oauth.LoadCloudToken (without the
-		// refresh) so --config, -X cloud_auth.*, and RPK_PROFILE all work.
-		auth := cfg.VirtualProfile().VirtualAuth()
-		if auth == nil {
-			auth = cfg.VirtualRpkYaml().CurrentAuth()
-		}
-		if auth != nil && auth.AuthToken != "" {
-			if err := os.Setenv(envAuthToken, auth.AuthToken); err != nil {
-				return fmt.Errorf("unable to set %s: %w", envAuthToken, err)
-			}
-		}
-	}
-
-	if os.Getenv(envEndpoint) == "" && !hasEndpointFlag(pluginArgs) {
-		endpoint, err := resolveAigwEndpoint(ctx, cfg)
-		if err != nil {
-			return err
-		}
-		if err := os.Setenv(envEndpoint, endpoint); err != nil {
-			return fmt.Errorf("unable to set %s: %w", envEndpoint, err)
-		}
-	}
-
-	return nil
-}
-
-// skipCloudForHelp reports whether a --help / -h / --version flag is present,
-// in which case we must not reach out to the cloud API or trigger OAuth. The
-// rpk ai plugin child process renders its own help/version output locally.
-func skipCloudForHelp(args []string) bool {
-	for _, a := range args {
-		if a == "--help" || a == "-h" || a == "--version" {
-			return true
-		}
-	}
-	return false
-}
-
 // parseFlags splits args into plugin args + rpk-global-flags consumed by rpk,
 // and parses the rpk-global-flags so the logger and config loader pick them up.
+//
+// rpk does not inject any cloud context (token or endpoint) into the plugin:
+// the rpk ai plugin owns its own login (`rpk ai auth login`) and environment
+// selection (`rpk ai env use`), so it runs without a selected rpk cloud
+// cluster. Everything except rpk's own globals is forwarded untouched.
 func parseFlags(p *config.Params, cmd *cobra.Command, args []string) ([]string, error) {
 	f := cmd.Flags()
 
@@ -113,45 +41,4 @@ func parseFlags(p *config.Params, cmd *cobra.Command, args []string) ([]string, 
 		keepForPlugin = append(keepForPlugin, "--help")
 	}
 	return keepForPlugin, nil
-}
-
-// hasEndpointFlag reports whether the plugin args carry an explicit endpoint
-// flag (in any supported form: --flag=value or --flag followed by its
-// value).
-func hasEndpointFlag(args []string) bool {
-	prefix := "--" + flagEndpoint
-	for _, a := range args {
-		if a == prefix || strings.HasPrefix(a, prefix+"=") {
-			return true
-		}
-	}
-	return false
-}
-
-// resolveAigwEndpoint returns the AI Gateway v2 URL for the active rpk cloud
-// profile's cluster. It prefers the value cached on the profile at creation
-// time and only falls back to a live publicapi lookup when the cache is empty
-// (older profiles created before AIGatewayURL existed, or profiles whose
-// cluster had no AI Gateway attached at creation but does now).
-func resolveAigwEndpoint(ctx context.Context, cfg *config.Config) (string, error) {
-	prof := cfg.VirtualProfile()
-	if prof == nil || !prof.FromCloud || prof.CloudCluster.ClusterID == "" {
-		return "", fmt.Errorf("no cluster selected for this rpk profile; run 'rpk cloud cluster use <id>' or pass --%s", flagEndpoint)
-	}
-	if prof.CloudCluster.AIGatewayURL != "" {
-		return prof.CloudCluster.AIGatewayURL, nil
-	}
-	clusterID := prof.CloudCluster.ClusterID
-
-	token := os.Getenv(envAuthToken)
-	cl := publicapi.NewCloudClientSet(cfg.DevOverrides().PublicAPIURL, token)
-	cluster, err := cl.ClusterForID(ctx, clusterID)
-	if err != nil {
-		return "", fmt.Errorf("unable to resolve aigw endpoint for cluster %s: %w", clusterID, err)
-	}
-	endpoint := cluster.GetAiGateway().GetV2Url()
-	if endpoint == "" {
-		return "", fmt.Errorf("cluster %s does not have an AI Gateway v2 endpoint; pick a cluster that does, or pass --%s", clusterID, flagEndpoint)
-	}
-	return endpoint, nil
 }
