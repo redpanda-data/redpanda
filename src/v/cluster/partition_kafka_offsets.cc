@@ -38,7 +38,19 @@ model::offset kafka_high_watermark(const partition& p) {
             return model::offset(0);
         }
     }
-    return p.log()->from_log_offset(p.high_watermark());
+    auto hwm = p.log()->from_log_offset(p.high_watermark());
+    // A partition served from tiered storage whose local log does not cover its
+    // cloud data reports the cloud high watermark. This is the case for a
+    // partition mid tiered->cloud migration whose local log was wiped by
+    // cluster recovery: its data lives in the cloud manifest, so without this
+    // the (empty) local log would report high watermark 0 and hide the
+    // recovered prefix from ListOffsets and consumers. For a healthy partition
+    // the cloud watermark never exceeds the local one (uploads lag production),
+    // so this is a no-op.
+    if (p.cloud_data_available()) {
+        hwm = std::max(hwm, p.next_cloud_offset());
+    }
+    return hwm;
 }
 
 model::offset kafka_start_offset_with_override(
