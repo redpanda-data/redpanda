@@ -22,6 +22,7 @@
 #include "cluster/fwd.h"
 #include "cluster/logger.h"
 #include "cluster/partition.h"
+#include "cluster/partition_properties_stm.h"
 #include "cluster/partition_recovery_manager.h"
 #include "cluster/topic_configuration.h"
 #include "cluster/types.h"
@@ -360,6 +361,29 @@ ss::future<consensus_ptr> partition_manager::manage(
       log->segment_count(),
       log->size_bytes());
 
+    // A cloud topic recovered mid tiered->cloud migration comes back as tiered
+    // storage (its authoritative data is the remote manifest, rebuilt above).
+    // partition_mode must load as `tiered` so the partition is served as TS
+    // until the resumed mirror cuts over. The leadership bootstrap cannot
+    // classify this reliably -- the archival manifest rebuilds asynchronously,
+    // so holds_archived_data() may still read false and misrecord `cloud`, and
+    // the bootstrap is one-shot. Instead pre-write the partition_properties
+    // snapshot to `tiered` here: the recovered log is non-empty, so the
+    // snapshot survives perform_initial_cleanup and is loaded when the STM
+    // starts.
+    if (
+      log->config().cloud_topic_enabled() && rtp.has_value()
+      && !read_replica_bucket.has_value()
+      && log->config().recovery_enabled()
+           == storage::topic_recovery_enabled::yes) {
+        co_await partition_properties_stm::seed_partition_mode(
+          _storage.kvs(),
+          clusterlog,
+          log->config().ntp(),
+          model::prev_offset(log->offsets().start_offset),
+          model::redpanda_storage_mode::tiered);
+    }
+
     ss::lw_shared_ptr<raft::consensus> c
       = co_await _raft_manager.local().create_group(
         group,
@@ -423,8 +447,15 @@ partition_manager::maybe_download_log(
         co_return cloud_storage::log_recovery_result{};
     }
 
-    // TODO: implement a recovery primitive for cloud topics.
-    if (ntp_cfg.cloud_topic_enabled()) {
+    // A native cloud-topic partition has no tiered-storage log to download.
+    // The exception is a partition recovered mid tiered->cloud migration: its
+    // authoritative data is still in tiered storage and must be restored from
+    // the remote manifest (recover-as-tiered-storage). The recovery backend
+    // requests this via the recovery override, so only bail for a cloud topic
+    // that is not recovering.
+    if (
+      ntp_cfg.cloud_topic_enabled()
+      && ntp_cfg.recovery_enabled() != storage::topic_recovery_enabled::yes) {
         co_return cloud_storage::log_recovery_result{};
     }
 

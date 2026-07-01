@@ -1514,6 +1514,17 @@ ss::future<std::error_code> controller_backend::create_partition(
               = storage::topic_recovery_enabled::yes;
             rtp.emplace(remote_rev, cfg.partition_count);
         }
+        // A tiered->cloud partition recovered mid-migration is served as tiered
+        // storage and must rebuild its archival STM from the remote manifest.
+        // It is excluded from the branch above (cloud topics are not
+        // is_tiered_storage_topic), so emplace the remote topic properties here
+        // when cluster recovery has requested recovery for it.
+        if (
+          ntp_config.cloud_topic_enabled() && !rtp.has_value()
+          && ntp_config.get_overrides().recovery_enabled
+               == storage::topic_recovery_enabled::yes) {
+            rtp.emplace(remote_rev, cfg.partition_count);
+        }
         /**
          * Reset remote topic properties if a topic is recovered from tiered
          * storage and current node is joining replica set. A node is joining

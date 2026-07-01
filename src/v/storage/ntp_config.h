@@ -240,9 +240,12 @@ public:
     }
 
     topic_recovery_enabled recovery_enabled() const {
-        if (cloud_topic_enabled()) {
-            return topic_recovery_enabled::no;
-        }
+        // A native cloud topic never recovers from tiered storage, and the
+        // recovery override defaults to `no` for it. A tiered->cloud partition
+        // recovered mid-migration is the exception: it comes back as tiered
+        // storage, rebuilding its archival STM from the remote manifest (the
+        // live migration then resumes and cuts over), so the recovery backend
+        // sets the override explicitly. Honor the override in either case.
         return _overrides != nullptr ? _overrides->recovery_enabled
                                      : topic_recovery_enabled::no;
     }
