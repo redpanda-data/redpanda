@@ -416,6 +416,7 @@ def redpanda_cc_bench(
         duration = None,
         data = [],
         tags = [],
+        target_compatible_with = [],
         redirect_stderr = False,
         test_regex = None):
     """
@@ -496,6 +497,7 @@ def redpanda_cc_bench(
         tags = tags,
         env = env,
         data = data,
+        target_compatible_with = target_compatible_with,
     )
 
     args = ["$(rootpath :{})".format(binary_name)] + args + _reactor_args()
@@ -520,6 +522,7 @@ def redpanda_cc_bench(
         data = data + [":" + binary_name],
         env = env,
         testonly = True,
+        target_compatible_with = target_compatible_with,
     )
 
     # we write a wrapper to test the benchmark, which tries to
@@ -536,4 +539,5 @@ def redpanda_cc_bench(
         env = _symbolizer_env(test_env | env),
         args = test_args,
         data = [":" + binary_name] + data + test_data + _SYMBOLIZER_DATA,
+        target_compatible_with = target_compatible_with,
     )
