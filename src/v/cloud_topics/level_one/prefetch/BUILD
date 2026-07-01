@@ -49,7 +49,7 @@ redpanda_cc_library(
         ":chunk_reassembler",
         "//src/v/base",
         "//src/v/bytes:iobuf",
-        "//src/v/cloud_io:scheduler_types",
+        "//src/v/cloud_io:admission_control_types",
         "//src/v/cloud_topics/level_one/common:abstract_io",
         "//src/v/cloud_topics/level_one/common:object",
         "//src/v/cloud_topics/level_one/common:object_id",

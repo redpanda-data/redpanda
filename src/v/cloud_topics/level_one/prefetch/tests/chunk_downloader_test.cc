@@ -99,11 +99,12 @@ public:
     ss::future<std::expected<ss::input_stream<char>, errc>> read_object(
       l1::object_extent extent,
       ss::abort_source* as,
-      cloud_io::group_id g) override {
+      cloud_io::group_id g,
+      bool skip_cache) override {
         if (_fail_ranges.count({extent.position, extent.size})) {
             co_return std::unexpected(errc::cloud_missing_object);
         }
-        co_return co_await _delegate.read_object(extent, as, g);
+        co_return co_await _delegate.read_object(extent, as, g, skip_cache);
     }
 
     ss::future<std::expected<void, errc>> delete_objects(

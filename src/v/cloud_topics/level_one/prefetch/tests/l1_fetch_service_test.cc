@@ -212,14 +212,15 @@ public:
     ss::future<std::expected<ss::input_stream<char>, errc>> read_object(
       l1::object_extent extent,
       ss::abort_source* as,
-      cloud_io::group_id g) override {
+      cloud_io::group_id g,
+      bool skip_cache) override {
         if (_footers.count({extent.position, extent.size}) > 0) {
-            co_return co_await _delegate.read_object(extent, as, g);
+            co_return co_await _delegate.read_object(extent, as, g, skip_cache);
         }
         ++_concurrent;
         _peak = std::max(_peak, _concurrent);
         co_await ss::sleep(std::chrono::milliseconds(20));
-        auto res = co_await _delegate.read_object(extent, as, g);
+        auto res = co_await _delegate.read_object(extent, as, g, skip_cache);
         --_concurrent;
         co_return res;
     }
@@ -266,9 +267,10 @@ public:
     ss::future<std::expected<ss::input_stream<char>, errc>> read_object(
       l1::object_extent extent,
       ss::abort_source* as,
-      cloud_io::group_id g) override {
+      cloud_io::group_id g,
+      bool skip_cache) override {
         if (_footers.count({extent.position, extent.size}) > 0) {
-            co_return co_await _delegate.read_object(extent, as, g);
+            co_return co_await _delegate.read_object(extent, as, g, skip_cache);
         }
         // Hold non-footer reads briefly to widen the concurrent overlap window.
         co_await ss::sleep(std::chrono::milliseconds(5));
@@ -276,7 +278,7 @@ public:
         if (_fail_on && _data_reads == *_fail_on) {
             co_return std::unexpected(errc::cloud_missing_object);
         }
-        co_return co_await _delegate.read_object(extent, as, g);
+        co_return co_await _delegate.read_object(extent, as, g, skip_cache);
     }
     ss::future<std::expected<void, errc>> delete_objects(
       chunked_vector<l1::object_id> oids, ss::abort_source* as) override {
@@ -316,9 +318,10 @@ public:
     ss::future<std::expected<ss::input_stream<char>, errc>> read_object(
       l1::object_extent extent,
       ss::abort_source* as,
-      cloud_io::group_id g) override {
+      cloud_io::group_id g,
+      bool skip_cache) override {
         co_await ss::sleep(_delay);
-        co_return co_await _delegate.read_object(extent, as, g);
+        co_return co_await _delegate.read_object(extent, as, g, skip_cache);
     }
     ss::future<std::expected<void, errc>> delete_objects(
       chunked_vector<l1::object_id> oids, ss::abort_source* as) override {
