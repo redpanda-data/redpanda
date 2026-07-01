@@ -277,9 +277,9 @@ void segment_collector::collect_segments() {
       is_reupload_mode(_mode)
       && _begin_inclusive > _manifest.get_last_offset()) {
         vlog(
-          archival_log.warn,
-          "Start offset {} is ahead of manifest last offset {} for ntp {}, not "
-          "a reupload",
+          archival_log.debug,
+          "Start offset {} is ahead of manifest last offset {} for ntp {}, "
+          "nothing to reupload",
           _begin_inclusive,
           _manifest.get_last_offset(),
           _manifest.get_ntp());
