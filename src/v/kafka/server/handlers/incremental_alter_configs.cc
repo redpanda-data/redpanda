@@ -133,8 +133,10 @@ create_topic_properties_update(
     // Get the topic's current storage mode for validation warnings
     auto topic_cfg = ctx.metadata_cache().get_topic_cfg(tp_ns);
     std::optional<model::redpanda_storage_mode> current_storage_mode;
+    bool is_read_replica = false;
     if (topic_cfg) {
         current_storage_mode = topic_cfg->properties.storage_mode;
+        is_read_replica = topic_cfg->properties.read_replica.value_or(false);
     }
 
     if (!ctx.is_topic_mutable(tp_ns.tp)) {
@@ -532,12 +534,18 @@ create_topic_properties_update(
 
             if (cfg.name == topic_property_redpanda_storage_mode) {
                 auto validator = [current_storage_mode,
+                                  is_read_replica,
                                   &feature_table = ctx.feature_table().local()](
                                    const ss::sstring& raw,
                                    const model::redpanda_storage_mode& value)
                   -> std::optional<ss::sstring> {
                     auto transition_err = storage_mode_validator{
-                      current_storage_mode}(raw, value);
+                      current_storage_mode,
+                      feature_table.is_active(
+                        features::feature::topic_mode_migration)
+                        && config::shard_local_cfg()
+                             .enable_topic_mode_migration(),
+                      is_read_replica}(raw, value);
                     if (transition_err) {
                         return transition_err;
                     }

@@ -1209,6 +1209,7 @@ PERTURB_EXERCISED_FEATURES = frozenset(
         "tiered_cloud_topics",
         "shadow_link_role_sync",
         "fetch_controller_snapshot_rpc",
+        "topic_mode_migration",
     }
 )
 PERTURB_ACKNOWLEDGED_FEATURES = frozenset(
@@ -1235,11 +1236,6 @@ PERTURB_ACKNOWLEDGED_FEATURES = frozenset(
         # Iceberg extended-mode topic-config gate; exercising it needs Iceberg
         # topic setup orthogonal to the finalization behavior under test.
         "iceberg_extended_mode_config",
-        # Downgrade-safe by inspection: most of the functionality this gates is
-        # not present yet, so nothing writes the new partition_mode command while
-        # an upgrade is unfinalized. A follow-up PR exercises the gate for real
-        # once the migration trigger lands.
-        "topic_mode_migration",
     }
 )
 
@@ -1330,6 +1326,7 @@ class ManualFinalizationUpgradeTest(UnfinalizedUpgradeMixin, FeaturesTestBase):
         # a new per-step function to be written and registered here.
         per_step = {
             (26, 1): self._perturb_v26_1_to_v26_2,
+            (26, 2): self._perturb_v26_2_to_v26_3,
         }
         step = per_step.get(self.old_release[:2])
         if step is not None:
@@ -1417,13 +1414,27 @@ class ManualFinalizationUpgradeTest(UnfinalizedUpgradeMixin, FeaturesTestBase):
         self._exercise_tiered_cloud_topics()
         self._exercise_shadow_link_role_sync()
         self._exercise_fetch_controller_snapshot_rpc()
-        # The remaining gated features are acknowledged rather than exercised
-        # here; see PERTURB_ACKNOWLEDGED_FEATURES for why each stays
-        # downgrade-safe. Two are v26.2 cluster-linking features needing a second
-        # (source) cluster (shadow_link_sr_api_sync is covered by
+        # The other two v26.2-gated features are cluster-linking features that
+        # need a second (source) cluster, so they are acknowledged rather than
+        # exercised here; see PERTURB_ACKNOWLEDGED_FEATURES for why each stays
+        # downgrade-safe (shadow_link_sr_api_sync is covered by
         # ShadowLinkUnfinalizedUpgradeTest; batch_mirror_topic_status is safe by
-        # inspection); topic_mode_migration is v26.3-gated and gates nothing
-        # user-visible until the migration trigger lands.
+        # inspection).
+
+    def _perturb_v26_2_to_v26_3(self, phase):
+        """Per-step perturbation for the v26.2 -> v26.3 unfinalized upgrade.
+
+        Structured per the note above: one function per upgrade step. The harness
+        still performs a single old -> HEAD hop rather than chained unfinalized
+        upgrades, so this runs in the same window as the v26.1 -> v26.2 step --
+        which is sound either way, because a v26.3-gated feature is unavailable
+        for as long as the active version is held below v26.3.
+
+        Only runs on the HEAD binary, for the same reason as the v26.1 -> v26.2
+        step: the gated code paths do not exist on the rolled-back binary."""
+        if "upgraded" not in phase:
+            return
+        self._exercise_topic_mode_migration()
 
     def _exercise_tiered_cloud_topics(self):
         """tiered_cloud_topics gate: creating a topic with the tiered_v2
@@ -1457,6 +1468,36 @@ class ManualFinalizationUpgradeTest(UnfinalizedUpgradeMixin, FeaturesTestBase):
             raise AssertionError(
                 "creating a tiered_cloud topic should be gated while unfinalized"
             )
+
+    def _exercise_topic_mode_migration(self):
+        """topic_mode_migration gate: a tiered -> cloud storage-mode change
+        migrates the topic's data to the new mode, and is permitted only when
+        this feature is active AND enable_topic_mode_migration is on. While the
+        upgrade is unfinalized the feature must report unavailable, so no
+        migration can be triggered -- which is what keeps the window
+        downgrade-safe, since a migration would replicate a partition_mode
+        command the prior release cannot decode.
+
+        Assert the feature side of that conjunction, and that the config alone
+        does not open the gate: turning enable_topic_mode_migration on must
+        leave the feature unavailable. (Driving the storage-mode transition
+        itself needs a tiered topic, which needs cloud storage -- not configured
+        by this test, the same limitation noted in
+        _verify_tiered_cloud_topics_working.)"""
+        assert self._feature_state("topic_mode_migration") == "unavailable", (
+            "topic_mode_migration should be unavailable while the upgrade "
+            "is unfinalized"
+        )
+        self.admin.patch_cluster_config(upsert={"enable_topic_mode_migration": True})
+        try:
+            assert self._feature_state("topic_mode_migration") == "unavailable", (
+                "enabling enable_topic_mode_migration must not open the feature gate "
+                "while the upgrade is unfinalized"
+            )
+        finally:
+            # Leave the cluster as found: the config is read on the HEAD binary
+            # only, but a rollback should not inherit it.
+            self.admin.patch_cluster_config(remove=["enable_topic_mode_migration"])
 
     def _validate_role_sync_config(self):
         """Issue a validate-only CreateShadowLink with role sync configured to
@@ -1668,6 +1709,19 @@ class ManualFinalizationUpgradeTest(UnfinalizedUpgradeMixin, FeaturesTestBase):
             err_msg="tiered_cloud_topics did not auto-activate after finalize",
         )
 
+    def _verify_topic_mode_migration_working(self):
+        """After finalize the active version advances past the feature's
+        require_version and it auto-activates (available_policy::always), so the
+        migration trigger's feature precondition is satisfied. (Actually
+        triggering one needs a tiered topic, hence cloud storage, which this test
+        does not configure.)"""
+        wait_until(
+            lambda: self._feature_state("topic_mode_migration") == "active",
+            timeout_sec=30,
+            backoff_sec=1,
+            err_msg="topic_mode_migration did not auto-activate after finalize",
+        )
+
     def _verify_shadow_link_role_sync_working(self):
         """After finalize both gates open: shadow_link_role_sync auto-activates
         (available_policy::always, so no explicit enable), DescribeRedpandaRoles is
@@ -1713,6 +1767,10 @@ class ManualFinalizationUpgradeTest(UnfinalizedUpgradeMixin, FeaturesTestBase):
         self._verify_tiered_cloud_topics_working()
         self._verify_shadow_link_role_sync_working()
         self._verify_fetch_controller_snapshot_rpc_working()
+
+    def _verify_v26_3_features_working(self):
+        """Post-finalize counterpart to _perturb_v26_2_to_v26_3."""
+        self._verify_topic_mode_migration_working()
 
     def _feature_state(self, name):
         for f in self.admin.get_features()["features"]:
@@ -2001,6 +2059,7 @@ class ManualFinalizationUpgradeTest(UnfinalizedUpgradeMixin, FeaturesTestBase):
         # With the upgrade finalized, the v26.2 feature gates have opened:
         # confirm the features actually work.
         self._verify_v26_2_features_working()
+        self._verify_v26_3_features_working()
 
     @cluster(
         num_nodes=3,

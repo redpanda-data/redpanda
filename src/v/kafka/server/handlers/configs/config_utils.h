@@ -392,11 +392,24 @@ struct batch_max_bytes_limits_validator {
 //   tiered_cloud -> tiered: Not permitted
 //   unset <-> tiered_cloud: Not permitted
 inline bool is_storage_mode_transition_permitted(
-  model::redpanda_storage_mode from, model::redpanda_storage_mode to) {
+  model::redpanda_storage_mode from,
+  model::redpanda_storage_mode to,
+  bool migration_enabled) {
     using sm = model::redpanda_storage_mode;
 
     // No-op transitions are fine.
     if (from == to) {
+        return true;
+    }
+
+    // tiered -> cloud / tiered_cloud migrates the topic's data to the new mode.
+    // Gated by `migration_enabled`, which the caller sets only when the
+    // topic_mode_migration cluster feature is active (so a mixed-version
+    // cluster does not begin a migration older nodes cannot drive) AND the
+    // enable_topic_mode_migration config is on.
+    if (
+      migration_enabled && from == sm::tiered
+      && (to == sm::cloud || to == sm::tiered_cloud)) {
         return true;
     }
 
@@ -435,6 +448,14 @@ inline bool is_storage_mode_transition_permitted(
 /// permitted.
 struct storage_mode_validator {
     std::optional<model::redpanda_storage_mode> current_mode;
+    // Whether a tiered -> cloud/tiered_cloud migration may be triggered: set by
+    // the caller only when the topic_mode_migration feature is active AND the
+    // enable_topic_mode_migration config is on. Permits those transitions.
+    bool migration_enabled{false};
+    // A read-replica topic derives its storage configuration from the source
+    // cluster; its storage mode must not be altered locally (in particular, a
+    // read replica must not be independently migrated tiered -> cloud).
+    bool is_read_replica{false};
 
     std::optional<ss::sstring>
     operator()(const ss::sstring&, const model::redpanda_storage_mode& value) {
@@ -443,7 +464,16 @@ struct storage_mode_validator {
             return std::nullopt;
         }
 
-        if (!is_storage_mode_transition_permitted(*current_mode, value)) {
+        if (is_read_replica && value != *current_mode) {
+            return fmt::format(
+              "Cannot alter redpanda.storage.mode on a read-replica topic "
+              "(currently {}): the storage configuration is determined by the "
+              "source cluster",
+              *current_mode);
+        }
+
+        if (!is_storage_mode_transition_permitted(
+              *current_mode, value, migration_enabled)) {
             return fmt::format(
               "Cannot alter redpanda.storage.mode from {} to {} - this "
               "transition is not permitted",

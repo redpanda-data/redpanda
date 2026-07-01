@@ -374,7 +374,8 @@ bool maybe_append_storage_mode_update(
           "Cannot use the tiered_v2 storage mode until the cluster is fully "
           "upgraded to at least v26.2.1");
     }
-    if (!kafka::is_storage_mode_transition_permitted(current, *mode)) {
+    if (!kafka::is_storage_mode_transition_permitted(
+          current, *mode, /*migration_enabled=*/false)) {
         throw kafka::validation_error(
           fmt::format(
             "Storage mode transition from {} to {} is not permitted",
