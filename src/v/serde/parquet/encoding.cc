@@ -45,9 +45,17 @@ template<typename value_type>
 void numeric_plain_encoder<value_type>::add_value(value_type v) {
     if constexpr (std::is_integral_v<decltype(v.val)>) {
         v.val = ss::cpu_to_le(v.val);
+        // NOLINTNEXTLINE(*reinterpret-cast*)
+        buf.append(reinterpret_cast<const uint8_t*>(&v.val), sizeof(v.val));
+    } else {
+        // PLAIN encoding stores FLOAT/DOUBLE as little-endian IEEE bytes.
+        // cpu_to_le only accepts integrals, so byteswap the bit pattern.
+        using bits_type
+          = std::conditional_t<sizeof(v.val) == 4, uint32_t, uint64_t>;
+        auto bits = ss::cpu_to_le(std::bit_cast<bits_type>(v.val));
+        // NOLINTNEXTLINE(*reinterpret-cast*)
+        buf.append(reinterpret_cast<const uint8_t*>(&bits), sizeof(bits));
     }
-    // NOLINTNEXTLINE(*reinterpret-cast*)
-    buf.append(reinterpret_cast<const uint8_t*>(&v.val), sizeof(v.val));
 }
 
 template<typename value_type>

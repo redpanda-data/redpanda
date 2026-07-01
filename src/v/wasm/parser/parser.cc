@@ -16,6 +16,7 @@
 #include "strings/utf8.h"
 #include "wasm/parser/leb128.h"
 
+#include <seastar/core/byteorder.hh>
 #include <seastar/core/coroutine.hh>
 #include <seastar/coroutine/maybe_yield.hh>
 
@@ -281,7 +282,8 @@ public:
             throw parse_exception(
               fmt::format("magic bytes incorrect: {}", magic));
         }
-        auto version = _parser->consume_type<int32_t>();
+        // The WASM version is a little-endian 4-byte field on the wire.
+        auto version = ss::le_to_cpu(_parser->consume_type<int32_t>());
         if (version != 1) {
             throw parse_exception("unsupported wasm version");
         }

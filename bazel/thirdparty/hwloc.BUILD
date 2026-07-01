@@ -23,6 +23,13 @@ configure_make(
     configure_options = [
         "--disable-libudev",
 
+        # Don't let autoconf pick up a system libxml2 for optional XML
+        # topology import/export. We don't use it, and an auto-detected
+        # libxml2 leaks undefined xml* symbols into every hwloc consumer
+        # (the dep isn't wired up), breaking links on hosts that happen to
+        # have libxml2 headers installed.
+        "--disable-libxml2",
+
         # Disable graphics and the many kinds of display driver discovery
         "--disable-gl",
         "--disable-opencl",

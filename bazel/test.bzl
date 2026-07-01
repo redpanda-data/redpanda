@@ -75,7 +75,6 @@ def _test_options():
     data = [
         "//:ubsan_suppressions",
         "//:lsan_suppressions",
-        "@current_llvm_toolchain//:llvm-symbolizer",
     ]
     env = {
         "BOOST_TEST_LOG_LEVEL": "test_suite",
@@ -84,7 +83,6 @@ def _test_options():
         "BOOST_TEST_REPORT_LEVEL": "no",
         "BOOST_LOGGER": "HRF,test_suite",
         "ASAN_OPTIONS": "disable_coredump=0:abort_on_error=1",
-        "ASAN_SYMBOLIZER_PATH": "$(rootpath @current_llvm_toolchain//:llvm-symbolizer)",
         "LSAN_OPTIONS": "suppressions=$(rootpath //:lsan_suppressions)",
         "UBSAN_OPTIONS": "symbolize=1:print_stacktrace=1:halt_on_error=1:abort_on_error=1:report_error_type=1:suppressions=$(rootpath //:ubsan_suppressions)",
         # see https://redpandadata.atlassian.net/wiki/x/BwDSUw
@@ -92,6 +90,23 @@ def _test_options():
     }
     deps = antithesis_deps()
     return data, env, deps
+
+# The hermetic LLVM toolchain has no s390x distribution, so the
+# llvm-symbolizer target cannot be fetched there. Sanitizers are not used
+# on s390x, so drop the symbolizer data dep and ASAN_SYMBOLIZER_PATH on that
+# arch while keeping them everywhere else.
+_SYMBOLIZER_DATA = select({
+    "//bazel:s390x": [],
+    "//conditions:default": ["@current_llvm_toolchain//:llvm-symbolizer"],
+})
+
+def _symbolizer_env(base_env):
+    return select({
+        "//bazel:s390x": base_env,
+        "//conditions:default": base_env | {
+            "ASAN_SYMBOLIZER_PATH": "$(rootpath @current_llvm_toolchain//:llvm-symbolizer)",
+        },
+    })
 
 def _redpanda_cc_test(
         name,
@@ -171,9 +186,9 @@ def _redpanda_cc_test(
             "layering_check",
         ],
         tags = resource_tags + tags,
-        env = {"RP_FIXTURE_ENV": "1"} | test_env | env,
+        env = _symbolizer_env({"RP_FIXTURE_ENV": "1"} | test_env | env),
         target_compatible_with = target_compatible_with,
-        data = data + test_data,
+        data = data + test_data + _SYMBOLIZER_DATA,
         local_defines = local_defines,
         flaky = flaky,
     )
@@ -215,8 +230,8 @@ def _redpanda_cc_fuzz_test(
         tags = [
             "fuzz",
         ],
-        env = test_env | env,
-        data = data + test_data,
+        env = _symbolizer_env(test_env | env),
+        data = data + test_data + _SYMBOLIZER_DATA,
         linkopts = [
             "-fsanitize=fuzzer",
         ],
@@ -355,8 +370,8 @@ def redpanda_cc_btest_no_seastar(
             "//src/v/test_utils:boost_test_hooks",
             "@boost//:test.so",
         ] + deps + test_deps,
-        data = test_data,
-        env = test_env,
+        data = test_data + _SYMBOLIZER_DATA,
+        env = _symbolizer_env(test_env),
     )
 
 def redpanda_test_cc_library(
@@ -401,6 +416,7 @@ def redpanda_cc_bench(
         duration = None,
         data = [],
         tags = [],
+        target_compatible_with = [],
         redirect_stderr = False,
         test_regex = None):
     """
@@ -481,6 +497,7 @@ def redpanda_cc_bench(
         tags = tags,
         env = env,
         data = data,
+        target_compatible_with = target_compatible_with,
     )
 
     args = ["$(rootpath :{})".format(binary_name)] + args + _reactor_args()
@@ -505,6 +522,7 @@ def redpanda_cc_bench(
         data = data + [":" + binary_name],
         env = env,
         testonly = True,
+        target_compatible_with = target_compatible_with,
     )
 
     # we write a wrapper to test the benchmark, which tries to
@@ -518,7 +536,8 @@ def redpanda_cc_bench(
         main = "bench_wrapper.py",
         tags = resource_tags + tags,
         srcs = ["//bazel:bench_wrapper"],
-        env = test_env | env,
+        env = _symbolizer_env(test_env | env),
         args = test_args,
-        data = [":" + binary_name] + data + test_data,
+        data = [":" + binary_name] + data + test_data + _SYMBOLIZER_DATA,
+        target_compatible_with = target_compatible_with,
     )

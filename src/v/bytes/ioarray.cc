@@ -269,7 +269,9 @@ uint32_t ioarray::read_fixed32(size_t i) const {
     v |= read(++i) << 8u;
     v |= read(++i) << 16u;
     v |= read(++i) << 24u;
-    return ss::le_to_cpu(v);
+    // The shifts above already assemble the bytes into host byte order
+    // (least-significant byte first), so no le_to_cpu is needed here.
+    return v;
 }
 
 void ioarray::trim_back(size_t n) {

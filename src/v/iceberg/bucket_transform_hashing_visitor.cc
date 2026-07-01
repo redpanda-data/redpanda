@@ -44,22 +44,24 @@ bucket_transform_hashing_visitor::operator()(const timestamptz_value& value) {
 }
 uint32_t
 bucket_transform_hashing_visitor::operator()(const decimal_value& value) {
-    const auto low_val = ss::cpu_to_be(Int128Low64(value.val));
-    const auto high_val = ss::cpu_to_be(Int128High64(value.val));
+    const auto low_val = Int128Low64(value.val);
+    const auto high_val = Int128High64(value.val);
 
     std::array<uint8_t, 16> value_bytes{0};
 
     /**
      * Both Java and PyIceberg implementations encode the decimal in big endian
      * format and then they hash an array with the smallest size required to
-     * represent the decimal
+     * represent the decimal.
+     *
+     * Extract the bytes most-significant first via arithmetic shifts, which is
+     * independent of host byte order (don't byteswap into a native value and
+     * then shift, which only yields big-endian bytes on little-endian hosts).
      */
     for (uint8_t i = 0; i < 8; i++) {
-        const auto h_byte = (high_val >> (i * 8)) & 0xFF;
-        const auto l_byte = (low_val >> (i * 8)) & 0xFF;
-
-        value_bytes[i] = h_byte;
-        value_bytes[i + 8] = l_byte;
+        const auto shift = (7 - i) * 8;
+        value_bytes[i] = (high_val >> shift) & 0xFF;
+        value_bytes[i + 8] = (low_val >> shift) & 0xFF;
     }
     /**
      * Limit the size of the array to the smallest size required to represent

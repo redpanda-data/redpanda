@@ -14,12 +14,14 @@
 #include "bytes/iobuf_parser.h"
 #include "serde/protobuf/wire_format.h"
 
+#include <seastar/core/byteorder.hh>
 #include <seastar/core/coroutine.hh>
 #include <seastar/util/variant_utils.hh>
 
 #include <google/protobuf/descriptor.h>
 
 #include <algorithm>
+#include <bit>
 #include <iterator>
 #include <stdexcept>
 #include <type_traits>
@@ -28,6 +30,26 @@
 namespace serde::pb {
 
 namespace pb = google::protobuf;
+
+namespace {
+
+// Protobuf fixed32/fixed64 (and float/double) are serialized little-endian on
+// the wire. iobuf_parser::consume_type reads in host byte order, so convert
+// from little-endian to keep these fields correct on big-endian hosts.
+template<typename T>
+T consume_fixed_le(iobuf_parser& parser) {
+    static_assert(std::is_arithmetic_v<T>);
+    if constexpr (std::is_integral_v<T>) {
+        return ss::le_to_cpu(parser.consume_type<T>());
+    } else {
+        using bits_type
+          = std::conditional_t<sizeof(T) == 4, uint32_t, uint64_t>;
+        return std::bit_cast<T>(
+          ss::le_to_cpu(parser.consume_type<bits_type>()));
+    }
+}
+
+} // namespace
 
 class parser {
     static constexpr int32_t top_level_field_number = -1;
@@ -171,15 +193,15 @@ private:
         switch (field_descriptor->type()) {
         case google::protobuf::FieldDescriptor::TYPE_FIXED64:
             update_field(
-              *field_descriptor, current_->parser.consume_type<uint64_t>());
+              *field_descriptor, consume_fixed_le<uint64_t>(current_->parser));
             break;
         case google::protobuf::FieldDescriptor::TYPE_SFIXED64:
             update_field(
-              *field_descriptor, current_->parser.consume_type<int64_t>());
+              *field_descriptor, consume_fixed_le<int64_t>(current_->parser));
             break;
         case google::protobuf::FieldDescriptor::TYPE_DOUBLE:
             update_field(
-              *field_descriptor, current_->parser.consume_type<double>());
+              *field_descriptor, consume_fixed_le<double>(current_->parser));
             break;
         case google::protobuf::FieldDescriptor::TYPE_BOOL:
         case google::protobuf::FieldDescriptor::TYPE_ENUM:
@@ -212,15 +234,15 @@ private:
         switch (field_descriptor->type()) {
         case google::protobuf::FieldDescriptor::TYPE_FIXED32:
             update_field(
-              *field_descriptor, current_->parser.consume_type<uint32_t>());
+              *field_descriptor, consume_fixed_le<uint32_t>(current_->parser));
             break;
         case google::protobuf::FieldDescriptor::TYPE_SFIXED32:
             update_field(
-              *field_descriptor, current_->parser.consume_type<int32_t>());
+              *field_descriptor, consume_fixed_le<int32_t>(current_->parser));
             break;
         case google::protobuf::FieldDescriptor::TYPE_FLOAT:
             update_field(
-              *field_descriptor, current_->parser.consume_type<float>());
+              *field_descriptor, consume_fixed_le<float>(current_->parser));
             break;
         case google::protobuf::FieldDescriptor::TYPE_BOOL:
         case google::protobuf::FieldDescriptor::TYPE_ENUM:
@@ -445,12 +467,12 @@ private:
             break;
         case pb::FieldDescriptor::TYPE_FIXED32:
             read_packed_elements(*descriptor, length, [this] {
-                return current_->parser.consume_type<uint32_t>();
+                return consume_fixed_le<uint32_t>(current_->parser);
             });
             break;
         case pb::FieldDescriptor::TYPE_SFIXED32:
             read_packed_elements(*descriptor, length, [this] {
-                return current_->parser.consume_type<int32_t>();
+                return consume_fixed_le<int32_t>(current_->parser);
             });
             break;
         case pb::FieldDescriptor::TYPE_INT64:
@@ -470,22 +492,22 @@ private:
             break;
         case pb::FieldDescriptor::TYPE_FIXED64:
             read_packed_elements(*descriptor, length, [this] {
-                return current_->parser.consume_type<uint64_t>();
+                return consume_fixed_le<uint64_t>(current_->parser);
             });
             break;
         case pb::FieldDescriptor::TYPE_SFIXED64:
             read_packed_elements(*descriptor, length, [this] {
-                return current_->parser.consume_type<int64_t>();
+                return consume_fixed_le<int64_t>(current_->parser);
             });
             break;
         case pb::FieldDescriptor::TYPE_FLOAT:
             read_packed_elements(*descriptor, length, [this] {
-                return current_->parser.consume_type<float>();
+                return consume_fixed_le<float>(current_->parser);
             });
             break;
         case pb::FieldDescriptor::TYPE_DOUBLE:
             read_packed_elements(*descriptor, length, [this] {
-                return current_->parser.consume_type<double>();
+                return consume_fixed_le<double>(current_->parser);
             });
             break;
         case pb::FieldDescriptor::TYPE_STRING:

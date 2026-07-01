@@ -123,8 +123,10 @@ SEASTAR_THREAD_TEST_CASE(consumer_records_consume_batch) {
 
 SEASTAR_THREAD_TEST_CASE(consumer_records_consume_batch_fail_magic) {
     auto ctx = make_context(base_offset, few_batches);
-    corrupt_offset<int32_t>(
-      ctx.record_set, mag_offset, [](int32_t& t) { --t; });
+    // The magic is a single byte; corrupt it as int8 so exactly that byte
+    // changes. Corrupting a 4-byte int here only alters the magic byte on
+    // little-endian hosts (where it is the least-significant byte).
+    corrupt_offset<int8_t>(ctx.record_set, mag_offset, [](int8_t& t) { --t; });
 
     auto crs = kafka::batch_reader(std::move(ctx.record_set));
 
@@ -209,8 +211,10 @@ SEASTAR_THREAD_TEST_CASE(batch_reader_record_batch_reader_impl_fail_lod) {
 
 SEASTAR_THREAD_TEST_CASE(batch_reader_record_batch_reader_impl_fail_magic) {
     auto ctx = make_context(base_offset, few_batches);
-    corrupt_offset<int32_t>(
-      ctx.record_set, mag_offset, [](int32_t& t) { --t; });
+    // The magic is a single byte; corrupt it as int8 so exactly that byte
+    // changes. Corrupting a 4-byte int here only alters the magic byte on
+    // little-endian hosts (where it is the least-significant byte).
+    corrupt_offset<int8_t>(ctx.record_set, mag_offset, [](int8_t& t) { --t; });
 
     auto rdr = model::make_record_batch_reader<kafka::batch_reader>(
       std::move(ctx.record_set));

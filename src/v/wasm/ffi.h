@@ -19,6 +19,7 @@
 #include "reflection/type_traits.h"
 #include "utils/named_type.h"
 
+#include <bit>
 #include <cstdint>
 #include <span>
 #include <string_view>
@@ -31,6 +32,46 @@ namespace wasm::ffi {
  * A "raw" pointer into guest VM memory.
  */
 using ptr = named_type<uint32_t, struct ptr_tag>;
+
+/**
+ * Store a scalar into a guest out-parameter using WebAssembly's little-endian
+ * memory layout. WASM linear memory is always little-endian, so on big-endian
+ * hosts the value must be byteswapped before it is written; on little-endian
+ * hosts this is a plain store. Named types are written as their underlying
+ * integral value.
+ */
+template<typename T>
+void write_guest(T* guest_out, std::type_identity_t<T> value) {
+    if constexpr (reflection::is_rp_named_type<T>) {
+        write_guest(
+          // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+          reinterpret_cast<typename T::type*>(guest_out),
+          static_cast<typename T::type>(value));
+    } else {
+        if constexpr (std::endian::native == std::endian::big) {
+            value = std::byteswap(value);
+        }
+        *guest_out = value;
+    }
+}
+
+/**
+ * Read a scalar that the guest stored in WebAssembly's little-endian memory
+ * layout (e.g. a field of a struct the guest passed by pointer). On big-endian
+ * hosts the value is byteswapped back to host order; on little-endian hosts it
+ * is returned unchanged. Named types are converted via their underlying value.
+ */
+template<typename T>
+T read_guest(T value) {
+    if constexpr (reflection::is_rp_named_type<T>) {
+        return T{read_guest(static_cast<typename T::type>(value))};
+    } else {
+        if constexpr (std::endian::native == std::endian::big) {
+            return std::byteswap(value);
+        }
+        return value;
+    }
+}
 
 /**
  * An container for a sequence of T from the Wasm VM guest.

@@ -627,8 +627,9 @@ index_state index_state_serde::decode(iobuf_parser& parser) {
     retval.max_timestamp = model::timestamp(
       reflection::adl<model::timestamp::type>{}.from(parser));
 
-    const uint32_t vsize = ss::le_to_cpu(
-      reflection::adl<uint32_t>{}.from(parser));
+    // adl<uint32_t>::from already converts from little-endian; an extra
+    // le_to_cpu here would byteswap a second time on big-endian hosts.
+    const uint32_t vsize = reflection::adl<uint32_t>{}.from(parser);
 
     chunked_vector<uint32_t> relative_offset_index;
     relative_offset_index.reserve(vsize);
