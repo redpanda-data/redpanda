@@ -15,6 +15,8 @@
 #include "model/record.h"
 #include "utils/vint.h"
 
+#include <seastar/util/bool_class.hh>
+
 namespace storage {
 class record_batch_builder {
 public:
@@ -30,7 +32,14 @@ public:
       std::optional<iobuf>&& key,
       std::optional<iobuf>&& value,
       chunked_vector<model::record_header> headers);
-    model::record_batch build() &&;
+    // Whether `build()` should finalize the batch by computing its size and
+    // checksums. Only valid if compression mode is compression::none. If set to
+    // `no`, it is the callers responsibility to invoke
+    // `batch.reset_checksum_metadata()`.
+    using reset_size_checksum = ss::bool_class<struct reset_size_checksum_tag>;
+
+    model::record_batch
+    build(reset_size_checksum reset = reset_size_checksum::yes) &&;
     ss::future<model::record_batch> build_async() &&;
     virtual ~record_batch_builder();
 

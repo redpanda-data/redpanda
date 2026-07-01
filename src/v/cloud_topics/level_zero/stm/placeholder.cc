@@ -48,7 +48,8 @@ model::record_batch encode_placeholder_batch(
         builder.add_raw_kv(std::nullopt, std::nullopt);
     }
 
-    auto ph = std::move(builder).build();
+    auto ph = std::move(builder).build(
+      storage::record_batch_builder::reset_size_checksum::no);
     // In order for timequeries to work correctly, we need to ensure we never
     // look inside the batch to answer the query. If the time is append time we
     // don't need to unpack the batch, but instead all records have the
