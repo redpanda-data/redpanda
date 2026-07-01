@@ -1,0 +1,14 @@
+--- a/include/seastar/testing/thread_test_case.hh
++++ b/include/seastar/testing/thread_test_case.hh
+@@ -37,7 +37,10 @@
+     struct name : public seastar::testing::seastar_test {    \
+         using seastar::testing::seastar_test::seastar_test;  \
+         seastar::future<> run_test_case() const override {   \
+-            return seastar::async([this] {                   \
++            return seastar::async(                           \
++              seastar::thread_attributes{                    \
++                .stack_size = static_cast<size_t>(16) << 20}, \
++              [this] {                                       \
+                 do_run_test_case();                          \
+             });                                              \
+         }                                                    \

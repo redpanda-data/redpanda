@@ -167,6 +167,11 @@ def data_dependency():
         sha256 = "e800bfbfeaf514ad90cb480aa5e317c01c514f99ed97ee0ac2ef3c9c55dc43a5",
         strip_prefix = "seastar-5d474c884fb54f1bbef9fe9bfada0eb48feb47b5",
         url = "https://github.com/redpanda-data/seastar/archive/5d474c884fb54f1bbef9fe9bfada0eb48feb47b5.tar.gz",
+        patches = [
+            "//bazel/thirdparty:seastar-test-runner-stack.patch",
+            "//bazel/thirdparty:seastar-thread-test-stack.patch",
+        ],
+        patch_args = ["-p1"],
     )
 
     http_archive(

@@ -1,0 +1,13 @@
+--- a/src/testing/test_runner.cc
++++ b/src/testing/test_runner.cc
+@@ -67,7 +67,9 @@
+     auto init_outcome = std::make_shared<exchanger<bool>>();
+ 
+     namespace bpo = boost::program_options;
+-    _thread = std::make_unique<posix_thread>([this, ac, av, init_outcome]() mutable {
++    _thread = std::make_unique<posix_thread>(
++      posix_thread::attr{posix_thread::attr::stack_size{size_t(256) << 20}},
++      [this, ac, av, init_outcome]() mutable {
+         app_template app;
+         app.add_options()
+             ("random-seed", bpo::value<unsigned>(), "Random number generator seed")
