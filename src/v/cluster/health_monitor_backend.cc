@@ -955,8 +955,7 @@ partition_status build_partition_status(const partition& p) {
 
     if (p.ntp().ns == model::kafka_namespace && p.started()) {
         // HWM cannot be reliably retrieved until raft has started
-        status.high_watermark = model::offset_cast(
-          p.log()->from_log_offset(p.high_watermark()));
+        status.high_watermark = model::offset_cast(kafka_high_watermark(p));
         status.log_start_offset = model::offset_cast(kafka_start_offset(p));
     }
 
