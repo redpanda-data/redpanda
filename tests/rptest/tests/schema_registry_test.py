@@ -68,7 +68,11 @@ from rptest.util import (
     wait_until_result,
 )
 from rptest.utils.log_utils import wait_until_nag_is_set
-from rptest.utils.mode_checks import skip_debug_mode, skip_fips_mode
+from rptest.utils.mode_checks import (
+    skip_debug_mode,
+    skip_file_in_cdt,
+    skip_fips_mode,
+)
 
 Headers: TypeAlias = dict[str, str] | None
 
@@ -11947,3 +11951,13 @@ class SchemaRegistryTransportCompatTest(RedpandaTest):
 
         self._flip_transport(use_rpc=False)
         self._verify_phase(after_rpc2, "kafka2", "Kafka2Rec", n)
+
+
+# Opt the entire schema-registry HTTP-API suite out of CDT: it is exhaustive and
+# adds significant runtime on real cloud infra without adding any cloud-infra
+# coverage (the dockerized CI run already exercises it end to end). The test
+# methods live on the base classes above; skip_file_in_cdt marks each module
+# class's own methods, so the thin concrete subclasses inherit the mark.
+skip_file_in_cdt(
+    reason="exhaustive SR HTTP-API suite; no cloud-infra signal (dockerized CI covers it)"
+)
