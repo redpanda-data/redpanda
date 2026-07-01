@@ -253,6 +253,15 @@ frontend::make_reader(cloud_topic_log_reader_config cfg) {
     vassert(_data_plane != nullptr, "cloud topics api not initialized");
 
     bool level_one = false;
+    // Inclusive upper bound of what the L1 read path can serve. The L1 reader
+    // is bounded to this so it returns end-of-stream at the boundary instead of
+    // blocking on offsets that are not yet reconciled into an L1 object. The
+    // consumer's next fetch re-evaluates and falls through to the L0 reader,
+    // which owns the un-reconciled tail. This mirrors the old level_one_reader,
+    // which stopped once the metastore had no further object rather than
+    // waiting. kafka::offset::max() means "do not bound" (left as-is below when
+    // the L1 range is already the authoritative copy).
+    kafka::offset l1_upper_bound = kafka::offset::max();
     if (_partition->get_ntp_config().is_tiered_cloud()) {
         // In tiered_cloud mode writes go straight to the local raft log; the
         // authoritative copy of trimmed-away data lives in L1. Local retention
@@ -279,6 +288,10 @@ frontend::make_reader(cloud_topic_log_reader_config cfg) {
     } else {
         const auto lro = _ctp_stm_api->get_last_reconciled_offset();
         level_one = lro > kafka::offset::min() && cfg.start_offset <= lro;
+        // L1 only holds data up to the last reconciled offset; anything past it
+        // is still L0-only. Bound the L1 read there so it does not wait for the
+        // reconciler to catch up (see l1_upper_bound).
+        l1_upper_bound = lro;
 
         vlog(
           cd_log.debug,
@@ -313,6 +326,10 @@ frontend::make_reader(cloud_topic_log_reader_config cfg) {
         if (!tidp) {
             throw topic_config_not_found_exception(ntp());
         }
+        // Bound the L1 read at the reconciled boundary so the reader ends the
+        // stream there rather than blocking on not-yet-reconciled offsets; the
+        // next fetch re-routes to L0 for the tail.
+        cfg.max_offset = std::min(cfg.max_offset, l1_upper_bound);
         co_return storage::translating_reader{
           co_await make_l1_reader(cfg, *tidp)};
     }
