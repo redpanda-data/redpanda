@@ -225,7 +225,9 @@ void append_record_to_buffer(iobuf& a, const model::record& r) {
     append_vint_to_iobuf(a, r.timestamp_delta());
     append_vint_to_iobuf(a, r.offset_delta());
 
-    a.reserve_memory(r.key_size() + r.value_size());
+    auto key_bytes = std::max(r.key_size(), 0);
+    auto val_bytes = std::max(r.value_size(), 0);
+    a.reserve_memory(key_bytes + val_bytes);
     append_vint_to_iobuf(a, r.key_size());
     if (r.key_size() > 0) {
         for (auto& f : r.key()) {
