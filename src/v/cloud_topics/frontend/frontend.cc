@@ -13,9 +13,8 @@
 #include "cloud_storage/types.h"
 #include "cloud_topics/data_plane_api.h"
 #include "cloud_topics/frontend/errc.h"
-#include "cloud_topics/level_one/frontend_reader/l1_reader_cache.h"
-#include "cloud_topics/level_one/frontend_reader/level_one_reader.h"
 #include "cloud_topics/level_one/metastore/metastore.h"
+#include "cloud_topics/level_one/prefetch/l1_fetch_service.h"
 #include "cloud_topics/level_zero/common/extent_meta.h"
 #include "cloud_topics/level_zero/common/producer_queue.h"
 #include "cloud_topics/level_zero/frontend_reader/level_zero_reader.h"
@@ -314,7 +313,8 @@ frontend::make_reader(cloud_topic_log_reader_config cfg) {
         if (!tidp) {
             throw topic_config_not_found_exception(ntp());
         }
-        co_return storage::translating_reader{make_l1_reader(cfg, *tidp)};
+        co_return storage::translating_reader{
+          co_await make_l1_reader(cfg, *tidp)};
     }
     co_return storage::translating_reader{
       model::record_batch_reader(make_l0_reader(cfg)),
@@ -413,28 +413,21 @@ ss::future<size_t> frontend::size_bytes() {
     co_return l0_size + l1_size_res.value().size;
 }
 
-model::record_batch_reader frontend::make_l1_reader(
+ss::future<model::record_batch_reader> frontend::make_l1_reader(
   const cloud_topic_log_reader_config& cfg,
   model::topic_id_partition tidp) const {
+    // The L1 read path serves data through the shared batch cache as a
+    // best-effort store: the prefetch service decodes batches into it ahead of
+    // demand, and the reader consumes them from there. Under memory pressure
+    // the cache may evict entries before consumption; a subsequent fetch at the
+    // same offset will re-produce the data. If the batch cache is disabled
+    // (global disable_batch_cache, or a topic with cache_enabled=false) L1
+    // reads will not return data; this is an accepted product limitation, not
+    // a fallback to direct object storage. l1_fetch_service::get_reader emits
+    // a rate-limited warning when it observes the cache disabled.
     auto ct_state = _partition->get_cloud_topics_state();
-    auto* cache = ct_state->local().get_l1_reader_cache();
-    if (cache) {
-        if (auto hit = cache->get_reader(tidp, cfg); hit) {
-            return std::move(*hit);
-        }
-    }
-
-    auto l1_metastore = ct_state->local().get_l1_metastore();
-    auto l1_io = ct_state->local().get_l1_io();
-    auto l1_reader_probe = ct_state->local().get_l1_reader_probe();
-
-    auto reader = std::make_unique<level_one_log_reader_impl>(
-      cfg, _partition->ntp(), tidp, l1_metastore, l1_io, l1_reader_probe);
-
-    if (cache) {
-        return cache->put(std::move(reader));
-    }
-    return model::record_batch_reader(std::move(reader));
+    auto* svc = ct_state->local().get_l1_fetch_service();
+    return svc->get_reader(tidp, cfg);
 }
 
 ss::future<std::optional<storage::timequery_result>>

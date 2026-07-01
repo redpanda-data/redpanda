@@ -17,28 +17,6 @@ redpanda_cc_library(
 )
 
 redpanda_cc_library(
-    name = "l1_reader_cache",
-    srcs = [
-        "l1_reader_cache.cc",
-    ],
-    hdrs = [
-        "l1_reader_cache.h",
-    ],
-    visibility = ["//visibility:public"],
-    deps = [
-        ":reader",
-        "//src/v/cloud_topics:log_reader_config",
-        "//src/v/cloud_topics:logger",
-        "//src/v/config",
-        "//src/v/container:intrusive",
-        "//src/v/model",
-        "//src/v/random:time_jitter",
-        "//src/v/ssx:future_util",
-        "@seastar",
-    ],
-)
-
-redpanda_cc_library(
     name = "reader",
     srcs = [
         "level_one_reader.cc",

@@ -74,17 +74,6 @@ ss::future<> app::construct(
     co_await construct_service(_l1_file_io_probe);
 
     co_await construct_service(
-      _l1_reader_cache,
-      ss::sharded_parameter([] {
-          return config::shard_local_cfg()
-            .cloud_topics_l1_reader_cache_eviction_timeout_ms.bind();
-      }),
-      ss::sharded_parameter([] {
-          return config::shard_local_cfg()
-            .cloud_topics_l1_reader_cache_max_size.bind();
-      }));
-
-    co_await construct_service(
       l1_io,
       config::node().l1_staging_path(),
       ss::sharded_parameter([&remote] { return &remote->local(); }),
@@ -117,6 +106,48 @@ ss::future<> app::construct(
       ss::sharded_parameter([&remote] { return std::ref(remote->local()); }),
       bucket);
 
+    // Registered after l1_io, replicated_metastore, and the data_plane (which
+    // owns the batch_cache) so it is stopped before any of them: the service's
+    // produce()/reader paths reference all three. The data_plane is stopped in
+    // app::stop() after the sharded_service_container shutdown, so the
+    // batch_cache outlives the service too.
+    co_await construct_service(
+      _l1_fetch_service,
+      ss::sharded_parameter([this] { return &replicated_metastore.local(); }),
+      ss::sharded_parameter([this] { return &l1_io.local(); }),
+      ss::sharded_parameter([this] { return data_plane->get_batch_cache(); }),
+      ss::sharded_parameter([] {
+          return config::shard_local_cfg()
+            .cloud_topics_l1_prefetch_memory_budget_bytes.bind();
+      }),
+      ss::sharded_parameter([] {
+          return config::shard_local_cfg()
+            .cloud_topics_l1_prefetch_max_streams.bind();
+      }),
+      ss::sharded_parameter([] {
+          return config::shard_local_cfg()
+            .cloud_topics_l1_prefetch_idle_timeout_ms.bind();
+      }),
+      ss::sharded_parameter([] {
+          return config::shard_local_cfg()
+            .cloud_topics_l1_prefetch_max_in_flight.bind();
+      }),
+      ss::sharded_parameter([] {
+          return config::shard_local_cfg()
+            .cloud_topics_l1_prefetch_fill_watermark_bytes.bind();
+      }),
+      ss::sharded_parameter([] {
+          const auto& cfg = config::shard_local_cfg();
+          return prefetch::pacer_config{
+            .min_window = cfg.cloud_topics_l1_prefetch_min_window_bytes(),
+            .max_window = cfg.cloud_topics_l1_prefetch_max_window_bytes(),
+            .min_chunk = cfg.cloud_topics_l1_prefetch_min_chunk_bytes(),
+            .max_chunk = cfg.cloud_topics_l1_prefetch_max_chunk_bytes(),
+            .safety = cfg.cloud_topics_l1_prefetch_window_safety_factor(),
+          };
+      }),
+      ss::sharded_parameter([this] { return &_l1_reader_probe.local(); }));
+
     co_await construct_service(
       rr_snapshot_manager_,
       config::node().l1_staging_path(),
@@ -146,7 +177,7 @@ ss::future<> app::construct(
         [&metadata_cache] { return &metadata_cache->local(); }),
       ss::sharded_parameter([this] { return &_l1_reader_probe.local(); }),
       ss::sharded_parameter([this] { return &_l1_file_io_probe.local(); }),
-      ss::sharded_parameter([this] { return &_l1_reader_cache.local(); }),
+      ss::sharded_parameter([this] { return &_l1_fetch_service.local(); }),
       ss::sharded_parameter([this] { return &rr_metadata_manager_.local(); }),
       ss::sharded_parameter([this] { return &rr_snapshot_manager_.local(); }));
 
@@ -230,6 +261,8 @@ ss::future<> app::start() {
     co_await cleanup_tmp_files();
 
     co_await data_plane->start();
+    co_await _l1_fetch_service.invoke_on_all(
+      &prefetch::l1_fetch_service::start);
     co_await reconciler.invoke_on_all(&reconciler::reconciler<>::start);
     co_await domain_supervisor.invoke_on_all(
       [](auto& ds) { return ds.start(); });
@@ -296,6 +329,21 @@ ss::future<> app::wire_up_notifications() {
                   hm.start_housekeeper(tidp, std::move(*partition));
               } else {
                   hm.stop_housekeeper(tidp);
+              }
+          });
+    });
+    // Tear down L1 prefetch streams promptly when a partition loses leadership
+    // or stops (partition == nullptr). Without this the streams linger until
+    // their idle_timeout (60s) holding pinned + reserved memory (spec
+    // "Partition stop / leadership loss" invariant, §9).
+    co_await _l1_fetch_service.invoke_on_all([this](auto& svc) {
+        manager.local().on_ctp_partition_leader(
+          [&svc](
+            const model::ntp&,
+            const model::topic_id_partition& tidp,
+            auto partition) noexcept {
+              if (!partition) {
+                  svc.notify_partition_stopped(tidp);
               }
           });
     });

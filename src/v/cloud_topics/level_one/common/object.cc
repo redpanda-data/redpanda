@@ -129,6 +129,25 @@ constinit const static size_t batch_header_size = compute_batch_header_size();
 
 } // namespace
 
+const size_t l1_batch_header_size = batch_header_size;
+
+model::record_batch_header parse_batch_header(iobuf_parser& p) {
+    // Read the whole header in one shot, then decode field-by-field so we
+    // can reuse the same for_each_batch_header_field / from_bytes machinery
+    // used by the streaming reader.
+    auto raw = p.copy(batch_header_size);
+    iobuf_const_parser hp(raw);
+    model::record_batch_header hdr;
+    for_each_batch_header_field(hdr, [&hp](auto& field) {
+        constexpr size_t field_size = sizeof(as_bytes(field));
+        using T = std::remove_reference_t<decltype(field)>;
+        char buf[field_size]; // NOLINT
+        hp.consume_to(field_size, buf);
+        field = from_bytes<T>(buf);
+    });
+    return hdr;
+}
+
 footer::partition footer::partition::copy() const {
     return {
       .file_position = file_position,
@@ -596,14 +615,10 @@ private:
                 batch_header_size,
                 hdr_buf.size()));
         }
-        model::record_batch_header hdr;
-        for_each_batch_header_field(hdr, [&hdr_buf](auto& field) {
-            constinit static size_t field_size = sizeof(as_bytes(field));
-            using T = std::remove_reference_t<decltype(field)>;
-            field = from_bytes<T>(hdr_buf.get());
-            hdr_buf.trim_front(field_size);
-        });
-        co_return hdr;
+        iobuf raw;
+        raw.append(hdr_buf.get(), hdr_buf.size());
+        iobuf_parser p(std::move(raw));
+        co_return parse_batch_header(p);
     }
 
     ss::input_stream<char> _input;

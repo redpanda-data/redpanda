@@ -108,6 +108,8 @@ public:
     MOCK_METHOD(ss::future<>, start, (), (override));
 
     MOCK_METHOD(ss::future<>, stop, (), (override));
+
+    MOCK_METHOD(cloud_topics::batch_cache*, get_batch_cache, (), (override));
 };
 
 auto make_extent_fut(model::offset o, cluster_epoch epoch) {

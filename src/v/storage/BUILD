@@ -114,6 +114,7 @@ redpanda_cc_library(
     ],
     visibility = [
         "//src/v/cloud_topics/batch_cache:__pkg__",
+        "//src/v/cloud_topics/level_one/prefetch:__pkg__",
         "//src/v/resource_mgmt/tests:__pkg__",
         "//src/v/storage/tests:__pkg__",
     ],

@@ -58,6 +58,7 @@ redpanda_cc_library(
     ],
     deps = [
         "//src/v/base",
+        "//src/v/bytes:iobuf_parser",
         "//src/v/container:chunked_vector",
         "//src/v/model",
         "//src/v/serde",

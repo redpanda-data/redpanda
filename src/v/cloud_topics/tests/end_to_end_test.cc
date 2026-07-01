@@ -9,7 +9,13 @@
  */
 
 #include "cloud_io/tests/s3_imposter.h"
+#include "cloud_topics/app.h"
+#include "cloud_topics/batch_cache/batch_cache.h"
+#include "cloud_topics/data_plane_api.h"
+#include "cloud_topics/level_one/prefetch/l1_fetch_service.h"
+#include "cloud_topics/level_one/prefetch/prefetch_probe.h"
 #include "cloud_topics/level_zero/stm/ctp_stm.h"
+#include "cloud_topics/state_accessors.h"
 #include "kafka/server/tests/list_offsets_utils.h"
 #include "kafka/server/tests/produce_consume_utils.h"
 #include "model/batch_builder.h"
@@ -33,6 +39,22 @@ using tests::kafka_produce_transport;
 using tests::kv_t;
 
 static ss::logger e2e_test_log("e2e_test");
+
+namespace cloud_topics {
+// Friend accessor for batch_cache — allows test code to force-evict cache
+// entries for a given tidp, making L1 reads deterministically hit the cloud
+// instead of being served from the warm produce-path cache.
+struct batch_cache_accessor {
+    static void
+    reclaim_all(batch_cache& c, const model::topic_id_partition& tidp) {
+        auto it = c._entries.find(tidp);
+        if (it != c._entries.end()) {
+            it->second.index->testing_reclaim_from_cache(
+              std::numeric_limits<size_t>::max());
+        }
+    }
+};
+} // namespace cloud_topics
 
 class e2e_fixture
   : public s3_imposter_fixture
@@ -334,4 +356,105 @@ TEST_F(e2e_fixture, test_tailing_consumer_no_l0_downloads) {
       << " unexpected S3 GetObject request(s) during tailing consume. "
          "This indicates a race between replicate() and cache_put() "
          "in the cloud topics write path.";
+}
+
+// End-to-end proof that the LIVE L1 read path routes a consumer fetch through
+// the l1_fetch_service (Task 9 wiring): produce -> reconcile into L1 -> consume
+// from offset 0. The consume traverses frontend::make_reader's L1 branch, which
+// now calls l1_fetch_service::get_reader via the state_accessors. We assert:
+//   1. The scan returns every produced record in order with correct payloads.
+//   2. The prefetch service was actually exercised (its probe shows a download
+//      driven by this consume) — i.e. the read went through the new service,
+//      not the removed l1_reader_cache.
+TEST_F(e2e_fixture, test_l1_read_path_through_prefetch_service) {
+    // Run with the batch cache ENABLED — the supported configuration. The L1
+    // read path serves data exclusively through the shared batch cache, so a
+    // disabled cache disables L1 reads by design (see
+    // l1_fetch_service::get_reader). The produce path may pre-warm the cache,
+    // but the prefetch service's producer still drives a real cloud download to
+    // fill its prefetch window when get_reader creates a stream (it does not
+    // short-circuit on already-cached offsets), so the downloads-counter
+    // assertion below remains deterministic.
+    auto* producer = make_producer();
+    const size_t total_records = 100;
+    const size_t records_per_batch = 5;
+    std::vector<kv_t> records;
+    for (size_t i = 0; i < total_records; i += records_per_batch) {
+        std::vector<kv_t> batch;
+        for (size_t j = 0; j < records_per_batch; j++) {
+            records.emplace_back(
+              ssx::sformat("key{}", i + j), ssx::sformat("val{}", i + j));
+            batch.push_back(records.back());
+        }
+        producer
+          ->produce_to_partition(topic_name, model::partition_id(0), batch)
+          .get();
+    }
+
+    auto partition = app.partition_manager.local().get(ntp);
+    auto state = partition->get_cloud_topics_state();
+    ASSERT_NE(state, nullptr);
+    auto topic_id = partition->get_topic_config()->get().tp_id;
+    ASSERT_NE(topic_id, std::nullopt);
+
+    // Wait until reconciliation has pushed the produced data into L1.
+    RPTEST_REQUIRE_EVENTUALLY(30s, [state, topic_id, this]() {
+        return state->local()
+          .get_l1_metastore()
+          ->get_offsets({*topic_id, ntp.tp.partition})
+          .then([](auto result) {
+              return result.has_value()
+                     && result.value().next_offset > kafka::offset{99};
+          });
+    });
+
+    // Force-evict the batch cache for this partition so the L1 read cannot be
+    // served from the produce-path warm entries. Without this, if the
+    // reconciled offsets are still resident in the shared batch cache the
+    // prefetch service never issues a cloud download, making the
+    // downloads-counter assertion below flaky (0 vs 0 when the cache is warm).
+    {
+        model::topic_id_partition tidp{*topic_id, ntp.tp.partition};
+        auto* bc = app.cloud_topics_app->get_state()
+                     ->local()
+                     .get_data_plane()
+                     ->get_batch_cache();
+        ASSERT_NE(bc, nullptr);
+        cloud_topics::batch_cache_accessor::reclaim_all(*bc, tidp);
+    }
+
+    // Snapshot the prefetch service probe before the L1 read so the deltas
+    // attribute unambiguously to this consume.
+    auto* svc
+      = app.cloud_topics_app->get_state()->local().get_l1_fetch_service();
+    ASSERT_NE(svc, nullptr);
+    const auto downloads_before = svc->probe().downloads();
+
+    // Consume the whole partition from offset 0. This drives the L1 read path:
+    // frontend::make_reader -> L1 branch -> l1_fetch_service::get_reader.
+    auto consumer = make_consumer();
+    auto consumed = consumer
+                      ->consume_from_partition(
+                        topic_name, model::partition_id(0), model::offset(0))
+                      .get();
+
+    ASSERT_EQ(consumed.size(), records.size());
+    for (const auto& [expected, got] : std::views::zip(records, consumed)) {
+        ASSERT_EQ(expected.key, got.key);
+        ASSERT_EQ(expected.val, got.val);
+    }
+
+    // The L1 read must have gone through the prefetch service: with the
+    // produce-path cache disabled, serving the consume required at least one
+    // cloud download driven by l1_fetch_service. This is the live-path proof
+    // that frontend::make_reader now routes L1 through the prefetch service.
+    ASSERT_GT(svc->probe().downloads(), downloads_before)
+      << "L1 consume did not drive any download through l1_fetch_service; the "
+         "read path is not routed through the prefetch service";
+
+    // The warm consecutive-fetch / no-metastore-requery behaviour is asserted
+    // deterministically at the service level in l1_fetch_service_test's
+    // warm_get_reader_reuses_stream (a single fetch RPC here may not split into
+    // multiple get_reader calls, so cache-hit counting is not deterministic at
+    // the e2e layer).
 }

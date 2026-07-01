@@ -29,6 +29,8 @@
 
 namespace cloud_topics {
 
+class batch_cache;
+
 // staged_write is a write operation that has been reserved in the pipeline.
 // it is decoupled from uploading so that we can provide backpressure before
 // accepting more batches into the pipeline
@@ -124,6 +126,13 @@ public:
       model::offset last_known,
       model::timeout_clock::time_point deadline,
       std::optional<std::reference_wrapper<ss::abort_source>> as) = 0;
+
+    /// Returns the shared per-shard record batch cache. The L1 prefetch service
+    /// lands decoded batches here ahead of demand as a best-effort cache; the
+    /// entries are not pinned, so under memory pressure they may be evicted and
+    /// re-produced on the consumer's next fetch. Never null (the cache exists
+    /// even when caching is disabled).
+    virtual cloud_topics::batch_cache* get_batch_cache() = 0;
 };
 
 } // namespace cloud_topics

@@ -238,7 +238,7 @@ private:
     std::unique_ptr<model::record_batch_reader::impl>
     make_l0_reader(const cloud_topic_log_reader_config& cfg) const;
 
-    model::record_batch_reader make_l1_reader(
+    ss::future<model::record_batch_reader> make_l1_reader(
       const cloud_topic_log_reader_config& cfg,
       model::topic_id_partition tidp) const;
 

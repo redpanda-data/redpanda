@@ -871,6 +871,19 @@ public:
     property<std::chrono::milliseconds>
       cloud_topics_l1_reader_cache_eviction_timeout_ms;
     bounded_property<size_t> cloud_topics_l1_reader_cache_max_size;
+
+    property<size_t> cloud_topics_l1_prefetch_memory_budget_bytes;
+    bounded_property<size_t> cloud_topics_l1_prefetch_max_streams;
+    property<std::chrono::milliseconds>
+      cloud_topics_l1_prefetch_idle_timeout_ms;
+    property<size_t> cloud_topics_l1_prefetch_min_chunk_bytes;
+    property<size_t> cloud_topics_l1_prefetch_max_chunk_bytes;
+    property<size_t> cloud_topics_l1_prefetch_min_window_bytes;
+    property<size_t> cloud_topics_l1_prefetch_max_window_bytes;
+    bounded_property<size_t> cloud_topics_l1_prefetch_max_in_flight;
+    property<double> cloud_topics_l1_prefetch_window_safety_factor;
+    property<size_t> cloud_topics_l1_prefetch_fill_watermark_bytes;
+
     property<bool> code_hugepages_enabled;
 
     development_feature_property<int> development_feature_property_testing_only;

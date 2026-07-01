@@ -5160,18 +5160,98 @@ configuration::configuration()
   , cloud_topics_l1_reader_cache_eviction_timeout_ms(
       *this,
       "cloud_topics_l1_reader_cache_eviction_timeout_ms",
-      "Time after which idle L1 readers are evicted from the per-shard "
-      "reader cache.",
-      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
+      "Deprecated: the l1_reader_cache has been replaced by the "
+      "l1_fetch_service prefetch pipeline.",
+      {.needs_restart = needs_restart::no,
+       .visibility = visibility::deprecated},
       60'000ms)
   , cloud_topics_l1_reader_cache_max_size(
       *this,
       "cloud_topics_l1_reader_cache_max_size",
-      "Maximum number of L1 readers cached per shard. When the cache exceeds "
-      "this limit, the oldest idle reader is evicted.",
-      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
+      "Deprecated: the l1_reader_cache has been replaced by the "
+      "l1_fetch_service prefetch pipeline.",
+      {.needs_restart = needs_restart::no,
+       .visibility = visibility::deprecated},
       128,
       {.min = 0, .max = 10000})
+  , cloud_topics_l1_prefetch_memory_budget_bytes(
+      *this,
+      "cloud_topics_l1_prefetch_memory_budget_bytes",
+      "Per-shard memory reservation budget for the L1 prefetch service. All "
+      "prefetched-but-unconsumed data (pinned decoded batches, in-flight "
+      "download buffers, reorder buffers) is reserved against this budget. "
+      "Benchmark-tunable; a future revision may derive it from a cloud_topics "
+      "memory group share.",
+      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
+      256_MiB)
+  , cloud_topics_l1_prefetch_max_streams(
+      *this,
+      "cloud_topics_l1_prefetch_max_streams",
+      "Maximum number of concurrently driven L1 prefetch streams per shard. "
+      "When the cap is exceeded the least-recently-used idle stream is "
+      "reclaimed.",
+      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
+      128,
+      {.min = 0})
+  , cloud_topics_l1_prefetch_idle_timeout_ms(
+      *this,
+      "cloud_topics_l1_prefetch_idle_timeout_ms",
+      "Time an L1 prefetch stream is kept warm after its last reader detaches "
+      "before it is reclaimed, so the next fetch in a scan lands warm.",
+      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
+      60'000ms)
+  , cloud_topics_l1_prefetch_min_chunk_bytes(
+      *this,
+      "cloud_topics_l1_prefetch_min_chunk_bytes",
+      "Lower bound on the size of an individual L1 prefetch download chunk. "
+      "Small chunks give fast time-to-first-byte and fine-grained pacing.",
+      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
+      256_KiB)
+  , cloud_topics_l1_prefetch_max_chunk_bytes(
+      *this,
+      "cloud_topics_l1_prefetch_max_chunk_bytes",
+      "Upper bound on the size of an individual L1 prefetch download chunk. "
+      "Chunks grow toward this size as a stream proves it drains.",
+      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
+      4_MiB)
+  , cloud_topics_l1_prefetch_min_window_bytes(
+      *this,
+      "cloud_topics_l1_prefetch_min_window_bytes",
+      "Lower bound on the adaptive prefetch window (the volume of data kept "
+      "ready ahead of the consumer) for an L1 prefetch stream.",
+      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
+      1_MiB)
+  , cloud_topics_l1_prefetch_max_window_bytes(
+      *this,
+      "cloud_topics_l1_prefetch_max_window_bytes",
+      "Upper bound on the adaptive prefetch window for an L1 prefetch stream.",
+      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
+      64_MiB)
+  , cloud_topics_l1_prefetch_max_in_flight(
+      *this,
+      "cloud_topics_l1_prefetch_max_in_flight",
+      "Maximum number of concurrent object-storage download requests issued by "
+      "the L1 prefetch service per shard, across all streams.",
+      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
+      20,
+      {.min = 1})
+  , cloud_topics_l1_prefetch_window_safety_factor(
+      *this,
+      "cloud_topics_l1_prefetch_window_safety_factor",
+      "Headroom multiplier applied to the adaptive prefetch window target "
+      "(consume-rate x refill-latency x safety-factor) so the window stays "
+      "ahead of the consumer.",
+      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
+      1.5)
+  , cloud_topics_l1_prefetch_fill_watermark_bytes(
+      *this,
+      "cloud_topics_l1_prefetch_fill_watermark_bytes",
+      "Decoded bytes that must be cached before get_reader hands the "
+      "memory-first reader back to the Kafka fetch path (reader-creation fill "
+      "gate). Set to 1 for minimal latency; increase for benchmarked "
+      "throughput gains.",
+      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
+      1)
   , code_hugepages_enabled(
       *this,
       "code_hugepages_enabled",

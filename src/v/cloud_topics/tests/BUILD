@@ -18,7 +18,7 @@ redpanda_test_cc_library(
 
 redpanda_cc_gtest(
     name = "end_to_end_test",
-    timeout = "short",
+    timeout = "moderate",
     srcs = [
         "end_to_end_test.cc",
     ],
@@ -29,6 +29,13 @@ redpanda_cc_gtest(
         "//src/v/cloud_io/tests:s3_imposter",
         "//src/v/cloud_storage",
         "//src/v/cloud_storage_clients",
+        "//src/v/cloud_topics:app",
+        "//src/v/cloud_topics:data_plane_api",
+        "//src/v/cloud_topics:state_accessors",
+        "//src/v/cloud_topics/batch_cache",
+        "//src/v/cloud_topics/level_one/metastore",
+        "//src/v/cloud_topics/level_one/prefetch:l1_fetch_service",
+        "//src/v/cloud_topics/level_one/prefetch:prefetch_probe",
         "//src/v/cloud_topics/level_zero/stm:ctp_stm",
         "//src/v/cluster:client_quota_backend",
         "//src/v/cluster:cluster_utils",

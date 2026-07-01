@@ -26,25 +26,6 @@ redpanda_test_cc_library(
 )
 
 redpanda_cc_gtest(
-    name = "l1_reader_cache_test",
-    timeout = "short",
-    srcs = [
-        "l1_reader_cache_test.cc",
-    ],
-    deps = [
-        ":l1_reader_fixture",
-        "//src/v/cloud_topics:log_reader_config",
-        "//src/v/cloud_topics/level_one/frontend_reader:l1_reader_cache",
-        "//src/v/cloud_topics/level_one/frontend_reader:reader",
-        "//src/v/config",
-        "//src/v/model",
-        "//src/v/model/tests:random",
-        "//src/v/test_utils:gtest",
-        "@googletest//:gtest",
-    ],
-)
-
-redpanda_cc_gtest(
     name = "reader_test",
     timeout = "short",
     srcs = [

@@ -7,6 +7,7 @@ redpanda_cc_gtest(
         "batch_cache_test.cc",
     ],
     deps = [
+        "//src/v/base",
         "//src/v/bytes",
         "//src/v/bytes:iostream",
         "//src/v/cloud_topics/batch_cache",

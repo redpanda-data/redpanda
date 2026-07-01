@@ -241,6 +241,10 @@ public:
         co_await _cluster_services.local().invalidate_epoch_below(epoch);
     }
 
+    cloud_topics::batch_cache* get_batch_cache() final {
+        return &_batch_cache.local();
+    }
+
 private:
     ss::sharded<l0::cluster_services> _cluster_services;
     // Write path

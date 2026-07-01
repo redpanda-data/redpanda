@@ -14,6 +14,7 @@
 #include "base/format_to.h"
 #include "base/seastarx.h"
 #include "base/units.h"
+#include "bytes/iobuf_parser.h"
 #include "container/chunked_vector.h"
 #include "model/fundamental.h"
 #include "model/record.h"
@@ -29,6 +30,15 @@
 #include <limits>
 
 namespace cloud_topics::l1 {
+
+/// The size in bytes of a batch header as serialized in an L1 object.
+/// Equals model::packed_record_batch_header_size (61) plus 8 bytes for the
+/// raft term field appended by the L1 writer.
+extern const size_t l1_batch_header_size;
+
+/// Parse an L1-encoded record_batch_header from an iobuf_parser.
+/// The caller must ensure at least l1_batch_header_size bytes are available.
+model::record_batch_header parse_batch_header(iobuf_parser&);
 
 // clang-format off
 // L1 Object File Format:

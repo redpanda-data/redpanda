@@ -180,9 +180,16 @@ public:
         model::record_batch batch(size_t o);
         model::record_batch_header header(size_t o);
 
-        void pin() { _pinned = true; }
-        void unpin() { _pinned = false; }
-        bool pinned() const { return _pinned; }
+        // Pinning is reference counted: a range stays pinned while any pin is
+        // held. This lets a transient lock_guard compose with a long-lived pin
+        // (e.g. the cloud_topics prefetch service pinning un-consumed batches)
+        // without one releasing the other's protection.
+        void pin() { ++_pinned; }
+        void unpin() {
+            vassert(_pinned > 0, "unpin of an unpinned range");
+            --_pinned;
+        }
+        bool pinned() const { return _pinned > 0; }
 
         void mark_clean(model::offset up_to) {
             if (_max_dirty_offset <= up_to) {
@@ -212,7 +219,7 @@ public:
         // list of offsets to update batch_cache_index
         std::vector<model::offset> _offsets;
 
-        bool _pinned{false};
+        size_t _pinned{0};
 
         // Maximum dirty batch offset that is stored in this range. If a range
         // contains any dirty batch offsets we prevent its eviction so that
@@ -591,6 +598,32 @@ public:
      * Return the batch containing the specified offset, if one exists.
      */
     std::optional<model::record_batch> get(model::offset offset);
+
+    /// Pin the cache range that holds \p offset so the LRU reclaimer will not
+    /// drop it. Pins are reference counted at the range level, so the same
+    /// range may be pinned by several offsets; it stays resident until every
+    /// pin is released. Returns true if a live range was found and pinned.
+    /// A no-op (returns false) when the offset is not (or no longer) cached.
+    bool pin(model::offset offset) {
+        lock_guard lk(*this);
+        if (auto it = find_first_contains(offset); it != _index.end()) {
+            it->second.range()->pin();
+            return true;
+        }
+        return false;
+    }
+
+    /// Release a pin previously taken by pin() for \p offset. Returns true if a
+    /// live range was found and unpinned. Must be balanced with a prior pin()
+    /// that returned true; a no-op when the offset is not cached.
+    bool unpin(model::offset offset) {
+        lock_guard lk(*this);
+        if (auto it = find_first_contains(offset); it != _index.end()) {
+            it->second.range()->unpin();
+            return true;
+        }
+        return false;
+    }
 
     /**
      * \brief Return a contiguous range of cached batches.

@@ -8,6 +8,7 @@
  * https://github.com/redpanda-data/redpanda/blob/master/licenses/rcl.md
  */
 
+#include "base/units.h"
 #include "cloud_topics/batch_cache/batch_cache.h"
 #include "model/fundamental.h"
 #include "model/record.h"
@@ -15,6 +16,8 @@
 #include "redpanda/tests/fixture.h"
 
 #include <gtest/gtest.h>
+
+#include <limits>
 
 namespace cloud_topics {
 struct batch_cache_accessor {
@@ -32,6 +35,13 @@ struct batch_cache_accessor {
     contains_tidp(const batch_cache& c, const model::topic_id_partition& tidp) {
         auto it = c._entries.find(tidp);
         return it != c._entries.end() && it->second.index != nullptr;
+    }
+    static void
+    reclaim_all(batch_cache& c, const model::topic_id_partition& tidp) {
+        // Reclaim everything; pinned ranges are skipped by the storage
+        // reclaimer.
+        c._entries[tidp].index->testing_reclaim_from_cache(
+          std::numeric_limits<size_t>::max());
     }
 };
 
@@ -60,7 +70,23 @@ public:
     void reclaim(const model::topic_id_partition& tidp, size_t size) {
         cloud_topics::batch_cache_accessor::reclaim(_cache, tidp, size);
     }
+
+    void reclaim_all(const model::topic_id_partition& tidp) {
+        cloud_topics::batch_cache_accessor::reclaim_all(_cache, tidp);
+    }
 };
+
+// A batch large enough to land in its own batch_cache range (range_size is
+// 32 KiB). Used so per-offset pin/unpin maps to a distinct range.
+static model::record_batch make_large_batch(model::offset o) {
+    return model::test::make_random_batch(
+      model::test::record_batch_spec{
+        .offset = o,
+        .allow_compression = false,
+        .count = 1,
+        .record_sizes = std::vector<size_t>{64_KiB},
+      });
+}
 
 TEST_F(batch_cache_test_fixture, test_batch_cache_put_get) {
     auto tidp = model::topic_id_partition{
@@ -139,6 +165,34 @@ TEST_F(batch_cache_test_fixture, test_batch_cache_eviction) {
     ASSERT_FALSE(contains_tidp(tidp));
 
     _cache.stop().get();
+}
+
+// contains() is an offset-level residency probe: true only while a valid
+// (non-evicted) batch covering the offset is cached. It is distinct from the
+// entry-level contains_tidp() (which tracks the per-partition index, not
+// per-offset residency) and, unlike get(), copies no batch and touches no
+// hit/miss metrics.
+TEST_F(batch_cache_test_fixture, test_batch_cache_contains) {
+    auto tidp = model::topic_id_partition{
+      model::topic_id::create(), model::partition_id(0)};
+
+    // Unknown tidp / nothing cached -> false.
+    EXPECT_FALSE(_cache.contains(tidp, model::offset(42)));
+
+    auto batch = model::test::make_random_batch(model::offset(42), 10, false);
+    _cache.put(tidp, batch); // covers offsets [42, 51]
+
+    // Resident offsets within the cached batch -> true.
+    EXPECT_TRUE(_cache.contains(tidp, model::offset(42)));
+    EXPECT_TRUE(_cache.contains(tidp, model::offset(48)));
+    // An offset not covered by any cached batch -> false.
+    EXPECT_FALSE(_cache.contains(tidp, model::offset(100)));
+
+    // After the range is reclaimed the offset is no longer resident (the
+    // per-partition index entry may still linger until GC, but contains() is
+    // per-offset and reports false).
+    reclaim(tidp, 1);
+    EXPECT_FALSE(_cache.contains(tidp, model::offset(42)));
 }
 
 // Verify that put_ordered inserts batches into the cache and notifies
@@ -307,6 +361,61 @@ TEST_F(
     ASSERT_EQ(b->base_offset(), model::offset(10));
 
     _cache.stop().get();
+}
+
+// A pinned offset survives a forced reclaim pass that drops everything else.
+// This is the core correctness guarantee for the L1 prefetch service: an
+// un-consumed prefetched batch must remain retrievable until consumed, even
+// under memory pressure that triggers the storage LRU reclaimer.
+TEST_F(batch_cache_test_fixture, test_pin_survives_reclaim) {
+    auto tidp = model::topic_id_partition{
+      model::topic_id::create(), model::partition_id(0)};
+
+    auto pinned = make_large_batch(model::offset(0));
+    auto unpinned = make_large_batch(model::offset(1));
+
+    _cache.put(tidp, pinned);
+    _cache.put(tidp, unpinned);
+
+    // Pin the first offset; the second stays unpinned.
+    _cache.pin(tidp, model::offset(0));
+
+    // Both retrievable before reclaim.
+    ASSERT_TRUE(_cache.get(tidp, model::offset(0)).has_value());
+    ASSERT_TRUE(_cache.get(tidp, model::offset(1)).has_value());
+
+    // Force a full reclaim pass.
+    reclaim_all(tidp);
+
+    // The pinned offset survives; the unpinned one is gone.
+    auto survivor = _cache.get(tidp, model::offset(0));
+    ASSERT_TRUE(survivor.has_value())
+      << "pinned offset must survive reclaim under memory pressure";
+    ASSERT_EQ(survivor->base_offset(), model::offset(0));
+    ASSERT_FALSE(_cache.get(tidp, model::offset(1)).has_value())
+      << "unpinned offset should be collectible";
+
+    // After unpin the offset is collectible again.
+    _cache.unpin(tidp, model::offset(0));
+    reclaim_all(tidp);
+    ASSERT_FALSE(_cache.get(tidp, model::offset(0)).has_value())
+      << "after unpin the offset must be collectible";
+}
+
+// pin/unpin on a missing tidp or offset must be a safe no-op (the offset may
+// already have been evicted before the pin call).
+TEST_F(batch_cache_test_fixture, test_pin_unpin_missing_is_noop) {
+    auto tidp = model::topic_id_partition{
+      model::topic_id::create(), model::partition_id(0)};
+
+    // No index yet for tidp.
+    ASSERT_NO_THROW(_cache.pin(tidp, model::offset(0)));
+    ASSERT_NO_THROW(_cache.unpin(tidp, model::offset(0)));
+
+    // Index exists but offset absent.
+    _cache.put(tidp, make_large_batch(model::offset(0)));
+    ASSERT_NO_THROW(_cache.pin(tidp, model::offset(99)));
+    ASSERT_NO_THROW(_cache.unpin(tidp, model::offset(99)));
 }
 
 TEST_F(batch_cache_test_fixture, test_batch_cache_topic_recreation) {

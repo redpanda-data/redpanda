@@ -51,6 +51,10 @@ ss::future<> batch_cache::stop() {
     co_await _gate.close();
 }
 
+bool batch_cache::caching_enabled() const {
+    return _lm != nullptr && _lm->config().cache == storage::with_cache::yes;
+}
+
 void batch_cache::put(
   const model::topic_id_partition& tidp, const model::record_batch& b) {
     vassert(
@@ -85,6 +89,22 @@ void batch_cache::notify(
     }
 }
 
+void batch_cache::notify_produced(
+  const model::topic_id_partition& tidp, model::offset last_offset) {
+    notify(tidp, last_offset);
+}
+
+std::unique_ptr<storage::batch_cache_index> batch_cache::create_index() {
+    if (_lm == nullptr) {
+        return nullptr;
+    }
+    auto cache_ix = _lm->create_cache(storage::with_cache::yes);
+    if (!cache_ix.has_value()) {
+        return nullptr;
+    }
+    return std::make_unique<storage::batch_cache_index>(std::move(*cache_ix));
+}
+
 std::optional<model::record_batch>
 batch_cache::get(const model::topic_id_partition& tidp, model::offset o) {
     if (_lm == nullptr) {
@@ -115,6 +135,45 @@ batch_cache::get(const model::topic_id_partition& tidp, model::offset o) {
         return rb;
     }
     return std::nullopt;
+}
+
+bool batch_cache::contains(
+  const model::topic_id_partition& tidp, model::offset o) {
+    if (_lm == nullptr) {
+        return false;
+    }
+    _gate.check();
+    if (
+      auto it = _entries.find(tidp); it != _entries.end() && it->second.index) {
+        // Single-offset residency check: no copy, no LRU promote, no probe.
+        return it->second.index->has_contiguous_coverage(o, o);
+    }
+    return false;
+}
+
+bool batch_cache::pin(const model::topic_id_partition& tidp, model::offset o) {
+    if (_lm == nullptr) {
+        return false;
+    }
+    _gate.check();
+    if (
+      auto it = _entries.find(tidp); it != _entries.end() && it->second.index) {
+        return it->second.index->pin(o);
+    }
+    return false;
+}
+
+bool batch_cache::unpin(
+  const model::topic_id_partition& tidp, model::offset o) {
+    if (_lm == nullptr) {
+        return false;
+    }
+    _gate.check();
+    if (
+      auto it = _entries.find(tidp); it != _entries.end() && it->second.index) {
+        return it->second.index->unpin(o);
+    }
+    return false;
 }
 
 ss::future<> batch_cache::wait_for_offset(
