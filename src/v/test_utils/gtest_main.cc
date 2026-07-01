@@ -34,8 +34,16 @@ int main(int argc, char** argv) {
     seastar::testing::global_test_runner().start(argc, argv);
 
     int ret = 0;
-    seastar::testing::global_test_runner().run_sync(
-      [&ret] { return seastar::async([&ret] { ret = RUN_ALL_TESTS(); }); });
+    // Run gtest on a seastar::thread with a generous stack. The default
+    // seastar::thread stack (128KiB) is too small for tests that build and tear
+    // down deeply-nested structures (JSON/AVRO/protobuf conformance DOMs);
+    // big-endian hosts have larger stack frames and overflow first.
+    seastar::thread_attributes test_thread_attrs;
+    test_thread_attrs.stack_size = size_t{16} * 1024 * 1024;
+    seastar::testing::global_test_runner().run_sync([&ret, &test_thread_attrs] {
+        return seastar::async(
+          test_thread_attrs, [&ret] { ret = RUN_ALL_TESTS(); });
+    });
 
     int ss_ret = seastar::testing::global_test_runner().finalize();
     if (ret) {
