@@ -583,6 +583,7 @@ coordinator::sync_add_files(
           datalake_log.debug,
           "Rejecting request to add files for {}: too many pending files",
           tp);
+        probe_.increment_add_files_backpressure();
         co_return errc::failed;
     }
     vlog(
@@ -686,6 +687,7 @@ coordinator::sync_get_last_added_offsets(
         // Fall through to actually return offsets, even if we're under load.
         // Returning a valid response despite backpressure allows translators
         // to report lag.
+        probe_.increment_fetch_offsets_backpressure();
     }
     auto topic_it = stm_->state().topic_to_state.find(tp.topic);
     if (topic_it == stm_->state().topic_to_state.end()) {

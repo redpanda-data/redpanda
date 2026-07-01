@@ -30,9 +30,11 @@ redpanda_cc_library(
     name = "coordinator",
     srcs = [
         "coordinator.cc",
+        "coordinator_probe.cc",
     ],
     hdrs = [
         "coordinator.h",
+        "coordinator_probe.h",
     ],
     implementation_deps = [
         ":iceberg_snapshot_remover",
@@ -59,6 +61,7 @@ redpanda_cc_library(
         "//src/v/config",
         "//src/v/container:chunked_hash_map",
         "//src/v/container:chunked_vector",
+        "//src/v/metrics",
         "//src/v/model",
         "@abseil-cpp//absl/hash",
         "@seastar",
