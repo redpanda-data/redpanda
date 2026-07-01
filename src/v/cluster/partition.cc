@@ -479,8 +479,20 @@ ss::future<> partition::start(
     // are gated separately. Until partition_mode is set, partition_mode() is
     // `unset` and ntp_config falls back to the topic-config-derived mode.
     if (_partition_properties_stm) {
-        _partition_properties_stm->set_partition_mode_change_callback(
-          [this] { update_partition_mode(); });
+        _partition_properties_stm->set_partition_mode_change_callback([this] {
+            update_partition_mode();
+            // partition_mode drives should_construct_archiver (a migrating
+            // partition is tiered-mode, so it builds an archiver). On recovery
+            // partition_mode can restore from the log tail after
+            // start()/leadership -- too late for the construction check there
+            // -- so re-evaluate when it changes, letting a recovered migrating
+            // partition resume its migration mirror.
+            if (!_archiver_reeval_gate.is_closed()) {
+                ssx::spawn_with_gate(_archiver_reeval_gate, [this] {
+                    return maybe_start_archiver();
+                });
+            }
+        });
         update_partition_mode();
     }
 
@@ -561,6 +573,11 @@ ss::future<> partition::stop() {
     _as.request_abort();
 
     unregister_flush_hook(_archiver_flush_subscription);
+
+    // Drain any in-flight background archiver re-evaluation before taking the
+    // reset mutex below (a re-eval task holds it while (re)constructing the
+    // archiver), so stop() does not race archiver construction.
+    co_await _archiver_reeval_gate.close();
 
     {
         // `partition_manager::do_shutdown` (caller of stop) will assert
@@ -787,21 +804,35 @@ bool partition::should_construct_archiver() {
     // in the case of read replicas -- we still need the archiver to drive
     // manifest updates, etc.
     const auto& ntp_config = _raft->log()->config();
-    return config::shard_local_cfg().cloud_storage_enabled()
-           && config::shard_local_cfg().cloud_storage_disable_archiver_manager()
-           && _cloud_storage_api.local_is_initialized()
-           // The archiver can only be created for partitions that belong to
-           // user topics. This includes everything inside the kafka namespace
-           // except for the kafka consumer offsets topic. The consumer offsets
-           // topic is backed up separately by the cluster/cluster_metadata
-           // subsystem. The archival_metadata_stm can't be created for the
-           // consumer offsets topic partitions. The schema registry topic is
-           // not exempt from this. It should be possible to create an archiver
-           // for it.
-           && _raft->ntp().ns == model::kafka_namespace
-           && _raft->ntp().tp.topic != model::kafka_consumer_offsets_topic
-           && !ntp_config.cloud_topic_enabled()
-           && (ntp_config.is_archival_enabled() || ntp_config.is_read_replica_mode_enabled());
+    const bool base
+      = config::shard_local_cfg().cloud_storage_enabled()
+        && config::shard_local_cfg().cloud_storage_disable_archiver_manager()
+        && _cloud_storage_api.local_is_initialized()
+        // The archiver can only be created for partitions that
+        // belong to user topics. This includes everything inside
+        // the kafka namespace except for the kafka consumer
+        // offsets topic. The consumer offsets topic is backed up
+        // separately by the cluster/cluster_metadata subsystem.
+        // The archival_metadata_stm can't be created for the
+        // consumer offsets topic partitions. The schema registry
+        // topic is not exempt from this. It should be possible to
+        // create an archiver for it.
+        && _raft->ntp().ns == model::kafka_namespace
+        && _raft->ntp().tp.topic != model::kafka_consumer_offsets_topic;
+    if (!base) {
+        return false;
+    }
+    // A partition mid tiered->cloud migration keeps its archiver: it is
+    // tiered-mode (partition_mode is still tiered until cutover), so it is
+    // handled by the is_archival_enabled() branch and keeps uploading, GC'ing,
+    // and mirroring its tiered data. A cloud-mode partition (partition_mode
+    // cloud) needs no archiver; cutover advances partition_mode to cloud once
+    // the data has been mirrored into L1, after which this returns false.
+    if (ntp_config.cloud_topic_enabled()) {
+        return false;
+    }
+    return ntp_config.is_archival_enabled()
+           || ntp_config.is_read_replica_mode_enabled();
 }
 
 void partition::maybe_construct_archiver() {
@@ -959,6 +990,22 @@ ss::future<> partition::restart_archiver(bool should_notify_topic_config) {
         }
         co_await _archiver->start();
     }
+}
+
+ss::future<> partition::maybe_start_archiver() {
+    // The archiver is normally constructed in start(). A migrating partition's
+    // construction gate (should_construct_archiver) keys on partition_mode
+    // (tiered while migrating), which on recovery can restore from the log tail
+    // after start()/leadership -- too late for the construction check there --
+    // so a recovered migrating partition would never resume its migration
+    // mirror. This is re-evaluated on leadership and when partition_mode
+    // changes; construct the archiver if it is now warranted. restart_archiver
+    // builds it (the stop step is a no-op when _archiver is null) and is
+    // serialized with other (re)construction via the reset mutex.
+    if (_archiver || !should_construct_archiver()) {
+        co_return;
+    }
+    co_await restart_archiver(true);
 }
 
 std::optional<model::offset>
@@ -1790,12 +1837,41 @@ ss::future<> partition::maybe_sync_partition_mode() {
           features::feature::topic_mode_migration)) {
         co_return;
     }
-    // At this point in the stack a partition's mode is simply its topic's
-    // configured mode -- there is no migration yet -- so mirror topic_mode()
-    // through whenever they differ. (A legacy shadow_indexing topic has
-    // topic_mode() == unset; partition_mode starts unset too, so this is a
-    // no-op and it stays unset.)
+    // A partition upgraded from a pre-partition_mode release has
+    // partition_mode == unset. If its topic mode was switched to cloud/tsv2
+    // before we recorded partition_mode, a naive sync would jump straight to
+    // cloud and skip the migration. When the archival manifest still holds
+    // tiered data the partition really is tiered -- record that first, so the
+    // switch is handled as a migration below.
+    if (
+      _partition_properties_stm->partition_mode()
+        == model::redpanda_storage_mode::unset
+      && _archival_meta_stm && _archival_meta_stm->holds_archived_data()) {
+        auto res = co_await _partition_properties_stm->set_partition_mode(
+          model::redpanda_storage_mode::tiered);
+        if (res.has_error()) {
+            vlog(
+              clusterlog.debug,
+              "{}: failed to record tiered partition_mode: {}",
+              _raft->ntp(),
+              res.error().message());
+            co_return;
+        }
+    }
+
     const auto target = get_ntp_config().topic_mode();
+
+    // A tiered partition must be migrated to cloud/tsv2. Leave the mode as
+    // tiered to allow us to continue serving IO as normal; a background
+    // migration process will eventually flip the mode when ready.
+    if (
+      _partition_properties_stm->partition_mode()
+        == model::redpanda_storage_mode::tiered
+      && (target == model::redpanda_storage_mode::cloud
+          || target == model::redpanda_storage_mode::tiered_cloud)) {
+        co_return;
+    }
+
     if (_partition_properties_stm->partition_mode() == target) {
         co_return;
     }

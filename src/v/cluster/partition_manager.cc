@@ -73,6 +73,16 @@ partition_manager::partition_manager(
                 auto a = p->archiver();
                 if (a) {
                     a.value().get().notify_leadership(leader_id);
+                } else if (p->should_construct_archiver()) {
+                    // No archiver yet, but one is now warranted. The archiver
+                    // is normally built at partition start; a migrating
+                    // partition's construction gate keys on partition_mode,
+                    // which can restore from the log tail after start() (e.g. a
+                    // migrating partition recovered before its partition_mode
+                    // is applied). Re-evaluate on leadership so a recovered
+                    // migrating partition resumes its migration mirror.
+                    ssx::spawn_with_gate(
+                      _gate, [p] { return p->maybe_start_archiver(); });
                 }
                 // Sync the partition's durable storage mode to its topic
                 // config on becoming leader (no-op when not leader or already
