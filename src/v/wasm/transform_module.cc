@@ -147,16 +147,18 @@ ss::future<int32_t> transform_module::read_batch_header(
         co_return NO_ACTIVE_TRANSFORM;
     }
     const model::record_batch_header& header = _call_ctx->batch_header;
-    *base_offset = header.base_offset();
-    *record_count = header.record_count;
-    *partition_leader_epoch = int32_t(header.ctx.term());
-    *attributes = header.attrs.value();
-    *last_offset_delta = header.last_offset_delta;
-    *base_timestamp = header.first_timestamp();
-    *max_timestamp = header.max_timestamp();
-    *producer_id = header.producer_id;
-    *producer_epoch = header.producer_epoch;
-    *base_sequence = header.base_sequence;
+    // WASM linear memory is little-endian; out-parameters must be written in
+    // that layout regardless of host endianness.
+    ffi::write_guest(base_offset, header.base_offset());
+    ffi::write_guest(record_count, header.record_count);
+    ffi::write_guest(partition_leader_epoch, int32_t(header.ctx.term()));
+    ffi::write_guest(attributes, header.attrs.value());
+    ffi::write_guest(last_offset_delta, header.last_offset_delta);
+    ffi::write_guest(base_timestamp, header.first_timestamp());
+    ffi::write_guest(max_timestamp, header.max_timestamp());
+    ffi::write_guest(producer_id, header.producer_id);
+    ffi::write_guest(producer_epoch, header.producer_epoch);
+    ffi::write_guest(base_sequence, header.base_sequence);
 
     _wasi_module->set_walltime(
       header.attrs.timestamp_type() == model::timestamp_type::create_time
@@ -199,10 +201,10 @@ ss::future<int32_t> transform_module::read_next_record(
 
     _wasi_module->set_walltime(record.timestamp);
 
-    // Pass back the record's metadata
-    *attributes = record.attributes.value();
-    *timestamp = record.timestamp();
-    *offset = record.offset;
+    // Pass back the record's metadata (little-endian, per WASM memory layout)
+    ffi::write_guest(attributes, record.attributes.value());
+    ffi::write_guest(timestamp, record.timestamp());
+    ffi::write_guest(offset, record.offset);
 
     // Drop the metadata we already parsed
     _call_ctx->batch_data.trim_front(record.metadata_size);

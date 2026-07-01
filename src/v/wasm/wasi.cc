@@ -84,7 +84,7 @@ errno_t preview1_module::clock_res_get(clock_id_t id, timestamp_t* out) {
     case MONOTONIC_CLOCK_ID:
     case PROCESS_CPUTIME_CLOCK_ID:
     case THREAD_CPUTIME_CLOCK_ID: {
-        *out = to_timestamp(clock_resolution());
+        ffi::write_guest(out, to_timestamp(clock_resolution()));
         return ERRNO_SUCCESS;
     }
     default:
@@ -96,13 +96,13 @@ errno_t
 preview1_module::clock_time_get(clock_id_t id, timestamp_t, timestamp_t* out) {
     switch (id) {
     case REALTIME_CLOCK_ID: {
-        *out = to_timestamp(_wall_time);
+        ffi::write_guest(out, to_timestamp(_wall_time));
         return ERRNO_SUCCESS;
     }
     case MONOTONIC_CLOCK_ID:
     case PROCESS_CPUTIME_CLOCK_ID:
     case THREAD_CPUTIME_CLOCK_ID: {
-        *out = to_timestamp(_monotonic_time);
+        ffi::write_guest(out, to_timestamp(_monotonic_time));
         // Increment by our minimal resolution here so that busy sleep loops
         // used by languages by reading from the monotonic clock don't hang.
         _monotonic_time += clock_resolution();
@@ -130,7 +130,8 @@ void serialize_args(
     uint32_t position = offset;
     for (size_t i = 0; i < args.size(); ++i) {
         const auto& arg = args[i];
-        ptrs[i] = position;
+        // Pointer table entries are read by the guest in little-endian layout.
+        ffi::write_guest(&ptrs[i], position);
         data_out->append(arg);
         data_out->append(std::string_view{"\0", 1});
         position += arg.size() + 1;
@@ -140,8 +141,8 @@ void serialize_args(
 
 errno_t
 preview1_module::args_sizes_get(uint32_t* count_ptr, uint32_t* size_ptr) {
-    *count_ptr = _args.size();
-    *size_ptr = serialized_args_size(_args);
+    ffi::write_guest(count_ptr, uint32_t(_args.size()));
+    ffi::write_guest(size_ptr, serialized_args_size(_args));
     return ERRNO_SUCCESS;
 }
 
@@ -163,8 +164,8 @@ errno_t preview1_module::args_get(
 
 errno_t
 preview1_module::environ_sizes_get(uint32_t* count_ptr, uint32_t* size_ptr) {
-    *count_ptr = _environ.size();
-    *size_ptr = serialized_args_size(_environ);
+    ffi::write_guest(count_ptr, uint32_t(_environ.size()));
+    ffi::write_guest(size_ptr, serialized_args_size(_environ));
     return ERRNO_SUCCESS;
 }
 
@@ -244,8 +245,9 @@ errno_t preview1_module::fd_write(
         uint32_t amt = 0;
         auto level = fd == 1 ? ss::log_level::info : ss::log_level::warn;
         auto as_string_view = [mem, &amt](iovec_t vec) {
+            // iovec fields are stored in the guest's little-endian layout.
             ffi::array<uint8_t> data = mem->translate_array<uint8_t>(
-              vec.buf_addr, vec.buf_len);
+              ffi::read_guest(vec.buf_addr), ffi::read_guest(vec.buf_len));
             amt += static_cast<uint32_t>(data.size());
             return ffi::array_as_string_view(data);
         };
@@ -257,7 +259,7 @@ errno_t preview1_module::fd_write(
               iovecs | std::views::transform(as_string_view), "");
             _logger->log(level, joined);
         }
-        *written = amt;
+        ffi::write_guest(written, amt);
         return ERRNO_SUCCESS;
     }
     return ERRNO_NOSYS;
@@ -350,7 +352,7 @@ errno_t preview1_module::poll_oneoff(
         }
     }
     // Report how many events we wrote back out.
-    *retptr = nsubscriptions;
+    ffi::write_guest(retptr, nsubscriptions);
     return ERRNO_SUCCESS;
 }
 errno_t preview1_module::random_get(ffi::array<uint8_t> buf) {
