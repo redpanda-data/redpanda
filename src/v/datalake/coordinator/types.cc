@@ -46,6 +46,9 @@ std::ostream& operator<<(std::ostream& o, const errc& errc) {
     case errc::failed:
         o << "errc::failed";
         break;
+    default:
+        fmt::print(o, "errc::unknown({})", static_cast<int16_t>(errc));
+        break;
     }
     return o;
 }
