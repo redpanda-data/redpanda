@@ -40,7 +40,11 @@ from rptest.services.redpanda import (
 from rptest.tests.group_membership_test import GroupCoordinatorTransferUtils
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.util import search_logs_with_timeout
-from rptest.utils.mode_checks import in_fips_environment, skip_debug_mode
+from rptest.utils.mode_checks import (
+    in_fips_environment,
+    skip_debug_mode,
+    skip_file_in_cdt,
+)
 from rptest.utils.utf8 import CONTROL_CHARS_MAP
 
 
@@ -2447,3 +2451,9 @@ class PandaProxyCompressedBatchesTest(PandaProxyEndpoints):
         assert item["offset"] == produced_offset, (
             "Pandaproxy consumer fetch consumed the wrong offset"
         )
+
+
+# No-cloud suite: opt out of CDT (dockerized CI already covers it).
+skip_file_in_cdt(
+    reason="pandaproxy HTTP-API suite: no cloud-infra signal in CDT; dockerized CI covers it"
+)
