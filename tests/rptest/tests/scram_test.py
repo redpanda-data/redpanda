@@ -56,7 +56,7 @@ from rptest.tests.sasl_reauth_test import (
 )
 from rptest.util import expect_exception, expect_http_error
 from rptest.utils.log_utils import wait_until_nag_is_set
-from rptest.utils.mode_checks import in_fips_environment
+from rptest.utils.mode_checks import in_fips_environment, skip_file_in_cdt
 from rptest.utils.utf8 import (
     generate_string_with_control_character,
 )
@@ -1668,3 +1668,9 @@ class SCRAMReauthTest(BaseScramTest):
         )
         assert REAUTH_METRIC in metrics.keys()
         assert metrics[REAUTH_METRIC] > 0, "Expected client reauth on some broker..."
+
+
+# No-cloud suite: opt out of CDT (dockerized CI already covers it).
+skip_file_in_cdt(
+    reason="SASL/SCRAM auth suite: no cloud-infra signal in CDT; dockerized CI covers it"
+)
