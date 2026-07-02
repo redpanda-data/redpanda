@@ -21,6 +21,7 @@ from rptest.clients.types import TopicSpec
 from rptest.services.cluster import cluster
 from rptest.services.redpanda import RESTART_LOG_ALLOW_LIST
 from rptest.tests.maintenance import MaintenanceTestBase
+from rptest.utils.mode_checks import skip_file_in_cdt
 
 
 class MaintenanceTest(MaintenanceTestBase):
@@ -228,3 +229,9 @@ class MaintenanceCycleTest(MaintenanceTestBase):
             backoff_sec=2,
             err_msg="Leaders distributed very unevenly",
         )
+
+
+# No-cloud suite: opt out of CDT (dockerized CI already covers it).
+skip_file_in_cdt(
+    reason="maintenance-mode suite: no cloud-infra signal in CDT; dockerized CI covers it"
+)
