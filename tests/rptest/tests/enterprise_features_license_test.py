@@ -18,7 +18,7 @@ from rptest.services.redpanda import (
 )
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.util import expect_exception
-from rptest.utils.mode_checks import skip_fips_mode
+from rptest.utils.mode_checks import skip_fips_mode, skip_file_in_cdt
 
 
 class EnterpriseFeaturesTestBase(RedpandaTest):
@@ -345,3 +345,9 @@ class EnterpriseFeaturesTest(EnterpriseFeaturesTestBase):
         )
 
         self.check_feature(feature, enabled=False, license_valid=False)
+
+
+# No-cloud suite: opt out of CDT (dockerized CI already covers it).
+skip_file_in_cdt(
+    reason="enterprise-license enforcement suite: no cloud-infra signal in CDT; dockerized CI covers it"
+)
