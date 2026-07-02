@@ -29,6 +29,7 @@ from rptest.tests.redpanda_test import RedpandaTest
 from rptest.util import expect_exception, wait_until_result
 from rptest.utils.node_operations import NodeDecommissionWaiter
 from rptest.utils.rpenv import sample_license, sample_license_v1
+from rptest.utils.mode_checks import skip_file_in_cdt
 
 FEATURE_ALPHA_NAME = "__test_alpha"
 FEATURE_BRAVO_NAME = "__test_bravo"
@@ -2024,3 +2025,9 @@ class FeatureManagerDecommissionRegressionTest(FeaturesTestBase):
                 "feature_manager likely failed to wake on member removal."
             ),
         )
+
+
+# No-cloud suite: opt out of CDT (dockerized CI already covers it).
+skip_file_in_cdt(
+    reason="feature-flag suite: no cloud-infra signal in CDT; dockerized CI covers it"
+)
