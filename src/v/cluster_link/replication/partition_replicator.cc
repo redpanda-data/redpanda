@@ -121,6 +121,9 @@ ss::future<bool> partition_replicator::handle_replication_result(
         // source to sink
         // We only intend to backoff on consecutive failures.
         _backoff_policy.reset();
+        // The shadow high watermark just advanced, so a prefix truncation that
+        // was deferred waiting for the shadow to catch up can now proceed.
+        co_await maybe_synchronize_start_offset();
         co_return true;
     } catch (...) {
         auto eptr = std::current_exception();
