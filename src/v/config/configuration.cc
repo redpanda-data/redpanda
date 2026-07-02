@@ -5211,9 +5211,12 @@ configuration::configuration()
       *this,
       "cloud_topics_l1_prefetch_max_chunk_bytes",
       "Upper bound on the size of an individual L1 prefetch download chunk. "
-      "Chunks grow toward this size as a stream proves it drains.",
+      "Chunks are sized to the bandwidth-delay product (consume-rate x "
+      "refill-latency) so a single large object-storage GET can carry the "
+      "throughput instead of many small GETs contending for the connection "
+      "pool; this caps that adaptive size.",
       {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
-      4_MiB)
+      32_MiB)
   , cloud_topics_l1_prefetch_min_window_bytes(
       *this,
       "cloud_topics_l1_prefetch_min_window_bytes",
