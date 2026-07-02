@@ -37,7 +37,7 @@ from rptest.tests.metrics_reporter_test import MetricsReporterServer
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.util import expect_exception, expect_http_error, wait_until_result
 from rptest.utils.log_utils import wait_until_nag_is_set
-from rptest.utils.mode_checks import skip_fips_mode
+from rptest.utils.mode_checks import skip_fips_mode, skip_file_in_cdt
 
 ALICE = SaslCredentials("alice", "itsMeH0nest012", "SCRAM-SHA-256")
 
@@ -1231,3 +1231,9 @@ class RolePersistenceTest(RBACTestBase):
             backoff_sec=1,
             retry_on_exc=True,
         )
+
+
+# No-cloud suite: opt out of CDT (dockerized CI already covers it).
+skip_file_in_cdt(
+    reason="RBAC suite: no cloud-infra signal in CDT; dockerized CI covers it"
+)
