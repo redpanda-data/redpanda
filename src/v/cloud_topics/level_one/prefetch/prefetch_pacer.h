@@ -57,8 +57,18 @@ public:
     /// timestamps are ignored (divide-by-zero guard).
     void observe_consumed(size_t bytes, ss::lowres_clock::time_point now);
 
-    /// Feed a backend refill latency sample into the EWMA.
+    /// Feed a backend refill latency sample into the EWMA. Also advances the
+    /// slow-start demand window by one step (see note_demand_block): a refill
+    /// is one round-trip, so growth/decay is applied at most once per refill.
     void observe_refill_latency(std::chrono::milliseconds latency);
+
+    /// Signal that a reader blocked waiting for data (demand starvation) since
+    /// the last refill. Drives slow-start growth of the prefetch window in the
+    /// next observe_refill_latency so the window can climb ABOVE the
+    /// current-rate bandwidth-delay product. Without this the window pins at
+    /// the min_window floor whenever BDP < min_window (a low-throughput
+    /// equilibrium), and read throughput cannot ramp up.
+    void note_demand_block();
 
     /// Compute the prefetch window target in bytes.
     ///
@@ -90,6 +100,17 @@ private:
 
     // True once _latency_s has been seeded.
     bool _latency_seeded{false};
+
+    // Slow-start demand-driven window floor. Doubles once per refill while a
+    // reader has starved since the last refill, decays when the prefetcher
+    // keeps up. Lets window_target exceed the current-rate bandwidth-delay
+    // product so throughput can climb out of the min_window low-throughput
+    // equilibrium.
+    size_t _demand_window{0};
+
+    // Set by note_demand_block(), consumed (and cleared) by the next
+    // observe_refill_latency() so the demand window grows at most once per RTT.
+    bool _blocked_since_refill{false};
 
     // Previous observation for delta computation.
     std::optional<std::pair<size_t, ss::lowres_clock::time_point>> _prev;

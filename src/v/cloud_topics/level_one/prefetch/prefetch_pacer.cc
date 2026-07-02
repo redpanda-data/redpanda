@@ -65,12 +65,35 @@ void prefetch_pacer::observe_refill_latency(std::chrono::milliseconds latency) {
     } else {
         _latency_s = k_alpha * sample_s + (1.0 - k_alpha) * _latency_s;
     }
+
+    // Slow-start step, applied once per refill (~one round-trip). If a reader
+    // starved since the last refill, the current window is too small to keep
+    // the consumer fed, so double the demand window (capped at max_window) to
+    // push more bytes in flight next round. If nothing starved, the prefetcher
+    // is keeping up, so decay the demand window back toward the pure BDP and
+    // release the reservation it no longer needs.
+    if (_blocked_since_refill) {
+        size_t next = _demand_window == 0 ? _cfg.min_window
+                                          : _demand_window * 2;
+        _demand_window = std::min(next, _cfg.max_window);
+        _blocked_since_refill = false;
+    } else if (_demand_window > _cfg.min_window) {
+        _demand_window = (_demand_window * 3) / 4;
+    } else {
+        _demand_window = 0;
+    }
 }
 
+void prefetch_pacer::note_demand_block() { _blocked_since_refill = true; }
+
 size_t prefetch_pacer::window_target(size_t reservation_cap) const {
-    double target = _rate_bps * _latency_s * _cfg.safety;
-    auto clamped = static_cast<size_t>(
-      std::clamp(target, double(_cfg.min_window), double(_cfg.max_window)));
+    // Keep the larger of the bandwidth-delay product and the slow-start demand
+    // window: the BDP tracks steady-state need, the demand window lets the
+    // window climb above it while the consumer is starving (bootstrap out of
+    // the min_window floor).
+    double bdp = _rate_bps * _latency_s * _cfg.safety;
+    size_t want = std::max(static_cast<size_t>(bdp), _demand_window);
+    auto clamped = std::clamp(want, _cfg.min_window, _cfg.max_window);
     return std::min(clamped, reservation_cap);
 }
 

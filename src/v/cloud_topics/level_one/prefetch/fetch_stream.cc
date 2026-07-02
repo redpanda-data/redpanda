@@ -21,9 +21,11 @@
 #include "utils/retry_chain_node.h"
 
 #include <seastar/core/future-util.hh>
+#include <seastar/core/loop.hh>
 #include <seastar/coroutine/as_future.hh>
 
 #include <algorithm>
+#include <chrono>
 #include <exception>
 #include <limits>
 
@@ -218,57 +220,62 @@ fetch_stream::produce(size_t window_budget, size_t max_concurrent) {
 
     auto& cur = *_current;
 
-    // Dispatch up to `window_budget` bytes of chunks from the current run,
-    // CONCURRENTLY, with at most `max_concurrent` GETs in flight at once. All
-    // chunks belong to the same run, so the contiguous decode and slack carry
-    // stay well defined. The dispatch futures resolve once the GET has landed
-    // and been (attempted to be) fed to the reassembler.
-    chunked_vector<ss::future<>> dispatches;
+    // Build the pacer-sized chunk requests covering up to `window_budget` bytes
+    // of the current run. All chunks belong to the same run, so the contiguous
+    // decode and slack carry stay well defined.
+    struct chunk_req {
+        size_t pos;
+        size_t size;
+    };
+    chunked_vector<chunk_req> chunks;
     size_t dispatched_bytes = 0;
-    while (cur.run_cursor < cur.run_end && dispatched_bytes < window_budget
-           && dispatches.size() < max_concurrent) {
+    while (cur.run_cursor < cur.run_end && dispatched_bytes < window_budget) {
         size_t run_remaining = cur.run_end - cur.run_cursor;
-        // Each chunk is pacer-sized (clamped to the run remaining). The total
-        // window budget caps a single chunk so it never overshoots, but it does
-        // NOT shrink per chunk — that is what lets the window split into
-        // several pacer-sized chunks dispatched concurrently rather than one
-        // chunk that swallows the whole window.
-        size_t size = _pacer.next_chunk_size(run_remaining, window_budget);
+        // Each chunk is pacer-sized (clamped to the run remaining), and the
+        // final chunk is trimmed so the batch never overshoots the window.
+        size_t size = _pacer.next_chunk_size(
+          run_remaining, window_budget - dispatched_bytes);
         if (size == 0) {
             break;
         }
-        // Do not overshoot the window with the final chunk.
         size = std::min(size, window_budget - dispatched_bytes);
         if (size == 0) {
             break;
         }
-        size_t pos = cur.run_cursor;
+        chunks.push_back({.pos = cur.run_cursor, .size = size});
         cur.run_cursor += size;
         dispatched_bytes += size;
-        _in_flight_bytes += size;
-        dispatches.push_back(cur.downloader->dispatch(pos, size));
     }
+    _in_flight_bytes += dispatched_bytes;
 
-    // Wait for every dispatched GET to land before draining and before any
-    // run-boundary handling, so the reassembler sees the full contiguous run.
-    auto results = co_await ss::when_all(dispatches.begin(), dispatches.end());
+    // Download the chunks keeping up to `max_concurrent` GETs CONTINUOUSLY in
+    // flight (a sliding window) rather than dispatching one batch and blocking
+    // on the whole batch. Each dispatch drains its decoded batches into the
+    // cache in order as its GET lands (see chunk_downloader::dispatch), so the
+    // downloads overlap the decode and the object-storage connections stay busy
+    // for the full produce instead of going idle between batches — this is what
+    // lets a single-partition scan sustain many concurrent downloads. Chunk GET
+    // errors are recorded as a poison range inside the downloader and surfaced
+    // by take_ready() below, so dispatch() itself never fails here.
+    auto refill_start = ss::lowres_clock::now();
+    co_await ss::max_concurrent_for_each(
+      chunks, max_concurrent, [&cur](const chunk_req& c) {
+          return cur.downloader->dispatch(c.pos, c.size);
+      });
+    // Feed the refill (download round-trip) latency to the pacer. The adaptive
+    // prefetch window and download size are a bandwidth-delay product
+    // (consume_rate * refill_latency); without a latency sample the pacer's
+    // latency term stays zero and both the window and the chunk size collapse
+    // to their configured minimums, which caps read throughput. Floor at 1ms so
+    // a sub-tick (warm) refill still seeds a non-zero latency.
+    if (dispatched_bytes > 0) {
+        auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
+          ss::lowres_clock::now() - refill_start);
+        _pacer.observe_refill_latency(
+          std::max(elapsed, std::chrono::milliseconds(1)));
+    }
     // All dispatched GETs have resolved: they are no longer in-flight buffers.
     _in_flight_bytes -= std::min(_in_flight_bytes, dispatched_bytes);
-
-    for (auto& r : results) {
-        if (r.failed()) {
-            auto ex = r.get_exception();
-            vlog(_log.error, "Dispatch failed for object {}: {}", cur.oid, ex);
-            record_error(ex);
-            co_return;
-        }
-    }
-
-    // All dispatched chunk GETs landed: count the bytes read from the L1
-    // object against the reused L1 reader read_bytes metric.
-    if (_l1_reader_probe != nullptr && dispatched_bytes > 0) {
-        _l1_reader_probe->register_bytes_read(dispatched_bytes);
-    }
 
     chunked_vector<model::record_batch> batches;
     try {
@@ -376,6 +383,14 @@ void fetch_stream::on_consumed(
   kafka::offset up_to, size_t bytes, ss::lowres_clock::time_point now) {
     _last_active = now;
     _pacer.observe_consumed(bytes, now);
+    // Count bytes served to the consumer from L1 against the reader read_bytes
+    // metric. This mirrors the pre-prefetch level_one_reader, which counted
+    // served (not downloaded) bytes: a warm re-read served from the batch cache
+    // without a fresh object-storage GET must still register as L1 read work,
+    // otherwise "did the read pivot to L1" observability breaks on cache hits.
+    if (_l1_reader_probe != nullptr) {
+        _l1_reader_probe->register_bytes_read(bytes);
+    }
     // Clamp the released amount to what the stream actually held ahead of the
     // consumer so the broker reservation is never released below zero.
     size_t released = std::min(bytes, _cached_ahead_bytes);
@@ -450,6 +465,10 @@ void fetch_stream::unpin_all() {
 void fetch_stream::on_demand(kafka::offset blocked_at) {
     _last_active = ss::lowres_clock::now();
     _demand_watermark = std::max(_demand_watermark, blocked_at);
+    // A blocked reader means the prefetch window is too small to keep the
+    // consumer fed; drive the pacer's slow-start so the window grows past the
+    // current-rate BDP on the next refill.
+    _pacer.note_demand_block();
     _demand_observer();
 }
 

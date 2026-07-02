@@ -130,6 +130,42 @@ TEST(prefetch_pacer, chunk_grows_after_repeated_observations) {
     EXPECT_LE(prev, 4u << 20);
 }
 
+TEST(prefetch_pacer, demand_block_slow_start_grows_then_decays) {
+    // When the bandwidth-delay product is below min_window the window would pin
+    // to the floor; slow-start must lift it above the floor while a reader
+    // keeps starving, then decay it once the prefetcher keeps up.
+    prefetch_pacer p(
+      {.min_window = 1 << 20,
+       .max_window = 64 << 20,
+       .min_chunk = 256 << 10,
+       .max_chunk = 32 << 20,
+       .safety = 1.5});
+    auto t0 = ss::lowres_clock::time_point(std::chrono::seconds(0));
+    auto t1 = ss::lowres_clock::time_point(std::chrono::seconds(1));
+    p.observe_consumed(0, t0);
+    p.observe_consumed(1u << 20, t1); // ~1 MiB/s -> BDP well below min_window
+
+    // Each refill preceded by a demand-block doubles the window (slow-start).
+    size_t prev = p.window_target(1u << 30);
+    for (int i = 0; i < 4; ++i) {
+        p.note_demand_block();
+        p.observe_refill_latency(std::chrono::milliseconds(50));
+        size_t cur = p.window_target(1u << 30);
+        EXPECT_GE(cur, prev);
+        prev = cur;
+    }
+    // Grew above the min_window floor, still capped at max_window.
+    EXPECT_GT(prev, 1u << 20);
+    EXPECT_LE(prev, 64u << 20);
+
+    // With the consumer kept up (no demand blocks), the window decays back
+    // down.
+    for (int i = 0; i < 30; ++i) {
+        p.observe_refill_latency(std::chrono::milliseconds(50));
+    }
+    EXPECT_LT(p.window_target(1u << 30), prev);
+}
+
 TEST(prefetch_pacer, same_timestamp_ignored) {
     prefetch_pacer p(
       {.min_window = 1 << 20,
