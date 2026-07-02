@@ -410,4 +410,22 @@ TEST_F_CORO(PartitionReplicatorFixture, TestNoStartOffsetOvershootOnResume) {
       5s, [&] { return _sink->start_offset() == kafka::offset(50); });
 }
 
+// A shadow partition that catches up to a prefix-trimmed source in a single
+// batch must still sync its start offset. When the batch is fetched the shadow
+// HWM is still behind the trim point, so the truncation is deferred; and once
+// the batch is replicated no further source data arrives to drive another
+// fetch. The truncation must therefore be retried when the batch commits.
+TEST_F_CORO(PartitionReplicatorFixture, TestTrimSyncAfterSingleCatchUpFetch) {
+    // Source is prefix-trimmed to 5 but still has a moving tail (lso > 5), so
+    // truncation stays deferred until the shadow catches up to the trim point.
+    _source->set_reported_start_offset(kafka::offset(5));
+
+    // A single batch [0, 9] catches the shadow up past the trim point. After it
+    // commits the source is idle, so the commit itself must retry the sync.
+    co_await push_data();
+
+    RPTEST_REQUIRE_EVENTUALLY_CORO(
+      5s, [&] { return _sink->start_offset() == kafka::offset(5); });
+}
+
 } // namespace cluster_link::replication
