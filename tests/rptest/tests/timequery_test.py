@@ -722,7 +722,11 @@ class CloudTopicsTimeQueryTest(RedpandaTest):
                 "enable_cluster_metadata_upload_loop": False,
                 "cloud_topics_long_term_flush_interval": 1000,
                 "cloud_topics_reconciliation_max_object_size": self.max_object_size,
-                "disable_batch_cache": True,
+                # Cloud-topics L1 reads are served through the batch cache, so
+                # the timequery refinement read requires it; leave the cache
+                # enabled (the cloud-topics + no-batch-cache combination is
+                # unsupported and would make L1 reads return no data).
+                "disable_batch_cache": False,
                 "enable_leader_balancer": False,
                 "log_retention_ms": -1,
             }
