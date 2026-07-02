@@ -317,7 +317,7 @@ ss::future<download_result> remote::download_stream(
   transfer_details transfer_details,
   const try_consume_stream& cons_str,
   const std::string_view stream_label,
-  [[maybe_unused]] bool acquire_hydration_units,
+  bool acquire_hydration_units,
   std::optional<cloud_storage_clients::http_byte_range> byte_range,
   std::function<void(size_t)> throttle_metric_ms_cb,
   group_id gid) {
@@ -371,10 +371,22 @@ ss::future<download_result> remote::download_stream(
                 boost::beast::http::field::content_length));
             try {
                 auto underlying_st = resp.value()->as_input_stream();
-                auto throttled_st = _resources->throttle_download(
-                  std::move(underlying_st), _as, throttle_metric_ms_cb);
-                uint64_t content_length = co_await cons_str(
-                  length, std::move(throttled_st));
+                uint64_t content_length;
+                if (acquire_hydration_units) {
+                    // Normal path: rate-limit the download against the shared
+                    // per-shard tiered-storage throughput budget.
+                    auto throttled_st = _resources->throttle_download(
+                      std::move(underlying_st), _as, throttle_metric_ms_cb);
+                    content_length = co_await cons_str(
+                      length, std::move(throttled_st));
+                } else {
+                    // Caller opts out of the tiered-storage download throttle
+                    // (e.g. the L1 prefetch read path, which manages its own
+                    // memory/throughput budget): consume the raw stream so it
+                    // is not capped by cloud_storage_throughput_limit_percent.
+                    content_length = co_await cons_str(
+                      length, std::move(underlying_st));
+                }
                 transfer_details.on_success_size(content_length);
                 co_return download_result::success;
             } catch (...) {

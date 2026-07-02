@@ -103,6 +103,17 @@ public:
       cloud_io::group_id g,
       bool skip_cache = false);
 
+    // Download an object range directly into an `iobuf`, bypassing BOTH the
+    // on-disk cache AND the tiered-storage throughput throttler (hydration
+    // units). Intended for the L1 prefetch read path, which owns its own memory
+    // budget and must not be rate-limited by the write-oriented cloud-storage
+    // limiter (`cloud_storage_throughput_limit_percent`). The base
+    // implementation falls back to the cached, throttled `read_object_as_iobuf`
+    // so non-`file_io` implementations (test doubles) keep working; `file_io`
+    // overrides it with a direct, unthrottled object-storage GET.
+    virtual ss::future<std::expected<iobuf, errc>> download_object_as_iobuf(
+      object_extent, ss::abort_source*, cloud_io::group_id g);
+
     // Delete the specified objects from object storage.
     virtual ss::future<std::expected<void, errc>>
     delete_objects(chunked_vector<object_id>, ss::abort_source*) = 0;

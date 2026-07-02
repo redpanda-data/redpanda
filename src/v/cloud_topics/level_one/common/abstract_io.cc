@@ -32,6 +32,13 @@ ss::future<std::expected<iobuf, io::errc>> io::read_object_as_iobuf(
       .finally([&stream] { return stream.close(); });
 }
 
+ss::future<std::expected<iobuf, io::errc>> io::download_object_as_iobuf(
+  object_extent extent, ss::abort_source* as, cloud_io::group_id gid) {
+    // Base fallback: use the cached, throttled iobuf read. file_io overrides
+    // this with a direct, cache- and throttle-bypassing GET.
+    return read_object_as_iobuf(extent, as, gid, /*skip_cache=*/false);
+}
+
 } // namespace cloud_topics::l1
 
 auto fmt::formatter<cloud_topics::l1::io::errc>::format(

@@ -463,6 +463,89 @@ file_io::read_object(
     }
 }
 
+ss::future<std::expected<iobuf, io::errc>> file_io::download_object_as_iobuf(
+  object_extent extent, ss::abort_source* as, cloud_io::group_id gid) {
+    if (_gate.is_closed()) {
+        co_return std::unexpected(io::errc::file_io_error);
+    }
+    auto holder = _gate.hold();
+    if (_probe) {
+        _probe->register_read();
+    }
+    static constexpr auto timeout = 10s;
+    static constexpr auto backoff = 100ms;
+    retry_chain_node root(*as, ss::lowres_clock::now() + timeout, backoff);
+
+    // Drain the ranged GET straight into an iobuf. The cache is neither
+    // consulted nor written, and acquire_hydration_units=false so the
+    // tiered-storage throughput limiter does not throttle L1 prefetch reads.
+    // On a retry the consumer runs again and reassigns `buf`, so the last
+    // attempt wins rather than appending duplicate bytes.
+    iobuf buf;
+    cloud_io::try_consume_stream consumer =
+      [&buf](
+        this auto,
+        uint64_t /*content_length*/,
+        ss::input_stream<char> stream) -> ss::future<uint64_t> {
+        iobuf local;
+        uint64_t total = 0;
+        std::exception_ptr ex;
+        try {
+            while (true) {
+                auto b = co_await stream.read();
+                if (b.empty()) {
+                    break;
+                }
+                total += b.size();
+                local.append(std::move(b));
+            }
+        } catch (...) {
+            ex = std::current_exception();
+        }
+        co_await stream.close();
+        if (ex) {
+            std::rethrow_exception(ex);
+        }
+        // Last attempt wins (retry-safe): overwrite rather than append.
+        buf = std::move(local);
+        co_return total;
+    };
+    auto result_fut
+      = co_await ss::coroutine::as_future<cloud_io::download_result>(
+        _remote->download_stream(
+          cloud_io::transfer_details{
+            .bucket = _bucket,
+            .key = object_path_factory::level_one_path(extent.id),
+            .parent_rtc = root,
+          },
+          consumer,
+          "l1_prefetch_download",
+          /*acquire_hydration_units=*/false,
+          cloud_storage_clients::http_byte_range{
+            extent.position, extent.position + extent.size - 1},
+          {},
+          gid));
+    if (result_fut.failed()) {
+        auto ex = result_fut.get_exception();
+        vlog(
+          cd_log.warn, "Error downloading object {} (direct): {}", extent, ex);
+        co_return std::unexpected(
+          as->abort_requested() ? io::errc::cloud_op_timeout
+                                : io::errc::cloud_op_error);
+    }
+    switch (result_fut.get()) {
+    case cloud_io::download_result::success:
+        co_return std::move(buf);
+    case cloud_io::download_result::notfound:
+        co_return std::unexpected(io::errc::cloud_missing_object);
+    case cloud_io::download_result::timedout:
+        co_return std::unexpected(io::errc::cloud_op_timeout);
+    case cloud_io::download_result::failed:
+        co_return std::unexpected(io::errc::cloud_op_error);
+    }
+    std::unreachable();
+}
+
 ss::future<std::expected<void, io::errc>>
 file_io::delete_objects(chunked_vector<object_id> ids, ss::abort_source* as) {
     static constexpr auto timeout = 10s;

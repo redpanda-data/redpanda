@@ -107,7 +107,7 @@ ss::future<> chunk_downloader::dispatch(size_t position, size_t size) {
             };
 
             auto fut = co_await ss::coroutine::as_future(
-              _io->read_object_as_iobuf(extent, as, _group));
+              _io->download_object_as_iobuf(extent, as, _group));
 
             if (fut.failed()) {
                 auto ex = fut.get_exception();
@@ -187,7 +187,7 @@ chunk_downloader::fetch_footer(size_t footer_pos, size_t object_size) {
                                              : &_internal_abort;
 
     auto read_fut = co_await ss::coroutine::as_future(
-      _io->read_object_as_iobuf(extent, as, _group));
+      _io->download_object_as_iobuf(extent, as, _group));
 
     if (read_fut.failed()) {
         auto ex = read_fut.get_exception();
