@@ -158,7 +158,7 @@ def wait_until_with_progress_check(
     timeout_sec: float,
     progress_sec: float,
     backoff_sec: float,
-    err_msg: str | None = None,
+    err_msg: str = "",
     logger: Logger | None = None,
 ):
     """

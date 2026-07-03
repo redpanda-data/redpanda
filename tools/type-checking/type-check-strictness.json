@@ -267,6 +267,7 @@
         "rptest/tests/pkcs12_test.py",
         "rptest/tests/tls_version_test.py",
         "rptest/tests/topic_recovery_test.py",
+        "rptest/util.py",
         "rptest/utils/expect_rate.py",
         "rptest/utils/rpenv.py",
         "rptest/utils/si_utils.py"
@@ -449,7 +450,6 @@
         "rptest/transactions/verifiers/compacted_verifier.py",
         "rptest/transactions/verifiers/idempotency_load_generator.py",
         "rptest/transactions/verifiers/stream_verifier.py",
-        "rptest/util.py",
         "rptest/utils/cluster_topology.py"
     ],
     "skip": [
