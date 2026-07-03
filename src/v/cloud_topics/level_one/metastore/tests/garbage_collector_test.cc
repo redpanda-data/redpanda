@@ -212,6 +212,16 @@ public:
         return underlying_->read_object(ext, as, g, skip_cache);
     }
 
+    ss::future<std::expected<iobuf, errc>>
+    fetch_ts_index(object_extent ext, ss::abort_source* as) override {
+        return underlying_->fetch_ts_index(ext, as);
+    }
+
+    ss::future<std::expected<chunked_vector<model::tx_range>, errc>>
+    fetch_ts_tx(object_extent ext, ss::abort_source* as) override {
+        return underlying_->fetch_ts_tx(ext, as);
+    }
+
     ss::future<std::expected<void, errc>>
     delete_objects(chunked_vector<object_id>, ss::abort_source*) override {
         return ss::make_ready_future<std::expected<void, errc>>(
