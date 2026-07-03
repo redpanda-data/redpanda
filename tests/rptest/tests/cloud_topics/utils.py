@@ -1,4 +1,5 @@
-from typing import Any, Callable
+import time
+from typing import Any, Callable, TypeVar
 from ducktape.utils.util import wait_until
 from connectrpc.errors import ConnectError, ConnectErrorCode
 from rptest.clients.admin.v2 import Admin, metastore_pb, ntp_pb
@@ -6,6 +7,25 @@ from rptest.clients.admin.v2 import Admin, metastore_pb, ntp_pb
 # Default of the `cloud_topics_num_metastore_partitions` cluster config.
 _DEFAULT_NUM_METASTORE_PARTITIONS: int = 3
 _INT64_MAX: int = (2**63) - 1
+
+_T = TypeVar("_T")
+
+
+def _call_with_leader_retry(
+    call: Callable[[], _T], timeout_sec: int = 30, backoff_sec: int = 1
+) -> _T:
+    """Invoke a metastore RPC, retrying through the transient UNAVAILABLE
+    ("partition does not have a leader") window that occurs while a metastore
+    partition is mid leader election or step-down. Only UNAVAILABLE is retried;
+    other errors (e.g. NOT_FOUND) propagate immediately."""
+    deadline = time.time() + timeout_sec
+    while True:
+        try:
+            return call()
+        except ConnectError as e:
+            if e.code != ConnectErrorCode.UNAVAILABLE or time.time() >= deadline:
+                raise
+            time.sleep(backoff_sec)
 
 
 def _read_rows(
@@ -29,7 +49,9 @@ def _read_rows(
             req_kwargs["seek_key"] = seek_key
         if last_key is not None:
             req_kwargs["last_key"] = last_key
-        resp = metastore.read_rows(req=metastore_pb.ReadRowsRequest(**req_kwargs))
+        resp = _call_with_leader_retry(
+            lambda: metastore.read_rows(req=metastore_pb.ReadRowsRequest(**req_kwargs))
+        )
         all_rows.extend(resp.rows)
         if not resp.next_key:
             break
@@ -43,8 +65,10 @@ def _resolve_topic_id(admin: Admin, topic: str) -> str:
     metastore = admin.metastore()
     after = ""
     while True:
-        resp = metastore.list_cloud_topics(
-            req=metastore_pb.ListCloudTopicsRequest(after_topic_name=after)
+        resp = _call_with_leader_retry(
+            lambda: metastore.list_cloud_topics(
+                req=metastore_pb.ListCloudTopicsRequest(after_topic_name=after)
+            )
         )
         for t in resp.topics:
             if t.topic_name == topic:
@@ -171,7 +195,7 @@ def get_l1_partition_size(admin: Admin, topic: str, partition: int) -> int | Non
         partition=ntp_pb.TopicPartition(topic=topic, partition=partition)
     )
     try:
-        response = metastore.get_size(req=req)
+        response = _call_with_leader_retry(lambda: metastore.get_size(req=req))
         return response.size_bytes
     except ConnectError as e:
         if e.code == ConnectErrorCode.NOT_FOUND:
