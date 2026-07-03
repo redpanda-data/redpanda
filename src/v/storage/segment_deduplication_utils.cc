@@ -53,11 +53,10 @@ ss::future<ss::stop_iteration> put_entry(
 ss::future<bool> is_latest_record_for_enhanced_key(
   const compaction::key_offset_map& map,
   const model::record_batch& b,
-  const model::record& r) {
-    const auto o = b.base_offset() + model::offset_delta(r.offset_delta());
-    auto key_view = compaction::compaction_key{iobuf_to_bytes(r.key())};
+  const model::record_key_metadata& r) {
+    const auto o = b.base_offset() + model::offset_delta(r.offset_delta);
     auto key = enhance_key(
-      b.header().type, b.header().attrs.is_control(), key_view);
+      b.header().type, b.header().attrs.is_control(), r.key);
 
     auto latest_offset_indexed = co_await map.get(key);
     // If the map hasn't indexed the given key, we should keep the
@@ -219,9 +218,10 @@ ss::future<index_state> deduplicate_segment(
     bool may_have_transaction_control_batches = false;
     bool may_have_transaction_data_or_fence_batches = false;
 
-    auto is_latest_record = [&map](
-                              const model::record_batch& b,
-                              const model::record& r) -> ss::future<bool> {
+    auto is_latest_record =
+      [&map](
+        const model::record_batch& b,
+        const model::record_key_metadata& r) -> ss::future<bool> {
         return is_latest_record_for_enhanced_key(map, b, r);
     };
 
@@ -238,7 +238,7 @@ ss::future<index_state> deduplicate_segment(
                           &may_have_transaction_data_or_fence_batches,
                           tx_batch_compaction_enabled](
                            const model::record_batch& b,
-                           const model::record& r,
+                           const model::record_key_metadata& r,
                            bool is_last_record_in_batch) {
         return internal::should_keep(
           b,

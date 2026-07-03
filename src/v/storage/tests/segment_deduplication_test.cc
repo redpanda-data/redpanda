@@ -655,9 +655,10 @@ TEST(CopyReducerCompressionReuseTest, ReusesCompressedPayloadWhenUnchanged) {
           return reducer.end_of_stream().reducer_stats;
       };
 
-    auto keep_all = [](const model::record_batch&, const model::record&, bool) {
-        return ss::make_ready_future<bool>(true);
-    };
+    auto keep_all =
+      [](const model::record_batch&, const model::record_key_metadata&, bool) {
+          return ss::make_ready_future<bool>(true);
+      };
 
     auto make_batch = [](bool compress) {
         auto batch = model::test::make_random_batch(
@@ -687,12 +688,14 @@ TEST(CopyReducerCompressionReuseTest, ReusesCompressedPayloadWhenUnchanged) {
         auto batch = make_batch(/*compress=*/true);
         ASSERT_TRUE(batch.compressed());
         bool drop = true;
-        auto drop_first =
-          [&](const model::record_batch&, const model::record&, bool) mutable {
-              // Keep every record except the first: the predicate returns
-              // whether to keep, so negate the one-shot drop flag.
-              return ss::make_ready_future<bool>(!std::exchange(drop, false));
-          };
+        auto drop_first = [&](
+                            const model::record_batch&,
+                            const model::record_key_metadata&,
+                            bool) mutable {
+            // Keep every record except the first: the predicate returns
+            // whether to keep, so negate the one-shot drop flag.
+            return ss::make_ready_future<bool>(!std::exchange(drop, false));
+        };
         auto stats = run_one(segs[1], std::move(batch), std::move(drop_first));
         EXPECT_EQ(stats.records_discarded, 1);
         EXPECT_EQ(stats.compressed_batches_reused, 0);
