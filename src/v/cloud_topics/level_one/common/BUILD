@@ -84,6 +84,7 @@ redpanda_cc_library(
         "//src/v/cloud_io:admission_control_types",
         "//src/v/cloud_storage_clients",
         "//src/v/container:chunked_vector",
+        "//src/v/model",
         "//src/v/utils:named_type",
         "@seastar",
     ],
@@ -121,13 +122,27 @@ redpanda_cc_library(
     implementation_deps = [
         ":chunk_data_source",
         ":object",
+        ":ts_object",
+        "//src/v/cloud_storage",
+        "//src/v/cloud_storage:offset_index",
         "//src/v/cloud_topics:logger",
         "//src/v/config",
+        "//src/v/model",
     ],
     deps = [
         ":abstract_io",
         ":object_handle",
         ":object_id",
+        "@seastar",
+    ],
+)
+
+redpanda_cc_library(
+    name = "chunk_data_source",
+    hdrs = ["chunk_data_source.h"],
+    deps = [
+        "//src/v/base",
+        "@fmt",
         "@seastar",
     ],
 )
@@ -181,6 +196,7 @@ redpanda_cc_library(
     implementation_deps = [
         "//src/v/base",
         "//src/v/bytes:iostream",
+        "//src/v/cloud_storage",
     ],
     visibility = [
         "//src/v/cloud_topics:__pkg__",
@@ -209,23 +225,18 @@ redpanda_cc_library(
     name = "fake_io",
     srcs = ["fake_io.cc"],
     hdrs = ["fake_io.h"],
+    implementation_deps = [
+        "//src/v/base",
+    ],
     deps = [
         ":abstract_io",
+        ":object",
         ":object_id",
         "//src/v/bytes:iobuf",
         "//src/v/bytes:iostream",
         "//src/v/cloud_storage_clients",
+        "//src/v/model",
         "@abseil-cpp//absl/container:btree",
-        "@seastar",
-    ],
-)
-
-redpanda_cc_library(
-    name = "chunk_data_source",
-    hdrs = ["chunk_data_source.h"],
-    deps = [
-        "//src/v/base",
-        "@fmt",
         "@seastar",
     ],
 )

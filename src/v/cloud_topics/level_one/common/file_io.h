@@ -66,6 +66,12 @@ public:
       cloud_io::group_id g,
       bool skip_cache) override;
 
+    ss::future<std::expected<iobuf, errc>>
+    fetch_ts_index(object_extent, ss::abort_source*) override;
+
+    ss::future<std::expected<chunked_vector<model::tx_range>, errc>>
+    fetch_ts_tx(object_extent, ss::abort_source*) override;
+
     ss::future<std::expected<void, errc>>
     delete_objects(chunked_vector<object_id>, ss::abort_source*) override;
 
@@ -80,17 +86,22 @@ private:
       std::filesystem::path,
       uint64_t content_length);
 
-    /// Reserve cache space, run the S3 GET, and stream the bytes into
-    /// the cloud cache under `cache_key`. Succeeds, or fails with the
-    /// mapped errc on reservation / download failure.
+    /// Reserve cache space, run the S3 GET against `key` for byte `range`, and
+    /// stream the bytes into the cloud cache under `cache_key` (labelling the
+    /// transfer `download_label`). Succeeds, or fails with the mapped errc on
+    /// reservation / download failure.
     ss::future<std::expected<void, errc>> do_download_to_cache(
-      const object_extent& extent,
+      const cloud_storage_clients::object_key& key,
+      cloud_storage_clients::http_byte_range range,
       const std::filesystem::path& cache_key,
+      std::string_view download_label,
       retry_chain_node& root,
       ss::abort_source& as,
       cloud_io::group_id gid);
 
     cloud_io::remote* _remote;
+    // Holds both native L1 objects and imported tiered-storage segments: a
+    // single cluster always stores both in the one configured object bucket.
     cloud_storage_clients::bucket_name _bucket;
     std::filesystem::path _staging_dir;
     cloud_io::cache* _cache;

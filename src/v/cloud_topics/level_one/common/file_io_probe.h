@@ -26,6 +26,8 @@ public:
     void register_concurrent_read_merge() { ++_concurrent_read_merges; }
 
     void register_footer_read(size_t bytes) { _footer_bytes_read += bytes; }
+    void register_ts_index_read(size_t bytes) { _ts_index_bytes_read += bytes; }
+    void register_ts_tx_read(size_t bytes) { _ts_tx_bytes_read += bytes; }
 
 private:
     void setup_metrics();
@@ -35,6 +37,8 @@ private:
     uint64_t _concurrent_read_merges{0};
 
     uint64_t _footer_bytes_read{0};
+    uint64_t _ts_index_bytes_read{0};
+    uint64_t _ts_tx_bytes_read{0};
 
     metrics::internal_metric_groups _metrics;
 };

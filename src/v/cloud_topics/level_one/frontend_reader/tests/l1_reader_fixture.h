@@ -24,6 +24,7 @@
 #include "model/record.h"
 #include "model/record_batch_reader.h"
 #include "model/tests/random_batch.h"
+#include "test_utils/scoped_config.h"
 #include "test_utils/test.h"
 
 #include <gtest/gtest.h>
@@ -39,6 +40,16 @@ namespace cloud_topics::l1 {
 
 class l1_reader_fixture : public seastar_test {
 protected:
+    l1_reader_fixture() {
+        // Force a small chunk size so imported reads exercise the chunked data
+        // source for real -- multi-chunk reads and batches spanning chunk
+        // boundaries -- rather than a single whole-suffix download. open_object
+        // takes the chunk size from config, so it is set here rather than baked
+        // into fake_io.
+        _cfg.get("cloud_storage_disable_chunk_reads").set_value(false);
+        _cfg.get("cloud_storage_cache_chunk_size").set_value(size_t{64});
+    }
+
     using tidp_batches_t = std::pair<
       model::topic_id_partition,
       chunked_circular_buffer<model::record_batch>>;
@@ -55,6 +66,50 @@ protected:
         auto tidp = model::topic_id_partition{
           model::topic_id{uuid_t::create()}, test_partition_id};
         return std::make_pair(ntp, tidp);
+    }
+
+    /// Register a raw TS-format segment as an imported extent in the metastore
+    /// and inject it into fake_io. `segment_bytes` must already be in the
+    /// on-disk format (packed header + raw records, no L1 framing).
+    ss::future<> register_imported_extent(
+      const model::topic_id_partition& tidp,
+      iobuf segment_bytes,
+      kafka::offset base_kafka_offset,
+      kafka::offset last_kafka_offset,
+      model::offset_delta delta_base,
+      l1::ts_segment_path ts_path = l1::ts_segment_path{"test/0-1-v1.log"}) {
+        size_t seg_size = segment_bytes.size_bytes();
+
+        _io.put_ts_segment(ts_path, segment_bytes.share(0, seg_size));
+
+        // Imported objects go through the normal object-builder / add_objects
+        // path (the migration mirror's entry point); add_imported skips
+        // pre-registration. The partition must be marked migrating first so the
+        // metastore adopts its log at the imported extents' (non-zero) base.
+        co_await _metastore.set_migrating(tidp, true);
+        auto builder = (co_await _metastore.object_builder()).value();
+        [[maybe_unused]] auto oid
+          = builder
+              ->add_imported(
+                l1::metastore::object_metadata::ntp_metadata{
+                  .tidp = tidp,
+                  .base_offset = base_kafka_offset,
+                  .last_offset = last_kafka_offset,
+                  .max_timestamp = model::timestamp::now(),
+                  .pos = 0,
+                  .size = seg_size,
+                  .imported = l1::imported_ts_info{
+                    .ts_path = ts_path,
+                    .delta_base = delta_base,
+                  },
+                })
+              .value();
+        l1::metastore::term_offset_map_t terms;
+        terms[tidp].push_back(
+          l1::metastore::term_offset{
+            .term = model::term_id{1}, .first_offset = base_kafka_offset});
+        [[maybe_unused]] auto add_res = co_await _metastore.add_objects(
+          *builder, terms);
     }
 
     ss::future<> make_l1_objects(std::vector<tidp_batches_t> batches_by_tidp) {
@@ -178,6 +233,7 @@ protected:
         return result;
     }
 
+    scoped_config _cfg;
     l1::simple_metastore _metastore{};
     l1::fake_io _io{};
 };
