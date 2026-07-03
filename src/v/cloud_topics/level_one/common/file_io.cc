@@ -10,9 +10,12 @@
 
 #include "cloud_topics/level_one/common/file_io.h"
 
+#include "base/vassert.h"
 #include "bytes/iostream.h"
 #include "cloud_io/io_result.h"
 #include "cloud_io/remote.h"
+#include "cloud_storage/remote_segment.h"
+#include "cloud_storage/tx_range_manifest.h"
 #include "cloud_storage_clients/client.h"
 #include "cloud_topics/level_one/common/abstract_io.h"
 #include "cloud_topics/level_one/common/object_id.h"
@@ -93,9 +96,6 @@ struct one_time_stream_provider : public stream_provider {
     std::optional<ss::input_stream<char>> _st;
 };
 
-// A streaming download source for L1 objects that chunks downloads per
-// `chunk_size`. This may result in many GET requests per object download.
-//
 // Cache-bypassing ranged download of the object byte range [pos, pos+len) at
 // `key`, fully buffered into an input_stream. `download_stream` (a single
 // ranged GET) returns the lease to the pool as soon as the range body has been
@@ -168,6 +168,46 @@ download_range_bypassing_cache(
           fmt::format("L1 streaming download failed: {}", result));
     }
     co_return make_iobuf_input_stream(std::move(buf));
+}
+
+// Download a whole object by key into an iobuf. Used for small sidecar objects
+// (the imported segment's index and tx-range manifest) that are fetched in one
+// shot rather than streamed through the cache.
+ss::future<std::expected<iobuf, io::errc>> download_raw_iobuf(
+  cloud_io::remote* remote,
+  const cloud_storage_clients::bucket_name& bucket,
+  const ss::sstring& key,
+  ss::abort_source* as) {
+    static constexpr auto timeout = 10s;
+    static constexpr auto backoff = 100ms;
+    retry_chain_node root(*as, ss::lowres_clock::now() + timeout, backoff);
+    iobuf result;
+    auto res_fut = co_await ss::coroutine::as_future<cloud_io::download_result>(
+      remote->download_object({
+        .transfer_details = {
+          .bucket = bucket,
+          .key = cloud_storage_clients::object_key{key},
+          .parent_rtc = root,
+        },
+        .display_str = "ts_raw_download",
+        .payload = result,
+      }));
+    if (res_fut.failed()) {
+        auto ex = res_fut.get_exception();
+        vlog(cd_log.warn, "Error downloading raw object {}: {}", key, ex);
+        co_return std::unexpected(io::errc::cloud_op_error);
+    }
+    switch (res_fut.get()) {
+    case cloud_io::download_result::success:
+        co_return std::move(result);
+    case cloud_io::download_result::notfound:
+        co_return std::unexpected(io::errc::cloud_missing_object);
+    case cloud_io::download_result::timedout:
+        co_return std::unexpected(io::errc::cloud_op_timeout);
+    case cloud_io::download_result::failed:
+        co_return std::unexpected(io::errc::cloud_op_error);
+    }
+    std::unreachable();
 }
 
 } // namespace
@@ -260,21 +300,24 @@ ss::future<uint64_t> file_io::save_to_cache(
 }
 
 ss::future<std::expected<void, io::errc>> file_io::do_download_to_cache(
-  const object_extent& extent,
+  const cloud_storage_clients::object_key& key,
+  cloud_storage_clients::http_byte_range range,
   const std::filesystem::path& cache_key,
+  std::string_view download_label,
   retry_chain_node& root,
   ss::abort_source& as,
   cloud_io::group_id gid) {
+    const auto range_size = range.second - range.first + 1;
     // TODO(cloud_topics): reserving space should also take an abort_source
     auto reservation_fut
       = co_await ss::coroutine::as_future<cloud_io::space_reservation_guard>(
-        _cache->reserve_space(extent.size, 1));
+        _cache->reserve_space(range_size, 1));
     if (reservation_fut.failed()) {
         auto ex = reservation_fut.get_exception();
         vlog(
           cd_log.warn,
           "Error reserving cache space for download of {}: {}",
-          extent,
+          key,
           ex);
         co_return std::unexpected(io::errc::file_io_error);
     }
@@ -289,19 +332,18 @@ ss::future<std::expected<void, io::errc>> file_io::do_download_to_cache(
         _remote->download_stream(
           cloud_io::transfer_details{
             .bucket = _bucket,
-            .key = object_path_factory::level_one_path(extent.id),
+            .key = key,
             .parent_rtc = root,
           },
           consumer,
-          "l1_file_download",
+          download_label,
           /*acquire_hydration_units=*/true,
-          cloud_storage_clients::http_byte_range{
-            extent.position, extent.position + extent.size - 1},
+          range,
           {},
           gid));
     if (result_fut.failed()) {
         auto ex = result_fut.get_exception();
-        vlog(cd_log.warn, "Error downloading object {}: {}", extent, ex);
+        vlog(cd_log.warn, "Error downloading object {}: {}", key, ex);
         // Map abort to cloud_op_timeout so a leader-abort and a
         // merger-abort produce the same errc for the same event.
         co_return std::unexpected(
@@ -342,7 +384,30 @@ file_io::read_object(
     // them).
     // TODO(cloud_topics): If reading just a footer, we should skip the cache.
     // Maybe we need another method for that which is iobuf based?
-    auto cache_key = file_io::cache_key(extent);
+    //
+    // Resolve the storage key, cache key, and download label uniformly for
+    // native and imported extents; the range is then read the same way for
+    // both. A native object lives at its L1 object path; an imported
+    // tiered-storage segment lives at its own ts_path (keyed per (pos,size) so
+    // the cache dedups across reads touching the same chunk).
+    cloud_storage_clients::object_key key;
+    std::filesystem::path cache_key;
+    std::string_view download_label;
+    if (extent.imported.has_value()) {
+        key = cloud_storage_clients::object_key{extent.imported->ts_path()};
+        cache_key = fmt::format(
+          "ts_{}_position_{}_size_{}.partial",
+          extent.imported->ts_path(),
+          extent.position,
+          extent.size);
+        download_label = "ts_segment_download";
+    } else {
+        key = object_path_factory::level_one_path(extent.id);
+        cache_key = file_io::cache_key(extent);
+        download_label = "l1_file_download";
+    }
+    const cloud_storage_clients::http_byte_range range{
+      extent.position, extent.position + extent.size - 1};
     while (true) {
         auto stream_fut = co_await ss::coroutine::as_future<
           std::optional<cloud_io::cache_item_stream>>(_cache->get_stream(
@@ -370,21 +435,16 @@ file_io::read_object(
             // chunking that bounds peak memory is applied a layer up in
             // open_object, which invokes read_object once per chunk.
             co_return co_await download_range_bypassing_cache(
-              _remote,
-              _bucket,
-              object_path_factory::level_one_path(extent.id),
-              gid,
-              extent.position,
-              extent.size,
-              as);
+              _remote, _bucket, key, gid, extent.position, extent.size, as);
         }
 
         // single_flight dedups concurrent downloads for this extent.
         auto r = co_await _single_flight.run(
           cache_key,
           *as,
-          [this, &extent, &cache_key, &root, as, gid]() {
-              return do_download_to_cache(extent, cache_key, root, *as, gid);
+          [this, &key, range, &cache_key, download_label, &root, as, gid]() {
+              return do_download_to_cache(
+                key, range, cache_key, download_label, root, *as, gid);
           },
           &cd_log);
 
@@ -412,6 +472,42 @@ ss::future<std::expected<iobuf, io::errc>> file_io::fetch_native_footer(
         _probe->register_footer_read(extent.size);
     }
     return io::fetch_native_footer(extent, as, gid, skip_cache);
+}
+
+ss::future<std::expected<iobuf, io::errc>>
+file_io::fetch_ts_index(object_extent extent, ss::abort_source* as) {
+    vassert(
+      extent.imported.has_value(),
+      "fetch_ts_index requires an imported extent");
+    auto index_path = cloud_storage::generate_index_path(
+      cloud_storage::remote_segment_path{
+        std::filesystem::path{extent.imported->ts_path()}});
+    auto index_iobuf = co_await download_raw_iobuf(
+      _remote, _bucket, index_path.native(), as);
+    if (index_iobuf.has_value() && _probe != nullptr) {
+        _probe->register_ts_index_read(index_iobuf->size_bytes());
+    }
+    co_return index_iobuf;
+}
+
+ss::future<std::expected<chunked_vector<model::tx_range>, io::errc>>
+file_io::fetch_ts_tx(object_extent extent, ss::abort_source* as) {
+    vassert(
+      extent.imported.has_value(), "fetch_ts_tx requires an imported extent");
+    cloud_storage::remote_segment_path seg_path{
+      std::filesystem::path{extent.imported->ts_path()}};
+    auto tx_path = cloud_storage::generate_remote_tx_path(seg_path);
+    auto tx_iobuf = co_await download_raw_iobuf(
+      _remote, _bucket, tx_path().native(), as);
+    if (!tx_iobuf.has_value()) {
+        co_return std::unexpected(tx_iobuf.error());
+    }
+    if (_probe != nullptr) {
+        _probe->register_ts_tx_read(tx_iobuf->size_bytes());
+    }
+    cloud_storage::tx_range_manifest manifest(seg_path);
+    co_await manifest.update(make_iobuf_input_stream(std::move(*tx_iobuf)));
+    co_return std::move(manifest).get_tx_range();
 }
 
 ss::future<std::expected<void, io::errc>>

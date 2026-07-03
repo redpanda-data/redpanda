@@ -9,8 +9,11 @@
  */
 #include "cloud_topics/level_one/common/open_object.h"
 
+#include "cloud_storage/offset_index.h"
+#include "cloud_storage/remote_segment.h"
 #include "cloud_topics/level_one/common/chunk_data_source.h"
 #include "cloud_topics/level_one/common/object.h"
+#include "cloud_topics/level_one/common/ts_object.h"
 #include "cloud_topics/logger.h"
 #include "config/configuration.h"
 
@@ -18,15 +21,16 @@ namespace cloud_topics::l1 {
 
 namespace {
 
-// Chunking for a read, given whether the cache is bypassed. Applied by wrapping
-// the per-range read_object fetch in a chunk_data_source; chunk_size == 0 means
-// "don't chunk" -- pass the whole requested range straight through.
+// Chunking for a read, given the object format and whether the cache is
+// bypassed. Applied by wrapping the per-range read_object fetch in a
+// chunk_data_source; chunk_size == 0 means "don't chunk" -- pass the whole
+// requested range straight through.
 struct read_chunking {
     size_t chunk_size;
     use_chunk_aligned_reads aligned;
 };
 
-read_chunking chunking_for(bool skip_cache) {
+read_chunking chunking_for(bool imported, bool skip_cache) {
     const auto& cfg = config::shard_local_cfg();
     if (skip_cache) {
         // Cache-bypassing bulk/one-shot read (leveling, compaction): bound peak
@@ -35,6 +39,17 @@ read_chunking chunking_for(bool skip_cache) {
         return {
           cfg.cloud_topics_l1_streaming_read_chunk_size(),
           use_chunk_aligned_reads::no};
+    }
+    if (imported) {
+        // Cached imported read: chunk at the cloud-storage cache-chunk
+        // granularity, chunk-aligned so overlapping reads request identical
+        // (pos,size) chunks that the cache dedups. Disabling chunk reads falls
+        // back to a single whole-suffix cache entry.
+        if (cfg.cloud_storage_disable_chunk_reads()) {
+            return {0, use_chunk_aligned_reads::yes};
+        }
+        return {
+          cfg.cloud_storage_cache_chunk_size(), use_chunk_aligned_reads::yes};
     }
     // Cached native read: read_object stores the whole requested extent in the
     // cache and serves it from a file, so the cache file bounds memory and no
@@ -45,7 +60,7 @@ read_chunking chunking_for(bool skip_cache) {
 // Wrap a per-range fetch so a request for [pos, pos+len) is served as a
 // chunk_data_source that lazily pulls fixed-size chunks (only the chunks a read
 // touches are fetched). chunk_size == 0 passes the whole range straight through
-// (the cached-native case).
+// (the cached-native / chunk-reads-disabled case).
 fetch_range_fn chunked_fetch(fetch_range_fn inner, read_chunking c) {
     if (c.chunk_size == 0) {
         return inner;
@@ -58,6 +73,115 @@ fetch_range_fn chunked_fetch(fetch_range_fn inner, read_chunking c) {
     };
 }
 
+// Open an imported tiered-storage segment: build its index from the .index
+// sidecar (io::fetch_ts_index), its aborted-transaction set from the .tx
+// sidecar (io::fetch_ts_tx, gated by the import-time tx_state), and return a
+// ts_object_handle whose byte transport reads chunks back through
+// io::read_object (routed to the segment's ts_path).
+ss::future<std::expected<std::unique_ptr<object_handle>, io::errc>>
+open_imported_object(
+  io& io_impl,
+  const object_extent& extent,
+  ss::abort_source* as,
+  cloud_io::group_id g,
+  bool skip_cache) {
+    const auto& imported = *extent.imported;
+
+    // Seek through the segment's real offset index: a present .index is
+    // deserialized; a missing one (notfound) leaves the index empty, so seeks
+    // fall back to a full-segment scan from position 0 with the segment base
+    // delta -- matching native tiered storage. Any other error propagates
+    // rather than being masked as an empty-index full scan.
+    cloud_storage::offset_index oi(
+      model::offset{0},
+      kafka::offset{0},
+      0,
+      cloud_storage::remote_segment_sampling_step_bytes,
+      model::timestamp::missing());
+    auto index_bytes = co_await io_impl.fetch_ts_index(extent, as);
+    if (index_bytes.has_value()) {
+        oi.from_iobuf(std::move(*index_bytes));
+    } else if (index_bytes.error() != io::errc::cloud_missing_object) {
+        vlog(
+          cd_log.warn,
+          "Failed to fetch index for imported segment {}: {}",
+          imported.ts_path,
+          index_bytes.error());
+        co_return std::unexpected(index_bytes.error());
+    }
+    auto idx = std::make_unique<ts_segment_index>(
+      std::move(oi), imported.delta_base, extent.size);
+
+    // Aborted-transaction ranges for this segment, so the reader can strip
+    // aborted data and make the imported region committed-only (like native CT
+    // L1). Ranges are in raw log-offset space, as the reader needs. Whether to
+    // consult the .tx sidecar is decided by the import-time tx_state, which
+    // mirrors what native tiered storage knows without a probe: only v1/v2
+    // non-compacted segments require one.
+    aborted_transactions aborted;
+    if (imported.tx_state != tx_manifest_state::absent) {
+        // present or unknown: consult the .tx sidecar.
+        auto tx = co_await io_impl.fetch_ts_tx(extent, as);
+        if (tx.has_value()) {
+            for (auto& r : *tx) {
+                aborted.insert(r);
+            }
+        } else if (tx.error() == io::errc::cloud_missing_object) {
+            // A missing .tx means no aborted transactions. Tolerate it and read
+            // the segment as committed-only, matching native tiered storage,
+            // which treats a notfound .tx as empty. When tx_state == present
+            // the source metadata recorded a .tx, so its absence is unexpected
+            // (a lost or partial upload) and we warn -- but as a compatibility
+            // layer we degrade gracefully rather than turning behavior tiered
+            // storage silently tolerated into a hard read failure.
+            if (imported.tx_state == tx_manifest_state::present) {
+                vlog(
+                  cd_log.warn,
+                  "Imported segment {} was expected to have a .tx manifest "
+                  "(its "
+                  "metadata recorded one) but it is missing; reading the "
+                  "segment "
+                  "as committed-only",
+                  imported.ts_path);
+            }
+        } else {
+            // A transient/other error (not a definitive notfound): propagate so
+            // the read is retried, rather than silently dropping
+            // aborted-transaction filtering.
+            vlog(
+              cd_log.warn,
+              "Failed to fetch tx ranges for imported segment {}: {}",
+              imported.ts_path,
+              tx.error());
+            co_return std::unexpected(tx.error());
+        }
+    }
+    // tx_state == absent: known to have no aborted transactions (compacted, or
+    // v3 with an empty .tx manifest), so skip the sidecar entirely -- `aborted`
+    // stays empty.
+
+    // The per-range transport: read one byte range through the uniform
+    // read_object path (an imported extent routes it to the segment's ts_path,
+    // with cache/skip handling, same as any other L1 read). chunked_fetch then
+    // layers the read's chunking on top so a read only downloads the chunks it
+    // touches.
+    fetch_range_fn inner = [io = &io_impl, imported, g, skip_cache](
+                             size_t pos, size_t len, ss::abort_source* fetch_as)
+      -> ss::future<std::expected<ss::input_stream<char>, io::errc>> {
+        return io->read_object(
+          object_extent{.position = pos, .size = len, .imported = imported},
+          fetch_as,
+          g,
+          skip_cache);
+    };
+    co_return std::make_unique<ts_object_handle>(
+      std::move(idx),
+      imported.segment_term,
+      std::move(aborted),
+      chunked_fetch(
+        std::move(inner), chunking_for(/*imported=*/true, skip_cache)));
+}
+
 } // namespace
 
 ss::future<std::expected<std::unique_ptr<object_handle>, io::errc>> open_object(
@@ -66,6 +190,10 @@ ss::future<std::expected<std::unique_ptr<object_handle>, io::errc>> open_object(
   ss::abort_source* as,
   cloud_io::group_id g,
   bool skip_cache) {
+    if (extent.imported.has_value()) {
+        co_return co_await open_imported_object(
+          io_impl, extent, as, g, skip_cache);
+    }
     // Native L1 object: read and parse the footer, then hand the handle a fetch
     // that reads data ranges back through io::read_object, with the read's
     // chunking layered on by chunked_fetch.
@@ -90,7 +218,8 @@ ss::future<std::expected<std::unique_ptr<object_handle>, io::errc>> open_object(
     };
     co_return std::make_unique<l1_native_object_handle>(
       std::get<footer>(std::move(footer_result)),
-      chunked_fetch(std::move(inner), chunking_for(skip_cache)));
+      chunked_fetch(
+        std::move(inner), chunking_for(/*imported=*/false, skip_cache)));
 }
 
 } // namespace cloud_topics::l1
