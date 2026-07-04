@@ -15,6 +15,7 @@
 #include "base/format_to.h"
 #include "cluster_link/errc.h"
 #include "container/chunked_hash_map.h"
+#include "container/chunked_vector.h"
 #include "kafka/protocol/topic_properties.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"

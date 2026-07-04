@@ -828,15 +828,4 @@ fmt::iterator segment_appender::stats::format_to(fmt::iterator it) const {
       writes_completed);
 }
 
-std::ostream&
-operator<<(std::ostream& s, const segment_appender::inflight_write& op) {
-    fmt::print(
-      s,
-      "{{state: {}, committed_offset: {}, alignment: {}}}",
-      (int)op.state,
-      op.committed_offset,
-      op.alignment);
-    return s;
-}
-
 } // namespace storage

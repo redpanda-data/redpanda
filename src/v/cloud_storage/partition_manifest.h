@@ -25,6 +25,9 @@
 #include <seastar/core/iostream.hh>
 #include <seastar/core/shared_ptr.hh>
 
+#include <fmt/ostream.h>
+#include <fmt/ranges.h>
+
 #include <deque>
 
 namespace cloud_storage {
@@ -714,3 +717,15 @@ private:
 std::ostream& operator<<(std::ostream& o, const partition_manifest& f);
 
 } // namespace cloud_storage
+
+// partition_manifest is a range (of segment_meta), so with <fmt/ranges.h> in
+// scope (pulled in transitively via seastar's chunked containers) fmt would
+// format it as a dump of every segment. Disable fmt's range formatter and
+// format via operator<< (a bounded summary) instead.
+template<>
+struct fmt::formatter<cloud_storage::partition_manifest>
+  : fmt::ostream_formatter {};
+
+template<>
+struct fmt::range_format_kind<cloud_storage::partition_manifest, char>
+  : std::integral_constant<fmt::range_format, fmt::range_format::disabled> {};

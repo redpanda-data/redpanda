@@ -9,6 +9,7 @@
  * the Business Source License, use of this software will be governed
  * by the Apache License, Version 2.0
  */
+#include "base/vassert.h"
 #include "io/page.h"
 #include "io/page_cache.h"
 #include "io/page_set.h"

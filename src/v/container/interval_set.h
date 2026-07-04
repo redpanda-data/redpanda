@@ -17,6 +17,8 @@
 #include "serde/rw/rw.h"
 #include "utils/to_string.h"
 
+#include <fmt/ranges.h>
+
 /**
  * A container that contains non-empty, open intervals.
  *
@@ -275,3 +277,11 @@ template<std::integral T>
 size_t interval_set<T>::size() const {
     return set_.size();
 }
+
+// interval_set is a range, but it provides its own `format_to`. Disable fmt's
+// range formatter so it does not conflict with the `format_to` formatter (see
+// base/format_to.h) — otherwise both partial specializations of
+// fmt::formatter<interval_set<T>> match and formatting is ambiguous.
+template<std::integral T, typename Char>
+struct fmt::range_format_kind<interval_set<T>, Char>
+  : std::integral_constant<fmt::range_format, fmt::range_format::disabled> {};

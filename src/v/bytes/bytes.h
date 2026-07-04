@@ -17,6 +17,9 @@
 
 #include <seastar/core/sstring.hh>
 
+#include <fmt/ostream.h>
+#include <fmt/ranges.h>
+
 #include <algorithm>
 #include <cstdint>
 #include <iosfwd>
@@ -304,3 +307,20 @@ operator^(const std::array<char, Size>& a, const std::array<char, Size>& b) {
       a.begin(), a.end(), b.begin(), out.begin(), std::bit_xor<>());
     return out;
 }
+
+// bytes / bytes_view are ranges (of bytes), so with <fmt/ranges.h> in scope
+// (pulled in transitively via seastar's chunked containers) fmt would format
+// them as byte arrays. Disable fmt's range formatter and format via operator<<.
+template<>
+struct fmt::formatter<::bytes> : fmt::ostream_formatter {};
+
+template<>
+struct fmt::range_format_kind<::bytes, char>
+  : std::integral_constant<fmt::range_format, fmt::range_format::disabled> {};
+
+template<>
+struct fmt::formatter<bytes_view> : fmt::ostream_formatter {};
+
+template<>
+struct fmt::range_format_kind<bytes_view, char>
+  : std::integral_constant<fmt::range_format, fmt::range_format::disabled> {};

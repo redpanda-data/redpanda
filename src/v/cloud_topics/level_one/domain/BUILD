@@ -109,6 +109,7 @@ redpanda_cc_library(
         "//src/v/cloud_topics/level_one/metastore/lsm:replicated_db",
         "//src/v/cloud_topics/level_one/metastore/lsm:stm",
         "//src/v/container:chunked_hash_map",
+        "//src/v/container:chunked_vector",
         "//src/v/model",
         "//src/v/ssx:checkpoint_mutex",
         "@abseil-cpp//absl/container:btree",

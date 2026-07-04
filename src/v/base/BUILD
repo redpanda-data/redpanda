@@ -7,6 +7,7 @@ redpanda_cc_library(
     ],
     hdrs = [
         "compiler_utils.h",
+        "external_fmt.h",
         "format_to.h",
         "likely.h",
         "oncore.h",
@@ -23,7 +24,10 @@ redpanda_cc_library(
     ],
     visibility = ["//visibility:public"],
     deps = [
+        "@boost//:beast",
+        "@boost//:filesystem",
         "@boost//:outcome",
+        "@boost//:system",
         "@fmt",
         "@seastar",
     ],

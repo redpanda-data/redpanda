@@ -597,9 +597,9 @@ std::ostream&
 operator<<(std::ostream& o, const ntp_reconciliation_state& state) {
     fmt::print(
       o,
-      "{{ntp: {}, backend_operations: {}, error: {}, status: {}}}",
+      "{{ntp: {}, backend_operations: [{}], error: {}, status: {}}}",
       state._ntp,
-      state._backend_operations,
+      fmt::join(state._backend_operations, ", "),
       state._error,
       state._status);
     return o;

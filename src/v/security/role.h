@@ -17,6 +17,9 @@
 
 #include <seastar/core/sstring.hh>
 
+#include <fmt/ostream.h>
+#include <fmt/ranges.h>
+
 #include <iosfwd>
 #include <type_traits>
 
@@ -159,3 +162,12 @@ concept RoleMember = requires(T m) {
 };
 
 } // namespace security
+
+// role has begin()/end() so fmt sees it as a range. Disable that and format
+// via operator<< instead (a bounded summary rather than a dump of members).
+template<>
+struct fmt::formatter<security::role> : fmt::ostream_formatter {};
+
+template<>
+struct fmt::range_format_kind<security::role, char>
+  : std::integral_constant<fmt::range_format, fmt::range_format::disabled> {};

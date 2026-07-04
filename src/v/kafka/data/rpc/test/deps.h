@@ -49,7 +49,7 @@ struct record_batches {
     }
 
     friend std::ostream& operator<<(std::ostream& os, const record_batches& b) {
-        return os << ss::format("{}", b.underlying);
+        return os << "record_batches{size=" << b.underlying.size() << "}";
     }
 
     bool empty() const { return underlying.empty(); }

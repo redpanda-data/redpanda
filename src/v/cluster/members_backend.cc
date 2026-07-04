@@ -583,7 +583,7 @@ ss::future<> members_backend::reconcile_reallocation_state(
           meta.current_replica_set,
           meta.new_replica_set,
           reconciliation_state.status(),
-          reconciliation_state.pending_operations());
+          fmt::join(reconciliation_state.pending_operations(), ", "));
         if (reconciliation_state.status() != reconciliation_status::done) {
             co_return;
         }
