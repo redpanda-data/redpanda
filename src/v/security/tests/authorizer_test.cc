@@ -12,6 +12,7 @@
 #include "pandaproxy/schema_registry/types.h"
 #include "random/generators.h"
 #include "security/acl.h"
+#include "security/acl_store.h"
 #include "security/authorizer.h"
 #include "security/role.h"
 #include "security/role_store.h"
@@ -20,8 +21,12 @@
 #include <seastar/util/defer.hh>
 
 #include <boost/algorithm/string.hpp>
+#include <fmt/format.h>
 #include <fmt/ostream.h>
 #include <gtest/gtest.h>
+
+#include <string_view>
+#include <vector>
 
 namespace security {
 
@@ -3373,6 +3378,260 @@ TEST(AUTHORIZER_TEST, group_principal_acl_deny_precedence) {
     EXPECT_TRUE(bool(result_without_group));
     EXPECT_EQ(result_without_group.acl, allow_write);
     EXPECT_FALSE(result_without_group.group.has_value());
+}
+
+// A matching prefix ACL must be found amid prefixed patterns that share the
+// queried name's first character but are not prefixes of it, regardless of how
+// many such patterns exist: add a matching prefix ACL plus a varying amount of
+// that same-first-character noise and assert authorization is unaffected.
+class authz_prefix_noise : public ::testing::TestWithParam<size_t> {};
+
+INSTANTIATE_TEST_SUITE_P(
+  same_first_char_noise,
+  authz_prefix_noise,
+  ::testing::Values(size_t{0}, size_t{8}, size_t{100}),
+  [](const ::testing::TestParamInfo<size_t>& info) {
+      return fmt::format("noise_{}", info.param);
+  });
+
+TEST_P(authz_prefix_noise, authz_prefix_match_amid_same_first_char_noise) {
+    const size_t noise = GetParam();
+    const acl_principal user(principal_type::user, "alice");
+    const acl_host host("192.168.0.1");
+    const model::topic topic("tz-some-workload-topic");
+
+    const resource_pattern match(
+      resource_type::topic, "tz-", pattern_type::prefixed);
+
+    auto auth = make_test_instance();
+
+    chunked_vector<acl_binding> bindings;
+    bindings.emplace_back(
+      match, acl_entry(user, host, acl_operation::read, acl_permission::allow));
+
+    // prefixed patterns that share the topic's first character ('t') but
+    // are never a prefix of it, so they must never match
+    for (size_t i = 0; i < noise; ++i) {
+        bindings.emplace_back(
+          resource_pattern(
+            resource_type::topic,
+            fmt::format("to-noise-{:06}", i),
+            pattern_type::prefixed),
+          acl_entry(
+            acl_principal(principal_type::user, fmt::format("u{}", i)),
+            acl_wildcard_host,
+            acl_operation::read,
+            acl_permission::allow));
+    }
+    auth.add_bindings(bindings);
+
+    // granted via the "tz-" prefix regardless of the noise / code path
+    auto granted = auth.authorized(
+      topic,
+      acl_operation::read,
+      user,
+      host,
+      security::superuser_required::no,
+      {});
+    EXPECT_TRUE(granted.authorized);
+    EXPECT_EQ(granted.resource_pattern, match);
+
+    // a topic the "tz-" prefix does not cover is never granted, even though
+    // the noise shares its first character
+    EXPECT_FALSE(auth
+                   .authorized(
+                     model::topic("to-uncovered"),
+                     acl_operation::read,
+                     user,
+                     host,
+                     security::superuser_required::no,
+                     {})
+                   .authorized);
+}
+
+// The prefix radix index must never drift from `_acls`: across incremental
+// adds, a reset, and a removal, find() must discover exactly the prefixed
+// patterns the store holds whose name is a prefix of the query -- no more, no
+// fewer. Each pattern is granted to a distinct principal so a single find()
+// result can be probed per pattern against a brute-force prefix scan.
+TEST(AUTHORIZER_TEST, prefix_index_tracks_acls) {
+    const acl_host any_host = acl_host::wildcard_host();
+    const acl_host query_host("192.168.1.1");
+
+    const std::vector<ss::sstring> names{
+      "a", "ab", "abc", "abd", "b", "ba", "t", "tz", "tz-", "tz-events"};
+
+    auto principal_for = [](size_t i) {
+        return acl_principal(principal_type::user, fmt::format("p{}", i));
+    };
+    auto binding_for = [&](size_t i) {
+        return acl_binding(
+          resource_pattern(
+            resource_type::topic, names[i], pattern_type::prefixed),
+          acl_entry(
+            principal_for(i),
+            any_host,
+            acl_operation::read,
+            acl_permission::allow));
+    };
+
+    acl_store store;
+
+    const std::vector<ss::sstring> queries{
+      "abc",
+      "abd",
+      "abcd",
+      "abx",
+      "b",
+      "baz",
+      "tz-events-1",
+      "tz",
+      "t",
+      "zzz",
+      ""};
+
+    auto verify = [&](const absl::flat_hash_set<size_t>& present) {
+        for (const auto& q : queries) {
+            const auto matches = store.find(resource_type::topic, q);
+            for (size_t i = 0; i < names.size(); ++i) {
+                const bool expected = present.contains(i)
+                                      && std::string_view(q).starts_with(
+                                        std::string_view(names[i]));
+                const bool actual = matches.contains(
+                  acl_operation::read,
+                  principal_for(i),
+                  query_host,
+                  acl_permission::allow);
+                EXPECT_EQ(expected, actual)
+                  << "query='" << q << "' prefix='" << names[i] << "'";
+            }
+        }
+    };
+
+    // Incremental add in two batches: the second add must not drop the first
+    // batch's index entries.
+    chunked_vector<acl_binding> batch;
+    for (size_t i = 0; i < 5; ++i) {
+        batch.push_back(binding_for(i));
+    }
+    store.add_bindings(batch);
+    verify({0, 1, 2, 3, 4});
+
+    batch.clear();
+    for (size_t i = 5; i < names.size(); ++i) {
+        batch.push_back(binding_for(i));
+    }
+    store.add_bindings(batch);
+    verify({0, 1, 2, 3, 4, 5, 6, 7, 8, 9});
+
+    // Reset replaces the entire set: stale names must vanish from the index.
+    chunked_vector<acl_binding> reset;
+    reset.push_back(binding_for(7)); // "tz"
+    reset.push_back(binding_for(9)); // "tz-events"
+    store.reset_bindings(reset).get();
+    verify({7, 9});
+
+    // Removing an entry empties and prunes its pattern ("tz"); the descendant
+    // pattern ("tz-events") must still be discoverable via a descent through
+    // where the pruned node was, and the pruned one must no longer match.
+    chunked_vector<acl_binding_filter> filters;
+    filters.emplace_back(
+      resource_pattern_filter(
+        resource_type::topic, names[7], pattern_type::prefixed),
+      acl_entry_filter::any());
+    store.remove_bindings(filters);
+    verify({9});
+}
+
+namespace {
+const acl_host idx_any_host = acl_host::wildcard_host();
+const acl_host idx_query_host("192.168.1.1");
+
+acl_binding prefixed_read_allow(std::string_view name, const acl_principal& p) {
+    return acl_binding(
+      resource_pattern(
+        resource_type::topic, ss::sstring{name}, pattern_type::prefixed),
+      acl_entry(p, idx_any_host, acl_operation::read, acl_permission::allow));
+}
+
+bool idx_allows(
+  const acl_store& store, std::string_view topic, const acl_principal& p) {
+    return store.find(resource_type::topic, ss::sstring{topic})
+      .contains(acl_operation::read, p, idx_query_host, acl_permission::allow);
+}
+} // namespace
+
+// A second entry added to an already-indexed prefixed pattern takes the
+// "pattern already present" path in insert_binding (no index insert). The
+// existing index entry must survive and reflect the new entry through its
+// stable handle.
+TEST(AUTHORIZER_TEST, prefix_index_second_entry_on_existing_pattern) {
+    const acl_principal alice(principal_type::user, "alice");
+    const acl_principal bob(principal_type::user, "bob");
+
+    acl_store store;
+    auto grant = [&](const acl_principal& p) {
+        chunked_vector<acl_binding> b;
+        b.push_back(prefixed_read_allow("tz-", p));
+        store.add_bindings(b);
+    };
+    grant(alice); // creates + indexes the "tz-" pattern
+    grant(bob);   // second entry on the existing pattern
+
+    EXPECT_TRUE(idx_allows(store, "tz-events", alice));
+    EXPECT_TRUE(idx_allows(store, "tz-events", bob));
+}
+
+// The index stores references into _acls; they must survive the rehashes that
+// adding many further patterns triggers (the node-stability the design relies
+// on). Index one pattern, add thousands more, then confirm the first still
+// resolves.
+TEST(AUTHORIZER_TEST, prefix_index_stable_across_acls_growth) {
+    const acl_principal alice(principal_type::user, "alice");
+
+    acl_store store;
+    chunked_vector<acl_binding> first;
+    first.push_back(prefixed_read_allow("early-", alice));
+    store.add_bindings(first);
+
+    chunked_vector<acl_binding> bulk;
+    for (int i = 0; i < 5000; ++i) {
+        bulk.push_back(prefixed_read_allow(
+          fmt::format("p-{:06}-", i),
+          acl_principal(principal_type::user, fmt::format("u{}", i))));
+    }
+    store.add_bindings(bulk);
+
+    EXPECT_TRUE(idx_allows(store, "early-topic", alice));
+}
+
+// Removing the only entry empties the pattern, which prunes it from both _acls
+// and the index, so it must stop matching; re-adding re-creates and re-indexes
+// the pattern (it descends through where the pruned node was), and must match
+// again -- exercising the prune + re-insert round trip.
+TEST(AUTHORIZER_TEST, prefix_index_remove_then_readd) {
+    const acl_principal alice(principal_type::user, "alice");
+
+    acl_store store;
+    auto grant = [&] {
+        chunked_vector<acl_binding> b;
+        b.push_back(prefixed_read_allow("tz-", alice));
+        store.add_bindings(b);
+    };
+
+    grant();
+    EXPECT_TRUE(idx_allows(store, "tz-events", alice));
+
+    chunked_vector<acl_binding_filter> filters;
+    filters.emplace_back(
+      resource_pattern_filter(
+        resource_type::topic, ss::sstring{"tz-"}, pattern_type::prefixed),
+      acl_entry_filter::any());
+    store.remove_bindings(filters);
+    EXPECT_FALSE(idx_allows(store, "tz-events", alice));
+
+    grant();
+    EXPECT_TRUE(idx_allows(store, "tz-events", alice));
 }
 
 } // namespace security

@@ -24,6 +24,20 @@ redpanda_cc_library(
 )
 
 redpanda_cc_library(
+    name = "radix_tree",
+    hdrs = [
+        "radix_tree.h",
+    ],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":chunked_vector",
+        "//src/v/base",
+        "@abseil-cpp//absl/container:flat_hash_map",
+        "@seastar",
+    ],
+)
+
+redpanda_cc_library(
     name = "chunked_hash_map",
     hdrs = [
         "chunked_hash_map.h",
