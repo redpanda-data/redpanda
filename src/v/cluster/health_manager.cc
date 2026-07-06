@@ -169,7 +169,7 @@ ss::future<> health_manager::do_reconcile(ss::abort_source& as) {
         co_return;
     }
 
-    const std::array<model::topic_namespace_view, 8> internal_topics{
+    const std::array<model::topic_namespace_view, 9> internal_topics{
       model::kafka_consumer_offsets_nt,
       model::id_allocator_nt,
       model::tx_manager_nt,
@@ -178,6 +178,7 @@ ss::future<> health_manager::do_reconcile(ss::abort_source& as) {
       model::transform_offsets_nt,
       model::kafka_audit_logging_nt,
       model::transform_log_internal_nt,
+      model::l1_metastore_nt,
     };
 
     std::vector<ss::future<bool>> reconciles;
