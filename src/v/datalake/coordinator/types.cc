@@ -17,37 +17,27 @@ namespace datalake::coordinator {
 std::ostream& operator<<(std::ostream& o, const errc& errc) {
     switch (errc) {
     case errc::ok:
-        o << "errc::ok";
-        break;
+        return o << "errc::ok";
     case errc::coordinator_topic_not_exists:
-        o << "errc::coordinator_topic_not_exists";
-        break;
+        return o << "errc::coordinator_topic_not_exists";
     case errc::not_leader:
-        o << "errc::not_leader";
-        break;
+        return o << "errc::not_leader";
     case errc::timeout:
-        o << "errc::timeout";
-        break;
+        return o << "errc::timeout";
     case errc::fenced:
-        o << "errc::fenced";
-        break;
+        return o << "errc::fenced";
     case errc::stale:
-        o << "errc::stale";
-        break;
+        return o << "errc::stale";
     case errc::concurrent_requests:
-        o << "errc::concurrent_requests";
-        break;
+        return o << "errc::concurrent_requests";
     case errc::revision_mismatch:
-        o << "errc::revision_mismatch";
-        break;
+        return o << "errc::revision_mismatch";
     case errc::incompatible_schema:
-        o << "errc::incompatible_schema";
-        break;
+        return o << "errc::incompatible_schema";
     case errc::failed:
-        o << "errc::failed";
-        break;
+        return o << "errc::failed";
     }
-    return o;
+    return o << fmt::format("errc::unknown({})", static_cast<int16_t>(errc));
 }
 
 std::ostream& operator<<(std::ostream& o, const ensure_table_exists_reply& r) {
