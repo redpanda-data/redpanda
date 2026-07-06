@@ -3175,6 +3175,7 @@ consensus::next_followers_request_seq() {
 }
 
 ss::future<> consensus::refresh_commit_index() {
+    auto holder = _bg.hold();
     return _op_lock.get_units()
       .then([this](ssx::semaphore_units u) mutable {
           auto f = ss::now();
@@ -3191,7 +3192,8 @@ ss::future<> consensus::refresh_commit_index() {
       })
       .handle_exception_type([](const ss::broken_semaphore&) {
           // ignore exception, shutting down
-      });
+      })
+      .finally([holder = std::move(holder)] {});
 }
 
 void consensus::maybe_update_leader_commit_idx() {
