@@ -132,8 +132,9 @@ def submit_test_run(
         "antithesis.description": description,
         "antithesis.duration": str(duration_min),
         "antithesis.config_image": config_image,
-        "antithesis.images": ";".join(images),
     }
+    if images:
+        params["antithesis.images"] = ";".join(images)
     if recipients:
         params["antithesis.report.recipients"] = ";".join(recipients)
 

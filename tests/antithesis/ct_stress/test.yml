@@ -1,0 +1,32 @@
+# Antithesis test manifest, consumed by tools/antithesis/template_test_package.py.
+#
+# vars provides the default values for the Jinja2 templates (*.j2) in this
+# directory; override individual values at packaging time with --var KEY=VALUE.
+#
+# images declares companion images built from this test's own sources. Each
+# is built, tagged with a hash of its build context, exposed to the templates
+# as the named variable, and (for real runs) pushed and registered with
+# Antithesis so libvoidstar is injected into it.
+description: 5-node Redpanda cluster with MinIO object storage for cloud topics stress testing
+
+images:
+  workload_image:
+    context: workload
+
+vars:
+  # Any image with the stock rpk entrypoint works here. Override with an
+  # instrumented build for real Antithesis runs (--redpanda-image).
+  redpanda_image: docker.redpanda.com/redpandadata/redpanda-nightly:latest
+  minio_image: minio/minio:RELEASE.2025-07-23T15-54-02Z
+  nodes: 5
+  # 2 shards (threads) per broker. Memory must fit Antithesis' ~10G total:
+  # 5 brokers x 1.2G = 6G leaves room for MinIO, the workload, the OS page
+  # cache (buffered I/O, see --kernel-page-cache), and hypervisor overhead.
+  # This is below Redpanda's 1 GiB/shard floor (unavoidable: 5x2 shards at
+  # 1 GiB would need the whole 10G), so expect a cosmetic memory warning.
+  smp: 2
+  memory: 1200M
+  bucket: ct-stress
+  s3_access_key: panda-user
+  s3_secret_key: panda-secret
+  s3_region: panda-region

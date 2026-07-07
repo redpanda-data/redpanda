@@ -1,0 +1,51 @@
+FROM {{ base_image }}
+# Base must match the Bazel sysroot's glibc (Ubuntu 22.04 / glibc 2.35, per
+# bazel/repositories.bzl). The package bundles that 2.35 glibc; the injected
+# Antithesis libvoidstar pulls in the base image's libpthread, so if the base
+# has a newer glibc (e.g. redpanda-nightly / Debian 2.36) the versions split
+# and libvoidstar fails to dlopen ("Can not load the Antithesis native
+# library"). Matching the base to the sysroot keeps a single, consistent glibc.
+
+# curl is used by the compose healthcheck (the stock nightly base shipped it;
+# ubuntu:22.04 does not). The rest are for interactive debugging inside an
+# Antithesis multiverse-debugger session, where you cannot install tools at
+# inspection time: iproute2 (ss/ip/tc), iputils-ping and netcat-openbsd
+# (reachability), iptables/nftables/conntrack (see injected network faults),
+# procps/lsof (process and socket state), dnsutils and jq (name resolution and
+# admin-API/rpk JSON), tcpdump (confirm one-directional drops), gdb (thread
+# dumps of a wedged broker; /symbols has the unstripped binaries).
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        curl ca-certificates \
+        iproute2 iputils-ping netcat-openbsd \
+        iptables nftables conntrack \
+        procps lsof dnsutils jq \
+        tcpdump gdb \
+    && rm -rf /var/lib/apt/lists/*
+
+# The tarball lays out {{ install_root }} and the binaries' ELF interpreter is
+# baked to {{ install_root }}/lib, so it must be extracted at /. The rpk
+# symlink lets `rpk redpanda start` resolve its install dir and launch the
+# Bazel-built redpanda (same layout as the deb package); /symbols exposes the
+# unstripped binaries to Antithesis for symbolization.
+RUN --mount=from=packages,source={{ package_tarball }},target=/tmp/redpanda.tar.gz \
+    tar -xzf /tmp/redpanda.tar.gz -C / \
+    && mkdir -p /symbols \
+    && ln -sf {{ install_root }}/bin/rpk /usr/bin/rpk \
+    && ln -s {{ install_root }}/bin/redpanda /symbols/redpanda \
+    && find {{ install_root }}/lib/ -name '*.so*' \
+        -exec sh -c 'ln -s "$1" /symbols/"$(basename "$1")"' _ {} \;
+
+# Override the packaged default config (conf/redpanda.yaml) with a minimal one.
+COPY <<EOF /etc/redpanda/redpanda.yaml
+redpanda:
+  data_directory: /var/lib/redpanda/data
+  developer_mode: true
+  admin:
+    - address: 0.0.0.0
+      port: 9644
+EOF
+
+# Stock redpanda-nightly ran redpanda via rpk; replicate that so the compose
+# `command: [redpanda, start, ...]` becomes `rpk redpanda start ...`.
+ENTRYPOINT ["/usr/bin/rpk"]
