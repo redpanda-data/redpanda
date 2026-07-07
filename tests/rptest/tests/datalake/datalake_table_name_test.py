@@ -39,6 +39,33 @@ class DatalakeTableNameTest(RedpandaTest):
         # redpanda will be started by DatalakeServices
         pass
 
+    @staticmethod
+    def _wait_for_table_gone(spark, table_name: str):
+        def table_gone() -> bool:
+            try:
+                return table_name not in [
+                    row[1]
+                    for row in spark.run_query_fetch_all("SHOW TABLES IN redpanda")
+                ]
+            except pyhive.exc.OperationalError as e:
+                # Purging the last table deletes all files under the
+                # namespace prefix in S3, so the namespace disappears.
+                # An absent namespace means the table is gone too.
+                # JDBC-backed catalogs report NoSuchNamespaceException.
+                # HadoopCatalog instead gets FileNotFoundException from
+                # S3AFileSystem and wraps it as RuntimeIOException
+                # ("Failed to list tables under: <ns>").
+                msg = str(e)
+                if "NoSuchNamespaceException" in msg or "Failed to list tables" in msg:
+                    return True
+                raise
+
+        wait_until(
+            table_gone,
+            timeout_sec=30,
+            err_msg=f"Table {table_name} was not deleted",
+        )
+
     # For iceberg, should it be an icecube test?
     def _iceberg_dot_replacement_smoke(self, dl, topic, replacement):
         rpk = RpkTool(self.redpanda)
@@ -78,12 +105,8 @@ class DatalakeTableNameTest(RedpandaTest):
             timeout_sec=30,
             err_msg=f"Topic {topic} was not deleted",
         )
-        wait_until(
-            lambda: expected_table
-            not in spark.run_query_fetch_all("SHOW TABLES IN redpanda"),
-            timeout_sec=30,
-            err_msg=f"Table {expected_table} was not deleted",
-        )
+
+        self._wait_for_table_gone(spark, expected_table)
 
     @cluster(num_nodes=3)
     @matrix(
@@ -161,33 +184,7 @@ class DatalakeTableNameTest(RedpandaTest):
                 err_msg=f"Topic {topic} was not deleted",
             )
 
-            def dlq_table_gone() -> bool:
-                try:
-                    return expected_dlq_table not in [
-                        row[1]
-                        for row in spark.run_query_fetch_all("SHOW TABLES IN redpanda")
-                    ]
-                except pyhive.exc.OperationalError as e:
-                    # Purging the last table deletes all files under the
-                    # namespace prefix in S3, so the namespace disappears.
-                    # An absent namespace means the table is gone too.
-                    # JDBC-backed catalogs report NoSuchNamespaceException.
-                    # HadoopCatalog instead gets FileNotFoundException from
-                    # S3AFileSystem and wraps it as RuntimeIOException
-                    # ("Failed to list tables under: <ns>").
-                    msg = str(e)
-                    if (
-                        "NoSuchNamespaceException" in msg
-                        or "Failed to list tables" in msg
-                    ):
-                        return True
-                    raise
-
-            wait_until(
-                dlq_table_gone,
-                timeout_sec=30,
-                err_msg=f"DLQ table {expected_dlq_table} was not deleted",
-            )
+            self._wait_for_table_gone(spark, expected_dlq_table)
 
 
 class DatalakeTableNameInvalidReplacementTest(RedpandaTest):
