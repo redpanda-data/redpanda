@@ -16,6 +16,7 @@
 #include "cloud_topics/level_zero/stm/placeholder.h"
 #include "cloud_topics/level_zero/stm/types.h"
 #include "cloud_topics/types.h"
+#include "model/record_fields.h"
 #include "model/timeout_clock.h"
 #include "raft/consensus.h"
 #include "raft/persisted_stm.h"
@@ -38,8 +39,8 @@ cluster_epoch extract_epoch(model::record_batch&& batch) {
       "Expected batch type to be ctp_placeholder, got {}",
       batch.header().type);
     iobuf value;
-    batch.for_each_record([&value](model::record&& r) {
-        value = std::move(r).release_value();
+    batch.for_each_record<model::record_field::value>([&value](auto r) {
+        value = std::move(r.value);
         return ss::stop_iteration::yes;
     });
 
@@ -377,8 +378,8 @@ void ctp_stm::apply_placeholder(const model::record_batch& batch) {
     vassert(
       batch.record_count() > 0, "Record batch must have at least one record");
     iobuf value;
-    batch.for_each_record([&value](model::record&& r) {
-        value = std::move(r).release_value();
+    batch.for_each_record<model::record_field::value>([&value](auto r) {
+        value = std::move(r.value);
         return ss::stop_iteration::yes;
     });
     auto placeholder = serde::from_iobuf<ctp_placeholder>(std::move(value));
