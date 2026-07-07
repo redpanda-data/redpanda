@@ -353,8 +353,10 @@ class CloudTopicsColdReadScaleTest(PreallocNodesTest):
             #
             # HACK: when CORE-16648 is fixed, drop this force-stop and let the
             # graceful teardown run -- a clean shutdown then becomes a real check.
-            self.logger.info(
-                "Force-stopping brokers to avoid the reconciler-wedge shutdown "
-                "hang (CORE-16648)"
-            )
-            self.redpanda.stop(forced=True)
+            # self.logger.info(
+            #     "Force-stopping brokers to avoid the reconciler-wedge shutdown "
+            #     "hang (CORE-16648)"
+            # )
+            # self.redpanda.stop(forced=True)
+            self.logger.info("Let brokers tear down gracefully")
+            self.redpanda.stop()
