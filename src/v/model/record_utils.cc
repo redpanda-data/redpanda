@@ -11,6 +11,7 @@
 
 #include "hashing/crc32c.h"
 #include "model/record.h"
+#include "model/record_fields.h"
 #include "utils/vint.h"
 
 #include <type_traits>
@@ -289,81 +290,28 @@ model::record_key_metadata parse_record_key_from_buffer(iobuf_const_parser& p) {
     return {static_cast<int32_t>(offset_delta), is_tombstone, std::move(key)};
 }
 
+namespace {
+
+template<bool FullyParse>
+model::record_metadata do_parse_record_metadata(iobuf_const_parser& p) {
+    auto pr = parse_record_fields<
+      FullyParse,
+      model::record_field::size_bytes,
+      model::record_field::attributes,
+      model::record_field::timestamp_delta,
+      model::record_field::offset_delta>(p);
+    return {pr.size_bytes, pr.attributes, pr.timestamp_delta, pr.offset_delta};
+}
+
+} // namespace
+
 model::record_metadata parse_record_metadata_from_buffer(
   iobuf_const_parser& p, bool fully_parse_record) {
-    auto [record_size, attr] = parse_record_meta_from_buffer(p);
-    auto [timestamp_delta, tv] = p.read_varlong();
-    auto [offset_delta, ov] = p.read_varlong();
-
-    if (!fully_parse_record) {
-        auto total_bytes_read = 1 + tv + ov;
-        if (record_size <= total_bytes_read) [[unlikely]] {
-            throw std::out_of_range(
-              fmt::format(
-                "Expected record size {} to be greater than bytes read {}",
-                record_size,
-                total_bytes_read));
-        }
-        p.skip(record_size - total_bytes_read);
-    } else {
-        auto start = p.bytes_consumed() - (tv + ov);
-        auto [key_length, kv] = p.read_varlong();
-        if (key_length > record_size) [[unlikely]] {
-            throw std::out_of_range(
-              fmt::format(
-                "Expected key length {} but record has only {} bytes in total",
-                key_length,
-                record_size));
-        }
-        if (key_length > 0) {
-            p.skip(key_length);
-        }
-        auto [value_length, vv] = p.read_varlong();
-        if (value_length > record_size) [[unlikely]] {
-            throw std::out_of_range(
-              fmt::format(
-                "Expected value length {} but record has only {} bytes in "
-                "total",
-                value_length,
-                record_size));
-        }
-        if (value_length > 0) {
-            p.skip(value_length);
-        }
-        auto [header_count, hcv] = p.read_varlong();
-        if (static_cast<size_t>(header_count) > p.bytes_left()) [[unlikely]] {
-            throw std::out_of_range(
-              fmt::format(
-                "Expected {} headers, but only {} bytes left",
-                header_count,
-                p.bytes_left()));
-        }
-        for (int64_t i = 0; i < header_count; ++i) {
-            auto [hk_len, hkv] = p.read_varlong();
-            if (hk_len > 0) {
-                p.skip(hk_len);
-            }
-            auto [hv_len, hvv] = p.read_varlong();
-            if (hv_len > 0) {
-                p.skip(hv_len);
-            }
-        }
-        // record_size includes the 1-byte attr already consumed above.
-        auto bytes_parsed = p.bytes_consumed() - start + 1;
-        if (bytes_parsed != static_cast<size_t>(record_size)) [[unlikely]] {
-            throw std::out_of_range(
-              fmt::format(
-                "Record size mismatch: expected {} but parsed {} bytes",
-                record_size,
-                bytes_parsed));
-        }
-    }
-    return {
-      static_cast<int32_t>(record_size),
-      model::record_attributes(attr),
-      static_cast<int64_t>(timestamp_delta),
-      static_cast<int32_t>(offset_delta),
-    };
+    // With `fully_parse_record` the entire record structure (key, value and
+    // every header) is walked and validated without being materialized;
+    // otherwise those fields are skipped over wholesale.
+    return fully_parse_record ? do_parse_record_metadata<true>(p)
+                              : do_parse_record_metadata<false>(p);
 }
 
 } // namespace model

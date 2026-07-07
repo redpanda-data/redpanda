@@ -170,6 +170,7 @@ redpanda_cc_gtest(
         "//src/v/model",
         "//src/v/model:batch_compression",
         "//src/v/test_utils:gtest",
+        "//src/v/utils:vint",
         "@googletest//:gtest",
     ],
 )

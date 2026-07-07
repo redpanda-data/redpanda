@@ -39,6 +39,7 @@ redpanda_cc_library(
         "record.h",
         "record_batch_reader.h",
         "record_batch_types.h",
+        "record_fields.h",
         "record_utils.h",
         "timeout_clock.h",
         "timestamp.h",
