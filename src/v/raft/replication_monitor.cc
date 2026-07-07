@@ -13,38 +13,13 @@
 
 #include "raft/consensus.h"
 #include "raft/errc.h"
-#include "ssx/future-util.h"
 
 #include <ranges>
 
 namespace raft {
 
 replication_monitor::replication_monitor(consensus* r)
-  : _raft(r) {
-    ssx::repeat_until_gate_closed(_gate, [this] {
-        return do_notify_replicated().handle_exception(
-          [this](const std::exception_ptr& e) {
-              if (!ssx::is_shutdown_exception(e)) {
-                  vlog(
-                    _raft->_ctxlog.error,
-                    "Exception running replication monitor, ignoring: {}",
-                    e);
-              }
-          });
-    });
-
-    ssx::repeat_until_gate_closed(_gate, [this] {
-        return do_notify_committed().handle_exception(
-          [this](const std::exception_ptr& e) {
-              if (!ssx::is_shutdown_exception(e)) {
-                  vlog(
-                    _raft->_ctxlog.error,
-                    "Exception running replication monitor, ignoring: {}",
-                    e);
-              }
-          });
-    });
-}
+  : _raft(r) {}
 
 fmt::iterator replication_monitor::format_to(fmt::iterator it) const {
     static constexpr long max_waiters_to_print = 3;
@@ -68,13 +43,11 @@ fmt::iterator replication_monitor::format_to(fmt::iterator it) const {
 }
 
 ss::future<> replication_monitor::stop() {
-    auto f = _gate.close();
     for (auto& [_, waiter] : _waiters) {
         waiter->done.set_value(errc::shutting_down);
     }
-    _committed_event_cv.broken();
-    _replicated_event_cv.broken();
-    return f;
+    _waiters.clear();
+    return _gate.close();
 }
 
 ss::future<errc> replication_monitor::do_wait_until(
@@ -161,28 +134,30 @@ bool replication_monitor::is_append_replicated(
            && _raft->_majority_replicated_index >= append_info.last_offset;
 }
 
-ss::future<> replication_monitor::do_notify_replicated() {
-    if (_pending_majority_replication_waiters > 0) {
-        auto majority_replicated_offset = _raft->_majority_replicated_index;
-        auto it = _waiters.begin();
-        while (it != _waiters.end()
-               && it->first <= majority_replicated_offset) {
-            auto& entry = it->second;
-            auto& append_info = entry->append_info;
-            if (
-              entry->type == wait_type::majority_replication
-              && is_append_replicated(append_info)) {
-                entry->done.set_value(errc::success);
-                it = _waiters.erase(it);
-            } else {
-                ++it;
-            }
+void replication_monitor::notify_replicated() {
+    if (_gate.is_closed() || _pending_majority_replication_waiters == 0) {
+        return;
+    }
+    auto majority_replicated_offset = _raft->_majority_replicated_index;
+    auto it = _waiters.begin();
+    while (it != _waiters.end() && it->first <= majority_replicated_offset) {
+        auto& entry = it->second;
+        auto& append_info = entry->append_info;
+        if (
+          entry->type == wait_type::majority_replication
+          && is_append_replicated(append_info)) {
+            entry->done.set_value(errc::success);
+            it = _waiters.erase(it);
+        } else {
+            ++it;
         }
     }
-    co_await _replicated_event_cv.wait();
 }
 
-ss::future<> replication_monitor::do_notify_committed() {
+void replication_monitor::notify_committed() {
+    if (_gate.is_closed() || _waiters.empty()) {
+        return;
+    }
     auto committed_offset = _raft->committed_offset();
     auto committed_offset_term = _raft->get_term(committed_offset);
     auto it = _waiters.begin();
@@ -207,21 +182,6 @@ ss::future<> replication_monitor::do_notify_committed() {
             ++it;
         }
     }
-    co_await _committed_event_cv.wait();
-}
-
-void replication_monitor::notify_replicated() {
-    if (_gate.is_closed()) {
-        return;
-    }
-    _replicated_event_cv.signal();
-}
-
-void replication_monitor::notify_committed() {
-    if (_gate.is_closed()) {
-        return;
-    }
-    _committed_event_cv.signal();
 }
 
 replication_monitor::waiter::waiter(

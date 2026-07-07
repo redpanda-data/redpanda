@@ -17,7 +17,6 @@
 #include "model/fundamental.h"
 #include "storage/types.h"
 
-#include <seastar/core/condition-variable.hh>
 #include <seastar/core/future.hh>
 #include <seastar/core/gate.hh>
 
@@ -37,9 +36,9 @@ class consensus;
  *   2. offset majority replicated (without flush)
  *
  * Internally this class maintains a list of waiters for these events.
- * The main work loop that notifies these waiters runs out side of
- * consensus op lock. The waiters are also notified of the truncation
- * event if the desired offset is truncated in case of a leadership change.
+ * Waiters are notified directly from the consensus event hooks.
+ * The waiters are also notified of the truncation event if the
+ * desired offset is truncated in case of a leadership change.
  */
 class replication_monitor {
 public:
@@ -99,9 +98,6 @@ private:
         }
     };
 
-    ss::future<> do_notify_replicated();
-    ss::future<> do_notify_committed();
-
     ss::future<errc> do_wait_until(storage::append_result, wait_type);
 
     bool is_append_replicated(const storage::append_result&) const;
@@ -116,8 +112,6 @@ private:
     waiters_type _waiters;
     ss::gate _gate;
 
-    ss::condition_variable _replicated_event_cv;
-    ss::condition_variable _committed_event_cv;
     // Tracks the number of waiters of type majority_replication in
     // the waiters map. This is an optimization to avoid looping
     // through all waiters in the map if there are no waiters
