@@ -152,6 +152,13 @@ class ClusterLinkingProgressVerifier:
         self.consumer_properties: dict[str, Any] = (
             consumer_properties if consumer_properties else {}
         )
+        # When using compaction, the completion criteria examines per-partition
+        # offsets, which may be at odds with having a max_msgs set.
+        assert not (self.use_compaction and "max_msgs" in self.consumer_properties), (
+            "max_msgs is incompatible with use_compaction: completion requires "
+            "per-partition offset parity, which a bounded read may never reach. "
+            "Let the consumer tail (continuous) instead."
+        )
         self.timeout_sec = timeout_sec
         self.validate_number_of_messages_on_target = (
             validate_number_of_messages_on_target
@@ -195,12 +202,14 @@ class ClusterLinkingProgressVerifier:
         )
         self.source_consumer.start(clean=False)
 
+        # NOTE: when using compaction, the completion criteria examines
+        # per-partition offsets, which is at odds with having a max_msgs.
         self.target_consumer = KgoVerifierConsumerGroupConsumer(
             context=self.test_context,
             redpanda=self.target_cluster.service,
             topic=self.topic,
             msg_size=self.msg_size,
-            max_msgs=self.msg_count,
+            max_msgs=None if self.use_compaction else self.msg_count,
             readers=readers,
             use_transactions=self.use_transactions,
             group_name=f"target-cg-{self._instance_id}",
