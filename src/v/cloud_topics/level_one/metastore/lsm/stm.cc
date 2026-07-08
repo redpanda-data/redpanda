@@ -71,6 +71,11 @@ stm::stm(
 ss::future<std::expected<model::term_id, stm::errc>> stm::sync(
   model::timeout_clock::duration timeout,
   std::optional<std::reference_wrapper<ss::abort_source>> as) {
+    auto gh = _gate.try_hold();
+    if (!gh) {
+        co_return std::unexpected(errc::shutting_down);
+    }
+
     auto sync_res = co_await ss::coroutine::as_future(
       metastore_stm_base::sync(timeout, as));
     if (sync_res.failed()) {
