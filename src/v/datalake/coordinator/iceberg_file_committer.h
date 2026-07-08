@@ -31,11 +31,13 @@ public:
       storage::api& storage,
       iceberg::catalog& catalog,
       iceberg::manifest_io& io,
-      config::binding<bool> disable_snapshot_tags)
+      config::binding<bool> disable_snapshot_tags,
+      config::binding<size_t> max_files_per_commit)
       : storage_(storage)
       , catalog_(catalog)
       , io_(io)
-      , disable_snapshot_tags_(std::move(disable_snapshot_tags)) {}
+      , disable_snapshot_tags_(std::move(disable_snapshot_tags))
+      , max_files_per_commit_(std::move(max_files_per_commit)) {}
     ~iceberg_file_committer() override = default;
 
     // Commits the given files to the table, creating the table if necessary.
@@ -54,8 +56,7 @@ public:
     // result in the calls doing IO to build Iceberg metadata and at least one
     // of the calls failing to commit to the table. Ensuring a single caller
     // avoids this potential waste of IO.
-    ss::future<checked<chunked_vector<mark_files_committed_update>, errc>>
-    commit_topic_files_to_catalog(
+    ss::future<checked<commit_result, errc>> commit_topic_files_to_catalog(
       model::topic, const topics_state&) const final;
 
     ss::future<checked<std::nullopt_t, errc>>
@@ -67,6 +68,7 @@ private:
     iceberg::catalog& catalog_;
     iceberg::manifest_io& io_;
     config::binding<bool> disable_snapshot_tags_;
+    config::binding<size_t> max_files_per_commit_;
 };
 
 } // namespace datalake::coordinator

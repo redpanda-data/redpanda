@@ -101,7 +101,7 @@ ss::future<fetch_latest_translated_offset_reply> fetch_latest_offset(
     }
     auto& val = ret.value();
     co_return fetch_latest_translated_offset_reply{
-      val.last_added_offset, val.last_committed_offset};
+      val.last_added_offset, val.last_committed_offset, val.backpressure};
 }
 } // namespace
 

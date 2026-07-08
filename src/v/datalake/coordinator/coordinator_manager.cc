@@ -63,7 +63,9 @@ ss::future<> coordinator_manager::start() {
       storage_,
       *catalog_,
       manifest_io_,
-      config::shard_local_cfg().iceberg_disable_snapshot_tagging.bind());
+      config::shard_local_cfg().iceberg_disable_snapshot_tagging.bind(),
+      config::shard_local_cfg()
+        .datalake_coordinator_max_files_per_commit.bind());
     snapshot_remover_ = std::make_unique<iceberg_snapshot_remover>(
       *catalog_, manifest_io_);
 
@@ -148,7 +150,8 @@ void coordinator_manager::start_managing(cluster::partition& p) {
       config::shard_local_cfg().iceberg_catalog_commit_interval_ms.bind(),
       config::shard_local_cfg().iceberg_default_partition_spec.bind(),
       config::shard_local_cfg()
-        .iceberg_disable_automatic_snapshot_expiry.bind());
+        .iceberg_disable_automatic_snapshot_expiry.bind(),
+      config::shard_local_cfg().datalake_coordinator_max_pending_files.bind());
     if (p.is_leader()) {
         crd->notify_leadership(self_);
     }

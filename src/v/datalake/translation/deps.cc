@@ -631,6 +631,10 @@ public:
         _probe->update_commit_offset_lag(new_lag);
     }
 
+    void report_backpressure_backoff() final {
+        _probe->increment_backpressure_backoff();
+    }
+
 private:
     scheduling::clock::duration compute_target_lag() const {
         // todo: In addition to integrating with config subsystem, an additional

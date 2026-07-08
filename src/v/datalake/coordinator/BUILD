@@ -30,9 +30,11 @@ redpanda_cc_library(
     name = "coordinator",
     srcs = [
         "coordinator.cc",
+        "coordinator_probe.cc",
     ],
     hdrs = [
         "coordinator.h",
+        "coordinator_probe.h",
     ],
     implementation_deps = [
         ":catalog_config",
@@ -61,6 +63,7 @@ redpanda_cc_library(
         "//src/v/config",
         "//src/v/container:chunked_hash_map",
         "//src/v/container:chunked_vector",
+        "//src/v/metrics",
         "//src/v/model",
         "@abseil-cpp//absl/hash",
         "@seastar",
@@ -303,6 +306,7 @@ redpanda_cc_library(
     deps = [
         ":translated_offset_range",
         "//src/v/container:chunked_hash_map",
+        "//src/v/container:chunked_vector",
         "//src/v/iceberg:manifest_entry",
         "//src/v/model",
         "//src/v/serde",

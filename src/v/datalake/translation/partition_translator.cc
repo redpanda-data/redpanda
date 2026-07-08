@@ -219,6 +219,26 @@ partition_translator::fetch_translation_offsets(retry_chain_node& rcn) {
         current_translation_lto = checkpointed_lto;
     }
 
+    translation_offsets offsets;
+    offsets.coordinator_lto = checkpointed_lto;
+
+    if (result.backpressure) {
+        // The coordinator is shedding load for this topic. We've reported lag
+        // and reconciled the translated offset above, but don't proceed with
+        // translation.
+        _translation_ctx->report_backpressure_backoff();
+        static constexpr auto log_freq = 30s;
+        thread_local static ss::logger::rate_limit rate(log_freq);
+        vloglr(
+          datalake_log,
+          ss::log_level::info,
+          rate,
+          "[{}] Coordinator applying backpressure (too many pending files); "
+          "backing off translation",
+          _data_source->ntp());
+        co_return offsets;
+    }
+
     static constexpr auto data_wait_duration = 3s;
     // Wait until some data is ready to be translated.
     auto maybe_begin_offset = co_await _data_source->wait_for_data_to_translate(
@@ -226,8 +246,6 @@ partition_translator::fetch_translation_offsets(retry_chain_node& rcn) {
       ss::lowres_clock::now() + data_wait_duration,
       _as);
 
-    translation_offsets offsets;
-    offsets.coordinator_lto = checkpointed_lto;
     if (!maybe_begin_offset) {
         vlog(
           _logger.trace,
