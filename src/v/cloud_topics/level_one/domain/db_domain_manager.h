@@ -18,6 +18,7 @@
 #include "cloud_topics/level_one/metastore/lsm/stm.h"
 #include "model/fundamental.h"
 #include "model/timestamp.h"
+#include "raft/consensus.h"
 #include "ssx/checkpoint_mutex.h"
 
 #include <seastar/core/abort_source.hh>
@@ -36,6 +37,7 @@ public:
     explicit db_domain_manager(
       model::term_id expected_term,
       ss::shared_ptr<stm> stm,
+      ss::lw_shared_ptr<raft::consensus> raft,
       cloud_io::cache* cache,
       cloud_io::remote* remote,
       cloud_storage_clients::bucket_name bucket,
@@ -233,6 +235,11 @@ private:
     ss::scheduling_group sg_;
 
     ss::shared_ptr<stm> stm_;
+
+    // Consensus for the partition backing the STM. Held to keep it alive for
+    // the lifetime of this manager and to observe leadership/term without
+    // reaching through the STM, which does not own the consensus.
+    ss::lw_shared_ptr<raft::consensus> raft_;
 
     // Hold in write mode when changing the db instance.
     // Hold in read mode for other access to the db that doesn't reopen the db.

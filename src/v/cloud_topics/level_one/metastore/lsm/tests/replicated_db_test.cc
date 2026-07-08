@@ -68,10 +68,12 @@ ss::future<chunked_vector<write_batch_row>> get_rows(lsm::database& db) {
 struct replicated_db_node {
     replicated_db_node(
       ss::shared_ptr<stm> s,
+      ss::lw_shared_ptr<raft::consensus> raft,
       cloud_io::remote* remote,
       const cloud_storage_clients::bucket_name& bucket,
       cloud_io::cache* cache)
       : stm_ptr(std::move(s))
+      , raft(std::move(raft))
       , remote(remote)
       , bucket(bucket)
       , cache(cache) {}
@@ -79,8 +81,9 @@ struct replicated_db_node {
     ss::future<std::expected<replicated_database*, replicated_database::error>>
     open_db() {
         auto ret = co_await replicated_database::open(
-          stm_ptr->raft()->confirmed_term(),
+          raft->confirmed_term(),
           stm_ptr.get(),
+          raft,
           cache,
           remote,
           bucket,
@@ -101,12 +104,13 @@ struct replicated_db_node {
                 vlog(
                   rdb_test_log.warn,
                   "Failed to close DB for node {}",
-                  stm_ptr->raft()->self());
+                  raft->self());
             }
         }
     }
 
     ss::shared_ptr<stm> stm_ptr;
+    ss::lw_shared_ptr<raft::consensus> raft;
     cloud_io::remote* remote;
     const cloud_storage_clients::bucket_name& bucket;
     cloud_io::cache* cache;
@@ -179,6 +183,7 @@ public:
 
             db_nodes.at(id()) = std::make_unique<replicated_db_node>(
               std::move(s),
+              node->raft(),
               &sr->remote.local(),
               bucket_name,
               &test_cache.local());
@@ -196,6 +201,10 @@ public:
         for (auto& node : db_nodes) {
             if (node) {
                 node->close().get();
+                // Drop the node (and its consensus reference) before tearing
+                // down the raft fixture, so the fixture destroys the consensus
+                // and closes its log while storage services are still up.
+                node.reset();
             }
         }
         raft::raft_fixture::TearDownAsync().get();
@@ -211,7 +220,7 @@ public:
             return std::nullopt;
         }
         auto& node = *db_nodes.at(leader_id.value()());
-        if (!node.stm_ptr->raft()->is_leader()) {
+        if (!node.raft->is_leader()) {
             return std::nullopt;
         }
         return node;
@@ -326,7 +335,7 @@ TEST_F(ReplicatedDatabaseTest, TestBasicWrites) {
       ElementsAre(MatchesKV("key1", "value1")));
 
     // Elect a new leader.
-    initial_leader->stm_ptr->raft()->step_down("test").get();
+    initial_leader->raft->step_down("test").get();
     opt_ref leader_opt;
     ASSERT_NO_FATAL_FAILURE(wait_for_leader(leader_opt).get());
     auto& new_leader = leader_opt->get();
@@ -417,7 +426,7 @@ TEST_F(ReplicatedDatabaseTest, TestBasicFlush) {
     }
 
     // Opening the database on a new leader should yield all the rows.
-    initial_leader->stm_ptr->raft()->step_down("test").get();
+    initial_leader->raft->step_down("test").get();
     opt_ref leader_opt;
     ASSERT_NO_FATAL_FAILURE(wait_for_leader(leader_opt).get());
     auto& new_leader = leader_opt->get();
@@ -512,7 +521,7 @@ TEST_F(ReplicatedDatabaseTest, TestFlushFailure) {
       ElementsAre(MatchesKV("key1", "value1")));
 
     // Step down as leader of the given term.
-    initial_leader->stm_ptr->raft()->step_down("test").get();
+    initial_leader->raft->step_down("test").get();
     opt_ref leader_opt;
     ASSERT_NO_FATAL_FAILURE(wait_for_leader(leader_opt).get());
 
@@ -680,7 +689,7 @@ TEST_F(ReplicatedDatabaseTest, TestReplayTombstones) {
 
     // Transfer leadership. The new leader will replay the tombstone from the
     // volatile buffer.
-    initial_leader->stm_ptr->raft()->step_down("test").get();
+    initial_leader->raft->step_down("test").get();
     opt_ref leader_opt;
     ASSERT_NO_FATAL_FAILURE(wait_for_leader(leader_opt).get());
     auto& new_leader = leader_opt->get();

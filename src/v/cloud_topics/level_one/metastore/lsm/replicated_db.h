@@ -19,6 +19,7 @@
 #include "lsm/lsm.h"
 #include "lsm/proto/manifest.proto.h"
 #include "model/fundamental.h"
+#include "raft/consensus.h"
 #include "utils/detailed_error.h"
 
 #include <seastar/core/scheduling.hh>
@@ -63,6 +64,7 @@ public:
     open(
       model::term_id expected_term,
       stm* s,
+      ss::lw_shared_ptr<raft::consensus> raft,
       cloud_io::cache* cache,
       cloud_io::remote* remote,
       const cloud_storage_clients::bucket_name& bucket,
@@ -102,12 +104,14 @@ private:
       model::term_id term,
       domain_uuid domain_uuid,
       stm* s,
+      ss::lw_shared_ptr<raft::consensus> raft,
       lsm::database db,
       ss::abort_source& as,
       ss::scheduling_group sg)
       : term_(term)
       , expected_domain_uuid_(domain_uuid)
       , stm_(s)
+      , raft_(std::move(raft))
       , db_(std::move(db))
       , as_(as)
       , sg_(sg) {}
@@ -133,6 +137,11 @@ private:
 
     // STM for replication and state access.
     stm* stm_;
+
+    // Consensus for this partition. Held to keep it alive for the lifetime of
+    // this database and to observe leadership/term without reaching through the
+    // STM, which does not own the consensus.
+    ss::lw_shared_ptr<raft::consensus> raft_;
 
     // The underlying LSM database.
     lsm::database db_;

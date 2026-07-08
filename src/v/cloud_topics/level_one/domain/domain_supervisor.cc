@@ -329,6 +329,7 @@ private:
             domain_mgr = ss::make_shared<db_domain_manager>(
               *expected_term,
               stm_manager->get<stm>(),
+              (*partition)->raft(),
               _cache,
               _remote,
               _bucket,

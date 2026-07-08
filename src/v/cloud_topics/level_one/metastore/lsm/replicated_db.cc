@@ -58,6 +58,7 @@ ss::future<std::expected<
 replicated_database::open(
   model::term_id expected_term,
   stm* s,
+  ss::lw_shared_ptr<raft::consensus> raft,
   cloud_io::cache* cache,
   cloud_io::remote* remote,
   const cloud_storage_clients::bucket_name& bucket,
@@ -190,8 +191,8 @@ replicated_database::open(
             }
         }
     }
-    auto ret = std::unique_ptr<replicated_database>(
-      new replicated_database(term, domain_uuid, s, std::move(db), as, sg));
+    auto ret = std::unique_ptr<replicated_database>(new replicated_database(
+      term, domain_uuid, s, std::move(raft), std::move(db), as, sg));
     ret->start();
     co_return std::move(ret);
 }
@@ -217,7 +218,7 @@ replicated_database::close() {
 }
 
 bool replicated_database::needs_reopen() const {
-    return !stm_->raft()->is_leader() || term_ != stm_->raft()->confirmed_term()
+    return !raft_->is_leader() || term_ != raft_->confirmed_term()
            || get_domain_uuid() != expected_domain_uuid_;
 }
 
