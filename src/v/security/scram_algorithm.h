@@ -339,6 +339,18 @@ public:
     }
 
     /**
+     * Computes the stored key for a plaintext password, as persisted in a
+     * scram_credential. This is the expensive part of non-SCRAM password
+     * validation: the salted password derivation runs `iterations` HMAC
+     * rounds.
+     */
+    static bytes derive_stored_key(
+      const ss::sstring& password, bytes_view salt, int iterations) {
+        auto salted_password = salt_password(password, salt, iterations);
+        return stored_key(client_key(salted_password));
+    }
+
+    /**
      * For doing non-SCRAM authentication, such as HTTP basic auth over TLS,
      * using stored SCRAM credentials.
      */
@@ -347,10 +359,8 @@ public:
       bytes_view reference_stored_key,
       bytes_view salt,
       int iterations) {
-        auto salted_password = salt_password(password, salt, iterations);
-        auto clientkey = client_key(salted_password);
-        auto storedkey = stored_key(clientkey);
-        return storedkey == reference_stored_key;
+        return derive_stored_key(password, salt, iterations)
+               == reference_stored_key;
     }
 
 private:

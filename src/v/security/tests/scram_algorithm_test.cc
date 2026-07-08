@@ -353,4 +353,26 @@ BOOST_AUTO_TEST_CASE(make_credentials_sets_timestamp) {
     }
 }
 
+BOOST_AUTO_TEST_CASE(derive_stored_key_matches_credential) {
+    const ss::sstring password = "letmein-derive";
+
+    auto creds256 = scram_sha256::make_credentials(
+      password, scram_sha256::min_iterations);
+    BOOST_REQUIRE(
+      scram_sha256::derive_stored_key(
+        password, creds256.salt(), creds256.iterations())
+      == creds256.stored_key());
+    BOOST_REQUIRE(
+      scram_sha256::derive_stored_key(
+        "wrong-password", creds256.salt(), creds256.iterations())
+      != creds256.stored_key());
+
+    auto creds512 = scram_sha512::make_credentials(
+      password, scram_sha512::min_iterations);
+    BOOST_REQUIRE(
+      scram_sha512::derive_stored_key(
+        password, creds512.salt(), creds512.iterations())
+      == creds512.stored_key());
+}
+
 } // namespace security
