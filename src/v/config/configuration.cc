@@ -5109,6 +5109,16 @@ configuration::configuration()
       "When true, completely disables leveling of cloud topics.",
       {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
       false)
+  , enable_topic_mode_migration(
+      *this,
+      "enable_topic_mode_migration",
+      "Enable migrating a topic's data to a new storage mode by transitioning "
+      "its redpanda.storage.mode. Only tiered -> cloud/tiered_cloud (tiered "
+      "storage -> cloud topics) is supported today. The migration also "
+      "requires the topic_mode_migration cluster feature to be active; this "
+      "config must additionally be true. Off by default.",
+      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
+      false)
   , cloud_topics_compaction_key_map_memory(
       *this,
       "cloud_topics_compaction_key_map_memory",

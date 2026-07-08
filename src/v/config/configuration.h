@@ -843,6 +843,7 @@ public:
     property<size_t> cloud_topics_leveling_commit_interval_bytes;
     property<bool> cloud_topics_compaction_disabled;
     property<bool> cloud_topics_leveling_disabled;
+    property<bool> enable_topic_mode_migration;
     bounded_property<uint64_t> cloud_topics_compaction_key_map_memory;
     bounded_property<size_t> cloud_topics_l1_streaming_read_chunk_size;
     property<std::chrono::milliseconds>
