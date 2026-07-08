@@ -548,11 +548,7 @@ partition_validator::validate_objects(
             auto ec = ssx::is_shutdown_exception(ex) ? errc::shutting_down
                                                      : errc::io_error;
             co_return std::unexpected(error(
-              ec,
-              fmt::format(
-                "object_exists failed for {}: {}",
-                oid,
-                exists_fut.get_exception())));
+              ec, fmt::format("object_exists failed for {}: {}", oid, ex)));
         }
         auto dl_res = exists_fut.get();
         switch (dl_res) {
