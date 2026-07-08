@@ -16,6 +16,7 @@ import (
 	"math/rand"
 	"time"
 
+	"github.com/antithesishq/antithesis-sdk-go/assert"
 	"github.com/antithesishq/antithesis-sdk-go/random"
 	"github.com/twmb/franz-go/pkg/kadm"
 	"github.com/twmb/franz-go/pkg/kerr"
@@ -73,10 +74,19 @@ func createTopic() error {
 // parallel_driver_produce: produce a bounded random batch. Best-effort under
 // fault injection — transient failures are expected and not bugs.
 func produce() error {
+	// A per-invocation nonce keeps this producer's keys distinct from every
+	// other concurrent producer's, so (nonce, seq) uniquely identifies a
+	// record. It also rides in the ClientID so Redpanda's request logs can be
+	// correlated back to this batch.
+	nonce := rng.Uint64()
 	cl, err := newClient(
+		kgo.ClientID(fmt.Sprintf("ct_stress/produce/%016x", nonce)),
 		kgo.DefaultProduceTopic(topic),
 		kgo.RequiredAcks(kgo.AllISRAcks()),
 		kgo.ProducerLinger(5*time.Millisecond),
+		// Assign partitions ourselves so each record can carry the partition
+		// it was written to; a reader then verifies it was served from there.
+		kgo.RecordPartitioner(kgo.ManualPartitioner()),
 	)
 	if err != nil {
 		return err
@@ -86,36 +96,21 @@ func produce() error {
 	count := 1 + randN(50)
 	recs := make([]*kgo.Record, count)
 	for i := range recs {
-		recs[i] = &kgo.Record{
-			Key:   fmt.Appendf(nil, "k%d-%d", randN(1<<30), i),
-			Value: fmt.Appendf(nil, "val-%d-%d", randN(1<<30), i),
-		}
+		recs[i] = makeRecord(nonce, i, int32(randN(fooPartitions)))
 	}
 
+	fmt.Printf("producing %d records to foo (nonce=%016x)\n", count, nonce)
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	if err := cl.ProduceSync(ctx, recs...).FirstErr(); err != nil {
-		fmt.Printf("produce did not complete (expected under faults): %v\n", err)
+		fmt.Printf("produce did not complete (expected under faults) (nonce=%016x): %v\n", nonce, err)
 		return nil
 	}
-	fmt.Printf("produced %d records to foo\n", count)
-	return nil
-}
-
-// parallel_driver_consume: consume a random offset range from a random
-// partition, exercising the cloud-topics read path. Best-effort.
-func consume() error {
-	part, lo, hi, err := randomPartitionRange()
-	if err != nil || hi <= lo {
-		return nil // unreadable under faults, or empty; not a bug
-	}
-	o1 := lo + int64(randN(int(hi-lo)))
-	o2 := o1 + 1 + int64(randN(int(hi-o1)))
-
-	offs, err := readRange(part, o1, o2)
-	if err != nil {
-		return nil
-	}
-	fmt.Printf("consumed foo/%d offsets %d:%d -> %d records\n", part, o1, o2, len(offs))
+	// Prove the workload actually writes data in some timeline; without this a
+	// run where produce never succeeds would pass every safety check vacuously,
+	// since the checkers only assert on non-empty reads.
+	assert.Reachable("workload produced a batch to foo",
+		map[string]any{"count": count, "nonce": fmt.Sprintf("%016x", nonce)})
+	fmt.Printf("produced %d records to foo (nonce=%016x)\n", count, nonce)
 	return nil
 }

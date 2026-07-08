@@ -12,6 +12,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"strconv"
 	"time"
 
 	"github.com/antithesishq/antithesis-sdk-go/assert"
@@ -59,10 +60,10 @@ func randomPartitionRange() (part int32, lo, hi int64, err error) {
 	return part, lo, hi, err
 }
 
-// readRange consumes offsets [o1, o2) from a single partition and returns
-// them in the order the broker served them. Bounded by a timeout so a fault
+// readRange consumes offsets [o1, o2) from a single partition and returns the
+// records in the order the broker served them. Bounded by a timeout so a fault
 // that stalls the range cannot hang the command.
-func readRange(part int32, o1, o2 int64) ([]int64, error) {
+func readRange(part int32, o1, o2 int64) ([]*kgo.Record, error) {
 	cl, err := newClient(kgo.ConsumePartitions(map[string]map[int32]kgo.Offset{
 		topic: {part: kgo.NewOffset().At(o1)},
 	}))
@@ -74,7 +75,7 @@ func readRange(part int32, o1, o2 int64) ([]int64, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	var offs []int64
+	var recs []*kgo.Record
 	for {
 		fs := cl.PollFetches(ctx)
 		if ctx.Err() != nil {
@@ -91,7 +92,7 @@ func readRange(part int32, o1, o2 int64) ([]int64, error) {
 				done = true
 				break
 			}
-			offs = append(offs, r.Offset)
+			recs = append(recs, r)
 			if r.Offset == o2-1 {
 				done = true
 			}
@@ -100,16 +101,20 @@ func readRange(part int32, o1, o2 int64) ([]int64, error) {
 			break
 		}
 	}
-	return offs, nil
+	return recs, nil
 }
 
-// anytime_check_range: read a random range and assert the offsets it returns
-// are a well-formed slice of the log. The safety invariants hold on whatever
-// prefix comes back, so they never false-positive when a fault truncates the
-// read; completeness is only a liveness (Sometimes) property.
-//
-// Contiguity assumes non-transactional produce with cleanup.policy=delete
-// (our setup); markers or compaction would create legal gaps.
+// offsets extracts the offsets of recs in order.
+func offsets(recs []*kgo.Record) []int64 {
+	offs := make([]int64, len(recs))
+	for i, r := range recs {
+		offs[i] = r.Offset
+	}
+	return offs
+}
+
+// check backs both anytime_check_range and parallel_driver_consume: pick a
+// random sub-range of a random partition and validate the records it returns.
 func check() error {
 	part, lo, hi, err := randomPartitionRange()
 	if err != nil || hi <= lo {
@@ -118,10 +123,29 @@ func check() error {
 	o1 := lo + int64(randN(int(hi-lo)))
 	o2 := o1 + 1 + int64(randN(int(hi-o1)))
 
-	offs, err := readRange(part, o1, o2)
-	if err != nil || len(offs) == 0 {
+	recs, err := readRange(part, o1, o2)
+	if err != nil {
 		return nil
 	}
+	validateRange(part, lo, hi, o1, o2, recs)
+	return nil
+}
+
+// validateRange asserts that recs — the result of reading [o1, o2) from part —
+// form a well-formed slice of the log: offsets in order, contiguous, within the
+// requested bounds, and records that are intact, ours, and in per-producer
+// order. lo/hi are the partition's bounds, carried only for context in the
+// assertion details. An empty read is a no-op: the invariants hold on whatever
+// prefix a fault leaves behind, so they never false-positive on truncation, and
+// completeness is only a liveness (Sometimes) property.
+//
+// Contiguity assumes non-transactional produce with cleanup.policy=delete
+// (our setup); markers or compaction would create legal gaps.
+func validateRange(part int32, lo, hi, o1, o2 int64, recs []*kgo.Record) {
+	if len(recs) == 0 {
+		return
+	}
+	offs := offsets(recs)
 
 	first, last := offs[0], offs[len(offs)-1]
 	inOrder, contiguous := true, true
@@ -135,20 +159,67 @@ func check() error {
 	}
 	withinBounds := first >= o1 && last < o2
 	full := first == o1 && int64(len(offs)) == o2-o1
+	v := verifyRecords(part, recs)
 
 	details := map[string]any{
 		"partition": part, "o1": o1, "o2": o2,
 		"count": len(offs), "first": first, "last": last, "lo": lo, "hi": hi,
+		"bad_data": v.bad, "reordered": v.reordered,
+		"bad_offset": v.firstOff, "bad_reason": v.firstReason,
 	}
 
 	assert.Reachable("checker read a non-empty cloud topic range", details)
 	assert.Always(inOrder, "cloud topic range read returns in-order offsets", details)
 	assert.Always(contiguous, "cloud topic range read returns contiguous offsets", details)
 	assert.Always(withinBounds, "cloud topic range read stays within requested bounds", details)
+	assert.Always(v.bad == 0, "cloud topic records are intact and self-consistent", details)
+	assert.Always(v.reordered == 0, "cloud topic per-producer record order is preserved", details)
 	assert.Sometimes(full, "cloud topic range read returns the full requested range", details)
 
-	fmt.Printf("checked foo/%d offsets %d:%d -> %d records (in_order=%v contiguous=%v bounds=%v full=%v)\n",
-		part, o1, o2, len(offs), inOrder, contiguous, withinBounds, full)
+	fmt.Printf("checked foo/%d offsets %d:%d -> %d records (in_order=%v contiguous=%v bounds=%v full=%v bad_data=%d reordered=%d)\n",
+		part, o1, o2, len(offs), inOrder, contiguous, withinBounds, full, v.bad, v.reordered)
+}
+
+// checkOffsets is a manual command (no test-composer prefix, so it gets no
+// symlink and Antithesis never schedules it): read and validate an explicit
+// [o1, o2) range on a given partition. Unlike the random anytime_check_range,
+// the range is fixed by its arguments, so the read replays verbatim. Under the
+// multiverse debugger this lets you roll back to different points in a timeline
+// and repeat the exact same read to pin down when a range first goes bad.
+//
+// Usage: helper_workload check_offsets <partition> <o1> <o2>
+func checkOffsets() error {
+	if len(cmdArgs) != 3 {
+		return fmt.Errorf("usage: check_offsets <partition> <o1> <o2>")
+	}
+	part, err := strconv.ParseInt(cmdArgs[0], 10, 32)
+	if err != nil {
+		return fmt.Errorf("invalid partition %q: %w", cmdArgs[0], err)
+	}
+	o1, err := strconv.ParseInt(cmdArgs[1], 10, 64)
+	if err != nil {
+		return fmt.Errorf("invalid o1 %q: %w", cmdArgs[1], err)
+	}
+	o2, err := strconv.ParseInt(cmdArgs[2], 10, 64)
+	if err != nil {
+		return fmt.Errorf("invalid o2 %q: %w", cmdArgs[2], err)
+	}
+	if o2 <= o1 {
+		return fmt.Errorf("empty range: o2 (%d) must be > o1 (%d)", o2, o1)
+	}
+
+	lo, hi, err := partitionBounds(int32(part))
+	if err != nil {
+		fmt.Printf("check_offsets: could not read bounds for foo/%d: %v\n", part, err)
+		lo, hi = -1, -1
+	}
+	recs, err := readRange(int32(part), o1, o2)
+	if err != nil {
+		return fmt.Errorf("read of foo/%d [%d,%d) failed: %w", part, o1, o2, err)
+	}
+	fmt.Printf("check_offsets: foo/%d [%d,%d) bounds=[%d,%d) -> %d records\n",
+		part, o1, o2, lo, hi, len(recs))
+	validateRange(int32(part), lo, hi, o1, o2, recs)
 	return nil
 }
 
@@ -159,7 +230,7 @@ func check() error {
 // and there is no concurrent produce, so hi is stable). Returns the last-seen
 // bounds and whatever the final attempt read: the complete slice on success, or
 // a prefix if it gave up.
-func readPartitionToEnd(part int32, deadline time.Time) (lo, hi int64, offs []int64) {
+func readPartitionToEnd(part int32, deadline time.Time) (lo, hi int64, recs []*kgo.Record) {
 	for {
 		var err error
 		lo, hi, err = partitionBounds(part)
@@ -167,13 +238,13 @@ func readPartitionToEnd(part int32, deadline time.Time) (lo, hi int64, offs []in
 			if hi <= lo {
 				return lo, hi, nil // empty partition
 			}
-			offs, err = readRange(part, lo, hi)
-			if err == nil && int64(len(offs)) == hi-lo {
-				return lo, hi, offs
+			recs, err = readRange(part, lo, hi)
+			if err == nil && int64(len(recs)) == hi-lo {
+				return lo, hi, recs
 			}
 		}
 		if time.Now().After(deadline) {
-			return lo, hi, offs
+			return lo, hi, recs
 		}
 		time.Sleep(2 * time.Second)
 	}
@@ -202,10 +273,11 @@ func checkComplete() error {
 	}
 
 	for part := range int32(fooPartitions) {
-		lo, hi, offs := readPartitionToEnd(part, time.Now().Add(2*time.Minute))
+		lo, hi, recs := readPartitionToEnd(part, time.Now().Add(2*time.Minute))
 		if hi <= lo {
 			continue // empty partition; nothing to verify
 		}
+		offs := offsets(recs)
 
 		first, last := int64(-1), int64(-1)
 		if len(offs) > 0 {
@@ -221,18 +293,23 @@ func checkComplete() error {
 			}
 		}
 		complete := first == lo && last == hi-1 && int64(len(offs)) == hi-lo
+		v := verifyRecords(part, recs)
 
 		details := map[string]any{
 			"partition": part, "lo": lo, "hi": hi,
 			"count": len(offs), "first": first, "last": last,
+			"bad_data": v.bad, "reordered": v.reordered,
+			"bad_offset": v.firstOff, "bad_reason": v.firstReason,
 		}
 		assert.Reachable("finally: validated a non-empty cloud topic partition", details)
 		assert.Always(inOrder, "finally: cloud topic partition offsets are strictly increasing", details)
 		assert.Always(contiguous, "finally: cloud topic partition offsets are contiguous (no gaps)", details)
 		assert.Always(complete, "finally: cloud topic partition is fully readable to the high watermark", details)
+		assert.Always(v.bad == 0, "finally: cloud topic records are intact and self-consistent", details)
+		assert.Always(v.reordered == 0, "finally: cloud topic per-producer record order is preserved", details)
 
-		fmt.Printf("finally foo/%d [%d,%d) -> %d records (in_order=%v contiguous=%v complete=%v)\n",
-			part, lo, hi, len(offs), inOrder, contiguous, complete)
+		fmt.Printf("finally foo/%d [%d,%d) -> %d records (in_order=%v contiguous=%v complete=%v bad_data=%d reordered=%d)\n",
+			part, lo, hi, len(offs), inOrder, contiguous, complete, v.bad, v.reordered)
 	}
 	return nil
 }

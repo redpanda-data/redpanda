@@ -40,16 +40,27 @@ const (
 // the image build uses to create those links). `setup` is the container
 // entrypoint, not a test command.
 var commands = map[string]func() error{
-	"setup":                          setup,
-	"first_create_topic":             createTopic,
-	"parallel_driver_produce":        produce,
-	"parallel_driver_consume":        consume,
+	"setup":                   setup,
+	"first_create_topic":      createTopic,
+	"parallel_driver_produce": produce,
+	// consume reads and validates the same way the anytime checker does, but
+	// as a parallel driver Antithesis may run several concurrent copies of it,
+	// applying real read pressure while still asserting the invariants.
+	"parallel_driver_consume":        check,
 	"parallel_driver_move_metastore": moveMetastore,
 	"parallel_driver_move_foo":       moveFoo,
 	"anytime_check_range":            check,
 	"anytime_check_cloud_io":         checkCloudIO,
 	"finally_check_complete":         checkComplete,
+	// check_offsets has no test-composer prefix, so it gets no symlink and
+	// Antithesis never schedules it. It is a manual replay tool for the
+	// multiverse debugger; see checkOffsets.
+	"check_offsets": checkOffsets,
 }
+
+// cmdArgs holds the positional arguments that follow the command token, for
+// the few manual commands (e.g. check_offsets) that take parameters.
+var cmdArgs []string
 
 // testCommandPrefixes are the Antithesis test-composer command prefixes; a
 // command with one of these is scheduled by Antithesis and needs a symlink.
@@ -90,16 +101,22 @@ func brokers() []string {
 }
 
 func newClient(opts ...kgo.Opt) (*kgo.Client, error) {
-	return kgo.NewClient(append([]kgo.Opt{kgo.SeedBrokers(brokers()...)}, opts...)...)
+	base := []kgo.Opt{
+		kgo.SeedBrokers(brokers()...),
+		kgo.WithLogger(kgo.BasicLogger(os.Stderr, kgo.LogLevelInfo, nil)),
+	}
+	return kgo.NewClient(append(base, opts...)...)
 }
 
 func main() {
 	cmd := filepath.Base(os.Args[0])
+	cmdArgs = os.Args[1:]
 	// When invoked by the binary's own name (e.g. the entrypoint's
 	// `helper_workload setup`, or `workload produce` by hand) rather than
 	// through a command symlink, take the command from argv[1].
 	if _, known := commands[cmd]; !known && len(os.Args) > 1 {
 		cmd = os.Args[1]
+		cmdArgs = os.Args[2:]
 	}
 
 	// Dispatched outside `commands` to avoid an init cycle (it reads the map).
