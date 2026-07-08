@@ -301,6 +301,23 @@ inline bool is_shutdown_exception(const std::exception_ptr& e) {
     return false;
 }
 
+namespace detail {
+inline void rethrow_if_not_shutdown_exception(std::exception_ptr ep) {
+    if (!is_shutdown_exception(ep)) {
+        std::rethrow_exception(std::move(ep));
+    }
+}
+
+template<typename Future>
+inline void filter_shutdown_exceptions(Future fut) {
+    if (fut.failed()) {
+        rethrow_if_not_shutdown_exception(fut.get_exception());
+    } else {
+        fut.ignore_ready_future();
+    }
+}
+} // namespace detail
+
 /// \brief Create a new future, handling common shutdown exception types.
 ///
 /// On the fast path (the input future is already available and succeeded)
@@ -311,9 +328,7 @@ ignore_shutdown_exceptions(seastar::future<> fut) noexcept {
         return fut;
     }
     return std::move(fut).handle_exception([](std::exception_ptr ep) {
-        if (!is_shutdown_exception(ep)) {
-            std::rethrow_exception(std::move(ep));
-        }
+        detail::rethrow_if_not_shutdown_exception(std::move(ep));
     });
 }
 
@@ -321,8 +336,8 @@ ignore_shutdown_exceptions(seastar::future<> fut) noexcept {
 /// types.  Returns the resulting future, onto which further exception handling
 /// may be chained.
 ///
-/// \param g Gate to enter, passed through to ss::try_with_gate
-/// \param func Function to invoke, passed through to ss::try_with_gate
+/// \param g Gate to hold while invoking func
+/// \param func Function to invoke while the gate is held
 ///
 /// This is an alternative to spawn_with_gate for when the caller wants to
 /// do extra exception handling, such as ignoring+logging all exceptions in
@@ -330,9 +345,16 @@ ignore_shutdown_exceptions(seastar::future<> fut) noexcept {
 /// gate_closed_exception or abort_requested_exception, avoiding log
 /// noise on shutdown if the caller is logging exceptions.
 template<typename Func>
-inline auto spawn_with_gate_then(seastar::gate& g, Func&& func) noexcept {
-    return ignore_shutdown_exceptions(
-      seastar::try_with_gate(g, std::forward<Func>(func)));
+inline seastar::future<>
+spawn_with_gate_then(seastar::gate& g, Func&& func) noexcept {
+    if (g.is_closed()) [[unlikely]] {
+        return seastar::make_ready_future<>();
+    }
+    auto gate_holder = g.hold();
+    return seastar::futurize_invoke(std::forward<Func>(func))
+      .then_wrapped([gate_holder = std::move(gate_holder)](auto fut) mutable {
+          detail::filter_shutdown_exceptions(std::move(fut));
+      });
 }
 
 /// \brief Detach a fiber holding a gate, with exception handling to ignore
