@@ -19,6 +19,10 @@
 #include <seastar/core/fstream.hh>
 #include <seastar/core/temporary_buffer.hh>
 
+#include <fmt/format.h>
+
+#include <system_error>
+
 ss::future<ss::temporary_buffer<char>>
 read_fully_tmpbuf(const std::filesystem::path& name) {
     return ss::with_file(
@@ -60,6 +64,45 @@ read_fully_to_string(const std::filesystem::path& name) {
     return read_fully_tmpbuf(name).then([](ss::temporary_buffer<char> buf) {
         return ss::to_sstring(std::move(buf));
     });
+}
+
+// The read helpers above open files with O_DIRECT (via Seastar's
+// open_file_dma). Filesystems without direct-I/O support reject this with
+// EINVAL, which surfaces as an opaque "Invalid argument". A notable case is an
+// overlayfs whose lower layer is squashfs, which rejects the O_DIRECT open
+// with EINVAL. Some environments bind-mount the bootstrap config from such a
+// filesystem, so startup failed with no indication of the cause. Append a hint
+// pointing at O_DIRECT in that case.
+//
+// This matters mainly for config files, which users often bind-mount onto
+// arbitrary filesystems. Data directories are not a concern here: they are
+// validated separately by syschecks::disk, which does a round-trip O_DIRECT
+// check.
+//
+// See:
+//   https://github.com/scylladb/seastar/issues/3518
+//   https://github.com/redpanda-data/redpanda/issues/14473
+std::string
+format_file_io_error(std::string_view context, std::exception_ptr eptr) {
+    std::string what = "unknown error";
+    bool is_einval = false;
+    try {
+        if (eptr) {
+            std::rethrow_exception(eptr);
+        }
+    } catch (const std::system_error& e) {
+        what = e.what();
+        is_einval = e.code() == std::errc::invalid_argument;
+    } catch (const std::exception& e) {
+        what = e.what();
+    } catch (...) {
+        what = "unknown exception";
+    }
+    return fmt::format(
+      "{}: {}{}",
+      context,
+      what,
+      is_einval ? " (EINVAL). Does this filesystem support O_DIRECT?" : "");
 }
 
 ss::future<> write_fully(const std::filesystem::path& p, iobuf buf) {
