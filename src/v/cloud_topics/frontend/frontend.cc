@@ -491,28 +491,44 @@ frontend::l0_timequery(storage::timequery_config cfg) {
       model::record_batch_type::raft_data,
       model::record_batch_type::ctp_placeholder,
     });
-    auto gen = std::move(reader).generator(model::no_timeout);
-    while (auto batch_opt = co_await gen()) {
-        auto& batch = batch_opt->get();
-        if (!std::ranges::contains(type_filter, batch.header().type)) {
-            continue;
+
+    struct coarse_consumer {
+        model::timestamp time;
+        ss::lw_shared_ptr<const storage::offset_translator_state> ot_state;
+        std::optional<coarse_grained_timequery_result> result;
+
+        ss::future<ss::stop_iteration> operator()(model::record_batch& batch) {
+            if (!std::ranges::contains(type_filter, batch.header().type)) {
+                co_return ss::stop_iteration::no;
+            }
+            if (batch.header().max_timestamp < time) {
+                co_return ss::stop_iteration::no;
+            }
+            // NOTE: we can't just return this offset verbatim, since we
+            // don't record the same timestamp deltas inside batches for
+            // placeholder batches (this would require unpacking batches
+            // during produce).
+            result = coarse_grained_timequery_result{
+              .time = time,
+              .start_offset = model::offset_cast(
+                ot_state->from_log_offset(batch.base_offset())),
+              .last_offset = model::offset_cast(
+                ot_state->from_log_offset(batch.last_offset())),
+            };
+            co_return ss::stop_iteration::yes;
         }
-        if (batch.header().max_timestamp < cfg.time) {
-            continue;
+
+        std::optional<coarse_grained_timequery_result> end_of_stream() {
+            return result;
         }
-        // NOTE: we can't just return this offset verbatim, since we don't
-        // record the same timestamp deltas inside batches for placeholder
-        // batches (this would require unpacking batches during produce).
-        auto ot_state = _partition->get_offset_translator_state();
-        co_return coarse_grained_timequery_result{
-          .time = cfg.time,
-          .start_offset = model::offset_cast(
-            ot_state->from_log_offset(batch.base_offset())),
-          .last_offset = model::offset_cast(
-            ot_state->from_log_offset(batch.last_offset())),
-        };
-    }
-    co_return std::nullopt;
+    };
+
+    co_return co_await std::move(reader).for_each_ref(
+      coarse_consumer{
+        .time = cfg.time,
+        .ot_state = _partition->get_offset_translator_state(),
+      },
+      model::no_timeout);
 }
 ss::future<std::optional<storage::timequery_result>>
 frontend::refine_timequery_result(
@@ -530,30 +546,48 @@ frontend::refine_timequery_result(
       /*as=*/abort_source,
       /*client_addr=*/std::nullopt);
     auto reader = co_await make_reader(reader_cfg);
-    auto generator = std::move(reader.reader).generator(model::no_timeout);
-    auto query_interval = model::bounded_offset_interval::checked(
-      kafka::offset_cast(input.start_offset),
-      kafka::offset_cast(input.last_offset));
-    while (auto batch_opt = co_await generator()) {
-        auto& batch = batch_opt->get();
-        auto batch_interval = model::bounded_offset_interval::checked(
-          batch.base_offset(), batch.last_offset());
-        if (!query_interval.overlaps(batch_interval)) {
-            if (batch_interval.min() > query_interval.max()) {
-                break;
+
+    struct timequery_consumer {
+        model::offset start_offset;
+        model::offset last_offset;
+        model::timestamp time;
+        model::bounded_offset_interval query_interval;
+        std::optional<storage::timequery_result> result;
+
+        ss::future<ss::stop_iteration> operator()(model::record_batch batch) {
+            auto batch_interval = model::bounded_offset_interval::checked(
+              batch.base_offset(), batch.last_offset());
+            if (!query_interval.overlaps(batch_interval)) {
+                if (batch_interval.min() > query_interval.max()) {
+                    co_return ss::stop_iteration::yes;
+                }
+                co_return ss::stop_iteration::no;
             }
-            continue;
+            if (time > batch.header().max_timestamp) {
+                co_return ss::stop_iteration::no;
+            }
+            result = co_await storage::batch_timequery(
+              std::move(batch), start_offset, time, last_offset);
+            co_return ss::stop_iteration::yes;
         }
-        if (input.time > batch.header().max_timestamp) {
-            continue;
+
+        std::optional<storage::timequery_result> end_of_stream() {
+            return result;
         }
-        co_return co_await storage::batch_timequery(
-          std::move(batch),
-          kafka::offset_cast(input.start_offset),
-          input.time,
-          kafka::offset_cast(input.last_offset));
-    }
-    co_return std::nullopt;
+    };
+
+    auto start_offset = kafka::offset_cast(input.start_offset);
+    auto last_offset = kafka::offset_cast(input.last_offset);
+    co_return co_await std::move(reader.reader)
+      .consume(
+        timequery_consumer{
+          .start_offset = start_offset,
+          .last_offset = last_offset,
+          .time = input.time,
+          .query_interval = model::bounded_offset_interval::checked(
+            start_offset, last_offset),
+        },
+        model::no_timeout);
 }
 
 namespace {
