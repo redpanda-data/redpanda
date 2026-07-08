@@ -252,6 +252,19 @@ redpanda_cc_bench(
 )
 
 redpanda_cc_bench(
+    name = "scram_credential_bench_rpbench",
+    srcs = [
+        "scram_credential_bench.cc",
+    ],
+    deps = [
+        "//src/v/security",
+        "//src/v/ssx:sformat",
+        "@seastar",
+        "@seastar//:benchmark",
+    ],
+)
+
+redpanda_cc_bench(
     name = "oidc_authenticator_bench_rpbench",
     srcs = [
         "oidc_authenticator_bench.cc",
