@@ -12,6 +12,7 @@
 
 #include "cloud_topics/level_one/metastore/domain_uuid.h"
 #include "cloud_topics/level_one/metastore/lsm/lsm_update.h"
+#include "cloud_topics/level_one/metastore/lsm/metastore_lsm_probe.h"
 #include "cloud_topics/level_one/metastore/lsm/replicated_persistence.h"
 #include "cloud_topics/level_one/metastore/lsm/stm.h"
 #include "cloud_topics/logger.h"
@@ -21,6 +22,7 @@
 #include "lsm/proto/manifest.proto.h"
 #include "model/batch_builder.h"
 #include "model/record.h"
+#include "raft/consensus.h"
 #include "serde/rw/scalar.h"
 #include "ssx/clock.h"
 #include "ssx/future-util.h"
@@ -138,6 +140,13 @@ replicated_database::open(
       .metadata = std::move(meta_persist_fut.get()),
     };
 
+    // Construct and register the per-metastore-partition LSM probe before
+    // opening the database, so the LSM's counters and histograms are wired
+    // into the seastar metrics system from the first operation. Labeled by
+    // the metastore_partition for which this replica is the leader.
+    auto lsm_probe = std::make_unique<metastore_lsm_probe>(
+      s->raft()->ntp().tp.partition);
+
     // Open the LSM database using the persisted manifest from the STM.
     auto db_fut = co_await ss::coroutine::as_future(
       lsm::database::open(
@@ -154,6 +163,7 @@ replicated_database::open(
           .file_deletion_delay = absl::FromChrono(
             config::shard_local_cfg()
               .cloud_topics_long_term_file_deletion_delay()),
+          .probe = lsm_probe->probe(),
         },
         std::move(io)));
     if (db_fut.failed()) {
@@ -201,8 +211,8 @@ replicated_database::open(
             }
         }
     }
-    auto ret = std::unique_ptr<replicated_database>(
-      new replicated_database(term, domain_uuid, s, std::move(db), as, sg));
+    auto ret = std::unique_ptr<replicated_database>(new replicated_database(
+      term, domain_uuid, s, std::move(db), std::move(lsm_probe), as, sg));
     ret->start();
     co_return std::move(ret);
 }
@@ -224,6 +234,11 @@ replicated_database::close() {
           wrap_failed_future(fut.get_exception(), "Error closing database"));
     }
     co_await std::move(gate_fut);
+    // Tear down the probe's metric registration eagerly so a new
+    // replicated_database for the same metastore_partition can register
+    // its own probe even if some in-flight reference keeps this object
+    // alive past close().
+    probe_->deregister_metrics();
     co_return std::expected<void, error>{};
 }
 

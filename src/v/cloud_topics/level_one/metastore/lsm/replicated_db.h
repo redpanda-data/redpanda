@@ -12,6 +12,7 @@
 #include "cloud_io/cache_service.h"
 #include "cloud_io/remote.h"
 #include "cloud_storage_clients/types.h"
+#include "cloud_topics/level_one/metastore/lsm/metastore_lsm_probe.h"
 #include "cloud_topics/level_one/metastore/lsm/stm.h"
 #include "cloud_topics/level_one/metastore/lsm/write_batch_row.h"
 #include "container/chunked_vector.h"
@@ -25,6 +26,7 @@
 
 #include <expected>
 #include <filesystem>
+#include <memory>
 
 namespace cloud_topics::l1 {
 
@@ -103,12 +105,14 @@ private:
       domain_uuid domain_uuid,
       stm* s,
       lsm::database db,
+      std::unique_ptr<metastore_lsm_probe> probe,
       ss::abort_source& as,
       ss::scheduling_group sg)
       : term_(term)
       , expected_domain_uuid_(domain_uuid)
       , stm_(s)
       , db_(std::move(db))
+      , probe_(std::move(probe))
       , as_(as)
       , sg_(sg) {}
 
@@ -136,6 +140,10 @@ private:
 
     // The underlying LSM database.
     lsm::database db_;
+
+    // Wraps and exposes db_'s lsm::probe via seastar metrics. Outlives db_
+    // closure logically but tied to the same instance lifetime.
+    std::unique_ptr<metastore_lsm_probe> probe_;
 
     ss::gate gate_;
     ss::abort_source& as_;
