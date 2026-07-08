@@ -27,8 +27,7 @@ namespace datalake::coordinator {
 // pending files as committed. Doesn't affect any external state.
 class simple_file_committer : public file_committer {
 public:
-    ss::future<checked<chunked_vector<mark_files_committed_update>, errc>>
-    commit_topic_files_to_catalog(
+    ss::future<checked<commit_result, errc>> commit_topic_files_to_catalog(
       model::topic t, const topics_state& state) const override {
         chunked_vector<mark_files_committed_update> ret;
         auto t_iter = std::ranges::find(
@@ -36,7 +35,7 @@ public:
           t,
           &std::pair<model::topic, topic_state>::first);
         if (t_iter == state.topic_to_state.end()) {
-            co_return ret;
+            co_return commit_result{};
         }
         // Mark the last file in each partition as committed.
         auto& t_state = t_iter->second;
@@ -54,7 +53,8 @@ public:
             EXPECT_FALSE(build_res.has_error());
             ret.emplace_back(std::move(build_res.value()));
         }
-        co_return ret;
+        // Commits everything in one pass, so never leaves a backlog.
+        co_return commit_result{.updates = std::move(ret)};
     }
 
     ss::future<checked<std::nullopt_t, errc>>
