@@ -276,19 +276,6 @@ struct background_t {
 } // namespace detail
 inline constexpr detail::background_t background;
 
-/// \brief Create a new future, handling common shutdown exception types.
-inline seastar::future<>
-ignore_shutdown_exceptions(seastar::future<> fut) noexcept {
-    try {
-        co_await std::move(fut);
-    } catch (const seastar::abort_requested_exception&) {
-    } catch (const seastar::gate_closed_exception&) {
-    } catch (const seastar::broken_semaphore&) {
-    } catch (const seastar::broken_promise&) {
-    } catch (const seastar::broken_condition_variable&) {
-    }
-}
-
 /// \brief Check if the exception is a commonly ignored shutdown exception.
 ///
 /// Also checks inside seastar::nested_exception for shutdown exceptions
@@ -312,6 +299,22 @@ inline bool is_shutdown_exception(const std::exception_ptr& e) {
     } catch (...) {
     }
     return false;
+}
+
+/// \brief Create a new future, handling common shutdown exception types.
+///
+/// On the fast path (the input future is already available and succeeded)
+/// the future is returned directly without any continuation.
+inline seastar::future<>
+ignore_shutdown_exceptions(seastar::future<> fut) noexcept {
+    if (fut.available() && !fut.failed()) {
+        return fut;
+    }
+    return std::move(fut).handle_exception([](std::exception_ptr ep) {
+        if (!is_shutdown_exception(ep)) {
+            std::rethrow_exception(std::move(ep));
+        }
+    });
 }
 
 /// \brief Create a future holding a gate, handling common shutdown exception
