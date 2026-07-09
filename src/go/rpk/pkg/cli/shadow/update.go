@@ -10,10 +10,12 @@
 package shadow
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"reflect"
 	"strings"
+	"time"
 
 	controlplanev1 "buf.build/gen/go/redpandadata/cloud/protocolbuffers/go/redpanda/api/controlplane/v1"
 	adminv2 "buf.build/gen/go/redpandadata/core/protocolbuffers/go/redpanda/core/admin/v2"
@@ -28,6 +30,7 @@ import (
 	"github.com/spf13/afero"
 	"github.com/spf13/cobra"
 	"go.uber.org/zap"
+	"google.golang.org/protobuf/reflect/protoreflect"
 	"google.golang.org/protobuf/types/known/fieldmaskpb"
 )
 
@@ -40,6 +43,8 @@ func newUpdateCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 This command opens your default editor with the current Shadow Link
 configuration. Update the fields you want to change, save the file, and close
 the editor. The command applies only the changed fields to the Shadow Link.
+List fields, such as topic filters, are replaced as a whole: the Shadow Link
+ends up with exactly the list you leave in the editor.
 
 You cannot change the Shadow Link name. If you need to rename a Shadow Link,
 delete it and create a new one with the desired name.
@@ -66,10 +71,11 @@ Update a Shadow Link configuration:
 			fromCloud := prof.CheckFromCloud()
 			linkName := args[0]
 			var (
-				originalCfg *ShadowLinkConfig
-				adminClient *rpadmin.AdminAPI
-				cloudClient *publicapi.CloudClientSet
-				cloudLinkID string
+				originalCfg      *ShadowLinkConfig
+				adminClient      *rpadmin.AdminAPI
+				cloudClient      *publicapi.CloudClientSet
+				cloudLinkID      string
+				plainPasswordSet bool
 			)
 
 			// First part: retrieve current configuration.
@@ -103,6 +109,7 @@ Update a Shadow Link configuration:
 				originalCfg = shadowLinkToConfig(shadowLink)
 
 				addRedactedPasswordString(originalCfg, shadowLink)
+				plainPasswordSet = shadowLink.GetConfigurations().GetClientOptions().GetAuthenticationConfiguration().GetPlainConfiguration().GetPasswordSet()
 			}
 
 			// Second part: open editor and get updated configuration.
@@ -156,12 +163,17 @@ Update a Shadow Link configuration:
 				spinner.Success(fmt.Sprintf("Successfully updated shadow link %q", linkName))
 				os.Exit(0)
 			}
-			// Self-hosted path
+			// Self-hosted path.
+			maskPaths := selfHostedMaskPaths(diff)
+			err = checkPlainPasswordErased(updatedCfg, plainPasswordSet)
+			out.MaybeDieErr(err)
+			stripRedactedPasswords(originalCfg, updatedCfg)
+
 			updatedSL := shadowLinkConfigToProto(updatedCfg)
-			fm, err := fieldmaskpb.New(updatedSL, diff...)
+			fm, err := fieldmaskpb.New(updatedSL, maskPaths...)
 			out.MaybeDie(err, "unrecognized changed fields: %v; please report this with Redpanda Support", err)
 
-			zap.L().Sugar().Debugf("Requesting configuration update for: %v", strings.Join(diff, ", "))
+			zap.L().Sugar().Debugf("Requesting configuration update for: %v", strings.Join(maskPaths, ", "))
 			_, err = adminClient.ShadowLinkService().UpdateShadowLink(cmd.Context(), connect.NewRequest(&adminv2.UpdateShadowLinkRequest{
 				ShadowLink: updatedSL,
 				UpdateMask: fm,
@@ -173,28 +185,131 @@ Update a Shadow Link configuration:
 	return cmd
 }
 
+// redactedPassword is shown in the editor in place of a password that is set
+// on the cluster; the server only reports whether a password is set, never
+// its value. stripRedactedPasswords clears it before an update is sent.
+const redactedPassword = "<redacted>"
+
 // if a password is set, replace it with a redacted value so user can provide
 // a change easily instead of writing the full password field. The server only
 // reports whether a password is set, never its value.
 func addRedactedPasswordString(cfg *ShadowLinkConfig, link *adminv2.ShadowLink) {
-	const redacted = "<redacted>"
-
 	cfgs := link.GetConfigurations()
 	if cfgs.GetClientOptions().GetAuthenticationConfiguration().GetScramConfiguration().GetPasswordSet() {
-		if co := cfg.ClientOptions; co != nil {
-			if auth := co.AuthenticationConfiguration; auth != nil && auth.ScramConfiguration != nil {
-				auth.ScramConfiguration.Password = redacted
-			}
+		if scram := scramConfig(cfg); scram != nil {
+			scram.Password = redactedPassword
 		}
 	}
 
 	if cfgs.GetSchemaRegistrySyncOptions().GetShadowSchemaRegistryApi().GetAuthOptions().GetBasic().GetPasswordSet() {
-		if sr := cfg.SchemaRegistrySyncOptions; sr != nil && sr.ShadowSchemaRegistryAPI != nil {
-			if auth := sr.ShadowSchemaRegistryAPI.AuthOptions; auth != nil && auth.Basic != nil {
-				auth.Basic.Password = redacted
-			}
+		if basic := srBasicAuth(cfg); basic != nil {
+			basic.Password = redactedPassword
 		}
 	}
+}
+
+// stripRedactedPasswords clears passwords still holding the placeholder that
+// addRedactedPasswordString injected. An unchanged password must be sent
+// empty: when an update mask path covers an authentication message, the
+// server replaces the whole message and preserves the stored password only
+// if the incoming password is empty and the username is set. Only values
+// that were redacted in the first place are cleared, so a literal
+// placeholder typed on a link without a stored password is sent as-is.
+func stripRedactedPasswords(original, updated *ShadowLinkConfig) {
+	if scram := scramConfig(updated); scram != nil && scram.Password == redactedPassword {
+		if orig := scramConfig(original); orig != nil && orig.Password == redactedPassword {
+			scram.Password = ""
+		}
+	}
+	if basic := srBasicAuth(updated); basic != nil && basic.Password == redactedPassword {
+		if orig := srBasicAuth(original); orig != nil && orig.Password == redactedPassword {
+			basic.Password = ""
+		}
+	}
+}
+
+// scramConfig returns the SCRAM configuration, or nil if any link in the
+// chain is unset.
+func scramConfig(cfg *ShadowLinkConfig) *ScramConfiguration {
+	if cfg == nil || cfg.ClientOptions == nil || cfg.ClientOptions.AuthenticationConfiguration == nil {
+		return nil
+	}
+	return cfg.ClientOptions.AuthenticationConfiguration.ScramConfiguration
+}
+
+// srBasicAuth returns the Schema Registry HTTP basic auth options, or nil if
+// any link in the chain is unset.
+func srBasicAuth(cfg *ShadowLinkConfig) *HTTPBasicAuthOptions {
+	if cfg == nil || cfg.SchemaRegistrySyncOptions == nil || cfg.SchemaRegistrySyncOptions.ShadowSchemaRegistryAPI == nil || cfg.SchemaRegistrySyncOptions.ShadowSchemaRegistryAPI.AuthOptions == nil {
+		return nil
+	}
+	return cfg.SchemaRegistrySyncOptions.ShadowSchemaRegistryAPI.AuthOptions.Basic
+}
+
+// selfHostedMaskPaths converts diff paths into update mask paths for the
+// self-hosted Admin API, widening paths the API cannot apply in isolation
+// (see widenSelfHostedMaskPath) and collapsing overlapping paths, which the
+// server rejects.
+func selfHostedMaskPaths(diff []string) []string {
+	paths := make([]string, 0, len(diff))
+	for _, path := range diff {
+		paths = append(paths, widenSelfHostedMaskPath(path))
+	}
+	fm := &fieldmaskpb.FieldMask{Paths: paths}
+	fm.Normalize()
+	return fm.GetPaths()
+}
+
+// widenSelfHostedMaskPath widens a diff path to its parent message path when
+// it ends at a field the self-hosted Admin API cannot replace in isolation:
+// repeated fields are appended to and map fields merged rather than
+// replaced, and naming a oneof member clears the whole oneof when the update
+// does not carry that member — mask paths are applied in order, so when the
+// user switches members, the old member's path can clear the new member
+// right after it was set. Replacing the parent message instead is
+// order-independent and results in exactly the edited configuration.
+func widenSelfHostedMaskPath(path string) string {
+	segments := strings.Split(path, ".")
+	msg := (&adminv2.ShadowLink{}).ProtoReflect().Descriptor()
+	var fd protoreflect.FieldDescriptor
+	for i, segment := range segments {
+		if msg == nil {
+			return path
+		}
+		fd = msg.Fields().ByName(protoreflect.Name(segment))
+		if fd == nil {
+			// Unknown segment: leave the path for fieldmaskpb.New to
+			// report.
+			return path
+		}
+		if i < len(segments)-1 {
+			msg = fd.Message()
+		}
+	}
+	widen := fd.IsList() || fd.IsMap()
+	if oneof := fd.ContainingOneof(); oneof != nil && !oneof.IsSynthetic() {
+		widen = true
+	}
+	if !widen || len(segments) < 2 {
+		return path
+	}
+	return strings.Join(segments[:len(segments)-1], ".")
+}
+
+// checkPlainPasswordErased returns an error when the cluster stores a
+// SASL/PLAIN password and the update does not re-supply it. The cluster
+// rebuilds the full shadow link configuration on every update and, unlike
+// SCRAM, does not preserve a stored PLAIN password that is absent from the
+// update, so the request would fail server-side with an unhelpful error.
+func checkPlainPasswordErased(updated *ShadowLinkConfig, plainPasswordSet bool) error {
+	if !plainPasswordSet || updated == nil || updated.ClientOptions == nil {
+		return nil
+	}
+	auth := updated.ClientOptions.AuthenticationConfiguration
+	if auth == nil || auth.PlainConfiguration == nil || auth.PlainConfiguration.Password != "" {
+		return nil
+	}
+	return errors.New("the cluster cannot preserve the stored SASL/PLAIN password during updates; re-enter client_options.authentication_configuration.plain_configuration.password in the editor and retry")
 }
 
 // diffConfigs compares two ShadowLinkConfig objects and returns a list of
@@ -256,6 +371,14 @@ func compareValues(original, updated reflect.Value, path string, changedPaths *[
 
 	switch original.Kind() {
 	case reflect.Struct:
+		// time.Time has only unexported fields, which compareStructs
+		// skips; compare the instants directly.
+		if original.Type() == reflect.TypeOf(time.Time{}) {
+			if !original.Interface().(time.Time).Equal(updated.Interface().(time.Time)) {
+				*changedPaths = append(*changedPaths, path)
+			}
+			return
+		}
 		compareStructs(original, updated, path, changedPaths)
 	default:
 		// For other types, just use DeepEqual.
