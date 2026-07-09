@@ -279,6 +279,19 @@ redpanda_cc_bench(
 )
 
 redpanda_cc_bench(
+    name = "future_util_rpbench",
+    srcs = [
+        "future_util_bench.cc",
+    ],
+    deps = [
+        "//src/v/base",
+        "//src/v/ssx:future_util",
+        "@seastar",
+        "@seastar//:benchmark",
+    ],
+)
+
+redpanda_cc_bench(
     name = "async_algorithm_rpbench",
     srcs = [
         "async_algorithm_bench.cc",
