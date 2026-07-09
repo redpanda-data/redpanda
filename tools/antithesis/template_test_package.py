@@ -171,6 +171,55 @@ def parse_assignments(pairs: list[str], flag: str) -> dict:
     return out
 
 
+FAULT_PARAM = {
+    "clock_skew": "custom.clock_skew",
+    "cpu_mod": "custom.cpu_mod",
+    "exclude_from_faults": "custom.exclude_from_faults",
+    "node_hang": "custom.include_for_node_hang",
+    "node_termination": "custom.include_for_node_termination",
+    "node_throttle": "custom.include_for_node_throttle",
+}
+
+
+def fault_params(manifest: dict, tmpl_vars: dict) -> dict[str, str]:
+    """Translate the manifest's `faults` block into custom.* launch params.
+
+    Boolean-valued entries (clock_skew, cpu_mod) are global on/off toggles.
+    List-valued entries name container roles: `redpanda` expands to every broker
+    (redpanda-0..nodes-1), any other entry is a literal container name. Every
+    entry is sent explicitly, empty lists included (as ""), so the manifest is
+    the single source of truth for the fault posture rather than the webhook
+    defaults.
+    """
+    faults = manifest.get("faults") or {}
+
+    def expand(roles: list[str]) -> list[str]:
+        out: list[str] = []
+        for role in roles:
+            if role == "redpanda":
+                nodes = tmpl_vars.get("nodes")
+                if nodes is None:
+                    sys.exit("Error: faults reference 'redpanda' but 'nodes' is unset")
+                out.extend(f"redpanda-{i}" for i in range(int(nodes)))
+            else:
+                out.append(role)
+        return out
+
+    params: dict[str, str] = {}
+    for fault, value in faults.items():
+        param = FAULT_PARAM.get(fault)
+        if param is None:
+            sys.exit(
+                f"Error: unknown fault {fault!r} in {MANIFEST_NAME} faults "
+                f"(known: {', '.join(FAULT_PARAM)})"
+            )
+        if isinstance(value, bool):
+            params[param] = "true" if value else "false"
+        else:
+            params[param] = " ".join(expand(value))
+    return params
+
+
 def render_tree(src: Path, dst: Path, tmpl_vars: dict) -> None:
     """Render src into dst: *.j2 files are rendered with tmpl_vars (and
     lose the suffix), everything else is copied verbatim. The manifest
@@ -338,6 +387,7 @@ def package_test(name: str, test_dir: Path, args: argparse.Namespace) -> None:
             config_image=pushed[config_ref],
             images=[v for k, v in pushed.items() if k != config_ref],
             recipients=[r for r in args.recipients.split(";") if r] or None,
+            extra_params=fault_params(manifest, tmpl_vars),
         )
 
     compose_path = out_dir / COMPOSE_NAME

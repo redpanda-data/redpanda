@@ -121,12 +121,14 @@ def submit_test_run(
     config_image: str,
     images: list[str],
     recipients: list[str] | None = None,
+    extra_params: dict[str, str] | None = None,
 ) -> None:
     """Launch a basic_test run via the Antithesis API.
 
     config_image and images are fully-qualified registry references (the
     ones produced by upload_images). recipients is an optional list of
-    report email addresses.
+    report email addresses. extra_params are additional launch parameters
+    (e.g. tenant-custom `custom.*` fault-scoping keys) merged into the body.
     """
     params = {
         "antithesis.description": description,
@@ -137,6 +139,8 @@ def submit_test_run(
         params["antithesis.images"] = ";".join(images)
     if recipients:
         params["antithesis.report.recipients"] = ";".join(recipients)
+    if extra_params:
+        params.update(extra_params)
 
     body = json.dumps({"params": params})
 
