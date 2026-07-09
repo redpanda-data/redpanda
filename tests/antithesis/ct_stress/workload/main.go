@@ -49,9 +49,14 @@ var commands = map[string]func() error{
 	"parallel_driver_consume":        check,
 	"parallel_driver_move_metastore": moveMetastore,
 	"parallel_driver_move_foo":       moveFoo,
-	"anytime_check_range":            check,
-	"anytime_check_cloud_io":         checkCloudIO,
-	"finally_check_complete":         checkComplete,
+	// The ctc commands fuzz compaction on a compacted cloud topic; the
+	// sweeper asserts log-shape invariants but does not yet check surviving
+	// values against the producers' progress trackers. See ctc.go.
+	"parallel_driver_produce_ctc": produceCtc,
+	"parallel_driver_sweep_ctc":   sweepCtc,
+	"anytime_check_range":         check,
+	"anytime_check_cloud_io":      checkCloudIO,
+	"finally_check_complete":      checkComplete,
 	// check_offsets has no test-composer prefix, so it gets no symlink and
 	// Antithesis never schedules it. It is a manual replay tool for the
 	// multiverse debugger; see checkOffsets.

@@ -37,6 +37,10 @@ cloud_topics_reconciliation_max_object_size: 1048576  # 1 MiB (default 80 MiB)
 # NB: config key is cloud_topics_indexing_interval (not ..._l1_...).
 cloud_topics_indexing_interval: 16384                 # 16 KiB (default 4 MiB)
 
+# Compact cloud topics more often than the 30s default so the compacted
+# topic (ctc) goes through many compaction rounds in a short run.
+cloud_topics_compaction_interval_ms: 10000
+
 # Smallest metastore LSM memtable and SST read chunk the config allows
 # (both floor at 1 MiB), to get as much SST churn / chunked object-storage
 # reads as the low metastore load permits.

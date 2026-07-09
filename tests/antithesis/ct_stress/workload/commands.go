@@ -37,8 +37,8 @@ func randN(n int) int {
 	return rng.Intn(n)
 }
 
-// first_create_topic: create the cloud topic the workload exercises. Runs
-// once per timeline after setup_complete; must not signal lifecycle itself.
+// first_create_topic: create the topics the workload exercises. Runs once
+// per timeline after setup_complete; must not signal lifecycle itself.
 func createTopic() error {
 	cl, err := newClient()
 	if err != nil {
@@ -46,29 +46,40 @@ func createTopic() error {
 	}
 	defer cl.Close()
 	adm := kadm.NewClient(cl)
-	ctx := context.Background()
 
 	cloud := "cloud"
-	cfg := map[string]*string{"redpanda.storage.mode": &cloud}
+	compact := "compact"
+	if err := createOneTopic(adm, topic, fooPartitions, fooReplicas,
+		map[string]*string{"redpanda.storage.mode": &cloud}); err != nil {
+		return err
+	}
+	return createOneTopic(adm, ctcTopic, ctcPartitions, ctcReplicas,
+		map[string]*string{
+			"redpanda.storage.mode": &cloud,
+			"cleanup.policy":        &compact,
+		})
+}
 
+func createOneTopic(adm *kadm.Client, name string, partitions int32, replicas int16, cfg map[string]*string) error {
+	ctx := context.Background()
 	for attempt := 1; attempt <= 30; attempt++ {
-		resp, err := adm.CreateTopics(ctx, fooPartitions, fooReplicas, cfg, topic)
+		resp, err := adm.CreateTopics(ctx, partitions, replicas, cfg, name)
 		if err == nil {
-			if terr := resp[topic].Err; terr == nil {
-				fmt.Printf("created cloud topic foo (%d partitions, %d replicas)\n",
-					fooPartitions, fooReplicas)
+			if terr := resp[name].Err; terr == nil {
+				fmt.Printf("created cloud topic %s (%d partitions, %d replicas)\n",
+					name, partitions, replicas)
 				return nil
 			} else if errors.Is(terr, kerr.TopicAlreadyExists) {
-				fmt.Println("cloud topic foo already exists")
+				fmt.Printf("cloud topic %s already exists\n", name)
 				return nil
 			} else {
 				err = terr
 			}
 		}
-		fmt.Printf("attempt %d: create failed, retrying: %v\n", attempt, err)
+		fmt.Printf("attempt %d: create %s failed, retrying: %v\n", attempt, name, err)
 		time.Sleep(2 * time.Second)
 	}
-	return errors.New("failed to create cloud topic foo")
+	return fmt.Errorf("failed to create cloud topic %s", name)
 }
 
 // parallel_driver_produce: produce a bounded random batch. Best-effort under
