@@ -53,6 +53,7 @@ services:
     # container itself after the fault window. See
     # https://antithesis.com/docs/concepts/fault_injection/fault_types/#node-termination
     restart: "no"
+    entrypoint: ["/scripts/redpanda-entrypoint.sh"]
     command:
       - redpanda
       - start
@@ -64,10 +65,6 @@ services:
       - --memory={{ memory }}
       - --reserve-memory=0M
       - --overprovisioned
-      # Buffered I/O instead of O_DIRECT: the data dir is the container's
-      # overlay writable layer, where O_DIRECT is unreliable. Matches the
-      # ducktape RedpandaService config for containerized brokers.
-      - --kernel-page-cache=true
       - --kafka-addr=PLAINTEXT://0.0.0.0:9092
       - --advertise-kafka-addr=PLAINTEXT://redpanda-{{ i }}:9092
       - --rpc-addr=0.0.0.0:33145
@@ -76,7 +73,7 @@ services:
       - --seeds=redpanda-0:33145
 {% endif %}
     volumes:
-      - ./bootstrap.yaml:/etc/redpanda/.bootstrap.yaml:ro
+      - ./scripts:/scripts:ro
     ulimits:
       nofile:
         soft: 131072

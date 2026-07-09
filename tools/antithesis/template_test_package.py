@@ -73,7 +73,9 @@ TESTS_ROOT = REPO_ROOT / "tests" / "antithesis"
 
 MANIFEST_NAME = "test.yml"
 COMPOSE_NAME = "docker-compose.yaml"
-BOOTSTRAP_NAME = "bootstrap.yaml"
+# Relative to the config root. The bootstrap config lives under scripts/ so it
+# rides the container's scripts bind mount; the entrypoint stages it into place.
+BOOTSTRAP_NAME = "scripts/bootstrap.yaml"
 
 PACKAGE_TARGET = "//bazel/packaging:redpanda_tar"
 PACKAGE_TARBALL = "redpanda.tar.gz"

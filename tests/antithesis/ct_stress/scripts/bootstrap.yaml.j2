@@ -1,6 +1,7 @@
-# Cluster configuration applied once, on first cluster bootstrap (mounted
-# at /etc/redpanda/.bootstrap.yaml on every node). Changing values after
-# the cluster has formed requires `rpk cluster config set` at runtime.
+# Cluster configuration applied once, on first cluster bootstrap (staged to
+# /etc/redpanda/.bootstrap.yaml on every node by redpanda-entrypoint.sh).
+# Changing values after the cluster has formed requires `rpk cluster config
+# set` at runtime.
 #
 # Cloud topics are enabled by activating the tiered_cloud_topics feature
 # through the admin API; features are not cluster properties, so that
