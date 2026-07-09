@@ -22,7 +22,7 @@ import (
 
 // partitionBounds returns a partition's current start and high-watermark
 // offsets. Records occupy [lo, hi); the partition is empty when hi <= lo.
-func partitionBounds(part int32) (lo, hi int64, err error) {
+func partitionBounds(t string, part int32) (lo, hi int64, err error) {
 	cl, err := newClient()
 	if err != nil {
 		return 0, 0, err
@@ -32,40 +32,40 @@ func partitionBounds(part int32) (lo, hi int64, err error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 
-	starts, err := adm.ListStartOffsets(ctx, topic)
+	starts, err := adm.ListStartOffsets(ctx, t)
 	if err != nil {
 		return 0, 0, err
 	}
-	ends, err := adm.ListEndOffsets(ctx, topic)
+	ends, err := adm.ListEndOffsets(ctx, t)
 	if err != nil {
 		return 0, 0, err
 	}
 
-	s, ok := starts.Lookup(topic, part)
+	s, ok := starts.Lookup(t, part)
 	if !ok || s.Err != nil {
 		return 0, 0, s.Err
 	}
-	e, ok := ends.Lookup(topic, part)
+	e, ok := ends.Lookup(t, part)
 	if !ok || e.Err != nil {
 		return 0, 0, e.Err
 	}
 	return s.Offset, e.Offset, nil
 }
 
-// randomPartitionRange picks a random partition and returns its current
+// randomPartitionRange picks a random foo partition and returns its current
 // start and high-watermark offsets.
 func randomPartitionRange() (part int32, lo, hi int64, err error) {
 	part = int32(randN(fooPartitions))
-	lo, hi, err = partitionBounds(part)
+	lo, hi, err = partitionBounds(topic, part)
 	return part, lo, hi, err
 }
 
 // readRange consumes offsets [o1, o2) from a single partition and returns the
 // records in the order the broker served them. Bounded by a timeout so a fault
 // that stalls the range cannot hang the command.
-func readRange(part int32, o1, o2 int64) ([]*kgo.Record, error) {
+func readRange(t string, part int32, o1, o2 int64) ([]*kgo.Record, error) {
 	cl, err := newClient(kgo.ConsumePartitions(map[string]map[int32]kgo.Offset{
-		topic: {part: kgo.NewOffset().At(o1)},
+		t: {part: kgo.NewOffset().At(o1)},
 	}))
 	if err != nil {
 		return nil, err
@@ -123,7 +123,7 @@ func check() error {
 	o1 := lo + int64(randN(int(hi-lo)))
 	o2 := o1 + 1 + int64(randN(int(hi-o1)))
 
-	recs, err := readRange(part, o1, o2)
+	recs, err := readRange(topic, part, o1, o2)
 	if err != nil {
 		return nil
 	}
@@ -208,12 +208,12 @@ func checkOffsets() error {
 		return fmt.Errorf("empty range: o2 (%d) must be > o1 (%d)", o2, o1)
 	}
 
-	lo, hi, err := partitionBounds(int32(part))
+	lo, hi, err := partitionBounds(topic, int32(part))
 	if err != nil {
 		fmt.Printf("check_offsets: could not read bounds for foo/%d: %v\n", part, err)
 		lo, hi = -1, -1
 	}
-	recs, err := readRange(int32(part), o1, o2)
+	recs, err := readRange(topic, int32(part), o1, o2)
 	if err != nil {
 		return fmt.Errorf("read of foo/%d [%d,%d) failed: %w", part, o1, o2, err)
 	}
@@ -233,12 +233,12 @@ func checkOffsets() error {
 func readPartitionToEnd(part int32, deadline time.Time) (lo, hi int64, recs []*kgo.Record) {
 	for {
 		var err error
-		lo, hi, err = partitionBounds(part)
+		lo, hi, err = partitionBounds(topic, part)
 		if err == nil {
 			if hi <= lo {
 				return lo, hi, nil // empty partition
 			}
-			recs, err = readRange(part, lo, hi)
+			recs, err = readRange(topic, part, lo, hi)
 			if err == nil && int64(len(recs)) == hi-lo {
 				return lo, hi, recs
 			}
