@@ -87,6 +87,9 @@ func produce() error {
 		// Assign partitions ourselves so each record can carry the partition
 		// it was written to; a reader then verifies it was served from there.
 		kgo.RecordPartitioner(kgo.ManualPartitioner()),
+		// Flag franz-go's data-loss detection: it otherwise resets the
+		// producer id and silently carries on, hiding an anomaly we want seen.
+		kgo.ProducerOnDataLossDetected(reportDataLoss),
 	)
 	if err != nil {
 		return err
@@ -113,4 +116,19 @@ func produce() error {
 		map[string]any{"count": count, "nonce": fmt.Sprintf("%016x", nonce)})
 	fmt.Printf("produced %d records to foo (nonce=%016x)\n", count, nonce)
 	return nil
+}
+
+// reportDataLoss is the franz-go ProducerOnDataLossDetected hook. franz-go
+// calls it when a produce response returns an out-of-order sequence number or
+// unknown producer id that it cannot attribute to benign prefix truncation
+// (the broker's log start offset moving past records we'd already had acked).
+// franz-go treats that as data loss and, since we don't stop the producer,
+// resets the producer id and sequence numbers and continues. It is a
+// presumption, not proof — a producer-id expiry can trigger it too — but on an
+// acks=all cloud-topic producer it is an anomaly worth surfacing, so record it
+// as a reachability failure for Antithesis.
+func reportDataLoss(topic string, part int32) {
+	details := map[string]any{"topic": topic, "partition": part}
+	assert.Unreachable("idempotent producer detected data loss (out-of-order sequence or unknown producer id)", details)
+	fmt.Printf("data loss detected on %s/%d (out-of-order sequence or unknown producer id)\n", topic, part)
 }
