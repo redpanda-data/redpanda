@@ -18,10 +18,10 @@
 # Package template-based Antithesis tests into config images.
 #
 # Each directory under tests/antithesis/ containing a test.yml manifest is
-# a test. The manifest provides a description and default template
-# variables:
+# a test. The manifest provides a name (sent as antithesis.test_name, the run's
+# name in reports) and default template variables:
 #
-#   description: <one line>
+#   name: <one line>
 #   vars:
 #     redpanda_image: <default image>
 #     ...
@@ -382,7 +382,10 @@ def package_test(name: str, test_dir: Path, args: argparse.Namespace) -> None:
     if args.submit:
         submit_test_run(
             password=os.environ["AT_PASSWORD"],
-            description=args.description or manifest.get("description") or name,
+            test_name=manifest.get("name") or name,
+            description=args.description or None,
+            source=args.source or None,
+            ephemeral=args.ephemeral,
             duration_min=args.duration,
             config_image=pushed[config_ref],
             images=[v for k, v in pushed.items() if k != config_ref],
@@ -483,16 +486,37 @@ def main() -> None:
         default="",
         help="Image tag (default: content hash of the rendered config)",
     )
+    parser.add_argument(
+        "--source",
+        default="",
+        help="antithesis.source: groups property history across runs. Use a "
+        "stable key such as the git branch; runs sharing a source share "
+        "history. Required for --no-ephemeral runs.",
+    )
+    parser.add_argument(
+        "--ephemeral",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Keep the run out of the findings history (antithesis.is_ephemeral). "
+        "Default: ephemeral, for ad-hoc runs. Pass --no-ephemeral for a "
+        "persistent run recorded to history (requires --source).",
+    )
     add_common_args(parser)
     args = parser.parse_args()
 
     validate_common_args(parser, args)
 
+    if args.submit and not args.ephemeral and not args.source:
+        parser.error(
+            "--no-ephemeral runs must set --source; use a stable grouping key "
+            'such as the git branch, e.g. --source "$(git branch --show-current)"'
+        )
+
     available = discover_tests()
     if args.list:
         for name, path in available.items():
             manifest = yaml.safe_load((path / MANIFEST_NAME).read_text()) or {}
-            print(f"{name}: {manifest.get('description', '')}")
+            print(f"{name}: {manifest.get('name', '')}")
         return
     if not available:
         sys.exit(f"Error: no tests found under {TESTS_ROOT}")

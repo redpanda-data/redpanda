@@ -7,7 +7,7 @@
 # is built, tagged with a hash of its build context, exposed to the templates
 # as the named variable, and (for real runs) pushed and registered with
 # Antithesis so libvoidstar is injected into it.
-description: 5-node Redpanda cluster with MinIO object storage for cloud topics stress testing
+name: cloud topics stress testing
 
 images:
   workload_image:
