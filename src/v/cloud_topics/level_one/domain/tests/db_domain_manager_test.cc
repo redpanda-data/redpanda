@@ -56,11 +56,13 @@ ss::future<> random_sleep_ms(int max_ms) {
 struct domain_manager_node {
     domain_manager_node(
       ss::shared_ptr<stm> s,
+      ss::lw_shared_ptr<raft::consensus> raft,
       cloud_io::remote* remote,
       const cloud_storage_clients::bucket_name& bucket,
       cloud_io::cache* cache,
       const ss::sstring& staging_path)
       : stm_ptr(std::move(s))
+      , raft(std::move(raft))
       , remote(remote)
       , bucket(bucket)
       , cache(cache)
@@ -75,8 +77,9 @@ struct domain_manager_node {
     // retained in the list too, to validate that their usage fails.
     db_domain_manager* open_manager(bool start_gc) {
         auto mgr = std::make_unique<db_domain_manager>(
-          stm_ptr->raft()->confirmed_term(),
+          raft->confirmed_term(),
           stm_ptr,
+          raft,
           cache,
           remote,
           bucket,
@@ -118,6 +121,7 @@ struct domain_manager_node {
     }
 
     ss::shared_ptr<stm> stm_ptr;
+    ss::lw_shared_ptr<raft::consensus> raft;
     cloud_io::remote* remote;
     const cloud_storage_clients::bucket_name& bucket;
     cloud_io::cache* cache;
@@ -359,6 +363,7 @@ public:
             auto staging_path = fmt::format("db_domain_manager_test_{}", id());
             dm_nodes.at(id()) = std::make_unique<domain_manager_node>(
               std::move(s),
+              node->raft(),
               &sr->remote.local(),
               bucket_name,
               &test_cache.local(),
@@ -379,6 +384,10 @@ public:
                 } catch (...) {
                     // Ignore errors during teardown.
                 }
+                // Drop the node (and its consensus reference) before tearing
+                // down the raft fixture, so the fixture destroys the consensus
+                // and closes its log while storage services are still up.
+                node.reset();
             }
         }
         raft::raft_fixture::TearDownAsync().get();
@@ -394,7 +403,7 @@ public:
             return std::nullopt;
         }
         auto& node = *dm_nodes.at(leader_id.value()());
-        if (!node.stm_ptr->raft()->is_leader()) {
+        if (!node.raft->is_leader()) {
             return std::nullopt;
         }
         return node;
@@ -697,7 +706,7 @@ TEST_P(DbDomainManagerTestWithParams, TestConcurrentUpdates) {
     for (int i = 0; i < 10; ++i) {
         opt_ref leader_opt;
         ASSERT_NO_FATAL_FAILURE(wait_for_leader(leader_opt).get());
-        auto raft = leader_opt->get().stm_ptr->raft();
+        auto raft = leader_opt->get().raft;
         auto start_term = raft->confirmed_term();
 
         // Allow for some progress in the current term.
@@ -708,7 +717,7 @@ TEST_P(DbDomainManagerTestWithParams, TestConcurrentUpdates) {
         }
 
         // Step down and create a domain manager for the new leader.
-        leader_opt->get().stm_ptr->raft()->step_down("test stepdown").get();
+        leader_opt->get().raft->step_down("test stepdown").get();
         ASSERT_NO_FATAL_FAILURE(wait_for_leader(leader_opt).get());
         auto& leader_node = leader_opt->get();
         leader_node.open_manager(/*start_gc=*/true);
@@ -748,10 +757,10 @@ TEST_P(DbDomainManagerTestWithParams, TestUpdatesWithDroppedAppends) {
     for (int i = 0; i < 3; ++i) {
         opt_ref leader_opt;
         ASSERT_NO_FATAL_FAILURE(wait_for_leader(leader_opt).get());
-        auto raft = leader_opt->get().stm_ptr->raft();
+        auto raft = leader_opt->get().raft;
         auto start_term = raft->confirmed_term();
         auto starting_next = expected_add_next;
-        auto leader_id = leader_opt->get().stm_ptr->raft()->self();
+        auto leader_id = leader_opt->get().raft->self();
         auto& leader = node(leader_id.id());
 
         // Wait for there to make progress before mucking with appends.

@@ -111,6 +111,7 @@ redpanda_cc_library(
         "//src/v/container:chunked_hash_map",
         "//src/v/container:chunked_vector",
         "//src/v/model",
+        "//src/v/raft",
         "//src/v/ssx:checkpoint_mutex",
         "@abseil-cpp//absl/container:btree",
         "@seastar",

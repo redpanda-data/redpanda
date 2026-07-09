@@ -242,6 +242,7 @@ db_domain_manager::entity_locks::acquire_objects(
 db_domain_manager::db_domain_manager(
   model::term_id expected_term,
   ss::shared_ptr<stm> stm,
+  ss::lw_shared_ptr<raft::consensus> raft,
   cloud_io::cache* cache,
   cloud_io::remote* remote,
   cloud_storage_clients::bucket_name bucket,
@@ -254,6 +255,7 @@ db_domain_manager::db_domain_manager(
   , object_io_(object_io)
   , sg_(sg)
   , stm_(std::move(stm))
+  , raft_(std::move(raft))
   , gc_interval_(
       config::shard_local_cfg()
         .cloud_topics_long_term_garbage_collection_interval) {
@@ -1570,7 +1572,7 @@ db_domain_manager::write_rows_no_lock(chunked_vector<write_batch_row> rows) {
     }
     if (needs_step_down) {
         auto step_down_fut = co_await ss::coroutine::as_future(
-          stm_->raft()->step_down_in_term(
+          raft_->step_down_in_term(
             expected_term_, "Failed to write to database"));
         if (step_down_fut.failed()) {
             // Only throws at shutdown.
@@ -1587,7 +1589,7 @@ ss::future<std::expected<void, rpc::errc>> db_domain_manager::maybe_open_db() {
     if (db_ && !db_->needs_reopen()) {
         co_return std::expected<void, rpc::errc>{};
     }
-    auto cur_term = stm_->raft()->term();
+    auto cur_term = raft_->term();
     if (cur_term != expected_term_) {
         vlog(
           cd_log.debug,
@@ -1617,7 +1619,7 @@ ss::future<std::expected<void, rpc::errc>> db_domain_manager::maybe_open_db() {
     vlog(
       cd_log.debug, "Opening database with expected term {}", expected_term_);
     auto db_res = co_await replicated_database::open(
-      expected_term_, stm_.get(), cache_, remote_, bucket_, as_, sg_);
+      expected_term_, stm_.get(), raft_, cache_, remote_, bucket_, as_, sg_);
     if (!db_res.has_value()) {
         co_return std::unexpected(
           log_and_convert(db_res.error(), "Failed to open database: "));
@@ -1632,7 +1634,7 @@ ss::future<> db_domain_manager::gc_loop() {
         co_return;
     }
 
-    auto ntp = stm_->raft()->log()->config().ntp();
+    auto ntp = raft_->log()->config().ntp();
     db_garbage_collector gc(object_io_);
     while (!as_.abort_requested()) {
         // NOTE: even though the garbage collector will remove objects and
@@ -1801,7 +1803,7 @@ db_domain_manager::restore_domain(rpc::restore_domain_request req) {
       "Re-opening database with expected term {}",
       expected_term_);
     auto db_res = co_await replicated_database::open(
-      expected_term_, stm_.get(), cache_, remote_, bucket_, as_, sg_);
+      expected_term_, stm_.get(), raft_, cache_, remote_, bucket_, as_, sg_);
     if (!db_res.has_value()) {
         co_return rpc::restore_domain_reply{
           .ec = log_and_convert(db_res.error(), "Failed to reopen database: "),

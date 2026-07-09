@@ -33,7 +33,6 @@ public:
 
     explicit stm(
       ss::logger&, raft::consensus*, config::binding<std::chrono::seconds>);
-    raft::consensus* raft() { return _raft; }
 
     // Syncs the STM such that we're guaranteed that it has applied all records
     // from the previous terms. Calling does _not_ ensure that all records from
