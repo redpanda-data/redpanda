@@ -601,6 +601,24 @@ ss::future<append_result> segment::do_append(const model::record_batch& b) {
               : batch_cache::is_dirty_entry::no);
           return ret;
       });
+    if (!has_compaction_index()) {
+        return std::move(write_fut).then_wrapped(
+          [this,
+           batch_type = b.header().type](ss::future<append_result> append_fut) {
+              clear_cached_disk_usage();
+              if (append_fut.failed()) {
+                  auto append_err = std::move(append_fut).get_exception();
+                  vlog(stlog.error, "segment::append failed: {}", append_err);
+                  return ss::make_exception_future<append_result>(append_err);
+              }
+              if (
+                !_first_write.has_value()
+                && batch_type == model::record_batch_type::raft_data) {
+                  _first_write = ss::lowres_clock::now();
+              }
+              return append_fut;
+          });
+    }
     auto index_fut = compaction_index_batch(b);
     return ss::when_all(std::move(write_fut), std::move(index_fut))
       .then([this, batch_type = b.header().type](
