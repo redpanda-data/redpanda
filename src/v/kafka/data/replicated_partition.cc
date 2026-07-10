@@ -443,26 +443,8 @@ replicated_partition::get_leader_epoch_last_offset_unbounded(
       last_local_term,
       is_read_replica);
 
-    if (!is_read_replica && term > last_local_term) {
-        // Request for term that is in the future
-        co_return std::nullopt;
-    }
-    // Look for the highest offset in the requested term, or the first offset
-    // in the next term. This mirrors behavior in Kafka, see
-    // https://github.com/apache/kafka/blob/97105a8e5812135515f5a0fa4d5ff554d80df2fe/storage/src/main/java/org/apache/kafka/storage/internals/epoch/LeaderEpochFileCache.java#L255-L281
-    if (!is_read_replica && term >= first_local_term) {
-        auto last_offset = _partition->get_term_last_offset(term);
-        if (last_offset) {
-            co_return _translator->from_log_offset(*last_offset);
-        }
-    }
-    // The requested term falls below our earliest local segment.
-
-    // Check cloud storage for a viable offset.
-    if (
-      is_read_replica
-      || (_partition->is_remote_fetch_enabled() && _partition->cloud_data_available())) {
-        if (is_read_replica && !_partition->cloud_data_available()) {
+    if (is_read_replica) {
+        if (!_partition->cloud_data_available()) {
             // If we didn't sync the manifest yet the cloud_data_available will
             // return false. We can't call `get_cloud_term_last_offset` in this
             // case but we also can't use `first_local_offset` for read replica.
@@ -473,24 +455,45 @@ replicated_partition::get_leader_epoch_last_offset_unbounded(
         if (last_offset) {
             co_return last_offset;
         }
-
+        // The term was not found in cloud storage.
         const auto highest_cloud_term = _partition->highest_cloud_term();
-        if (is_read_replica) {
-            // The term was not found in cloud storage. A read replica has no
-            // local log, so a term above the highest cloud term is an unknown
-            // (future) epoch for it: return no value (an undefined epoch on the
-            // wire) rather than the cloud start offset, which would sit below
-            // the consumer's position and spuriously signal truncation.
-            if (highest_cloud_term.has_value() && term > *highest_cloud_term) {
-                co_return std::nullopt;
-            }
-            // The term is below the earliest cloud segment; the next-highest
-            // term still lives in cloud, so return the cloud start offset.
-            co_return _partition->start_cloud_offset();
+        if (highest_cloud_term.has_value() && term > *highest_cloud_term) {
+            // A read replica has no local log, so a term above the highest
+            // cloud term is an unknown (future) epoch for it.
+            co_return std::nullopt;
+        }
+        // The term is below the earliest cloud segment; the next-highest term
+        // still lives in cloud, so return the cloud start offset.
+        co_return _partition->start_cloud_offset();
+    }
+
+    if (term > last_local_term) {
+        // Request for term that is in the future
+        co_return std::nullopt;
+    }
+    // Look for the highest offset in the requested term, or the first offset
+    // in the next term. This mirrors behavior in Kafka, see
+    // https://github.com/apache/kafka/blob/97105a8e5812135515f5a0fa4d5ff554d80df2fe/storage/src/main/java/org/apache/kafka/storage/internals/epoch/LeaderEpochFileCache.java#L255-L281
+    if (term >= first_local_term) {
+        auto last_offset = _partition->get_term_last_offset(term);
+        if (last_offset) {
+            co_return _translator->from_log_offset(*last_offset);
+        }
+    }
+    // The requested term falls below our earliest local segment. Check cloud
+    // storage for a viable offset.
+    if (
+      _partition->is_remote_fetch_enabled()
+      && _partition->cloud_data_available()) {
+        auto last_offset = co_await _partition->get_cloud_term_last_offset(
+          term);
+        if (last_offset) {
+            co_return last_offset;
         }
         // The requested term is below the first local term (so its data is not
         // in the local log) and was not found in cloud storage. Here, we use
         // the highest cloud term to disambiguate two cases.
+        const auto highest_cloud_term = _partition->highest_cloud_term();
         if (highest_cloud_term.has_value() && term <= *highest_cloud_term) {
             // The term must be lower than the lowest cloud term: the
             // next-highest term still lives in cloud, so the answer is the
