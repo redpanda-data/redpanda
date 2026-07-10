@@ -548,6 +548,11 @@ consensus::success_reply consensus::update_follower_index(
 }
 
 void consensus::maybe_promote_to_voter(vnode id) {
+    const auto& latest_cfg = _configuration_manager.get_latest();
+    if (!latest_cfg.current_config().contains(id) || latest_cfg.is_voter(id)) {
+        return;
+    }
+
     ssx::spawn_with_gate(_bg, [this, id] {
         const auto& latest_cfg = _configuration_manager.get_latest();
 
