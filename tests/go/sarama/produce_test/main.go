@@ -14,7 +14,7 @@ import (
 var (
 	brokers = flag.String("brokers", "127.0.0.1:9092", "Th Redpanda brokers to connect to, as a comma separated list")
 	count   = flag.Int64("count", 100, "Optional count to run")
-	version = flag.String("version", "2.1.0", "Kafka version to use, e.g. 2.1.0")
+	version = flag.String("version", "4.2.0", "Kafka version to use, e.g. 2.1.0")
 )
 
 func main() {

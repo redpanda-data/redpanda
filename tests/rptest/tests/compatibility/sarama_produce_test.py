@@ -46,7 +46,7 @@ class SaramaProduceTest(RedpandaTest):
         )
 
     @cluster(num_nodes=3, log_allow_list=TX_ERROR_LOGS)
-    @matrix(version=["2.1.0", "2.6.0"])
+    @matrix(version=["2.1.0", "2.6.0", "3.6.0", "4.2.0"])
     def test_produce(self, version):
         verifier_bin = "/opt/redpanda-tests/go/sarama/produce_test/produce_test"
 
