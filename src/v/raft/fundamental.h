@@ -80,7 +80,8 @@ public:
     constexpr model::node_id id() const { return _node_id; }
     constexpr model::revision_id revision() const { return _revision; }
 
-    auto serde_fields() { return std::tie(_node_id, _revision); }
+    void serde_write(iobuf&) const;
+    void serde_read(iobuf_parser&, const serde::header&);
 
 private:
     model::node_id _node_id;

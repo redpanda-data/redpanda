@@ -263,6 +263,32 @@ SEASTAR_THREAD_TEST_CASE(append_entries_request_serde_wrapper_serde) {
 
 namespace {
 
+struct fieldwise_vnode
+  : serde::
+      envelope<fieldwise_vnode, serde::version<0>, serde::compat_version<0>> {
+    explicit fieldwise_vnode(raft::vnode node)
+      : node_id(node.id())
+      , revision(node.revision()) {}
+
+    auto serde_fields() { return std::tie(node_id, revision); }
+
+    model::node_id node_id;
+    model::revision_id revision;
+};
+
+struct short_fieldwise_vnode
+  : serde::envelope<
+      short_fieldwise_vnode,
+      serde::version<0>,
+      serde::compat_version<0>> {
+    explicit short_fieldwise_vnode(model::node_id node_id)
+      : node_id(node_id) {}
+
+    auto serde_fields() { return std::tie(node_id); }
+
+    model::node_id node_id;
+};
+
 struct fieldwise_protocol_metadata
   : serde::envelope<
       fieldwise_protocol_metadata,
@@ -340,6 +366,22 @@ struct append_entries_reply_with_raw_result
 };
 
 } // namespace
+
+SEASTAR_THREAD_TEST_CASE(vnode_encoding_matches_fieldwise_layout) {
+    const auto node = raft::vnode(model::node_id(11), model::revision_id(22));
+
+    const auto expected = serde::to_iobuf(fieldwise_vnode(node));
+    auto actual = serde::to_iobuf(node);
+
+    BOOST_REQUIRE(actual == expected);
+    BOOST_REQUIRE(serde::from_iobuf<raft::vnode>(std::move(actual)) == node);
+
+    auto short_encoding = serde::to_iobuf(
+      short_fieldwise_vnode(model::node_id(33)));
+    BOOST_REQUIRE(
+      serde::from_iobuf<raft::vnode>(std::move(short_encoding))
+      == raft::vnode(model::node_id(33), model::revision_id{}));
+}
 
 SEASTAR_THREAD_TEST_CASE(protocol_metadata_encoding_matches_fieldwise_layout) {
     const auto metadata = raft::protocol_metadata{

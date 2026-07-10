@@ -10,14 +10,21 @@ redpanda_cc_rpc_library(
 
 redpanda_cc_library(
     name = "fundamental",
+    srcs = [
+        "fundamental.cc",
+    ],
     hdrs = [
         "fundamental.h",
     ],
     visibility = ["//visibility:public"],
     deps = [
         "//src/v/base",
+        "//src/v/bytes:iobuf",
+        "//src/v/bytes:iobuf_parser",
         "//src/v/model",
+        "//src/v/serde",
         "//src/v/utils:named_type",
+        "@seastar",
     ],
 )
 
