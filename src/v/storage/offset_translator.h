@@ -84,6 +84,8 @@ public:
     ///
     /// Threshold adjustment is for testing.
     static constexpr size_t default_checkpoint_threshold = 64_MiB;
+    bool needs_checkpoint(
+      size_t checkpoint_threshold = default_checkpoint_threshold) const;
     ss::future<> maybe_checkpoint(
       size_t checkpoint_threshold = default_checkpoint_threshold);
 

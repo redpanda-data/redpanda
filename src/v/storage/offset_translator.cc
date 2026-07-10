@@ -313,6 +313,11 @@ bytes offset_translator::highest_known_offset_key() const {
     return kvstore_highest_known_offset_key(_group);
 }
 
+bool offset_translator::needs_checkpoint(size_t checkpoint_threshold) const {
+    return !_filtered_types.empty()
+           && (_checkpoint_hint || _bytes_processed >= _bytes_processed_at_checkpoint + checkpoint_threshold);
+}
+
 ss::future<> offset_translator::maybe_checkpoint(size_t checkpoint_threshold) {
     if (_filtered_types.empty()) {
         co_return;
@@ -325,9 +330,7 @@ ss::future<> offset_translator::maybe_checkpoint(size_t checkpoint_threshold) {
         co_return;
     }
 
-    if (
-      _bytes_processed < _bytes_processed_at_checkpoint + checkpoint_threshold
-      && !_checkpoint_hint) {
+    if (!needs_checkpoint(checkpoint_threshold)) {
         co_return;
     }
 

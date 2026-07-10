@@ -2219,6 +2219,9 @@ size_t disk_log_impl::bytes_left_before_roll() const {
 }
 
 void disk_log_impl::bg_checkpoint_offset_translator() {
+    if (!_offset_translator.needs_checkpoint()) {
+        return;
+    }
     ssx::spawn_with_gate(_compaction_housekeeping_gate, [this] {
         return _offset_translator.maybe_checkpoint();
     });
