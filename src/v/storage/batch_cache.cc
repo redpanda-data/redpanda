@@ -514,6 +514,18 @@ void batch_cache_index::mark_clean(model::offset up_to_inclusive) {
         return;
     }
 
+    if (!_dirty_spans_multiple_ranges) {
+        vassert(
+          _single_dirty_range,
+          "Dirty tracker must reference its single dirty cache range");
+        _single_dirty_range->mark_clean(up_to_inclusive);
+        _dirty_tracker.mark_clean(up_to_inclusive);
+        if (_dirty_tracker.clean()) {
+            _single_dirty_range = nullptr;
+        }
+        return;
+    }
+
     auto first = find_first(_dirty_tracker.min());
     vassert(
       first != _index.end(),
@@ -526,6 +538,10 @@ void batch_cache_index::mark_clean(model::offset up_to_inclusive) {
     });
 
     _dirty_tracker.mark_clean(up_to_inclusive);
+    if (_dirty_tracker.clean()) {
+        _single_dirty_range = nullptr;
+        _dirty_spans_multiple_ranges = false;
+    }
 }
 ss::future<> batch_cache_index::clear_async_unlocked() {
     vassert(

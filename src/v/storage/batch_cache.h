@@ -579,6 +579,13 @@ public:
              */
             auto p = _cache->put(*this, batch, dirty);
             if (dirty) {
+                auto* range = p.range().get();
+                if (_dirty_tracker.clean()) {
+                    _single_dirty_range = range;
+                    _dirty_spans_multiple_ranges = false;
+                } else if (_single_dirty_range != range) {
+                    _dirty_spans_multiple_ranges = true;
+                }
                 _dirty_tracker.mark_dirty(
                   {batch.base_offset(), batch.last_offset()});
             }
@@ -676,6 +683,8 @@ public:
         lock_guard lk(*this);
         co_await clear_async_unlocked();
         _small_batches_range = nullptr;
+        _single_dirty_range = nullptr;
+        _dirty_spans_multiple_ranges = false;
     }
 
 private:
@@ -757,6 +766,8 @@ private:
     batch_cache::range_ptr _small_batches_range = nullptr;
 
     dirty_tracker _dirty_tracker;
+    batch_cache::range* _single_dirty_range{nullptr};
+    bool _dirty_spans_multiple_ranges{false};
 
 public:
     fmt::iterator format_to(fmt::iterator it) const {
