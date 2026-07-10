@@ -506,11 +506,15 @@ ss::future<> segment_appender::process_flush_ops(size_t committed) {
         return ss::now();
     }
 
-    flush_ops_container ops(
-      std::make_move_iterator(flushable),
-      std::make_move_iterator(_flush_ops.end()));
-
-    _flush_ops.pop_back_n(std::distance(flushable, _flush_ops.end()));
+    flush_ops_container ops;
+    if (flushable == _flush_ops.begin()) {
+        ops = std::exchange(_flush_ops, {});
+    } else {
+        ops = flush_ops_container(
+          std::make_move_iterator(flushable),
+          std::make_move_iterator(_flush_ops.end()));
+        _flush_ops.pop_back_n(std::distance(flushable, _flush_ops.end()));
+    }
 
     return _out.flush().then([this, committed, ops = std::move(ops)]() mutable {
         // Inflight_dispatched is incremented right before a write is
