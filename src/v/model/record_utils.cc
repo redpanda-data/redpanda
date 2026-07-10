@@ -13,27 +13,33 @@
 #include "model/record.h"
 #include "utils/vint.h"
 
+#include <array>
+#include <cstring>
 #include <type_traits>
 
 namespace model {
 
-template<typename T, typename = std::enable_if_t<std::is_integral_v<T>, T>>
-void crc_extend_cpu_to_le(crc::crc32c& crc, T i) {
-    auto j = ss::cpu_to_le(i);
-    crc.extend(j);
-}
-
-template<typename... T>
-void crc_extend_all_cpu_to_le(crc::crc32c& crc, T... t) {
-    ((crc_extend_cpu_to_le(crc, t)), ...);
+template<typename EndianConverter, typename... T>
+requires(std::is_integral_v<T> && ...)
+void crc_extend_all(crc::crc32c& crc, EndianConverter to_endian, T... values) {
+    std::array<uint8_t, (sizeof(T) + ...)> bytes;
+    auto* out = bytes.data();
+    auto append = [&]<typename Value>(Value value) {
+        const auto encoded = to_endian(value);
+        std::memcpy(out, &encoded, sizeof(encoded));
+        out += sizeof(encoded);
+    };
+    (append(values), ...);
+    crc.extend(bytes.data(), bytes.size());
 }
 
 /// \brief uint32_t because that's what crc32c uses
 /// it is *only* record_batch_header.header_crc;
 uint32_t internal_header_only_crc(const record_batch_header& header) {
     auto c = crc::crc32c();
-    crc_extend_all_cpu_to_le(
+    crc_extend_all(
       c,
+      []<typename T>(T value) { return ss::cpu_to_le(value); },
       /*Additional fields*/
       header.size_bytes,
       header.base_offset(),
@@ -53,21 +59,11 @@ uint32_t internal_header_only_crc(const record_batch_header& header) {
     return c.value();
 }
 
-template<typename T, typename = std::enable_if_t<std::is_integral_v<T>, T>>
-void crc_extend_cpu_to_be(crc::crc32c& crc, T i) {
-    auto j = ss::cpu_to_be(i);
-    crc.extend(j);
-}
-
-template<typename... T>
-void crc_extend_all_cpu_to_be(crc::crc32c& crc, T... t) {
-    ((crc_extend_cpu_to_be(crc, t)), ...);
-}
-
 void crc_record_batch_header(
   crc::crc32c& crc, const record_batch_header& header) {
-    crc_extend_all_cpu_to_be(
+    crc_extend_all(
       crc,
+      []<typename T>(T value) { return ss::cpu_to_be(value); },
       header.attrs.value(),
       header.last_offset_delta,
       header.first_timestamp.value(),
