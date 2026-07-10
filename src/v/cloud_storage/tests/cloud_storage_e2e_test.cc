@@ -1359,6 +1359,91 @@ TEST_F(ReadReplicaFixture, TestCloudStorageTimequeryReadReplicaMode) {
       false);
 }
 
+// For a read replica, an OffsetForLeaderEpoch query for a term above everything
+// in cloud storage must return no value (undefined epoch / -1 on the wire), not
+// the cloud start offset. Returning the cloud start offset would tell a
+// consumer positioned above it that its log was truncated, resetting it
+// backwards. A term below cloud coverage still resolves to the cloud start
+// offset.
+TEST_F(
+  ReadReplicaFixture, TestOffsetForLeaderEpochReadReplicaTermOutsideCloud) {
+    const model::topic topic_name("tapioca");
+    model::ntp ntp(model::kafka_namespace, topic_name, model::partition_id{0});
+
+    cluster::topic_properties props;
+    props.shadow_indexing = model::shadow_indexing_mode::full;
+    props.retention_local_target_bytes = tristate<size_t>(0);
+    add_topic({model::kafka_namespace, topic_name}, 1, props).get();
+    wait_for_leader(ntp).get();
+
+    auto partition = app.partition_manager.local().get(ntp);
+    auto& archiver = partition->archiver().value().get();
+    archiver.initialize_probe();
+    ASSERT_TRUE(archiver.sync_for_tests().get());
+    archiver.upload_topic_manifest().get();
+
+    tests::remote_segment_generator gen(make_kafka_client().get(), *partition);
+    auto deferred_g_close = ss::defer([&gen] { gen.stop().get(); });
+    auto total_records
+      = gen.num_segments(3).batches_per_segment(1).produce().get();
+    ASSERT_GT(total_records, 0);
+
+    auto rr_rp = start_read_replica_fixture();
+    cluster::topic_properties read_replica_props;
+    read_replica_props.shadow_indexing = model::shadow_indexing_mode::disabled;
+    read_replica_props.read_replica = true;
+    read_replica_props.read_replica_bucket = "test-bucket";
+    rr_rp
+      ->add_topic({model::kafka_namespace, topic_name}, 1, read_replica_props)
+      .get();
+    rr_rp->wait_for_leader(ntp).get();
+
+    auto rr_partition = rr_rp->app.partition_manager.local().get(ntp);
+    kafka::replicated_partition rr(rr_partition);
+
+    // Before the manifest is synced, cloud data is unavailable and the read
+    // replica has no local log to fall back on, so it cannot answer -> no
+    // value.
+    ASSERT_FALSE(rr_partition->cloud_data_available());
+    ASSERT_FALSE(rr.get_leader_epoch_last_offset(kafka::leader_epoch(1))
+                   .get()
+                   .has_value());
+
+    auto& rr_archiver = rr_partition->archiver()->get();
+    rr_archiver.initialize_probe();
+    ASSERT_TRUE(rr_archiver.sync_for_tests().get());
+    rr_archiver.sync_manifest().get();
+    ASSERT_TRUE(rr_partition->cloud_data_available());
+
+    const auto& manifest = rr_archiver.manifest();
+    ASSERT_GT(manifest.size(), 0);
+    const auto highest_cloud_term = manifest.last_segment()->segment_term;
+    const auto lowest_cloud_term = manifest.begin()->segment_term;
+
+    // Within cloud coverage: resolves to a real cloud offset, not one of the
+    // out-of-range tails handled below.
+    auto in_cloud = rr.get_leader_epoch_last_offset(
+                        kafka::leader_epoch(highest_cloud_term()))
+                      .get();
+    ASSERT_TRUE(in_cloud.has_value());
+    ASSERT_GT(in_cloud.value(), rr_partition->start_cloud_offset());
+
+    // Above cloud coverage: an undefined epoch for this read replica -> no
+    // value.
+    auto above = rr.get_leader_epoch_last_offset(
+                     kafka::leader_epoch(highest_cloud_term() + 1))
+                   .get();
+    ASSERT_FALSE(above.has_value());
+
+    // Below cloud coverage: the next-highest term still lives in cloud, so the
+    // answer is the cloud start offset.
+    auto below = rr.get_leader_epoch_last_offset(
+                     kafka::leader_epoch(lowest_cloud_term() - 1))
+                   .get();
+    ASSERT_TRUE(below.has_value());
+    ASSERT_EQ(below.value(), rr_partition->start_cloud_offset());
+}
+
 TEST_P(EndToEndFixture, TestMixedTimequery) {
     const model::topic topic_name("tapioca");
     model::ntp ntp(model::kafka_namespace, topic_name, model::partition_id{0});

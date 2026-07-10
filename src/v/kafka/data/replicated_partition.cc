@@ -427,8 +427,7 @@ replicated_partition::get_leader_epoch_last_offset_unbounded(
     vlog(
       kdlog.debug,
       "{} get_leader_epoch_last_offset_unbounded, term {}, first local offset "
-      "{}, "
-      "first local term {}, last local term {}, is read replica {}",
+      "{}, first local term {}, last local term {}, is read replica {}",
       _partition->get_ntp_config().ntp(),
       term,
       first_local_offset,
@@ -465,11 +464,36 @@ replicated_partition::get_leader_epoch_last_offset_unbounded(
           term);
         if (last_offset) {
             co_return last_offset;
-        } else {
-            // Return the offset of this next-highest term, but from the
-            // cloud
+        }
+
+        const auto highest_cloud_term = _partition->highest_cloud_term();
+        if (is_read_replica) {
+            // The term was not found in cloud storage. A read replica has no
+            // local log, so a term above the highest cloud term is an unknown
+            // (future) epoch for it: return no value (an undefined epoch on the
+            // wire) rather than the cloud start offset, which would sit below
+            // the consumer's position and spuriously signal truncation.
+            if (highest_cloud_term.has_value() && term > *highest_cloud_term) {
+                co_return std::nullopt;
+            }
+            // The term is below the earliest cloud segment; the next-highest
+            // term still lives in cloud, so return the cloud start offset.
             co_return _partition->start_cloud_offset();
         }
+        // The requested term is below the first local term (so its data is not
+        // in the local log) and was not found in cloud storage. Here, we use
+        // the highest cloud term to disambiguate two cases.
+        if (highest_cloud_term.has_value() && term <= *highest_cloud_term) {
+            // The term must be lower than the lowest cloud term: the
+            // next-highest term still lives in cloud, so the answer is the
+            // cloud start offset (the effective log start).
+            co_return _partition->start_cloud_offset();
+        }
+        // The term is higher than the highest cloud term: its data lives
+        // only in the local log (e.g. the local start offset advanced ahead
+        // of the cloud upload watermark during partition movement). The
+        // next-highest term begins at the first local offset.
+        co_return _translator->from_log_offset(first_local_offset);
     }
 
     // Return the offset of this next-highest term.
