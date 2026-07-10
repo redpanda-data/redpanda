@@ -927,6 +927,7 @@ private:
     clock_type::time_point _last_flush_time;
     /// Ensures that we do not schedule multiple redudant flushes.
     bool _in_flight_flush = false;
+    std::optional<model::offset> _scheduled_commit_index_update;
 
     /**
      * Locks listed in the order of nestedness, election being the outermost

@@ -3194,21 +3194,51 @@ ss::future<> consensus::refresh_commit_index() {
 }
 
 void consensus::maybe_update_leader_commit_idx() {
-    ssx::background = ssx::spawn_with_gate_then(_bg, [this] {
-                          return _op_lock.get_units().then(
-                            [this](ssx::semaphore_units u) mutable {
-                                // do not update committed index if not the
-                                // leader, this check has to be done under the
-                                // semaphore
-                                if (!is_elected_leader()) {
-                                    return ss::now();
-                                }
-                                return do_maybe_update_leader_commit_idx(
-                                  std::move(u));
-                            });
-                      }).handle_exception([this](const std::exception_ptr& e) {
-        vlog(_ctxlog.warn, "Error updating leader commit index", e);
+    if (!is_elected_leader()) {
+        return;
+    }
+
+    auto majority_match = config().quorum_match([this](vnode id) {
+        if (id == _self) {
+            return _flushed_offset;
+        }
+        if (auto it = _fstates.find(id); it != _fstates.end()) {
+            return it->second.match_committed_index();
+        }
+        return model::offset{};
     });
+    const bool term_confirmation_needed = _confirmed_term != _term
+                                          && get_term(majority_match) == _term;
+    majority_match = std::min(majority_match, _flushed_offset);
+    if (
+      (majority_match <= _commit_index && !term_confirmation_needed)
+      || (_scheduled_commit_index_update && majority_match <= *_scheduled_commit_index_update)) {
+        return;
+    }
+
+    _scheduled_commit_index_update = majority_match;
+    ssx::background
+      = ssx::spawn_with_gate_then(
+          _bg,
+          [this] {
+              return _op_lock.get_units().then(
+                [this](ssx::semaphore_units u) mutable {
+                    // do not update committed index if not the leader, this
+                    // check has to be done under the semaphore
+                    if (!is_elected_leader()) {
+                        return ss::now();
+                    }
+                    return do_maybe_update_leader_commit_idx(std::move(u));
+                });
+          })
+          .finally([this, majority_match] {
+              if (_scheduled_commit_index_update == majority_match) {
+                  _scheduled_commit_index_update.reset();
+              }
+          })
+          .handle_exception([this](const std::exception_ptr& e) {
+              vlog(_ctxlog.warn, "Error updating leader commit index", e);
+          });
 }
 /**
  * The `maybe_commit_configuration` method is the place where configuration
