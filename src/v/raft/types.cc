@@ -17,6 +17,8 @@
 #include "raft/group_configuration.h"
 #include "reflection/adl.h"
 #include "reflection/async_adl.h"
+#include "serde/serde_exception.h"
+#include "serde/serde_size_t.h"
 
 #include <seastar/coroutine/maybe_yield.hh>
 
@@ -25,6 +27,10 @@
 #include <array>
 #include <chrono>
 #include <cstring>
+#include <limits>
+#include <type_traits>
+#include <utility>
+
 namespace {
 template<typename T>
 void write_little_endian(char*& cursor, T value) {
@@ -132,6 +138,46 @@ T read_one_varint_delta(iobuf_parser& in, const T& prev) {
 
 namespace raft {
 
+namespace {
+
+constexpr size_t vnode_body_size = sizeof(int32_t) + sizeof(int64_t);
+constexpr size_t vnode_encoded_size = sizeof(serde::version_t) * 2
+                                      + sizeof(serde::serde_size_t)
+                                      + vnode_body_size;
+constexpr size_t append_entries_reply_body_size
+  = 2 * vnode_encoded_size + 5 * sizeof(int64_t)
+    + sizeof(serde::serde_enum_serialized_t) + sizeof(int8_t);
+
+void write_vnode(char*& cursor, vnode node) {
+    static_assert(vnode::redpanda_serde_version == 0);
+    static_assert(vnode::redpanda_serde_compat_version == 0);
+
+    write_little_endian(cursor, vnode::redpanda_serde_version);
+    write_little_endian(cursor, vnode::redpanda_serde_compat_version);
+    write_little_endian(
+      cursor, static_cast<serde::serde_size_t>(vnode_body_size));
+    write_little_endian(cursor, node.id()());
+    write_little_endian(cursor, node.revision()());
+}
+
+vnode read_vnode(const char*& cursor) {
+    const auto version = read_little_endian<serde::version_t>(cursor);
+    const auto compat_version = read_little_endian<serde::version_t>(cursor);
+    const auto size = read_little_endian<serde::serde_size_t>(cursor);
+    if (
+      version != vnode::redpanda_serde_version
+      || compat_version != vnode::redpanda_serde_compat_version
+      || size != vnode_body_size) [[unlikely]] {
+        throw serde::serde_exception("unexpected vnode envelope layout");
+    }
+
+    auto id = model::node_id(read_little_endian<int32_t>(cursor));
+    auto revision = model::revision_id(read_little_endian<int64_t>(cursor));
+    return vnode(id, revision);
+}
+
+} // namespace
+
 void protocol_metadata::serde_write(iobuf& out) const {
     constexpr size_t encoded_size = 8 * sizeof(int64_t);
     std::array<char, encoded_size> encoded;
@@ -182,6 +228,71 @@ void protocol_metadata::serde_read(
     read(group) && read(commit_index) && read(term) && read(prev_log_index)
       && read(prev_log_term) && read(last_visible_index) && read(dirty_offset)
       && read(prev_log_delta);
+}
+
+void append_entries_reply::serde_write(iobuf& out) const {
+    std::array<char, append_entries_reply_body_size> encoded;
+    char* cursor = encoded.data();
+
+    write_vnode(cursor, target_node_id);
+    write_vnode(cursor, node_id);
+    write_little_endian(cursor, group());
+    write_little_endian(cursor, term());
+    write_little_endian(cursor, last_flushed_log_index());
+    write_little_endian(cursor, last_dirty_log_index());
+    write_little_endian(cursor, last_term_base_offset());
+    write_little_endian(
+      cursor, static_cast<serde::serde_enum_serialized_t>(result));
+    write_little_endian(cursor, static_cast<int8_t>(may_recover));
+
+    out.append(encoded.data(), encoded.size());
+}
+
+void append_entries_reply::serde_read(
+  iobuf_parser& in, const serde::header& envelope) {
+    const auto available = in.bytes_left() - envelope._bytes_left_limit;
+    if (available >= append_entries_reply_body_size) {
+        std::array<char, append_entries_reply_body_size> encoded;
+        in.consume_to(encoded.size(), encoded.begin());
+        const char* cursor = encoded.data();
+
+        target_node_id = read_vnode(cursor);
+        node_id = read_vnode(cursor);
+        group = group_id(read_little_endian<int64_t>(cursor));
+        term = model::term_id(read_little_endian<int64_t>(cursor));
+        last_flushed_log_index = model::offset(
+          read_little_endian<int64_t>(cursor));
+        last_dirty_log_index = model::offset(
+          read_little_endian<int64_t>(cursor));
+        last_term_base_offset = model::offset(
+          read_little_endian<int64_t>(cursor));
+        const auto raw_result
+          = read_little_endian<serde::serde_enum_serialized_t>(cursor);
+        if (
+          unlikely(
+            std::cmp_greater(
+              raw_result,
+              std::numeric_limits<
+                std::underlying_type_t<reply_result>>::max()))) {
+            throw serde::serde_exception(
+              "append entries reply result is out of range");
+        }
+        result = static_cast<reply_result>(raw_result);
+        may_recover = read_little_endian<int8_t>(cursor) != 0;
+        return;
+    }
+
+    auto read = [&in, &envelope](auto& field) {
+        if (in.bytes_left() == envelope._bytes_left_limit) {
+            return false;
+        }
+        serde::read_nested(in, field, envelope._bytes_left_limit);
+        return true;
+    };
+
+    read(target_node_id) && read(node_id) && read(group) && read(term)
+      && read(last_flushed_log_index) && read(last_dirty_log_index)
+      && read(last_term_base_offset) && read(result) && read(may_recover);
 }
 
 replicate_stages::replicate_stages(

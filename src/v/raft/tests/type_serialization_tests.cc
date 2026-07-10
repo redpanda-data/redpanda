@@ -286,6 +286,59 @@ struct fieldwise_protocol_metadata
     raft::protocol_metadata metadata;
 };
 
+struct fieldwise_append_entries_reply
+  : serde::envelope<
+      fieldwise_append_entries_reply,
+      serde::version<1>,
+      serde::compat_version<0>> {
+    explicit fieldwise_append_entries_reply(raft::append_entries_reply reply)
+      : reply(reply) {}
+
+    auto serde_fields() {
+        return std::tie(
+          reply.target_node_id,
+          reply.node_id,
+          reply.group,
+          reply.term,
+          reply.last_flushed_log_index,
+          reply.last_dirty_log_index,
+          reply.last_term_base_offset,
+          reply.result,
+          reply.may_recover);
+    }
+
+    raft::append_entries_reply reply;
+};
+
+struct append_entries_reply_with_raw_result
+  : serde::envelope<
+      append_entries_reply_with_raw_result,
+      serde::version<1>,
+      serde::compat_version<0>> {
+    auto serde_fields() {
+        return std::tie(
+          target_node_id,
+          node_id,
+          group,
+          term,
+          last_flushed_log_index,
+          last_dirty_log_index,
+          last_term_base_offset,
+          result,
+          may_recover);
+    }
+
+    raft::vnode target_node_id;
+    raft::vnode node_id;
+    raft::group_id group;
+    model::term_id term;
+    model::offset last_flushed_log_index;
+    model::offset last_dirty_log_index;
+    model::offset last_term_base_offset;
+    int32_t result{256};
+    bool may_recover{false};
+};
+
 } // namespace
 
 SEASTAR_THREAD_TEST_CASE(protocol_metadata_encoding_matches_fieldwise_layout) {
@@ -305,4 +358,36 @@ SEASTAR_THREAD_TEST_CASE(protocol_metadata_encoding_matches_fieldwise_layout) {
     const auto actual = serde::to_iobuf(metadata);
 
     BOOST_REQUIRE(actual == expected);
+}
+
+SEASTAR_THREAD_TEST_CASE(
+  append_entries_reply_encoding_matches_fieldwise_layout) {
+    const auto reply = raft::append_entries_reply{
+      .target_node_id = raft::vnode(model::node_id(1), model::revision_id(2)),
+      .node_id = raft::vnode(model::node_id(3), model::revision_id(4)),
+      .group = raft::group_id(5),
+      .term = model::term_id(6),
+      .last_flushed_log_index = model::offset(7),
+      .last_dirty_log_index = model::offset(8),
+      .last_term_base_offset = model::offset(9),
+      .result = raft::reply_result::success,
+      .may_recover = false,
+    };
+
+    const auto expected = serde::to_iobuf(
+      fieldwise_append_entries_reply(reply));
+    auto actual = serde::to_iobuf(reply);
+
+    BOOST_REQUIRE(actual == expected);
+    BOOST_REQUIRE(
+      serde::from_iobuf<raft::append_entries_reply>(std::move(actual))
+      == reply);
+}
+
+SEASTAR_THREAD_TEST_CASE(append_entries_reply_rejects_out_of_range_result) {
+    auto encoded = serde::to_iobuf(append_entries_reply_with_raw_result{});
+
+    BOOST_REQUIRE_THROW(
+      serde::from_iobuf<raft::append_entries_reply>(std::move(encoded)),
+      serde::serde_exception);
 }

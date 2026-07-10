@@ -256,18 +256,8 @@ struct append_entries_reply
     friend bool operator==(
       const append_entries_reply&, const append_entries_reply&) = default;
 
-    auto serde_fields() {
-        return std::tie(
-          target_node_id,
-          node_id,
-          group,
-          term,
-          last_flushed_log_index,
-          last_dirty_log_index,
-          last_term_base_offset,
-          result,
-          may_recover);
-    }
+    void serde_write(iobuf&) const;
+    void serde_read(iobuf_parser&, const serde::header&);
 };
 
 struct heartbeat_metadata {
