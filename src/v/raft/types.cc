@@ -22,8 +22,25 @@
 
 #include <fmt/format.h>
 
+#include <array>
 #include <chrono>
+#include <cstring>
 namespace {
+template<typename T>
+void write_little_endian(char*& cursor, T value) {
+    const auto little_endian = ss::cpu_to_le(value);
+    std::memcpy(cursor, &little_endian, sizeof(little_endian));
+    cursor += sizeof(little_endian);
+}
+
+template<typename T>
+T read_little_endian(const char*& cursor) {
+    T value;
+    std::memcpy(&value, cursor, sizeof(value));
+    cursor += sizeof(value);
+    return ss::le_to_cpu(value);
+}
+
 template<typename T>
 T decode_signed(T value) {
     return value < T(0) ? T{} : value;
@@ -114,6 +131,58 @@ T read_one_varint_delta(iobuf_parser& in, const T& prev) {
 } // namespace
 
 namespace raft {
+
+void protocol_metadata::serde_write(iobuf& out) const {
+    constexpr size_t encoded_size = 8 * sizeof(int64_t);
+    std::array<char, encoded_size> encoded;
+    char* cursor = encoded.data();
+
+    write_little_endian(cursor, group());
+    write_little_endian(cursor, commit_index());
+    write_little_endian(cursor, term());
+    write_little_endian(cursor, prev_log_index());
+    write_little_endian(cursor, prev_log_term());
+    write_little_endian(cursor, last_visible_index());
+    write_little_endian(cursor, dirty_offset());
+    write_little_endian(cursor, prev_log_delta());
+
+    out.append(encoded.data(), encoded.size());
+}
+
+void protocol_metadata::serde_read(
+  iobuf_parser& in, const serde::header& envelope) {
+    constexpr size_t encoded_size = 8 * sizeof(int64_t);
+    const auto available = in.bytes_left() - envelope._bytes_left_limit;
+
+    if (available >= encoded_size) {
+        std::array<char, encoded_size> encoded;
+        in.consume_to(encoded.size(), encoded.begin());
+        const char* cursor = encoded.data();
+
+        group = group_id(read_little_endian<int64_t>(cursor));
+        commit_index = model::offset(read_little_endian<int64_t>(cursor));
+        term = model::term_id(read_little_endian<int64_t>(cursor));
+        prev_log_index = model::offset(read_little_endian<int64_t>(cursor));
+        prev_log_term = model::term_id(read_little_endian<int64_t>(cursor));
+        last_visible_index = model::offset(read_little_endian<int64_t>(cursor));
+        dirty_offset = model::offset(read_little_endian<int64_t>(cursor));
+        prev_log_delta = model::offset_delta(
+          read_little_endian<int64_t>(cursor));
+        return;
+    }
+
+    auto read = [&in, &envelope](auto& field) {
+        if (in.bytes_left() == envelope._bytes_left_limit) {
+            return false;
+        }
+        serde::read_nested(in, field, envelope._bytes_left_limit);
+        return true;
+    };
+
+    read(group) && read(commit_index) && read(term) && read(prev_log_index)
+      && read(prev_log_term) && read(last_visible_index) && read(dirty_offset)
+      && read(prev_log_delta);
+}
 
 replicate_stages::replicate_stages(
   ss::future<> enq, ss::future<result<replicate_result>> offset_future)

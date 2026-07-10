@@ -70,17 +70,8 @@ struct protocol_metadata
     friend bool
     operator==(const protocol_metadata&, const protocol_metadata&) = default;
 
-    auto serde_fields() {
-        return std::tie(
-          group,
-          commit_index,
-          term,
-          prev_log_index,
-          prev_log_term,
-          last_visible_index,
-          dirty_offset,
-          prev_log_delta);
-    }
+    void serde_write(iobuf&) const;
+    void serde_read(iobuf_parser&, const serde::header&);
 };
 
 // The sequence used to track the order of follower append entries request

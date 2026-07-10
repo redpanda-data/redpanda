@@ -260,3 +260,49 @@ SEASTAR_THREAD_TEST_CASE(append_entries_request_serde_wrapper_serde) {
 
     verify_batches(reference_batches, decoded_req.batches());
 }
+
+namespace {
+
+struct fieldwise_protocol_metadata
+  : serde::envelope<
+      fieldwise_protocol_metadata,
+      serde::version<2>,
+      serde::compat_version<0>> {
+    explicit fieldwise_protocol_metadata(raft::protocol_metadata metadata)
+      : metadata(metadata) {}
+
+    auto serde_fields() {
+        return std::tie(
+          metadata.group,
+          metadata.commit_index,
+          metadata.term,
+          metadata.prev_log_index,
+          metadata.prev_log_term,
+          metadata.last_visible_index,
+          metadata.dirty_offset,
+          metadata.prev_log_delta);
+    }
+
+    raft::protocol_metadata metadata;
+};
+
+} // namespace
+
+SEASTAR_THREAD_TEST_CASE(protocol_metadata_encoding_matches_fieldwise_layout) {
+    const auto metadata = raft::protocol_metadata{
+      .group = raft::group_id(11),
+      .commit_index = model::offset(22),
+      .term = model::term_id(33),
+      .prev_log_index = model::offset(44),
+      .prev_log_term = model::term_id(55),
+      .last_visible_index = model::offset(66),
+      .dirty_offset = model::offset(77),
+      .prev_log_delta = model::offset_delta(88),
+    };
+
+    const auto expected = serde::to_iobuf(
+      fieldwise_protocol_metadata(metadata));
+    const auto actual = serde::to_iobuf(metadata);
+
+    BOOST_REQUIRE(actual == expected);
+}
