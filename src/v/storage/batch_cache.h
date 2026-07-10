@@ -413,7 +413,11 @@ private:
           , _min_free_memory(min_free_memory)
           , _sg(sg) {}
 
-        void notify() { _change.signal(); }
+        void notify() {
+            if (have_to_reclaim()) {
+                _change.signal();
+            }
+        }
 
         void start();
         ss::future<> stop();
