@@ -43,6 +43,15 @@ ss::future<> event_manager::wait(
     return _commit_index.wait(offset, timeout, as);
 }
 
-void event_manager::notify_commit_index() { _cond.signal(); }
+void event_manager::notify_commit_index() {
+    if (_commit_index.empty()) {
+        // Keep the monitor's last applied offset current without waking the
+        // delivery fiber when there are no subscribers to isolate from the
+        // consensus hot path.
+        _commit_index.notify(_consensus->committed_offset());
+        return;
+    }
+    _cond.signal();
+}
 
 } // namespace raft
