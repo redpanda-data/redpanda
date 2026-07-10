@@ -2092,7 +2092,9 @@ consensus::do_append_entries(append_entries_request&& r) {
         co_return reply;
     }
     _priority_tracker.on_successful_leader_election();
-    do_step_down("append_entries_term_greater");
+    if (_vstate != vote_state::follower || request_metadata.term > _term) {
+        do_step_down("append_entries_term_greater");
+    }
     if (request_metadata.term > _term) {
         vlog(
           _ctxlog.debug,
