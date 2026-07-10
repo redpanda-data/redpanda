@@ -1466,4 +1466,17 @@ std::optional<size_t> async_manifest_view::get_spillover_upper_bound_by_term(
     return sp_index;
 }
 
+std::optional<model::term_id> async_manifest_view::highest_term() const {
+    auto last_seg = _stm_manifest.last_segment();
+    if (last_seg) {
+        return last_seg->segment_term;
+    }
+    const auto& spillover_map = stm_manifest().get_spillover_map();
+    const auto& last_term_col = spillover_map.get_segment_term_column();
+    if (auto t = last_term_col.last_value()) {
+        return model::term_id{*t};
+    }
+    return std::nullopt;
+}
+
 } // namespace cloud_storage
