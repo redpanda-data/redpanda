@@ -569,6 +569,9 @@ struct record_batch_header
           ctx);
     }
 
+    static record_batch_header
+    serde_direct_read(iobuf_parser&, const serde::header&);
+
     bool contains(model::offset offset) const {
         return base_offset <= offset && offset <= last_offset();
     }
