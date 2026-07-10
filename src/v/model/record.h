@@ -34,6 +34,7 @@
 #include <boost/iterator/counting_iterator.hpp>
 #include <boost/range/numeric.hpp>
 
+#include <array>
 #include <bitset>
 #include <compare>
 #include <cstdint>
@@ -782,6 +783,15 @@ constexpr uint32_t packed_record_batch_header_size
     + sizeof(model::record_batch_header::base_sequence)     // 4
     + sizeof(model::record_batch_header::record_count);     // 4
 static_assert(packed_record_batch_header_size == 61);
+
+using packed_record_batch_header
+  = std::array<char, packed_record_batch_header_size>;
+
+packed_record_batch_header
+pack_record_batch_header(const record_batch_header& header);
+record_batch_header
+unpack_record_batch_header(const packed_record_batch_header& header);
+
 namespace test {
 class raw_record_batch_factory;
 }

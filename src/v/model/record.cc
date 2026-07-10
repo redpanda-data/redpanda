@@ -93,6 +93,59 @@ fmt::iterator tx_range::format_to(fmt::iterator it) const {
     return fmt::format_to(it, "pid: {}, range: [{}, {}]", pid, first, last);
 }
 
+packed_record_batch_header
+pack_record_batch_header(const record_batch_header& header) {
+    packed_record_batch_header encoded;
+    char* cursor = encoded.data();
+    auto write_le = [&cursor](auto value) {
+        const auto little_endian = ss::cpu_to_le(value);
+        std::memcpy(cursor, &little_endian, sizeof(little_endian));
+        cursor += sizeof(little_endian);
+    };
+
+    write_le(header.header_crc);
+    write_le(header.size_bytes);
+    write_le(header.base_offset());
+    write_le(
+      static_cast<std::underlying_type_t<record_batch_type>>(header.type));
+    write_le(header.crc);
+    write_le(header.attrs.value());
+    write_le(header.last_offset_delta);
+    write_le(header.first_timestamp.value());
+    write_le(header.max_timestamp.value());
+    write_le(header.producer_id);
+    write_le(header.producer_epoch);
+    write_le(header.base_sequence);
+    write_le(header.record_count);
+    return encoded;
+}
+
+record_batch_header
+unpack_record_batch_header(const packed_record_batch_header& encoded) {
+    const char* cursor = encoded.data();
+    auto read_le = [&cursor]<typename T>() {
+        T value;
+        std::memcpy(&value, cursor, sizeof(value));
+        cursor += sizeof(value);
+        return ss::le_to_cpu(value);
+    };
+
+    return record_batch_header{
+      .header_crc = read_le.operator()<uint32_t>(),
+      .size_bytes = read_le.operator()<int32_t>(),
+      .base_offset = model::offset(read_le.operator()<int64_t>()),
+      .type = static_cast<model::record_batch_type>(
+        read_le.operator()<std::underlying_type_t<record_batch_type>>()),
+      .crc = read_le.operator()<uint32_t>(),
+      .attrs = model::record_batch_attributes(read_le.operator()<int16_t>()),
+      .last_offset_delta = read_le.operator()<int32_t>(),
+      .first_timestamp = model::timestamp(read_le.operator()<int64_t>()),
+      .max_timestamp = model::timestamp(read_le.operator()<int64_t>()),
+      .producer_id = read_le.operator()<int64_t>(),
+      .producer_epoch = read_le.operator()<int16_t>(),
+      .base_sequence = read_le.operator()<int32_t>(),
+      .record_count = read_le.operator()<int32_t>()};
+}
 record_batch_header record_batch_header::serde_direct_read(
   iobuf_parser& in, const serde::header& envelope) {
     record_batch_header header;

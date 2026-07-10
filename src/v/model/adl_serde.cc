@@ -180,22 +180,8 @@ model::record adl<model::record>::from(iobuf_parser& in) {
 
 void adl<model::record_batch_header>::to(
   iobuf& out, model::record_batch_header&& r) {
-    reflection::serialize(
-      out,
-      r.header_crc,
-      r.size_bytes,
-      r.base_offset,
-      r.type,
-      r.crc,
-      r.attrs.value(),
-      r.last_offset_delta,
-      r.first_timestamp.value(),
-      r.max_timestamp.value(),
-      r.producer_id,
-      r.producer_epoch,
-      r.base_sequence,
-      r.record_count,
-      r.ctx.term);
+    out.append(model::pack_record_batch_header(r));
+    reflection::serialize(out, r.ctx.term);
 }
 
 void adl<batch_header>::to(iobuf& out, batch_header&& header) {
