@@ -11,8 +11,13 @@
 
 #include "model/record.h"
 
+#include "serde/serde_exception.h"
+
 #include <array>
 #include <cstring>
+#include <limits>
+#include <type_traits>
+#include <utility>
 
 namespace model {
 
@@ -32,6 +37,31 @@ constexpr size_t record_batch_header_serde_fields_size
     + sizeof(int16_t)                        // producer_epoch
     + sizeof(int32_t)                        // base_sequence
     + sizeof(int32_t);                       // record_count
+
+constexpr size_t serde_envelope_header_size = 2 * sizeof(serde::version_t)
+                                              + sizeof(serde::serde_size_t);
+constexpr size_t record_batch_header_context_body_size = sizeof(int64_t);
+constexpr size_t record_batch_header_context_encoded_size
+  = serde_envelope_header_size + record_batch_header_context_body_size;
+constexpr size_t record_batch_header_body_size
+  = record_batch_header_serde_fields_size
+    + record_batch_header_context_encoded_size;
+constexpr size_t record_batch_prefix_size
+  = record_batch_header_serde_fields_size
+    + record_batch_header_context_encoded_size + sizeof(serde::serde_size_t);
+
+record_batch_type
+decode_serde_record_batch_type(serde::serde_enum_serialized_t value) {
+    if (
+      unlikely(
+        std::cmp_greater(
+          value,
+          std::numeric_limits<
+            std::underlying_type_t<record_batch_type>>::max()))) {
+        throw serde::serde_exception("record batch type is out of range");
+    }
+    return static_cast<record_batch_type>(value);
+}
 
 } // namespace
 
@@ -148,7 +178,7 @@ unpack_record_batch_header(const packed_record_batch_header& encoded) {
 }
 record_batch_header record_batch_header::serde_direct_read(
   iobuf_parser& in, const serde::header& envelope) {
-    record_batch_header header;
+    record_batch_header header{};
     const auto available = in.bytes_left() - envelope._bytes_left_limit;
 
     if (available < record_batch_header_serde_fields_size) [[unlikely]] {
@@ -185,7 +215,7 @@ record_batch_header record_batch_header::serde_direct_read(
         header.header_crc = read_le.operator()<uint32_t>();
         header.size_bytes = read_le.operator()<int32_t>();
         header.base_offset = model::offset(read_le.operator()<int64_t>());
-        header.type = static_cast<model::record_batch_type>(
+        header.type = decode_serde_record_batch_type(
           read_le.operator()<serde::serde_enum_serialized_t>());
         header.crc = read_le.operator()<uint32_t>();
         header.attrs = model::record_batch_attributes(
@@ -205,6 +235,88 @@ record_batch_header record_batch_header::serde_direct_read(
         serde::read_nested(in, header.ctx, envelope._bytes_left_limit);
     }
     return header;
+}
+
+ss::future<record_batch> record_batch::serde_async_direct_read(
+  iobuf_parser& in, serde::header envelope) {
+    const auto header_envelope = serde::read_header<record_batch_header>(
+      in, envelope._bytes_left_limit);
+    const auto header_body_size = in.bytes_left()
+                                  - header_envelope._bytes_left_limit;
+
+    if (
+      envelope._version == record_batch::redpanda_serde_version
+      && envelope._compat_version == record_batch::redpanda_serde_compat_version
+      && header_envelope._version == record_batch_header::redpanda_serde_version
+      && header_envelope._compat_version
+           == record_batch_header::redpanda_serde_compat_version
+      && header_body_size == record_batch_header_body_size
+      && in.bytes_left() - envelope._bytes_left_limit
+           >= record_batch_prefix_size) {
+        std::array<char, record_batch_prefix_size> encoded;
+        in.consume_to(encoded.size(), encoded.begin());
+        const char* cursor = encoded.data();
+        auto read_le = [&cursor]<typename T>() {
+            T value;
+            std::memcpy(&value, cursor, sizeof(value));
+            cursor += sizeof(value);
+            return ss::le_to_cpu(value);
+        };
+
+        record_batch_header header{};
+        header.header_crc = read_le.operator()<uint32_t>();
+        header.size_bytes = read_le.operator()<int32_t>();
+        header.base_offset = model::offset(read_le.operator()<int64_t>());
+        header.type = decode_serde_record_batch_type(
+          read_le.operator()<serde::serde_enum_serialized_t>());
+        header.crc = read_le.operator()<uint32_t>();
+        header.attrs = model::record_batch_attributes(
+          static_cast<model::record_batch_attributes::type>(
+            read_le.operator()<uint64_t>()));
+        header.last_offset_delta = read_le.operator()<int32_t>();
+        header.first_timestamp = model::timestamp(
+          read_le.operator()<int64_t>());
+        header.max_timestamp = model::timestamp(read_le.operator()<int64_t>());
+        header.producer_id = read_le.operator()<int64_t>();
+        header.producer_epoch = read_le.operator()<int16_t>();
+        header.base_sequence = read_le.operator()<int32_t>();
+        header.record_count = read_le.operator()<int32_t>();
+
+        const auto context_version = read_le.operator()<serde::version_t>();
+        const auto context_compat_version
+          = read_le.operator()<serde::version_t>();
+        const auto context_size = read_le.operator()<serde::serde_size_t>();
+        if (
+          context_compat_version
+            > record_batch_header::context::redpanda_serde_version
+          || context_version
+               < record_batch_header::context::redpanda_serde_compat_version
+          || context_size != record_batch_header_context_body_size) {
+            throw serde::serde_exception(
+              "unexpected record batch header context layout");
+        }
+        header.ctx.term = model::term_id(read_le.operator()<int64_t>());
+        header.ctx.owner_shard = ss::this_shard_id();
+
+        const auto records_size = read_le.operator()<serde::serde_size_t>();
+        if (records_size > in.bytes_left() - envelope._bytes_left_limit)
+          [[unlikely]] {
+            throw serde::serde_exception(
+              "record batch data exceeds its envelope");
+        }
+
+        return ss::make_ready_future<record_batch>(
+          record_batch{header, in.share(records_size), tag_ctor_ng()});
+    }
+
+    auto header = record_batch_header::serde_direct_read(in, header_envelope);
+    if (in.bytes_left() > header_envelope._bytes_left_limit) {
+        in.skip(in.bytes_left() - header_envelope._bytes_left_limit);
+    }
+    return serde::read_async_nested<iobuf>(in, envelope._bytes_left_limit)
+      .then([header](iobuf records) {
+          return record_batch{header, std::move(records), tag_ctor_ng()};
+      });
 }
 
 void record_batch_header::reset_size_checksum_metadata(const iobuf& records) {

@@ -18,6 +18,58 @@
 
 class RecordBatchTest : public ::testing::Test {};
 
+namespace {
+
+struct short_record_batch_header
+  : serde::envelope<
+      short_record_batch_header,
+      serde::version<0>,
+      serde::compat_version<0>> {
+    auto serde_fields() { return std::tie(header_crc, size_bytes); }
+
+    uint32_t header_crc{0};
+    int32_t size_bytes{0};
+};
+
+struct record_batch_header_with_raw_type
+  : serde::envelope<
+      record_batch_header_with_raw_type,
+      serde::version<0>,
+      serde::compat_version<0>> {
+    auto serde_fields() {
+        return std::tie(
+          header_crc,
+          size_bytes,
+          base_offset,
+          type,
+          crc,
+          attrs,
+          last_offset_delta,
+          first_timestamp,
+          max_timestamp,
+          producer_id,
+          producer_epoch,
+          base_sequence,
+          record_count);
+    }
+
+    uint32_t header_crc{0};
+    int32_t size_bytes{0};
+    model::offset base_offset;
+    int32_t type{256};
+    uint32_t crc{0};
+    uint64_t attrs{0};
+    int32_t last_offset_delta{0};
+    model::timestamp first_timestamp;
+    model::timestamp max_timestamp;
+    int64_t producer_id{0};
+    int16_t producer_epoch{0};
+    int32_t base_sequence{0};
+    int32_t record_count{0};
+};
+
+} // namespace
+
 class RecordBatchAttributesTest
   : public ::testing::TestWithParam<
       std::tuple<model::compression, model::timestamp_type>> {};
@@ -69,6 +121,22 @@ TEST_F(RecordBatchTest, SetMaxTimestamp) {
       model::timestamp(batch.header().max_timestamp() - 1));
     EXPECT_EQ(crc, batch.header().crc);
     EXPECT_EQ(hdr_crc, batch.header().header_crc);
+}
+
+TEST_F(RecordBatchTest, SerdeValueInitializesMissingHeaderFields) {
+    auto encoded = serde::to_iobuf(short_record_batch_header{});
+    auto decoded = serde::from_iobuf<model::record_batch_header>(
+      std::move(encoded));
+
+    EXPECT_EQ(decoded.type, static_cast<model::record_batch_type>(0));
+}
+
+TEST_F(RecordBatchTest, SerdeRejectsOutOfRangeBatchType) {
+    auto encoded = serde::to_iobuf(record_batch_header_with_raw_type{});
+
+    EXPECT_THROW(
+      serde::from_iobuf<model::record_batch_header>(std::move(encoded)),
+      serde::serde_exception);
 }
 
 TEST_F(RecordBatchTest, Iterator) {

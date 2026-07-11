@@ -1033,20 +1033,7 @@ public:
     }
 
     static ss::future<model::record_batch>
-    serde_async_direct_read(iobuf_parser& in, serde::header h) {
-        using serde::read_async_nested;
-        // TODO: change to coroutine after we upgrade to clang-16
-        auto bytes_left_limit = h._bytes_left_limit;
-        return read_async_nested<model::record_batch_header>(
-                 in, bytes_left_limit)
-          .then([&in, bytes_left_limit](model::record_batch_header header) {
-              return read_async_nested<iobuf>(in, bytes_left_limit)
-                .then([header](iobuf records) {
-                    return model::record_batch{
-                      header, std::move(records), tag_ctor_ng()};
-                });
-          });
-    }
+    serde_async_direct_read(iobuf_parser&, serde::header);
 
 private:
     record_batch_header _header;
