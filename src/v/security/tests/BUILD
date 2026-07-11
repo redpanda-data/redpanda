@@ -273,6 +273,7 @@ redpanda_cc_bench(
         "scram_credential_bench.cc",
     ],
     deps = [
+        "//src/v/config",
         "//src/v/security",
         "//src/v/ssx:sformat",
         "@seastar",

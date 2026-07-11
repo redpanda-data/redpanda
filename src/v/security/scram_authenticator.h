@@ -79,11 +79,13 @@ private:
 template<>
 struct scram_mechanism_traits<scram_sha256> {
     static constexpr const char* name = "SCRAM-SHA-256";
+    static constexpr scram_algorithm_t algorithm = scram_algorithm_t::sha256;
 };
 
 template<>
 struct scram_mechanism_traits<scram_sha512> {
     static constexpr const char* name = "SCRAM-SHA-512";
+    static constexpr scram_algorithm_t algorithm = scram_algorithm_t::sha512;
 };
 
 struct scram_sha256_authenticator {
@@ -98,7 +100,23 @@ struct scram_sha512_authenticator {
       = scram_mechanism_traits<scram_sha512>::name;
 };
 
+class scram_credential_cache;
+
+/// Validates a plaintext password against a stored SCRAM credential, for
+/// non-SCRAM authentication such as HTTP Basic auth and SASL/PLAIN. Returns
+/// the credential's SASL mechanism name on success.
+///
+/// Consults the shard's scram_credential_cache to skip the expensive salted
+/// password derivation for recently validated (password, credential) pairs,
+/// unless disabled via the scram_credential_cache_enabled config.
 std::optional<std::string_view> validate_scram_credential(
   const scram_credential& cred, const credential_password& password);
 
+namespace detail {
+/// As above, against a caller-provided cache.
+std::optional<std::string_view> validate_scram_credential(
+  const scram_credential& cred,
+  const credential_password& password,
+  scram_credential_cache* cache);
+} // namespace detail
 } // namespace security

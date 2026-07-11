@@ -11,6 +11,8 @@
 #define BOOST_TEST_MODULE security
 
 #include "bytes/bytes.h"
+#include "security/scram_algorithm.h"
+#include "security/scram_authenticator.h"
 #include "security/scram_credential_cache.h"
 #include "security/types.h"
 #include "test_utils/random_bytes.h"
@@ -128,6 +130,67 @@ BOOST_AUTO_TEST_CASE(cache_tiny_capacity_does_not_crash) {
           cache.get(scram_algorithm_t::sha256, password(), salt, iterations)
             .has_value());
     }
+}
+
+BOOST_AUTO_TEST_CASE(cached_validate_scram_credential) {
+    scram_credential_cache cache(16);
+    auto cred = scram_sha256::make_credentials(
+      password()(), scram_sha256::min_iterations);
+
+    auto mech = detail::validate_scram_credential(cred, password(), &cache);
+    BOOST_REQUIRE(mech.has_value());
+    BOOST_REQUIRE_EQUAL(*mech, scram_sha256_authenticator::name);
+    BOOST_REQUIRE_EQUAL(cache.stats().hits, 0);
+
+    // Repeat validation is served from the cache with the same result.
+    mech = detail::validate_scram_credential(cred, password(), &cache);
+    BOOST_REQUIRE(mech.has_value());
+    BOOST_REQUIRE_EQUAL(*mech, scram_sha256_authenticator::name);
+    BOOST_REQUIRE_EQUAL(cache.stats().hits, 1);
+
+    // A wrong password fails, and keeps failing once its derivation is
+    // cached.
+    const credential_password wrong{"wrong-password"};
+    BOOST_REQUIRE(
+      !detail::validate_scram_credential(cred, wrong, &cache).has_value());
+    BOOST_REQUIRE(
+      !detail::validate_scram_credential(cred, wrong, &cache).has_value());
+}
+
+BOOST_AUTO_TEST_CASE(cached_validate_scram_credential_sha512) {
+    scram_credential_cache cache(16);
+    auto cred = scram_sha512::make_credentials(
+      password()(), scram_sha512::min_iterations);
+
+    for (int i = 0; i < 2; ++i) {
+        auto mech = detail::validate_scram_credential(cred, password(), &cache);
+        BOOST_REQUIRE(mech.has_value());
+        BOOST_REQUIRE_EQUAL(*mech, scram_sha512_authenticator::name);
+    }
+    BOOST_REQUIRE_EQUAL(cache.stats().hits, 1);
+}
+
+BOOST_AUTO_TEST_CASE(cached_validate_scram_credential_password_change) {
+    scram_credential_cache cache(16);
+    auto cred = scram_sha256::make_credentials(
+      password()(), scram_sha256::min_iterations);
+
+    // Warm the cache with the old credential.
+    BOOST_REQUIRE(detail::validate_scram_credential(cred, password(), &cache));
+    BOOST_REQUIRE(detail::validate_scram_credential(cred, password(), &cache));
+
+    // The user's password is changed: the new credential gets a fresh salt.
+    const credential_password new_password{"brand-new-password"};
+    auto new_cred = scram_sha256::make_credentials(
+      new_password(), scram_sha256::min_iterations);
+
+    // The stale cache entries do not interfere in either direction.
+    BOOST_REQUIRE(
+      detail::validate_scram_credential(new_cred, new_password, &cache)
+        .has_value());
+    BOOST_REQUIRE(
+      !detail::validate_scram_credential(new_cred, password(), &cache)
+         .has_value());
 }
 
 } // namespace security
