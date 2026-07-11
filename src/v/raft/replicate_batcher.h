@@ -118,7 +118,7 @@ private:
     consensus* _ptr;
     ssx::semaphore _max_batch_size_sem;
     size_t _max_batch_size;
-    std::vector<item_ptr> _item_cache;
+    absl::InlinedVector<item_ptr, 5> _item_cache;
     ssx::mutex _lock{"replicate_batcher"};
     ss::gate _bg;
     // If true, a background flush must be pending. Used to coalesce
