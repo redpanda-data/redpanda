@@ -34,6 +34,22 @@ redpanda_cc_btest(
     ],
 )
 
+redpanda_cc_btest(
+    name = "scram_credential_cache_test",
+    timeout = "short",
+    srcs = [
+        "scram_credential_cache_test.cc",
+    ],
+    deps = [
+        "//src/v/bytes",
+        "//src/v/security",
+        "//src/v/test_utils:random_bytes",
+        "@boost//:test",
+        "@fmt",
+        "@seastar//:testing",
+    ],
+)
+
 redpanda_cc_gtest(
     name = "plain_authenticator_test",
     timeout = "short",
