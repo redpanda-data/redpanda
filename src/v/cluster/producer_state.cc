@@ -163,32 +163,33 @@ result<request_ptr> requests::try_emplace(
         // these are guaranteed to be failed because of sync() guarantees
         // prior to this request.
         gc_requests_from_older_terms(current);
-        // check if an existing request matches
-        auto match_it = std::find_if(
-          _finished_requests.begin(),
-          _finished_requests.end(),
-          [first, last](const auto& request) {
-              return request->_first_sequence == first
-                     && request->_last_sequence == last;
-          });
-
-        if (match_it != _finished_requests.end()) {
-            return *match_it;
-        }
-
-        match_it = std::find_if(
-          _inflight_requests.begin(),
-          _inflight_requests.end(),
-          [first, last, current](const auto& request) {
-              return request->_first_sequence == first
-                     && request->_last_sequence == last
-                     && request->_term == current;
-          });
-
-        if (match_it != _inflight_requests.end()) {
-            return *match_it;
-        }
         if (!is_valid_sequence(first)) {
+            // An invalid next sequence may be a retry. Only search the cached
+            // requests after the common new-sequence case has been ruled out.
+            auto match_it = std::find_if(
+              _finished_requests.begin(),
+              _finished_requests.end(),
+              [first, last](const auto& request) {
+                  return request->_first_sequence == first
+                         && request->_last_sequence == last;
+              });
+
+            if (match_it != _finished_requests.end()) {
+                return *match_it;
+            }
+
+            match_it = std::find_if(
+              _inflight_requests.begin(),
+              _inflight_requests.end(),
+              [first, last, current](const auto& request) {
+                  return request->_first_sequence == first
+                         && request->_last_sequence == last
+                         && request->_term == current;
+              });
+
+            if (match_it != _inflight_requests.end()) {
+                return *match_it;
+            }
             return cluster::errc::sequence_out_of_order;
         }
     }
