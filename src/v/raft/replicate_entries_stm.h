@@ -95,6 +95,7 @@ public:
 
 private:
     ss::future<chunked_vector<model::record_batch>> share_batches();
+    ss::future<chunked_vector<model::record_batch>> share_batches_async();
 
     ss::future<> dispatch_one(vnode);
     ss::future<> dispatch_remote_append_entries(vnode);

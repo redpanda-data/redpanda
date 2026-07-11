@@ -34,6 +34,19 @@ using namespace std::chrono_literals;
 ss::future<chunked_vector<model::record_batch>>
 replicate_entries_stm::share_batches() {
     // one extra copy is needed for retries
+    if (_batches.size() == 1) {
+        chunked_vector<model::record_batch> batches;
+        batches.reserve(1);
+        batches.push_back(_batches.front().share());
+        return ss::make_ready_future<chunked_vector<model::record_batch>>(
+          std::move(batches));
+    }
+
+    return share_batches_async();
+}
+
+ss::future<chunked_vector<model::record_batch>>
+replicate_entries_stm::share_batches_async() {
     chunked_vector<model::record_batch> batches;
     batches.reserve(_batches.size());
     co_await ssx::async_for_each(_batches, [&batches](model::record_batch& b) {
