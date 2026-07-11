@@ -614,6 +614,21 @@ void segment_appender::dispatch_background_head_write() {
 
     auto w = _inflight.back();
 
+    if (auto head_units = ss::try_get_units(*head_sem, 1); head_units) {
+        if (
+          auto flush_units = ss::try_get_units(_concurrent_flushes, 1);
+          flush_units) {
+            (void)dispatch_background_write(w)
+              .finally([head_sem,
+                        head_units = std::move(*head_units),
+                        flush_units = std::move(*flush_units)] {})
+              .handle_exception([this](std::exception_ptr e) {
+                  vunreachable("Could not dma_write: {} - {}", e, *this);
+              });
+            return;
+        }
+    }
+
     /*
      * make sure that when the write is dispatched that is sequenced
      * in-order on the correct semaphore by grabbing the units
@@ -627,63 +642,64 @@ void segment_appender::dispatch_background_head_write() {
       [w, this, head_sem, units = std::move(units)]() mutable {
           return units
             .then([this, w](ssx::semaphore_units u) mutable {
-                const auto dma_size = w->chunk_end - w->chunk_begin;
-
-                vassert(
-                  dma_size <= _chunk_size && w->chunk_end > w->chunk_begin
-                    && w->chunk_end <= _chunk_size,
-                  "Bad write bounds _chunk_size: {}, chunk_begin: {}, "
-                  "chunk_end: {}",
-                  _chunk_size,
-                  w->chunk_begin,
-                  w->chunk_end);
-
-                // prevent any more writes from merging into this entry
-                // as it is about to be dma_write'd.
-                w->set_state(write_state::DISPATCHED);
-                ++_inflight_dispatched;
-                ++_dispatched_writes;
-
-                return _out
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wdeprecated-declarations"
-                  .dma_write(
-                    w->file_start_offset,
-                    w->chunk->data() + w->chunk_begin,
-                    dma_size)
-#pragma clang diagnostic pop
-                  .then([this, w, dma_size](size_t got) {
-                      _opts.shared_stats->bytes_written += dma_size;
-                      ++_opts.shared_stats->writes_completed;
-                      /*
-                       * the continuation that captured full=true is the
-                       * end of the dependency chain for this chunk. it
-                       * can be returned to cache.
-                       */
-                      if (w->last_write_to_current_chunk) {
-                          w->chunk->reset();
-                          _opts.resources.chunks().add(w->chunk);
-                      }
-
-                      // release our reference to the chunk since this
-                      // structure might hang around for a while in the
-                      // _inflight list but we can free this chunk to
-                      // re-use now as we won't use it again
-                      w->chunk = nullptr;
-
-                      const auto expected = w->chunk_end - w->chunk_begin;
-                      if (unlikely(expected != got)) {
-                          return size_mismatch_error(
-                            "chunk::write", expected, got);
-                      }
-                      return maybe_advance_stable_offset(w);
-                  })
-                  .finally([u = std::move(u)] {});
+                return dispatch_background_write(w).finally(
+                  [u = std::move(u)] {});
             })
             .finally([head_sem] {});
       })
       .handle_exception([this](std::exception_ptr e) {
           vunreachable("Could not dma_write: {} - {}", e, *this);
+      });
+}
+
+ss::future<> segment_appender::dispatch_background_write(
+  const ss::lw_shared_ptr<inflight_write>& w) {
+    const auto dma_size = w->chunk_end - w->chunk_begin;
+
+    vassert(
+      dma_size <= _chunk_size && w->chunk_end > w->chunk_begin
+        && w->chunk_end <= _chunk_size,
+      "Bad write bounds _chunk_size: {}, chunk_begin: {}, chunk_end: {}",
+      _chunk_size,
+      w->chunk_begin,
+      w->chunk_end);
+
+    // prevent any more writes from merging into this entry
+    // as it is about to be dma_write'd.
+    w->set_state(write_state::DISPATCHED);
+    ++_inflight_dispatched;
+    ++_dispatched_writes;
+
+    return _out
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
+      .dma_write(
+        w->file_start_offset, w->chunk->data() + w->chunk_begin, dma_size)
+#pragma clang diagnostic pop
+      .then([this, w, dma_size](size_t got) {
+          _opts.shared_stats->bytes_written += dma_size;
+          ++_opts.shared_stats->writes_completed;
+          /*
+           * the continuation that captured full=true is the
+           * end of the dependency chain for this chunk. it
+           * can be returned to cache.
+           */
+          if (w->last_write_to_current_chunk) {
+              w->chunk->reset();
+              _opts.resources.chunks().add(w->chunk);
+          }
+
+          // release our reference to the chunk since this
+          // structure might hang around for a while in the
+          // _inflight list but we can free this chunk to
+          // re-use now as we won't use it again
+          w->chunk = nullptr;
+
+          const auto expected = w->chunk_end - w->chunk_begin;
+          if (unlikely(expected != got)) {
+              return size_mismatch_error("chunk::write", expected, got);
+          }
+          return maybe_advance_stable_offset(w);
       });
 }
 

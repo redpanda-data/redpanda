@@ -328,6 +328,9 @@ private:
         }
     };
 
+    ss::future<>
+    dispatch_background_write(const ss::lw_shared_ptr<inflight_write>&);
+
     ss::chunked_fifo<ss::lw_shared_ptr<inflight_write>> _inflight;
     // A gauge of the current number of oustanding dispatched writes, equal to
     // the count of elements in the _inflight container which have state ==
