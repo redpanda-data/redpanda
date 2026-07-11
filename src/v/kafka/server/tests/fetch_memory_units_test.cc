@@ -136,7 +136,7 @@ TEST_F_CORO(fetch_memory_units_test_fixture, test_cross_shard_free) {
     };
 
     auto remote_units = co_await get_remote_units(max_release_size);
-    EXPECT_EQ(remote_units.value().num_units(), max_release_size);
+    EXPECT_EQ(remote_units.value().units.num_units(), max_release_size);
     EXPECT_EQ(local_fetch_semaphore().available_units(), max_release_size);
     EXPECT_EQ(local_kafka_semaphore().available_units(), max_release_size);
     EXPECT_EQ(co_await other_fetch_sem_avail(), 0);
@@ -149,7 +149,7 @@ TEST_F_CORO(fetch_memory_units_test_fixture, test_cross_shard_free) {
     EXPECT_EQ(co_await other_kafka_sem_avail(), max_release_size);
 
     remote_units = co_await get_remote_units(max_release_size - 1);
-    EXPECT_EQ(remote_units.value().num_units(), max_release_size - 1);
+    EXPECT_EQ(remote_units.value().units.num_units(), max_release_size - 1);
     EXPECT_NE(co_await other_fetch_sem_avail(), max_release_size);
     EXPECT_NE(co_await other_kafka_sem_avail(), max_release_size);
 
@@ -172,13 +172,13 @@ TEST_F_CORO(fetch_memory_units_test_fixture, test_max_units) {
     co_await set_max_message_size(10);
 
     auto units = mgr.allocate_memory_units(model::ktp{}, 1, 100, 1, false);
-    EXPECT_EQ(units.num_units(), 10);
+    EXPECT_EQ(units.units.num_units(), 10);
     units = mgr.allocate_memory_units(model::ktp{}, 1, 100, 1, true);
-    EXPECT_EQ(units.num_units(), 10);
+    EXPECT_EQ(units.units.num_units(), 10);
 
     // `max_bytes` should still be reserved if there are enough units.
     units = mgr.allocate_memory_units(model::ktp{}, 100, 1, 1, false);
-    EXPECT_EQ(units.num_units(), 100);
+    EXPECT_EQ(units.units.num_units(), 100);
 }
 
 TEST_F_CORO(fetch_memory_units_test_fixture, test_adjust_units) {
@@ -187,7 +187,8 @@ TEST_F_CORO(fetch_memory_units_test_fixture, test_adjust_units) {
     co_await set_kafka_units(10);
     co_await set_fetch_units(10);
 
-    auto units = mgr.allocate_memory_units(model::ktp{}, 10, 10, 10, false);
+    auto units
+      = mgr.allocate_memory_units(model::ktp{}, 10, 10, 10, false).units;
     EXPECT_EQ(units.num_units(), 10);
     units.adjust_units(5);
     EXPECT_EQ(units.num_units(), 5);
@@ -204,14 +205,21 @@ TEST_F_CORO(fetch_memory_units_test_fixture, test_allocate_memory_units) {
     co_await set_fetch_units(50_MiB);
 
     const auto test_case =
-      [&mgr](size_t max_bytes, bool obligatory_batch_read) -> size_t {
+      [&](size_t max_bytes, bool obligatory_batch_read) -> size_t {
+        const size_t available = std::min(
+          local_kafka_semaphore().available_units(),
+          local_fetch_semaphore().available_units());
         auto mu = mgr.allocate_memory_units(
           model::ktp{},
           max_bytes,
           batch_size,
           batch_size,
           obligatory_batch_read);
-        return mu.num_units();
+        // The semaphores are only allowed to go negative when an obligatory
+        // read forces us to reserve more units than were available.
+        EXPECT_EQ(
+          mu.exceeded_available_units, mu.units.num_units() > available);
+        return mu.units.num_units();
     };
 
     // below are test prerequisites, tests are done based on these assumptions

@@ -67,7 +67,7 @@ fetch_memory_units_manager::units::~units() noexcept {
       "foreign units need to be released via the fetch_memory_units_manager");
 }
 
-fetch_memory_units fetch_memory_units_manager::allocate_memory_units(
+memory_units_allocation fetch_memory_units_manager::allocate_memory_units(
   const model::ktp& ktp,
   size_t max_bytes,
   size_t max_batch_size,
@@ -131,7 +131,12 @@ fetch_memory_units fetch_memory_units_manager::allocate_memory_units(
         units_to_alloc = std::min(available_units, max_units);
     }
 
-    return {allocate_units(units_to_alloc), _local_instance_fn};
+    const bool exceeded_available_units = units_to_alloc > available_units;
+
+    return {
+      .units
+      = fetch_memory_units{allocate_units(units_to_alloc), _local_instance_fn},
+      .exceeded_available_units = exceeded_available_units};
 }
 
 fetch_memory_units fetch_memory_units_manager::zero_units() {

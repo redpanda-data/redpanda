@@ -225,16 +225,23 @@ static ss::future<read_result> do_read_from_ntp(
     // control available memory
     auto memory_units = units_mgr.zero_units();
     if (!ntp_config.cfg.skip_read) {
-        memory_units = units_mgr.allocate_memory_units(
+        auto allocation = units_mgr.allocate_memory_units(
           ntp_config.ktp(),
           ntp_config.cfg.max_bytes,
           ntp_config.cfg.max_batch_size,
           ntp_config.cfg.avg_batch_size,
           obligatory_batch_read);
+        memory_units = std::move(allocation.units);
         if (!memory_units.has_units()) {
             ntp_config.cfg.skip_read = true;
         } else if (ntp_config.cfg.max_bytes > memory_units.num_units()) {
             ntp_config.cfg.max_bytes = memory_units.num_units();
+        }
+
+        // If this is an obligatory read and we've had to over-extend the memory
+        // semaphore then ensure that no more than a single batch is read.
+        if (obligatory_batch_read && allocation.exceeded_available_units) {
+            ntp_config.cfg.max_bytes = 1;
         }
     }
 
