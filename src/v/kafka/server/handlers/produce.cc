@@ -214,6 +214,58 @@ struct ntp_produce_request {
     std::chrono::milliseconds message_timestamp_after_max_ms;
 };
 
+ss::future<produce_response::partition> produce_on_partition_shard(
+  cluster::partition_manager& mgr,
+  std::unique_ptr<model::record_batch> batch,
+  model::ntp ntp,
+  std::unique_ptr<ss::promise<>> dispatch,
+  int16_t acks,
+  std::chrono::milliseconds timeout,
+  ss::shard_id source_shard) {
+    auto partition = kafka::make_partition_proxy(ntp, mgr);
+    if (!partition || !partition->is_leader()) {
+        return ss::as_ready_future(finalize_request_with_error_code(
+          error_code::not_leader_for_partition,
+          std::move(dispatch),
+          ntp,
+          source_shard));
+    }
+
+    auto bid = model::batch_identity::from(batch->header());
+    auto num_records = batch->record_count();
+    auto batch_size = batch->size_bytes();
+    auto stages = partition_append(
+      ntp.tp.partition,
+      std::move(*partition),
+      bid,
+      std::move(batch),
+      acks,
+      num_records,
+      batch_size,
+      timeout);
+    return stages.dispatched
+      .then_wrapped(
+        [source_shard, dispatch = std::move(dispatch)](ss::future<> f) mutable {
+            if (f.failed()) {
+                ssx::background = ss::smp::submit_to(
+                  source_shard,
+                  [dispatch = std::move(dispatch),
+                   e = f.get_exception()]() mutable {
+                      dispatch->set_exception(e);
+                      dispatch.reset();
+                  });
+                return;
+            }
+            ssx::background = ss::smp::submit_to(
+              source_shard, [dispatch = std::move(dispatch)]() mutable {
+                  dispatch->set_value();
+                  dispatch.reset();
+              });
+        })
+      .then(
+        [f = std::move(stages.produced)]() mutable { return std::move(f); });
+}
+
 ss::future<produce_response::partition> do_produce_topic_partition(
   produce_ctx& octx,
   ntp_produce_request req,
@@ -298,60 +350,47 @@ ss::future<produce_response::partition> do_produce_topic_partition(
         timeout = max_timeout;
     }
 
-    auto p = co_await octx.rctx.partition_manager().invoke_on(
-      *shard,
-      octx.ssg,
-      [batch = std::move(req.batch),
-       ntp = std::move(req.ntp),
-       dispatch = std::move(dispatched),
-       acks = octx.request.data.acks,
-       timeout,
-       source_shard = ss::this_shard_id()](
-        cluster::partition_manager& mgr) mutable {
-          auto partition = kafka::make_partition_proxy(ntp, mgr);
-          if (!partition || !partition->is_leader()) {
-              return ss::as_ready_future(finalize_request_with_error_code(
-                error_code::not_leader_for_partition,
+    auto& partition_manager = octx.rctx.partition_manager();
+    auto source_shard = ss::this_shard_id();
+    auto produced = [&] {
+        if (*shard == source_shard) {
+            return produce_on_partition_shard(
+              partition_manager.local(),
+              std::move(req.batch),
+              std::move(req.ntp),
+              std::move(dispatched),
+              octx.request.data.acks,
+              timeout,
+              source_shard);
+        }
+        return partition_manager.invoke_on(
+          *shard,
+          octx.ssg,
+          [](
+            cluster::partition_manager& mgr,
+            std::unique_ptr<model::record_batch> batch,
+            model::ntp ntp,
+            std::unique_ptr<ss::promise<>> dispatch,
+            int16_t acks,
+            std::chrono::milliseconds timeout,
+            ss::shard_id source_shard) {
+              return produce_on_partition_shard(
+                mgr,
+                std::move(batch),
+                std::move(ntp),
                 std::move(dispatch),
-                ntp,
-                source_shard));
-          }
-
-          auto bid = model::batch_identity::from(batch->header());
-          auto num_records = batch->record_count();
-          auto batch_size = batch->size_bytes();
-          auto stages = partition_append(
-            ntp.tp.partition,
-            std::move(*partition),
-            bid,
-            std::move(batch),
-            acks,
-            num_records,
-            batch_size,
-            timeout);
-          return stages.dispatched
-            .then_wrapped([source_shard, dispatch = std::move(dispatch)](
-                            ss::future<> f) mutable {
-                if (f.failed()) {
-                    ssx::background = ss::smp::submit_to(
-                      source_shard,
-                      [dispatch = std::move(dispatch),
-                       e = f.get_exception()]() mutable {
-                          dispatch->set_exception(e);
-                          dispatch.reset();
-                      });
-                    return;
-                }
-                ssx::background = ss::smp::submit_to(
-                  source_shard, [dispatch = std::move(dispatch)]() mutable {
-                      dispatch->set_value();
-                      dispatch.reset();
-                  });
-            })
-            .then([f = std::move(stages.produced)]() mutable {
-                return std::move(f);
-            });
-      });
+                acks,
+                timeout,
+                source_shard);
+          },
+          std::move(req.batch),
+          std::move(req.ntp),
+          std::move(dispatched),
+          octx.request.data.acks,
+          timeout,
+          source_shard);
+    }();
+    auto p = co_await std::move(produced);
     if (p.error_code == error_code::none) {
         auto dur = std::chrono::steady_clock::now() - start;
         octx.rctx.connection()->server().update_produce_latency(dur);
