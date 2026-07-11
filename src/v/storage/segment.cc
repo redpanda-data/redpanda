@@ -354,6 +354,9 @@ void segment::release_appender_in_background(readers_cache* readers_cache) {
 
 ss::future<> segment::flush() {
     check_segment_not_closed("flush()");
+    if (auto h = try_hold_read_lock(); h) {
+        return do_flush().finally([h = std::move(*h)] {});
+    }
     return read_lock().then([this](ss::rwlock::holder h) {
         return do_flush().finally([h = std::move(h)] {});
     });
