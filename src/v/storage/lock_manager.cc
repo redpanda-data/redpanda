@@ -26,6 +26,20 @@ static ss::future<std::unique_ptr<lock_manager::lease>> range(
     auto ctx = std::make_unique<lock_manager::lease>(
       segment_set(std::move(segs)));
 
+    if (ctx->range.empty()) {
+        return ss::make_ready_future<std::unique_ptr<lock_manager::lease>>(
+          std::move(ctx));
+    }
+
+    if (ctx->range.size() == 1) {
+        return ctx->range.front()
+          ->read_lock(read_lock_deadline)
+          .then([ctx = std::move(ctx)](ss::rwlock::holder lock) mutable {
+              ctx->locks.push_back(std::move(lock));
+              return std::move(ctx);
+          });
+    }
+
     chunked_vector<ss::future<ss::rwlock::holder>> dispatch;
     dispatch.reserve(ctx->range.size());
     for (auto& s : ctx->range) {
