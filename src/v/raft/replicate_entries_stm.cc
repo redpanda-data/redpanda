@@ -74,7 +74,7 @@ replicate_entries_stm::send_append_entries_request(
     // When dispatch semaphore is released the append_entries_stm releases
     // op_lock so next append entries request can be dispatched to the
     // follower
-    auto signal_dispatch_sem = ss::defer([this] { _dispatch_sem.signal(); });
+    auto signal_dispatch = ss::defer([this] { request_dispatched(); });
     return _ptr->_client_protocol
       .append_entries(
         n.id(),
@@ -106,14 +106,14 @@ ss::future<> replicate_entries_stm::dispatch_one(vnode id) {
         if (id == _ptr->self()) {
             // self dispatch means flushing the leader log
             if (_is_flush_required) {
-                // start the flush before signalling the dispatch semaphore,
-                // the dispatcher only waits for the flush to be started, not
-                // to finish
+                // Start the flush before reporting the dispatch. Retained
+                // replication resources only need the flush to be started,
+                // not finished.
                 auto flush_f = _ptr->flush_log();
-                _dispatch_sem.signal();
+                request_dispatched();
                 co_await std::move(flush_f);
             } else {
-                _dispatch_sem.signal();
+                request_dispatched();
             }
         } else {
             co_await dispatch_remote_append_entries(id);
@@ -270,6 +270,10 @@ ss::future<result<replicate_result>> replicate_entries_stm::apply(units_t u) {
     _dirty_offset = _append_result->value().last_offset;
     // store committed offset to check if it advanced
     _initial_committed_offset = _ptr->committed_offset();
+    // Identify requests before dispatching any of them. Dispatch may complete
+    // synchronously, so the total must be known before the first request can
+    // report that it started.
+    absl::InlinedVector<vnode, 5> requests;
     // dispatch requests to followers & leader flush
     for (const auto& rni : replicas) {
         // We are not dispatching request to followers that are
@@ -285,22 +289,26 @@ ss::future<result<replicate_result>> replicate_entries_stm::apply(units_t u) {
                 it->second.last_sent_protocol_meta = _meta;
             }
         }
-        ++_requests_count;
+        requests.push_back(rni);
+    }
+
+    _requests_count = requests.size();
+    for (const auto& rni : requests) {
         (void)dispatch_one(rni); // background
     }
 
-    // wait for the requests to be dispatched in background and then release
-    // units
-    ssx::spawn_with_gate(_req_bg, [this]() {
-        // Wait until all RPCs will be dispatched
-        return _dispatch_sem.wait(_requests_count).then([this] {
-            // release memory reservations, and destroy data
-            _batches = {};
-            _units.release();
-        });
-    });
-
     co_return build_replicate_result();
+}
+
+void replicate_entries_stm::request_dispatched() {
+    vassert(_requests_count > 0, "Unexpected replication dispatch completion");
+    --_requests_count;
+    if (_requests_count == 0) {
+        // All RPCs and the leader flush have started. Release memory
+        // reservations and destroy the retained retry data.
+        _batches = {};
+        _units.release();
+    }
 }
 
 result<replicate_result> replicate_entries_stm::build_replicate_result() const {

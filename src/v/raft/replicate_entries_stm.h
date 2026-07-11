@@ -105,6 +105,7 @@ private:
 
     result<replicate_result>
       process_result(raft::errc, model::offset, model::term_id);
+    void request_dispatched();
     bool should_skip_follower_request(vnode);
     clock_type::time_point append_entries_timeout();
     /// This append will happen under the lock
@@ -121,7 +122,6 @@ private:
     absl::flat_hash_map<vnode, follower_req_seq> _followers_seq;
     absl::flat_hash_map<vnode, consensus::inflight_appends_guard>
       _inflight_appends;
-    ssx::semaphore _dispatch_sem{0, "raft/repl-dispatch"};
     ss::gate _req_bg;
     // Reference to the consensus instance's logger (which outlives this
     // single-shot stm) to avoid copying its ntp on every replicate.
