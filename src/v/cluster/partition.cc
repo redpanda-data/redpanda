@@ -387,6 +387,21 @@ template<class Units, class StagesFutureFunc>
 kafka_stages stages_with_units(
   ss::future<result<Units>> maybe_units_f,
   StagesFutureFunc stages_future_func) {
+    if (maybe_units_f.available() && !maybe_units_f.failed()) {
+        auto maybe_units = maybe_units_f.get();
+        if (!maybe_units.has_value()) {
+            return {
+              ss::now(),
+              ss::make_ready_future<result<kafka_result>>(maybe_units.error())};
+        }
+
+        auto stages = stages_future_func();
+        stages.replicate_finished
+          = std::move(stages.replicate_finished)
+              .finally([units = std::move(maybe_units).value()] {});
+        return stages;
+    }
+
     ss::promise<> enqueued_promise;
     auto enqueued_f = enqueued_promise.get_future();
     auto replicated_f = stages_with_units_helper(
