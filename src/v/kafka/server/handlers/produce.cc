@@ -11,6 +11,7 @@
 
 #include "base/likely.h"
 #include "cluster/metadata_cache.h"
+#include "cluster/partition.h"
 #include "cluster/partition_manager.h"
 #include "cluster/shard_table.h"
 #include "config/configuration.h"
@@ -184,6 +185,48 @@ partition_produce_stages partition_append(
     };
 }
 
+partition_produce_stages partition_append(
+  model::partition_id id,
+  ss::lw_shared_ptr<cluster::partition> partition,
+  model::batch_identity bid,
+  std::unique_ptr<model::record_batch> batch,
+  int16_t acks,
+  int32_t num_records,
+  int64_t num_bytes,
+  std::chrono::milliseconds timeout_ms) {
+    auto log_append_time_ms = batch->header().attrs.timestamp_type()
+                                  == model::timestamp_type::create_time
+                                ? model::timestamp::missing()
+                                : batch->header().max_timestamp;
+    auto stages = partition->replicate_in_stages(
+      bid, std::move(*batch), acks_to_replicate_options(acks, timeout_ms));
+    return partition_produce_stages{
+      .dispatched = std::move(stages.request_enqueued),
+      .produced = stages.replicate_finished.then_wrapped(
+        [partition, id, num_records, num_bytes, log_append_time_ms](
+          ss::future<result<cluster::kafka_result>> f) mutable {
+            produce_response::partition p{.partition_index = id};
+            try {
+                auto r = f.get();
+                if (r.has_value()) {
+                    p.base_offset = model::offset(
+                      r.value().last_offset - (num_records - 1));
+                    p.log_append_time_ms = log_append_time_ms;
+                    p.error_code = error_code::none;
+                    partition->probe().add_records_produced(num_records);
+                    partition->probe().add_bytes_produced(num_bytes);
+                    partition->probe().add_batches_produced(1);
+                } else {
+                    p.error_code = map_produce_error_code(r.error());
+                }
+            } catch (...) {
+                p.error_code = error_code::request_timed_out;
+            }
+            return p;
+        }),
+    };
+}
+
 produce_response::partition finalize_request_with_error_code(
   error_code ec,
   std::unique_ptr<ss::promise<>> dispatch,
@@ -222,7 +265,7 @@ ss::future<produce_response::partition> produce_on_partition_shard(
   int16_t acks,
   std::chrono::milliseconds timeout,
   ss::shard_id source_shard) {
-    auto partition = kafka::make_partition_proxy(ntp, mgr);
+    auto partition = mgr.get(ntp);
     if (!partition || !partition->is_leader()) {
         return ss::as_ready_future(finalize_request_with_error_code(
           error_code::not_leader_for_partition,
@@ -234,15 +277,31 @@ ss::future<produce_response::partition> produce_on_partition_shard(
     auto bid = model::batch_identity::from(batch->header());
     auto num_records = batch->record_count();
     auto batch_size = batch->size_bytes();
-    auto stages = partition_append(
-      ntp.tp.partition,
-      std::move(*partition),
-      bid,
-      std::move(batch),
-      acks,
-      num_records,
-      batch_size,
-      timeout);
+    auto stages = [&] {
+        if (
+          bid.is_idempotent()
+          && !partition->get_ntp_config().cloud_topic_enabled()
+          && !partition->is_read_replica_mode_enabled()) {
+            return partition_append(
+              ntp.tp.partition,
+              std::move(partition),
+              bid,
+              std::move(batch),
+              acks,
+              num_records,
+              batch_size,
+              timeout);
+        }
+        return partition_append(
+          ntp.tp.partition,
+          kafka::make_partition_proxy(partition),
+          bid,
+          std::move(batch),
+          acks,
+          num_records,
+          batch_size,
+          timeout);
+    }();
     return stages.dispatched
       .then_wrapped(
         [source_shard, dispatch = std::move(dispatch)](ss::future<> f) mutable {
