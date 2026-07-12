@@ -96,6 +96,45 @@ replicate_stages replicate_batcher::replicate(
                 errc::shutting_down)};
         }
     }
+
+    size_t bytes = 0;
+    size_t record_count = 0;
+    for (const auto& batch : batches) {
+        bytes += batch.size_bytes();
+        record_count += batch.record_count();
+    }
+    const auto requested_units = std::min(bytes, _max_batch_size);
+    if (!_bg.is_closed()) {
+        if (
+          auto units = ss::try_get_units(
+            _max_batch_size_sem, requested_units)) {
+            auto holder = _bg.hold();
+            auto item = ss::make_lw_shared<replicate_batcher::item>(
+              record_count, std::move(batches), std::move(*units), opts);
+            _item_cache.emplace_back(item);
+
+            if (!_flush_pending) {
+                _flush_pending = true;
+                ssx::background = ssx::spawn_with_gate_then(_bg, [this]() {
+                    return _lock.get_units()
+                      .then([this](auto lock_units) {
+                          return flush(std::move(lock_units), false);
+                      })
+                      .handle_exception([this](const std::exception_ptr& e) {
+                          vlog(
+                            _ptr->_ctxlog.error,
+                            "Error in background flush: {}",
+                            e);
+                      });
+                });
+            }
+
+            return {
+              ss::now(),
+              item->get_future().finally([holder = std::move(holder)] {})};
+        }
+    }
+
     ss::promise<> enqueued;
     auto enqueued_f = enqueued.get_future();
 
