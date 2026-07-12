@@ -51,9 +51,15 @@ class batch_applicator {
 public:
     batch_applicator(
       const char* ctx,
-      const std::vector<state_machine_manager::entry_ptr>& machines,
+      size_t machine_count,
       ss::abort_source& as,
       ctx_log& log);
+
+    void add(state_machine_manager::entry_ptr machine) {
+        _machines.push_back(apply_state{.stm_entry = std::move(machine)});
+    }
+
+    bool empty() const { return _machines.empty(); }
 
     ss::future<ss::stop_iteration> operator()(model::record_batch);
 
@@ -77,16 +83,11 @@ private:
 };
 
 batch_applicator::batch_applicator(
-  const char* ctx,
-  const std::vector<state_machine_manager::entry_ptr>& entries,
-  ss::abort_source& as,
-  ctx_log& log)
+  const char* ctx, size_t machine_count, ss::abort_source& as, ctx_log& log)
   : _ctx(ctx)
   , _as(as)
   , _log(log) {
-    for (auto& m : entries) {
-        _machines.push_back(apply_state{.stm_entry = m});
-    }
+    _machines.reserve(machine_count);
 }
 
 ss::future<ss::stop_iteration>
@@ -497,7 +498,7 @@ ss::future<> state_machine_manager::try_apply_in_foreground() {
 
         // collect STMs which has the same _next offset as the offset in
         // manager and there is no background apply taking place
-        std::vector<entry_ptr> machines;
+        batch_applicator applicator(default_ctx, _machines.size(), _as, _log);
         for (auto& [_, entry] : _machines) {
             /**
              * We can simply check if a mutex is ready here as calling
@@ -508,10 +509,10 @@ ss::future<> state_machine_manager::try_apply_in_foreground() {
             if (
               entry->stm->next() == _next
               && entry->background_apply_mutex.ready()) {
-                machines.push_back(entry);
+                applicator.add(entry);
             }
         }
-        if (machines.empty()) {
+        if (applicator.empty()) {
             vlog(
               _log.debug,
               "no machines were selected to apply in foreground, current next "
@@ -540,8 +541,7 @@ ss::future<> state_machine_manager::try_apply_in_foreground() {
         model::record_batch_reader reader = co_await _raft->make_reader(config);
 
         auto max_last_applied = co_await std::move(reader).consume(
-          batch_applicator(default_ctx, machines, _as, _log),
-          model::no_timeout);
+          std::move(applicator), model::no_timeout);
 
         if (max_last_applied == model::offset{}) {
             vlogl(
@@ -682,9 +682,10 @@ ss::future<> state_machine_manager::background_apply_fiber(
             model::record_batch_reader reader = co_await _raft->make_reader(
               config);
             auto last_applied_before = entry->stm->last_applied_offset();
+            batch_applicator applicator(background_ctx, 1, _as, _log);
+            applicator.add(entry);
             auto last_applied_after = co_await std::move(reader).consume(
-              batch_applicator(background_ctx, {entry}, _as, _log),
-              model::no_timeout);
+              std::move(applicator), model::no_timeout);
             if (last_applied_before >= last_applied_after) {
                 error = true;
             }
