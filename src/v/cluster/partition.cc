@@ -913,6 +913,10 @@ ss::future<> partition::update_configuration(topic_properties new_properties) {
     // Pass the configuration update to the raft layer
     _raft->notify_config_update();
 
+    // A storage.mode change lands in topic_mode() (above); keep the durable
+    // partition_mode in step so serving predicates see the new mode.
+    co_await maybe_sync_partition_mode();
+
     // If this partition's cloud storage mode changed, rebuild the archiver.
     // This must happen after the raft+storage update, because it reads raft's
     // ntp_config to decide whether to construct an archiver.
@@ -1776,6 +1780,34 @@ void partition::update_partition_mode() {
     }
     _raft->log()->set_partition_mode(
       _partition_properties_stm->partition_mode());
+}
+
+ss::future<> partition::maybe_sync_partition_mode() {
+    if (!_partition_properties_stm || !is_leader()) {
+        co_return;
+    }
+    if (!_feature_table.local().is_active(
+          features::feature::topic_mode_migration)) {
+        co_return;
+    }
+    // At this point in the stack a partition's mode is simply its topic's
+    // configured mode -- there is no migration yet -- so mirror topic_mode()
+    // through whenever they differ. (A legacy shadow_indexing topic has
+    // topic_mode() == unset; partition_mode starts unset too, so this is a
+    // no-op and it stays unset.)
+    const auto target = get_ntp_config().topic_mode();
+    if (_partition_properties_stm->partition_mode() == target) {
+        co_return;
+    }
+    auto res = co_await _partition_properties_stm->set_partition_mode(target);
+    if (res.has_error()) {
+        vlog(
+          clusterlog.debug,
+          "{}: failed to sync partition_mode to {}: {}",
+          _raft->ntp(),
+          target,
+          res.error().message());
+    }
 }
 
 ss::future<result<model::offset>> partition::set_writes_disabled(

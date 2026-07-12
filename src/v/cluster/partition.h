@@ -164,6 +164,16 @@ public:
 
     bool is_elected_leader() const;
     bool is_leader() const;
+
+    // Keep the durable partition_mode in step with the topic-configured
+    // storage mode: whenever they differ -- a storage.mode change, or the
+    // first time a leader records it -- write topic_mode() through to
+    // partition_properties. Gated behind the partition_mode feature and
+    // leader-only. Legacy shadow_indexing topics (topic_mode() == unset) are
+    // left unset. Invoked on leadership, on migration-feature activation, and
+    // on topic-config changes (update_configuration).
+    ss::future<> maybe_sync_partition_mode();
+
     bool has_followers() const;
     void block_new_leadership() const;
     void unblock_new_leadership() const;
