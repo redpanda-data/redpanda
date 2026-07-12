@@ -21,6 +21,7 @@
 #include "model/record_batch_types.h"
 #include "raft/persisted_stm.h"
 #include "storage/log.h"
+#include "utils/prefix_logger.h"
 
 #include <fmt/format.h>
 
@@ -141,6 +142,30 @@ ss::future<raft::stm_snapshot> partition_properties_stm::take_local_snapshot(
       0,
       last_applied,
       serde::to_iobuf(local_snapshot{.state_updates = std::move(state)}));
+}
+
+ss::future<> partition_properties_stm::seed_partition_mode(
+  storage::kvstore& kvstore,
+  ss::logger& logger,
+  const model::ntp& ntp,
+  model::offset snapshot_offset,
+  model::redpanda_storage_mode mode) {
+    // A single base state entry (update_offset {}, strictly below any log start
+    // offset) carrying the mode, matching the STM's initial in-memory state
+    // plus partition_mode.
+    local_snapshot snap;
+    snap.state_updates.push_back(
+      state_snapshot{
+        .writes_disabled = writes_disabled::no,
+        .update_offset = model::offset{},
+        .writes_revision_id = {},
+        .partition_mode = mode});
+    prefix_logger log(logger, fmt::format("[{}]", ntp));
+    raft::kvstore_backed_stm_snapshot backend(
+      partition_properties_stm_snapshot, log, ntp, kvstore);
+    co_await backend.persist_local_snapshot(
+      raft::stm_snapshot::create(
+        0, snapshot_offset, serde::to_iobuf(std::move(snap))));
 }
 
 ss::future<> partition_properties_stm::do_apply(const model::record_batch& b) {

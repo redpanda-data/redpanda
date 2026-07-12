@@ -1408,6 +1408,7 @@ redpanda_cc_library(
         ":types",
         "//src/v/base",
         "//src/v/storage",
+        "//src/v/utils:prefix_logger",
         "@fmt",
         "@seastar",
     ],
