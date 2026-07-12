@@ -377,7 +377,8 @@ ss::future<result<kafka_result>> stages_with_units_helper(
         enqueued_promise.set_value();
         co_return maybe_units.error();
     }
-    kafka_stages orig_stages = stages_future_func();
+    kafka_stages orig_stages = stages_future_func(
+      std::move(maybe_units).value());
     co_await std::move(orig_stages.request_enqueued);
     enqueued_promise.set_value();
     co_return co_await std::move(orig_stages.replicate_finished);
@@ -395,11 +396,7 @@ kafka_stages stages_with_units(
               ss::make_ready_future<result<kafka_result>>(maybe_units.error())};
         }
 
-        auto stages = stages_future_func();
-        stages.replicate_finished
-          = std::move(stages.replicate_finished)
-              .finally([units = std::move(maybe_units).value()] {});
-        return stages;
+        return stages_future_func(std::move(maybe_units).value());
     }
 
     ss::promise<> enqueued_promise;
@@ -443,13 +440,15 @@ kafka_stages partition::replicate_in_stages(
       [this,
        bid = std::move(bid),
        batch = std::move(batch),
-       opts = std::move(opts)]() mutable {
+       opts = std::move(opts)](ss::rwlock::holder write_units) mutable {
           if (_rm_stm) {
-              return _rm_stm->replicate_in_stages(bid, std::move(batch), opts);
+              return _rm_stm->replicate_in_stages(
+                bid, std::move(batch), opts, std::move(write_units));
           }
           auto res = _raft->replicate_in_stages(std::move(batch), opts);
           auto replicate_finished = res.replicate_finished.then(
-            [this](result<raft::replicate_result> r) {
+            [this, write_units = std::move(write_units)](
+              result<raft::replicate_result> r) {
                 if (!r) {
                     return ret_t(r.error());
                 }

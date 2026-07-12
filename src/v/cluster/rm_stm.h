@@ -194,7 +194,8 @@ public:
     kafka_stages replicate_in_stages(
       model::batch_identity,
       model::record_batch batch,
-      raft::replicate_options);
+      raft::replicate_options,
+      ss::rwlock::holder write_units);
 
     ss::future<result<kafka_result>> replicate(
       model::batch_identity,

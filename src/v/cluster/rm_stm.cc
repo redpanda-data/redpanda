@@ -817,26 +817,28 @@ ss::future<tx::errc> rm_stm::do_abort_tx(
 kafka_stages rm_stm::replicate_in_stages(
   model::batch_identity bid,
   model::record_batch batch,
-  raft::replicate_options opts) {
+  raft::replicate_options opts,
+  ss::rwlock::holder write_units) {
     auto enqueued = ss::make_lw_shared<available_promise<>>();
     auto f = enqueued->get_future();
     auto replicate_finished
-      = do_replicate(bid, std::move(batch), opts, enqueued).finally([enqueued] {
-            // we should avoid situations when
-            // replicate_finished is set while enqueued
-            // isn't because it leads to hanging produce
-            // requests and the resource leaks. since
-            // staged replication is an optimization and
-            // setting enqueued only after
-            // replicate_finished is already set doesn't
-            // have sematic implications adding this
-            // post replicate_finished as a safety
-            // measure in case enqueued isn't set
-            // explicitly
-            if (!enqueued->available()) {
-                enqueued->set_value();
-            }
-        });
+      = do_replicate(bid, std::move(batch), opts, enqueued)
+          .finally([enqueued, write_units = std::move(write_units)] {
+              // we should avoid situations when
+              // replicate_finished is set while enqueued
+              // isn't because it leads to hanging produce
+              // requests and the resource leaks. since
+              // staged replication is an optimization and
+              // setting enqueued only after
+              // replicate_finished is already set doesn't
+              // have sematic implications adding this
+              // post replicate_finished as a safety
+              // measure in case enqueued isn't set
+              // explicitly
+              if (!enqueued->available()) {
+                  enqueued->set_value();
+              }
+          });
     return {std::move(f), std::move(replicate_finished)};
 }
 
