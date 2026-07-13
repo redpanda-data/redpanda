@@ -661,6 +661,9 @@ deserialize(model::record_batch b, commands_type_list<Commands...>) {
     std::optional<std::variant<internal::deserializer<Commands>...>> ret;
     (void)((ret = internal::make_deserializer<Commands>(cmd_type), ret) || ...);
 
+    vassert(
+      ret.has_value(), "expected command with value: cmd type {}", cmd_type);
+
     return std::visit(
       [k_parser = std::move(k_parser),
        v_parser = std::move(v_parser),
