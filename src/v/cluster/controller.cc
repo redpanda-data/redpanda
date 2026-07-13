@@ -1170,6 +1170,7 @@ ss::future<> controller::cluster_creation_hook(
         cmd_data.founding_version
           = features::feature_table::get_latest_logical_version();
         cmd_data.initial_nodes = discovery.founding_brokers();
+        cmd_data.formation_timestamp = model::timestamp::now();
         co_return co_await create_cluster(std::move(cmd_data), as);
     }
 

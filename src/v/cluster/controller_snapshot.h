@@ -34,12 +34,17 @@ namespace controller_snapshot_parts {
 
 struct bootstrap_t
   : public serde::
-      envelope<bootstrap_t, serde::version<0>, serde::compat_version<0>> {
+      envelope<bootstrap_t, serde::version<1>, serde::compat_version<0>> {
     std::optional<model::cluster_uuid> cluster_uuid;
+
+    // Wall-clock time at which the cluster first formed. Absent for clusters
+    // bootstrapped before this field existed, or whose bootstrap record
+    // pre-dates it. See bootstrap_cluster_cmd_data::formation_timestamp.
+    std::optional<model::timestamp> formation_timestamp;
 
     friend bool operator==(const bootstrap_t&, const bootstrap_t&) = default;
 
-    auto serde_fields() { return std::tie(cluster_uuid); }
+    auto serde_fields() { return std::tie(cluster_uuid, formation_timestamp); }
 };
 
 struct features_t

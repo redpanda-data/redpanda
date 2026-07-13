@@ -225,6 +225,9 @@ bootstrap_backend::apply(bootstrap_cluster_cmd cmd, model::offset offset) {
     }
 
     co_await apply_cluster_uuid(cmd.value.uuid);
+    if (cmd.value.formation_timestamp) {
+        co_await apply_formation_timestamp(*cmd.value.formation_timestamp);
+    }
 
     co_return errc::success;
 }
@@ -242,8 +245,16 @@ ss::future<> bootstrap_backend::apply_cluster_uuid(model::cluster_uuid uuid) {
     vlog(clusterlog.debug, "Cluster UUID initialized {}", uuid);
 }
 
+ss::future<> bootstrap_backend::apply_formation_timestamp(model::timestamp ts) {
+    co_await _storage.invoke_on_all(
+      [ts](storage::api& storage) { storage.set_formation_timestamp(ts); });
+    _formation_timestamp_applied = ts;
+    vlog(clusterlog.debug, "Cluster formation timestamp initialized {}", ts);
+}
+
 ss::future<> bootstrap_backend::fill_snapshot(controller_snapshot& snap) const {
     snap.bootstrap.cluster_uuid = _cluster_uuid_applied;
+    snap.bootstrap.formation_timestamp = _formation_timestamp_applied;
     co_return;
 }
 
@@ -253,7 +264,12 @@ ss::future<> bootstrap_backend::apply_snapshot(
     // must dispatch updates to other parts of the controller stm
     // (members_manager, feature_table, credential_store). But if we are
     // applying a controller snapshot, these updates will be handled by the
-    // sub-stms themselves. Here we only need to initialize the cluster uuid.
+    // sub-stms themselves. Here we only need to initialize the cluster uuid
+    // and the formation timestamp.
+
+    if (snap.bootstrap.formation_timestamp) {
+        co_await apply_formation_timestamp(*snap.bootstrap.formation_timestamp);
+    }
 
     auto snap_cluster_uuid = snap.bootstrap.cluster_uuid;
     vlog(

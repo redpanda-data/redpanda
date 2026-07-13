@@ -14,6 +14,7 @@
 #include "base/seastarx.h"
 #include "features/feature_table.h"
 #include "model/fundamental.h"
+#include "model/timestamp.h"
 #include "storage/chunk_cache.h"
 #include "storage/disk.h"
 #include "storage/kvstore.h"
@@ -103,6 +104,13 @@ public:
         return _cluster_uuid;
     }
 
+    void set_formation_timestamp(model::timestamp ts) {
+        _formation_timestamp = ts;
+    }
+    const std::optional<model::timestamp>& get_formation_timestamp() const {
+        return _formation_timestamp;
+    }
+
     ss::future<bool> wait_for_cluster_uuid();
 
     kvstore& kvs() { return *_kvstore; }
@@ -145,6 +153,8 @@ private:
 
     std::optional<model::cluster_uuid> _cluster_uuid;
     ss::condition_variable _has_cluster_uuid_cond;
+
+    std::optional<model::timestamp> _formation_timestamp;
 };
 
 } // namespace storage

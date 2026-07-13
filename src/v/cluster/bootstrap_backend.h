@@ -57,9 +57,16 @@ public:
     ss::future<> fill_snapshot(controller_snapshot&) const;
     ss::future<> apply_snapshot(model::offset, const controller_snapshot&);
 
+    /// Wall-clock time at which the cluster first formed, if known. Absent for
+    /// clusters bootstrapped before this was recorded (serde version < 4).
+    std::optional<model::timestamp> formation_timestamp() const {
+        return _formation_timestamp_applied;
+    }
+
 private:
     ss::future<std::error_code> apply(bootstrap_cluster_cmd, model::offset);
     ss::future<> apply_cluster_uuid(model::cluster_uuid);
+    ss::future<> apply_formation_timestamp(model::timestamp);
 
     ss::sharded<security::credential_store>& _credentials;
     ss::sharded<storage::api>& _storage;
@@ -68,6 +75,7 @@ private:
     ss::sharded<feature_backend>& _feature_backend;
     ss::sharded<cluster_recovery_table>& _cluster_recovery_table;
     std::optional<model::cluster_uuid> _cluster_uuid_applied;
+    std::optional<model::timestamp> _formation_timestamp_applied;
 };
 
 } // namespace cluster

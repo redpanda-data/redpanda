@@ -1746,7 +1746,7 @@ struct cluster_recovery_init_state
 struct bootstrap_cluster_cmd_data
   : serde::envelope<
       bootstrap_cluster_cmd_data,
-      serde::version<3>,
+      serde::version<4>,
       serde::compat_version<0>> {
     friend bool operator==(
       const bootstrap_cluster_cmd_data&,
@@ -1759,7 +1759,8 @@ struct bootstrap_cluster_cmd_data
           node_ids_by_uuid,
           founding_version,
           initial_nodes,
-          recovery_state);
+          recovery_state,
+          formation_timestamp);
     }
 
     model::cluster_uuid uuid;
@@ -1774,6 +1775,10 @@ struct bootstrap_cluster_cmd_data
 
     // If set, begins a cluster recovery using this state as the basis.
     std::optional<cluster_recovery_init_state> recovery_state;
+
+    // Wall-clock time at which the founding node generated this bootstrap
+    // record, i.e. when the cluster first formed.
+    std::optional<model::timestamp> formation_timestamp;
 };
 
 struct cluster_recovery_init_cmd_data
