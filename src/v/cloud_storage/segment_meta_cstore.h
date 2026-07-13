@@ -155,6 +155,9 @@ public:
 
     void flush_write_buffer();
 
+    /// Number of base-offset hints currently stored. Test-only inspection.
+    size_t hints_size() const;
+
     // Access individual columns
     const gauge_col_t& get_size_bytes_column() const;
     const counter_col_t& get_base_offset_column() const;

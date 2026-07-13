@@ -697,6 +697,8 @@ public:
         _hints.erase(it, _hints.end());
     }
 
+    size_t hints_size() const { return _hints.size(); }
+
     /// Return two values: inflated size (size without compression) followed
     /// by the actual size that takes compression into account.
     std::pair<size_t, size_t> inflated_actual_size() const {
@@ -1051,6 +1053,11 @@ public:
         return _col.size();
     }
 
+    size_t hints_size() const {
+        flush_write_buffer();
+        return _col.hints_size();
+    }
+
     bool empty() const { return _write_buffer.empty() && _col.empty(); }
 
     bool contains(model::offset o) {
@@ -1169,6 +1176,8 @@ bool segment_meta_cstore::contains(model::offset o) const {
 bool segment_meta_cstore::empty() const { return _impl->empty(); }
 
 size_t segment_meta_cstore::size() const { return _impl->size(); }
+
+size_t segment_meta_cstore::hints_size() const { return _impl->hints_size(); }
 
 segment_meta_cstore::const_iterator
 segment_meta_cstore::upper_bound(model::offset o) const {
