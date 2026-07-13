@@ -1664,6 +1664,20 @@ class Admin:
             return r.json()["cluster_uuid"]
         return None
 
+    def get_cluster_formation_timestamp(self, node: MaybeNode = None) -> int | None:
+        """Return the cluster formation timestamp (milliseconds since the Unix
+        epoch) reported by GET /v1/cluster/formation_timestamp, or None if the
+        timestamp was not recorded at formation."""
+        try:
+            r = self._request("GET", "cluster/formation_timestamp", node=node)
+        except HTTPError as ex:
+            if ex.response.status_code == 404:
+                return None
+            raise
+        if len(r.text) > 0:
+            return r.json().get("formation_timestamp")
+        return None
+
     def get_metrics_uuid(self, node: MaybeNode = None) -> str | None:
         """
         Returns the concents of the `/v1/cluster/metrics_uuid` endpoint.

@@ -246,12 +246,24 @@ class ControllerSnapshotTest(RedpandaTest):
         cluster_uuid = admin.get_cluster_uuid(node=seed_nodes[0])
         assert cluster_uuid is not None
 
+        # The formation timestamp is recorded in the bootstrap command and
+        # persisted in the controller snapshot, so it must be present, stable
+        # across restarts, and identical on every node (including late joiners
+        # that receive it via the controller join snapshot).
+        formation_ts = admin.get_cluster_formation_timestamp(node=seed_nodes[0])
+        assert formation_ts is not None and formation_ts > 0, (
+            f"unexpected formation timestamp {formation_ts}"
+        )
+
         node_ids_per_idx = {}
 
         def check_and_save_node_ids(started):
             for n in started:
                 uuid = admin.get_cluster_uuid(node=n)
                 assert cluster_uuid == uuid, f"unexpected cluster uuid {uuid}"
+
+                ts = admin.get_cluster_formation_timestamp(node=n)
+                assert formation_ts == ts, f"unexpected formation timestamp {ts}"
 
                 brokers = admin.get_brokers(node=n)
                 assert len(brokers) == len(started)

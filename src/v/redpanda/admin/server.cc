@@ -4195,6 +4195,20 @@ void admin_server::register_cluster_routes() {
           return ss::json::json_return_type(ss::json::json_void());
       });
 
+    register_route_sync<publik>(
+      ss::httpd::cluster_json::get_cluster_formation_timestamp,
+      [this](ss::httpd::const_req) -> ss::json::json_return_type {
+          vlog(adminlog.debug, "Requested cluster formation timestamp");
+          const std::optional<model::timestamp>& formation_ts
+            = _controller->get_storage().local().get_formation_timestamp();
+          if (formation_ts) {
+              ss::httpd::cluster_json::cluster_formation_timestamp ret;
+              ret.formation_timestamp = formation_ts->value();
+              return ss::json::json_return_type(ret);
+          }
+          return ss::json::json_return_type(ss::json::json_void());
+      });
+
     register_route<publik>(
       ss::httpd::cluster_json::get_metrics_uuid,
       [this](std::unique_ptr<ss::http::request> req) {

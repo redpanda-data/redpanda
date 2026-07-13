@@ -68,6 +68,21 @@
             ]
         },
         {
+            "path": "/v1/cluster/formation_timestamp",
+            "operations": [
+                {
+                    "method": "GET",
+                    "summary": "Get the wall-clock time at which this cluster first formed",
+                    "type": "get_cluster_formation_timestamp",
+                    "nickname": "get_cluster_formation_timestamp",
+                    "produces": [
+                        "application/json"
+                    ],
+                    "parameters": []
+                }
+            ]
+        },
+        {
             "path": "/v1/cluster/metrics_uuid",
             "operations": [
                 {
@@ -346,6 +361,15 @@
             "properties": {
                 "cluster_uuid": {
                     "type": "string"
+                }
+            }
+        },
+        "cluster_formation_timestamp": {
+            "id": "cluster_formation_timestamp",
+            "properties": {
+                "formation_timestamp": {
+                    "type": "long",
+                    "description": "Timestamp at which the cluster first formed."
                 }
             }
         },
