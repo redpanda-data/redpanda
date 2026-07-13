@@ -27,21 +27,15 @@ import (
 
 func init() {
 	// Whenever a `rpk ai <subcommand>` managed-plugin leaf is dispatched,
-	// inject the plugin's token/endpoint env vars and strip rpk global
-	// flags before the child process is exec'd. Reaching this wrapper
-	// means cobra already routed to a real plugin leaf, so unless the user
-	// asked for --help / --version on the leaf itself (in which case the
-	// plugin renders its own local help), we always need cloud context —
-	// regardless of whether the leaf takes positional args.
-	plugin.RegisterManaged(rpaiPluginSlug, []string{"ai"}, func(cmd *cobra.Command, fs afero.Fs, p *config.Params) *cobra.Command {
+	// strip rpk's global flags before the child process is exec'd. rpk does
+	// not inject any cloud context: the rpk ai plugin owns its own login
+	// (`rpk ai auth login`) and environment selection (`rpk ai env use`), so
+	// it runs without a selected rpk cloud cluster.
+	plugin.RegisterManaged(rpaiPluginSlug, []string{"ai"}, func(cmd *cobra.Command, _ afero.Fs, p *config.Params) *cobra.Command {
 		run := cmd.Run
 		cmd.Run = func(cmd *cobra.Command, args []string) {
 			pluginArgs, err := parseFlags(p, cmd, args)
 			out.MaybeDie(err, "unable to prepare rpk ai invocation: %v", err)
-			if !skipCloudForHelp(pluginArgs) {
-				err = resolveAndInjectEnv(cmd.Context(), fs, p, pluginArgs)
-				out.MaybeDie(err, "unable to prepare rpk ai invocation: %v", err)
-			}
 			run(cmd, pluginArgs)
 		}
 		return cmd
@@ -81,11 +75,6 @@ func NewCommand(fs afero.Fs, p *config.Params, execFn func(string, []string) err
 			if !isSubcommand && !isVersion {
 				cmd.Help()
 				return
-			}
-
-			if !skipCloudForHelp(pluginArgs) {
-				err = resolveAndInjectEnv(cmd.Context(), fs, p, pluginArgs)
-				out.MaybeDie(err, "unable to prepare rpk ai invocation: %v", err)
 			}
 
 			var pluginPath string
