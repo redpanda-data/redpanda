@@ -31,6 +31,7 @@ go_library(
         "//src/go/rpk/pkg/cli/registry",
         "//src/go/rpk/pkg/cli/security",
         "//src/go/rpk/pkg/cli/shadow",
+        "//src/go/rpk/pkg/cli/sql",
         "//src/go/rpk/pkg/cli/topic",
         "//src/go/rpk/pkg/cli/transform",
         "//src/go/rpk/pkg/cli/version",
