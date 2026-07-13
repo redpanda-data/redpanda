@@ -41,7 +41,7 @@ const (
 // entrypoint, not a test command.
 var commands = map[string]func() error{
 	"setup":                   setup,
-	"first_create_topic":      createTopic,
+	"first_create_topics":     createTestTopics,
 	"parallel_driver_produce": produce,
 	// consume reads and validates the same way the anytime checker does, but
 	// as a parallel driver Antithesis may run several concurrent copies of it,

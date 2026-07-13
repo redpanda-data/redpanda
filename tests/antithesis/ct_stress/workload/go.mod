@@ -1,6 +1,6 @@
 module github.com/redpanda-data/redpanda/tests/antithesis/ct_stress/workload
 
-go 1.25.0
+go 1.26
 
 require (
 	github.com/antithesishq/antithesis-sdk-go v0.7.2

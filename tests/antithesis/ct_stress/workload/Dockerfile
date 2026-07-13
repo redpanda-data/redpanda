@@ -17,7 +17,7 @@
 # CGO must stay enabled for that path; without libvoidstar the SDK falls
 # back to local behavior, so the same image also runs locally.
 
-FROM golang:1.25-bookworm AS build
+FROM golang:1.26-bookworm AS build
 WORKDIR /src
 
 COPY go.mod go.sum ./

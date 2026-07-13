@@ -37,9 +37,25 @@ func randN(n int) int {
 	return rng.Intn(n)
 }
 
+const topicPropertyCleanupPolicy = "cleanup.policy"
+const topicPropertyStorageMode = "redpanda.storage.mode"
+const topicPropertyStorageModelImpl = "redpanda.storage.mode.impl"
+
+const storageModeCloud = "cloud"
+const storageModeTiered = "tiered"
+
+var storageModes = []string{storageModeCloud, storageModeTiered}
+
+const storageModeImplTiered = "tiered_v2"
+
 // first_create_topic: create the topics the workload exercises. Runs once
 // per timeline after setup_complete; must not signal lifecycle itself.
-func createTopic() error {
+//
+// Each topic's storage mode is an independent choice between cloud and
+// tiered_cloud, drawn with the SDK's RandomChoice so Antithesis knows a
+// structured random decision happens here and can steer it to explore the
+// mode combinations deliberately.
+func createTestTopics() error {
 	cl, err := newClient()
 	if err != nil {
 		return err
@@ -47,30 +63,50 @@ func createTopic() error {
 	defer cl.Close()
 	adm := kadm.NewClient(cl)
 
-	cloud := "cloud"
-	compact := "compact"
-	if err := createOneTopic(adm, topic, fooPartitions, fooReplicas,
-		map[string]*string{"redpanda.storage.mode": &cloud}); err != nil {
+	fooMode := random.RandomChoice(storageModes)
+	ctcMode := random.RandomChoice(storageModes)
+	fmt.Printf("randomly chosen storage modes: foo=%s ctc=%s\n", fooMode, ctcMode)
+
+	fooCfg := map[string]*string{topicPropertyStorageMode: &fooMode}
+	if fooMode == storageModeTiered {
+		fooCfg[topicPropertyStorageModelImpl] = new(storageModeImplTiered)
+	}
+
+	if err := createOneTopic(adm, topic, fooPartitions, fooReplicas, fooCfg); err != nil {
 		return err
 	}
-	return createOneTopic(adm, ctcTopic, ctcPartitions, ctcReplicas,
-		map[string]*string{
-			"redpanda.storage.mode": &cloud,
-			"cleanup.policy":        &compact,
-		})
+
+	ctcCfg := map[string]*string{
+		topicPropertyStorageMode:   &ctcMode,
+		topicPropertyCleanupPolicy: new("compact"),
+	}
+	if ctcMode == storageModeTiered {
+		ctcCfg[topicPropertyStorageModelImpl] = new(storageModeImplTiered)
+	}
+
+	if err := createOneTopic(adm, ctcTopic, ctcPartitions, ctcReplicas, ctcCfg); err != nil {
+		return err
+	}
+
+	return nil
 }
 
 func createOneTopic(adm *kadm.Client, name string, partitions int32, replicas int16, cfg map[string]*string) error {
+	modeForLog := "unset"
+	if m := cfg[topicPropertyStorageMode]; m != nil {
+		modeForLog = *m
+	}
+
 	ctx := context.Background()
 	for attempt := 1; attempt <= 30; attempt++ {
 		resp, err := adm.CreateTopics(ctx, partitions, replicas, cfg, name)
 		if err == nil {
 			if terr := resp[name].Err; terr == nil {
-				fmt.Printf("created cloud topic %s (%d partitions, %d replicas)\n",
-					name, partitions, replicas)
+				fmt.Printf("created topic %s (%d partitions, %d replicas, mode=%s)\n",
+					name, partitions, replicas, modeForLog)
 				return nil
 			} else if errors.Is(terr, kerr.TopicAlreadyExists) {
-				fmt.Printf("cloud topic %s already exists\n", name)
+				fmt.Printf("topic %s already exists\n", name)
 				return nil
 			} else {
 				err = terr
@@ -79,7 +115,8 @@ func createOneTopic(adm *kadm.Client, name string, partitions int32, replicas in
 		fmt.Printf("attempt %d: create %s failed, retrying: %v\n", attempt, name, err)
 		time.Sleep(2 * time.Second)
 	}
-	return fmt.Errorf("failed to create cloud topic %s", name)
+
+	return fmt.Errorf("failed to create topic %s", name)
 }
 
 // parallel_driver_produce: produce a bounded random batch. Best-effort under

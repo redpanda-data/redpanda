@@ -21,9 +21,12 @@ import (
 
 // scrapeMetrics sums the named seastar counters across the cluster, reading
 // each broker's internal /metrics endpoint once and adding every matching
-// series (one per shard). Returns name -> cluster-wide total.
-func scrapeMetrics(names []string) map[string]float64 {
+// series (one per shard). Returns name -> cluster-wide total, plus how many
+// hosts answered the scrape, so a caller asserting on a zero total can tell
+// "genuinely zero" from "a broker was unreachable and its counters missing".
+func scrapeMetrics(names []string) (map[string]float64, int) {
 	sums := make(map[string]float64, len(names))
+	scraped := 0
 
 	hosts := adminHosts()
 	fmt.Printf("scrapeMetrics: scraping %d hosts %v for %v\n", len(hosts), hosts, names)
@@ -48,6 +51,7 @@ func scrapeMetrics(names []string) map[string]float64 {
 			fmt.Printf("scrapeMetrics: host %s GET /metrics -> %d: %s\n", h, resp.StatusCode, snippet)
 			continue
 		}
+		scraped++
 		matched := 0
 		hostSums := make(map[string]float64, len(names))
 		for line := range strings.SplitSeq(string(body), "\n") {
@@ -71,7 +75,7 @@ func scrapeMetrics(names []string) map[string]float64 {
 		fmt.Printf("scrapeMetrics: host %s status=%d bytes=%d matched_series=%d sums=%v\n",
 			h, resp.StatusCode, len(body), matched, hostSums)
 	}
-	return sums
+	return sums, scraped
 }
 
 // anytime_check_cloud_io: assert the cloud-topics I/O paths are exercised at
@@ -90,7 +94,12 @@ func checkCloudIO() error {
 		fileReadMetric = "vectorized_cloud_topics_level_one_file_io_reads"
 		skippedMetric  = "vectorized_cloud_topics_level_one_reader_skipped_bytes"
 	)
-	sums := scrapeMetrics([]string{
+	// Sampled before the scrape so the zero-upload assertion below is not
+	// raced by a produce landing in between: an ack recorded before a scrape
+	// that still reads zero means no acked cloud-mode produce can hide in
+	// the gap. Both topics must have acked, or a mixed-mode timeline whose
+	// cloud topic simply has not produced yet would satisfy the assertion.
+	sums, _ := scrapeMetrics([]string{
 		readMetric, uploadMetric, fileReadMetric, skippedMetric,
 	})
 
@@ -109,5 +118,6 @@ func checkCloudIO() error {
 
 	fmt.Printf("L1 read_bytes=%.0f uploaded=%.0f file_reads=%.0f skipped_bytes=%.0f\n",
 		sums[readMetric], sums[uploadMetric], sums[fileReadMetric], sums[skippedMetric])
+
 	return nil
 }
