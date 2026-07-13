@@ -816,10 +816,10 @@ BOOST_AUTO_TEST_CASE(test_segment_meta_cstore_append_retrieve_edge_case) {
 // Reproduces a hint-index leak: a store whose size sits at a multiple of
 // the hint sampling interval (FOR_buffer_depth * cstore_sampling_rate = 128)
 // while being churned by interleaved appends and prefix truncations. The
-// sampling condition keys off the total store size, so at such sizes every
-// append inserts a hint (~one per element instead of one per 128). The
-// accumulated hints inflate inflated_actual_size() several-fold, which in
-// turn makes the archiver's spillover size heuristics diverge from the
+// sampling condition used to key off the total store size, so at such sizes
+// every append inserted a hint (~one per element instead of one per 128).
+// The accumulated hints inflated inflated_actual_size() several-fold, which
+// in turn made the archiver's spillover size heuristics diverge from the
 // size of a freshly encoded manifest with identical content.
 BOOST_AUTO_TEST_CASE(test_segment_meta_cstore_steady_state_churn_hints) {
     namespace rg = random_generators;
@@ -886,10 +886,9 @@ BOOST_AUTO_TEST_CASE(test_segment_meta_cstore_steady_state_churn_hints) {
                   << " hints; fresh: " << fresh_actual << " bytes, "
                   << fresh.hints_size() << " hints");
 
-    // Captures the current (buggy) behavior: the hint map grows towards
-    // one entry per element instead of the designed one per 128, and the
-    // reported size diverges from the freshly encoded equivalent by an
-    // order of magnitude.
-    BOOST_REQUIRE_GE(store.hints_size(), steady_size / 2);
-    BOOST_REQUIRE_GE(churned_actual, 8 * fresh_actual);
+    // design density is one hint per 128 elements
+    BOOST_REQUIRE_LE(store.hints_size(), 2 * steady_size / 128 + 4);
+    // accounting of the churned store must stay comparable to the
+    // freshly encoded equivalent
+    BOOST_REQUIRE_LE(churned_actual, 4 * fresh_actual);
 }

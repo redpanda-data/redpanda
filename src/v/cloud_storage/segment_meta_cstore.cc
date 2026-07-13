@@ -268,8 +268,6 @@ public:
 
     /// Add element to the store. The operation is transactional.
     void append(const segment_meta& meta) {
-        auto ix = _base_offset.size();
-
         try {
             details::tuple_map(
               [&](auto& col, auto accessor) {
@@ -284,8 +282,15 @@ public:
             vunreachable("column_store bad_alloc during 'append' operation");
         }
 
+        // Sample by position within the current frame rather than by the
+        // total store size. When the store is churned by interleaved
+        // appends and prefix truncations (retention steady state) its size
+        // can settle on a multiple of the sampling interval, in which case
+        // a size-based condition would insert a hint on every append and
+        // the hint map would grow to one entry per element.
+        auto frame_ix = _base_offset.last_frame_size() - 1;
         if (
-          ix
+          frame_ix
             % static_cast<uint32_t>(
               ::details::FOR_buffer_depth * cstore_sampling_rate)
           == 0) {
