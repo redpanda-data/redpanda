@@ -19,8 +19,6 @@ import (
 	"github.com/twmb/franz-go/pkg/kadm"
 )
 
-var flipTopics = []string{topic, ctcTopic}
-
 // parallel_driver_flip_storage_mode: toggle a random test topic between the
 // two cloud-backed storage modes (cloud <-> tiered_v2) while the rest of the
 // workload keeps producing, consuming and moving replicas. Antithesis
@@ -34,7 +32,7 @@ var flipTopics = []string{topic, ctcTopic}
 // a forbidden transition). Best-effort under fault injection: a failed
 // describe or a rejected alter is expected and not a bug.
 func flipStorageMode() error {
-	t := random.RandomChoice(flipTopics)
+	t := random.RandomChoice(testTopics).name
 
 	cl, err := newClient()
 	if err != nil {

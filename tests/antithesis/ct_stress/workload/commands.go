@@ -60,21 +60,16 @@ func createTestTopics() error {
 	defer cl.Close()
 	adm := kadm.NewClient(cl)
 
-	fooMode := random.RandomChoice(storageModes)
-	ctcMode := random.RandomChoice(storageModes)
-	fmt.Printf("randomly chosen storage modes: foo=%s ctc=%s\n", fooMode, ctcMode)
-
-	fooCfg := map[string]*string{topicPropertyStorageMode: &fooMode}
-	if err := createOneTopic(adm, topic, fooPartitions, fooReplicas, fooCfg); err != nil {
-		return err
-	}
-
-	ctcCfg := map[string]*string{
-		topicPropertyStorageMode:   &ctcMode,
-		topicPropertyCleanupPolicy: new("compact"),
-	}
-	if err := createOneTopic(adm, ctcTopic, ctcPartitions, ctcReplicas, ctcCfg); err != nil {
-		return err
+	for _, t := range testTopics {
+		mode := random.RandomChoice(storageModes)
+		fmt.Printf("randomly chosen storage mode: %s=%s\n", t.name, mode)
+		cfg := map[string]*string{topicPropertyStorageMode: &mode}
+		if t.compacted {
+			cfg[topicPropertyCleanupPolicy] = new("compact")
+		}
+		if err := createOneTopic(adm, t.name, t.partitions, t.replicas, cfg); err != nil {
+			return err
+		}
 	}
 
 	return nil

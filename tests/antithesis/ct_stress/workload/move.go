@@ -153,17 +153,19 @@ func moveMetastore() error {
 	return nil
 }
 
-// parallel_driver_move_foo: reassign a random partition of the cloud topic,
-// exercising reconfiguration of user data alongside the workload.
-func moveFoo() error {
+// parallel_driver_move_kafka_topic: reassign a random partition of a random
+// kafka test topic, exercising reconfiguration of user data alongside the
+// workload.
+func moveKafkaTopic() error {
 	if !haveAdminHosts() {
 		return fmt.Errorf("ADMIN_HOSTS not set")
 	}
-	part := randN(fooPartitions)
-	from, to, attempted, accepted := submitMove("kafka", topic, part)
+	t := testTopics[randN(len(testTopics))]
+	part := randN(int(t.partitions))
+	from, to, attempted, accepted := submitMove("kafka", t.name, part)
 	if attempted {
-		assert.Sometimes(accepted, "cloud topic foo replica move accepted",
-			map[string]any{"partition": part, "from": from, "to": to})
+		assert.Sometimes(accepted, "kafka topic replica move accepted",
+			map[string]any{"topic": t.name, "partition": part, "from": from, "to": to})
 	}
 	return nil
 }
