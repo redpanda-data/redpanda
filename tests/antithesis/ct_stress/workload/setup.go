@@ -35,7 +35,7 @@ func expectedBrokers() int {
 
 // waitClusterReady blocks until the cluster serves metadata with at least
 // `expected` brokers and an elected controller, or `timeout` elapses. Used both
-// at startup and by the finally check while the cluster recovers after faults.
+// at startup and by the eventually check while the cluster recovers after faults.
 func waitClusterReady(expected int, timeout time.Duration) error {
 	cl, err := newClient()
 	if err != nil {

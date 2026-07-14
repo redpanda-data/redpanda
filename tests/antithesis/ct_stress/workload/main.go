@@ -57,7 +57,13 @@ var commands = map[string]func() error{
 	"parallel_driver_sweep_ctc":   sweepCtc,
 	"anytime_check_range_foo":     checkFoo,
 	"anytime_check_cloud_io":      checkCloudIO,
-	"finally_check_complete":      checkComplete,
+	// eventually rather than finally: finally commands only run on timelines
+	// where every started command completed and none was killed by a fault,
+	// which excludes the most hostile histories — exactly the ones this data
+	// completeness check exists for. An eventually command runs after any
+	// driver has started; Antithesis kills the stragglers, which the acked
+	// summaries tolerate by design (only observed acks, atomic replace).
+	"eventually_check_complete": checkComplete,
 	// check_offsets_foo has no test-composer prefix, so it gets no symlink and
 	// Antithesis never schedules it. It is a manual replay tool for the
 	// multiverse debugger; see checkFooOffsets.
@@ -71,18 +77,18 @@ var cmdArgs []string
 // cmdName is the command this invocation resolved to. The checkers shared
 // across commands (validateFooRange, validateCtcRange) carry it in assertion
 // details so a tripped property names the phase it fired in — e.g.
-// parallel_driver_consume_foo vs anytime_check_range_foo vs finally_check_complete.
+// parallel_driver_consume_foo vs anytime_check_range_foo vs eventually_check_complete.
 var cmdName string
 
-// finallyPhase reports whether this invocation is a finally command, i.e.
-// fault injection has stopped and the cluster has healed. The shared
+// quiescedPhase reports whether this invocation is an eventually command,
+// i.e. fault injection has stopped and the cluster has healed. The shared
 // validators skip their Sometimes/Reachable assertions in this phase: those
 // liveness properties exist to prove reads make progress while faults are
 // possible, and a quiesced-cluster read satisfying them would mask timelines
-// where no such read ever succeeded. The finally checks assert their own
+// where no such read ever succeeded. The eventually checks assert their own
 // liveness under distinct names instead.
-func finallyPhase() bool {
-	return strings.HasPrefix(cmdName, "finally_")
+func quiescedPhase() bool {
+	return strings.HasPrefix(cmdName, "eventually_")
 }
 
 // testCommandPrefixes are the Antithesis test-composer command prefixes; a

@@ -487,7 +487,7 @@ type ctcLatest struct {
 
 // validateCtcRange asserts that recs — the result of reading [lo, hi) from a
 // ctc partition — have the shape of a compacted log; it backs both the
-// anytime sweep and finally_check_complete. Compaction removes records but
+// anytime sweep and eventually_check_complete. Compaction removes records but
 // never reorders survivors, so offsets must still be strictly increasing
 // (though gapped, unlike foo, so no contiguity here) and each producer
 // nonce's records must still appear in its produce order — ascending (key
@@ -570,7 +570,7 @@ func validateCtcRange(part int32, lo, hi int64, recs []*kgo.Record) (map[int]ctc
 	assert.Always(inOrder, "compacted cloud topic read returns in-order offsets", details)
 	assert.Always(bad == 0, "compacted cloud topic records are intact and self-consistent", details)
 	assert.Always(reordered == 0, "compacted cloud topic per-producer produce order is preserved", details)
-	if !finallyPhase() {
+	if !quiescedPhase() {
 		assert.Sometimes(gaps > 0, "compacted cloud topic sweep observes compaction gaps", details)
 	}
 
@@ -600,8 +600,8 @@ func validateCtcRange(part int32, lo, hi int64, recs []*kgo.Record) (map[int]ctc
 //
 // Keys whose acked offset is at or beyond hi prove nothing in the anytime
 // phase (a stale leader can serve an old hi) and are skipped. In the
-// finally phase the cluster is quiesced, hi is the true end of the log, and
-// an acked offset beyond it means the high watermark regressed, so there
+// eventually phase the cluster is quiesced, hi is the true end of the log,
+// and an acked offset beyond it means the high watermark regressed, so there
 // they are a hard failure.
 func validateCtcAcked(part int32, hi int64, latest map[int]ctcLatest, acked []ctcAcked, assertLoss bool) {
 	checked, lost, mismatched, beyondHi := 0, 0, 0, 0
@@ -612,7 +612,7 @@ func validateCtcAcked(part int32, hi int64, latest map[int]ctcLatest, acked []ct
 		}
 		if a.Offset >= hi {
 			beyondHi++
-			if finallyPhase() && firstReason == "" {
+			if quiescedPhase() && firstReason == "" {
 				firstKey, firstReason = id, fmt.Sprintf("acked offset %d at or beyond quiesced hi %d", a.Offset, hi)
 			}
 			continue
@@ -651,8 +651,8 @@ func validateCtcAcked(part int32, hi int64, latest map[int]ctcLatest, acked []ct
 	if assertLoss {
 		assert.Always(lost == 0, "compacted cloud topic keeps a record at or beyond every acked offset", details)
 	}
-	if finallyPhase() {
-		assert.Always(beyondHi == 0, "finally: compacted cloud topic high watermark covers every acked offset", details)
+	if quiescedPhase() {
+		assert.Always(beyondHi == 0, "eventually: compacted cloud topic high watermark covers every acked offset", details)
 	} else if assertLoss {
 		assert.Sometimes(checked > 0, "compacted cloud topic sweep checks acked writes against a complete read", details)
 	}
