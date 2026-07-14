@@ -129,7 +129,7 @@ struct configuration_update
 class group_configuration
   : public serde::envelope<
       group_configuration,
-      serde::version<7>,
+      serde::version<8>,
       serde::compat_version<6>> {
 public:
     using version_t
@@ -148,7 +148,12 @@ public:
     // version with symmetric cancellations (configuration_change_strategy_v6)
     static constexpr version_t v_7{7};
 
-    static constexpr version_t current_version = v_7;
+    // version with the replication term embedded in the configuration. The
+    // term makes term transitions recoverable from log data alone, allowing
+    // storage to relax the one-term-per-segment invariant.
+    static constexpr version_t v_8{8};
+
+    static constexpr version_t current_version = v_8;
 
     /**
      * creates a configuration where all provided brokers are current
@@ -349,8 +354,25 @@ public:
 
     void set_version(version_t v) { _version = v; }
 
-    friend bool operator==(
-      const group_configuration&, const group_configuration&) = default;
+    /// Term in which this configuration was replicated. Only present for
+    /// configurations serialized with version >= v_8; nullopt for older
+    /// configurations and for configurations that have not been replicated.
+    std::optional<model::term_id> term() const { return _term; }
+    void set_term(model::term_id t) { _term = t; }
+
+    // _term is deliberately excluded: it is metadata about when the
+    // configuration was replicated, not part of the configuration identity,
+    // and it does not survive serialization paths older than v_8 (e.g. adl
+    // snapshot metadata), which would otherwise make identical
+    // configurations compare unequal.
+    friend bool
+    operator==(const group_configuration& a, const group_configuration& b) {
+        return a._version == b._version && a._brokers == b._brokers
+               && a._current == b._current
+               && a._configuration_update == b._configuration_update
+               && a._old == b._old && a._all_replicas == b._all_replicas
+               && a._revision == b._revision;
+    }
 
     fmt::iterator format_to(fmt::iterator it) const;
 
@@ -436,6 +458,7 @@ private:
     std::optional<group_nodes> _old;
     std::vector<vnode> _all_replicas;
     model::revision_id _revision;
+    std::optional<model::term_id> _term;
 };
 
 void tag_invoke(

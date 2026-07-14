@@ -852,6 +852,10 @@ private:
           features::feature::raft_symmetric_reconfiguration_cancel);
     }
 
+    bool supports_configuration_term() const {
+        return _features.is_active(features::feature::multi_term_segments);
+    }
+
     void try_updating_configuration_version(group_configuration& cfg);
 
     void validate_offset_translator_delta(
