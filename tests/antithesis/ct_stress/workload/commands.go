@@ -39,14 +39,11 @@ func randN(n int) int {
 
 const topicPropertyCleanupPolicy = "cleanup.policy"
 const topicPropertyStorageMode = "redpanda.storage.mode"
-const topicPropertyStorageModelImpl = "redpanda.storage.mode.impl"
 
 const storageModeCloud = "cloud"
 const storageModeTiered = "tiered"
 
 var storageModes = []string{storageModeCloud, storageModeTiered}
-
-const storageModeImplTiered = "tiered_v2"
 
 // first_create_topic: create the topics the workload exercises. Runs once
 // per timeline after setup_complete; must not signal lifecycle itself.
@@ -68,10 +65,6 @@ func createTestTopics() error {
 	fmt.Printf("randomly chosen storage modes: foo=%s ctc=%s\n", fooMode, ctcMode)
 
 	fooCfg := map[string]*string{topicPropertyStorageMode: &fooMode}
-	if fooMode == storageModeTiered {
-		fooCfg[topicPropertyStorageModelImpl] = new(storageModeImplTiered)
-	}
-
 	if err := createOneTopic(adm, topic, fooPartitions, fooReplicas, fooCfg); err != nil {
 		return err
 	}
@@ -80,10 +73,6 @@ func createTestTopics() error {
 		topicPropertyStorageMode:   &ctcMode,
 		topicPropertyCleanupPolicy: new("compact"),
 	}
-	if ctcMode == storageModeTiered {
-		ctcCfg[topicPropertyStorageModelImpl] = new(storageModeImplTiered)
-	}
-
 	if err := createOneTopic(adm, ctcTopic, ctcPartitions, ctcReplicas, ctcCfg); err != nil {
 		return err
 	}

@@ -49,6 +49,7 @@ var commands = map[string]func() error{
 	"parallel_driver_consume":        check,
 	"parallel_driver_move_metastore": moveMetastore,
 	"parallel_driver_move_foo":       moveFoo,
+	"parallel_driver_flip_storage_mode": flipStorageMode,
 	// The ctc commands fuzz compaction on a compacted cloud topic; the
 	// sweeper asserts log-shape invariants but does not yet check surviving
 	// values against the producers' progress trackers. See ctc.go.
