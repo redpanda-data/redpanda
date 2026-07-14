@@ -1910,9 +1910,9 @@ TEST_F(CompactionFixtureTest, TestAdjacentCompactionMultipleRanges) {
     while (raft->term()() < orig_term() + num_raft_terms) {
         // Produced records in segments should look like
         // [0, 1, 2, ..., 9] | [10, 11, 12, ..., 19] | [...]
-        // where | marks a demarcation point in raft term. This ensures that
-        // the latest key-values can still be verified by the Kafka consumer
-        // below, as we won't compact across raft terms.
+        // where | marks a demarcation point in raft term. Each term uses a
+        // distinct key range so the latest key-values can be verified by the
+        // Kafka consumer below.
         auto term_base = term_idx * cardinality;
         generate_data(
           num_segments,
@@ -1958,8 +1958,10 @@ TEST_F(CompactionFixtureTest, TestAdjacentCompactionMultipleRanges) {
 
     disk_log.adjacent_merge_compact(filtered_seg_set.copy(), cfg).get();
 
-    // Another sanity check after compaction.
-    ASSERT_EQ(disk_log.segment_count(), num_raft_terms + 1);
+    // Another sanity check after compaction: with the multi_term_segments
+    // feature active, adjacent merging crosses raft terms, so all closed
+    // segments collapse into a single one (plus the active segment).
+    ASSERT_EQ(disk_log.segment_count(), 2);
 
     {
         tests::kafka_consume_transport consumer(make_kafka_client().get());

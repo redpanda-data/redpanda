@@ -725,6 +725,12 @@ public:
      */
     void testing_activate_all();
 
+    /**
+     * Deactivate a single feature. Only for use in unit tests exercising
+     * pre-feature behavior.
+     */
+    void testing_deactivate(feature);
+
     model::offset get_applied_offset() const { return _applied_offset; }
 
     enum class version_durability : uint8_t {

@@ -498,6 +498,11 @@ void segment::rebuild_term_spans(
     _idx.set_term_spans(_tracker.term_spans().copy());
 }
 
+void segment::set_term_spans(const chunked_vector<term_span>& spans) {
+    _tracker.reset_term_spans(spans.copy());
+    _idx.set_term_spans(_tracker.term_spans().copy());
+}
+
 void segment::cache_truncate(model::offset offset) {
     check_segment_not_closed("cache_truncate()");
     if (likely(bool(_cache))) {

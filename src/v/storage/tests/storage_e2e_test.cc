@@ -1860,21 +1860,32 @@ TEST_F(storage_test_fixture, adjacent_segment_compaction_terms) {
       0ms,
       as);
 
-    // compact all the individual segments
-    // the two segments with term 2 can be combined
+    // with the multi_term_segments feature active, adjacent merge
+    // compaction crosses raft terms: all closed segments combine into one
     log->housekeeping(c_cfg).get();
-    ASSERT_EQ(log->segment_count(), 5);
+    ASSERT_EQ(log->segment_count(), 2);
 
-    // no more pairs with the same term
+    // compaction is stable afterwards
     log->housekeeping(c_cfg).get();
     log->housekeeping(c_cfg).get();
     log->housekeeping(c_cfg).get();
     log->housekeeping(c_cfg).get();
-    ASSERT_EQ(log->segment_count(), 5);
+    ASSERT_EQ(log->segment_count(), 2);
 
-    for (int i = 0; i < 5; i++) {
-        ASSERT_EQ(log->segments()[i]->offsets().get_base_term()(), i + 1);
-    }
+    // the merged segment retains per-offset term attribution. batches were
+    // appended as: offsets [0, 20) term 1, [20, 80) term 2, [80, 120) term
+    // 3, [120, 170) term 4, with term 5 in the active segment.
+    const auto& merged = log->segments()[0]->offsets();
+    ASSERT_EQ(merged.get_base_term()(), 1);
+    ASSERT_EQ(merged.last_term()(), 4);
+    ASSERT_EQ(merged.term_at(model::offset(0)), model::term_id(1));
+    ASSERT_EQ(merged.term_at(model::offset(19)), model::term_id(1));
+    ASSERT_EQ(merged.term_at(model::offset(20)), model::term_id(2));
+    ASSERT_EQ(merged.term_at(model::offset(79)), model::term_id(2));
+    ASSERT_EQ(merged.term_at(model::offset(80)), model::term_id(3));
+    ASSERT_EQ(merged.term_at(model::offset(119)), model::term_id(3));
+    ASSERT_EQ(merged.term_at(model::offset(120)), model::term_id(4));
+    ASSERT_EQ(log->segments()[1]->offsets().get_base_term()(), 5);
 }
 
 TEST_F(storage_test_fixture, max_adjacent_segment_compaction) {
@@ -5989,6 +6000,14 @@ struct sliding_ranges_test_case {
 };
 
 TEST_F(storage_test_fixture, find_sliding_ranges) {
+    // this test's expectations encode term-bounded range selection; with
+    // multi_term_segments active, ranges may cross raft terms (covered by
+    // adjacent_segment_compaction_terms)
+    feature_table
+      .invoke_on_all([](features::feature_table& f) {
+          f.testing_deactivate(features::feature::multi_term_segments);
+      })
+      .get();
     scoped_config test_local_cfg;
     auto log_cfg = default_log_config(test_dir);
     log_cfg.max_compacted_segment_size = config::mock_binding<size_t>(1_MiB);

@@ -154,6 +154,13 @@ public:
     // Must be called while _segments_rolling_lock is held.
     ss::future<> maybe_roll_unlocked(model::term_id, model::offset next_offset);
 
+    /// Record a term transition in the active segment instead of rolling,
+    /// when the multi_term_segments feature is active and the transition is
+    /// recoverable from log data (a raft configuration batch whose payload
+    /// carries the term). Returns false when the caller should roll instead.
+    bool try_advance_term_unlocked(
+      const model::record_batch&, model::offset next_offset);
+
     // Kicks off a background flush of offset translator state to the kvstore.
     void bg_checkpoint_offset_translator();
 
@@ -295,8 +302,10 @@ public:
     std::optional<model::timestamp> earliest_dirty_segment_ts() const final;
 
     // Finds every sub-range of adjacent segments that can be compacted
-    // together. A valid segment range consists of segments with the same raft
-    // term, and a combined size less than max_compacted_segment_size.
+    // together. A valid segment range has a combined size less than
+    // max_compacted_segment_size. Ranges of v2 segments may span raft terms
+    // when the multi_term_segments feature is active; otherwise segments in
+    // a range must share a term.
     // This function guarantees that segments in returned ranges can be
     // combined. The ranges are guaranteed to contain two or more segments.
     //

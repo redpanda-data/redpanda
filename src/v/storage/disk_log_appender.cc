@@ -105,9 +105,12 @@ disk_log_appender::operator()(model::record_batch& batch) {
         // somehow closed before the append
         while (unlikely(!segment_is_appendable(batch.term()))) {
             // we might actually have space in the current log, but the
-            // terms do not match for the current append, so we must roll
+            // terms do not match for the current append. record the term
+            // transition in the active segment if possible, otherwise roll
             release_lock();
-            co_await _log.maybe_roll_unlocked(_last_term, _idx);
+            if (!_log.try_advance_term_unlocked(batch, _idx)) {
+                co_await _log.maybe_roll_unlocked(_last_term, _idx);
+            }
             co_await initialize();
         }
         auto stop = co_await append_batch_to_segment(batch);

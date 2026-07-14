@@ -977,9 +977,20 @@ disk_log_impl::find_adjacent_compaction_ranges(
     chunked_vector<std::pair<segment_set::iterator, segment_set::iterator>>
       ranges;
 
+    // ranges may merge across raft terms when the feature is active and
+    // every segment in the range is v2: v2 terms are recoverable per offset
+    // (index span cache + configuration batch payloads), while a multi-term
+    // v1 segment would be silently misread by older binaries
+    const bool allow_cross_term_merge = _feature_table.local().is_active(
+      features::feature::multi_term_segments);
+    auto is_v2 = [](const segment_set::type& s) {
+        return s->reader().path().get_version() == record_version_type::v2;
+    };
+
     auto it = _segs.begin();
     size_t current_size{0};
-    model::term_id current_term{(*it)->offsets().get_base_term()};
+    model::term_id current_term{(*it)->offsets().last_term()};
+    bool range_is_v2 = is_v2(*it);
 
     std::pair<segment_set::iterator, segment_set::iterator> current_range = {
       it, it};
@@ -993,7 +1004,9 @@ disk_log_impl::find_adjacent_compaction_ranges(
         auto num_segments_in_range = std::distance(
           current_range.first, current_range.second);
 
-        bool term_boundary = seg_term != current_term;
+        bool term_boundary
+          = seg_term != current_term
+            && !(allow_cross_term_merge && range_is_v2 && is_v2(seg));
         bool size_boundary = current_size
                              > _manager.config().max_compacted_segment_size();
         bool is_unstable = unstable(seg);
@@ -1023,11 +1036,12 @@ disk_log_impl::find_adjacent_compaction_ranges(
             auto next_it = is_unstable ? std::next(it) : it;
             auto next_size = is_unstable ? 0 : seg_size;
             auto next_term = next_it != _segs.end()
-                               ? (*next_it)->offsets().get_base_term()
+                               ? (*next_it)->offsets().last_term()
                                : model::term_id{};
             current_range = {next_it, next_it};
             current_size = next_size;
             current_term = next_term;
+            range_is_v2 = next_it != _segs.end() && is_v2(*next_it);
 
             if (!is_unstable) {
                 ++current_range.second;
@@ -1035,6 +1049,8 @@ disk_log_impl::find_adjacent_compaction_ranges(
 
         } else {
             ++current_range.second;
+            current_term = seg->offsets().last_term();
+            range_is_v2 = range_is_v2 && is_v2(seg);
         }
         ++it;
     }
@@ -2112,6 +2128,13 @@ ss::future<> disk_log_impl::new_segment(model::offset o, model::term_id t) {
     // Recomputing here means that any roll size checks after this takes into
     // account updated segment size.
     _max_segment_size = compute_max_segment_size();
+    // v2 segments may span raft terms; the filename term is the term of the
+    // base offset only. Emitting v2 makes older binaries refuse the segment
+    // instead of silently attributing the filename term to every batch.
+    const auto version = _feature_table.local().is_active(
+                           features::feature::multi_term_segments)
+                           ? record_version_type::v2
+                           : record_version_type::v1;
     return _manager
       .make_log_segment(
         config(),
@@ -2119,7 +2142,8 @@ ss::future<> disk_log_impl::new_segment(model::offset o, model::term_id t) {
         t,
         config::shard_local_cfg().storage_read_buffer_size(),
         config::shard_local_cfg().storage_read_readahead_count(),
-        _max_segment_size)
+        _max_segment_size,
+        version)
       .then([this](ss::lw_shared_ptr<segment> handles) mutable {
           return remove_empty_segments().then(
             [this, h = std::move(handles)]() mutable {
@@ -2273,6 +2297,57 @@ ss::future<> disk_log_impl::force_roll() {
     add_segment_bytes(ptr, ptr->size_bytes());
     co_return co_await ptr->release_appender(_readers_cache.get())
       .then([this, next_offset, t] { return new_segment(next_offset, t); });
+}
+
+bool disk_log_impl::try_advance_term_unlocked(
+  const model::record_batch& batch, model::offset next_offset) {
+    if (!_feature_table.local().is_active(
+          features::feature::multi_term_segments)) {
+        return false;
+    }
+    // only configuration batches whose payload carries the term may begin a
+    // new term span: the payload is what makes the transition recoverable
+    // from log data during crash recovery
+    if (batch.header().type != model::record_batch_type::raft_configuration) {
+        return false;
+    }
+    if (_segs.empty()) {
+        return false;
+    }
+    auto& seg = *_segs.back();
+    if (!seg.has_appender() || seg.is_tombstone() || seg.is_closed()) {
+        return false;
+    }
+    if (seg.empty() || next_offset <= seg.offsets().last_term_base_offset()) {
+        // an empty segment is simply replaced by a roll: advancing its term
+        // would leave the filename term at odds with the first batch
+        return false;
+    }
+    if (seg.appender().file_byte_offset() >= _max_segment_size) {
+        // the segment is due for a size roll anyway
+        return false;
+    }
+    // only v2 segments may span terms: older binaries would silently
+    // attribute the filename term to every batch of a v1 segment
+    if (seg.reader().path().get_version() != record_version_type::v2) {
+        return false;
+    }
+    const auto t = batch.term();
+    if (t <= term()) {
+        return false;
+    }
+    const auto& parser = _manager.config().batch_term_parser;
+    if (!parser || parser(batch) != t) {
+        return false;
+    }
+    vlog(
+      stlog.debug,
+      "{} advancing active segment to term {} at offset {}",
+      config().ntp(),
+      t,
+      next_offset);
+    seg.advance_term(t, next_offset);
+    return true;
 }
 
 ss::future<> disk_log_impl::maybe_roll_unlocked(

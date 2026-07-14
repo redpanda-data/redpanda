@@ -296,6 +296,11 @@ public:
     void rebuild_term_spans(
       const chunked_vector<std::pair<model::term_id, model::offset>>&);
 
+    /// Replace the term spans wholesale, e.g. adopting a merged compaction
+    /// replacement's spans. Keeps the index's term span cache in sync with
+    /// the offset tracker.
+    void set_term_spans(const chunked_vector<term_span>&);
+
     /// main write interface
     /// auto indexes record_batch
     ///

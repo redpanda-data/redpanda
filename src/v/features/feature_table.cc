@@ -813,6 +813,15 @@ void feature_table::testing_activate_all() {
     on_update();
 }
 
+void feature_table::testing_deactivate(feature f) {
+    for (auto& s : _feature_state) {
+        if (s.spec.bits == f) {
+            s.transition_unavailable();
+        }
+    }
+    on_update();
+}
+
 feature_table::version_fence
 feature_table::decode_version_fence(model::record_batch batch) {
     auto records = batch.copy_records();
