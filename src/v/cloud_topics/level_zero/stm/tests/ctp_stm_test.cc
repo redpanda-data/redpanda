@@ -59,6 +59,10 @@ struct ctp_stm_accessor {
     ss::future<model::offset> compute_local_retention_offset(ctp_stm& stm) {
         return stm.compute_local_retention_offset();
     }
+
+    ss::future<> apply(ctp_stm& stm, const model::record_batch& b) {
+        return stm.do_apply(b);
+    }
 };
 } // namespace cloud_topics
 
@@ -353,6 +357,60 @@ TEST_F_CORO(ctp_stm_fixture, advance_reconciled_offset_with_local_threshold) {
     res = co_await leader_api.advance_reconciled_offset(
       kafka::offset{20}, model::no_timeout, as, kafka::offset{15});
     ASSERT_TRUE_CORO(res.has_value());
+}
+
+TEST_F_CORO(ctp_stm_fixture, unknown_command_key_is_rejected_on_apply) {
+    // do_apply must reject an unrecognized ctp_stm command key rather than
+    // silently skip it. This is the downgrade poison pill the
+    // tiered_cloud_topics feature gate exists to prevent:
+    // set_min_allowed_local_threshold (key 5) is the v26.2 addition to the
+    // command vocabulary, and a pre-v26.2 binary -- whose ctp_stm_key enum
+    // stops at reset_state (4) -- hits exactly this throw when it replays such
+    // a command from a cloud-topic partition log. That is why the notifier and
+    // reconciler gate emission of the floor command on the feature being active
+    // (level_zero_notifier::notifications_enabled, reconciliation_source), so
+    // the command is never written while the cluster can still be downgraded.
+    // If a new key is added to ctp_stm_key, this test is the reminder that it
+    // is downgrade-sensitive and must be gated the same way.
+    co_await start();
+    co_await wait_for_leader(raft::default_timeout());
+    auto& leader = node(*get_leader());
+    auto stm = get_stm<0>(leader);
+    ct::ctp_stm_accessor accessor;
+
+    // Positive control: the newest known key (set_min_allowed_local_threshold)
+    // applies cleanly and mutates state.
+    {
+        storage::record_batch_builder builder(
+          model::record_batch_type::ctp_stm_command, model::offset{0});
+        builder.add_raw_kv(
+          serde::to_iobuf(ct::set_min_allowed_local_threshold_cmd::key),
+          serde::to_iobuf(
+            ct::set_min_allowed_local_threshold_cmd(kafka::offset{7})));
+        co_await accessor.apply(*stm, std::move(builder).build());
+        ASSERT_EQ_CORO(
+          api(leader).get_min_allowed_local_threshold(), kafka::offset{7});
+    }
+
+    // An unrecognized key (one an older binary might not know, or a future one
+    // this binary does not) throws instead of being ignored.
+    {
+        constexpr uint8_t unknown_key = 200;
+        storage::record_batch_builder builder(
+          model::record_batch_type::ctp_stm_command, model::offset{1});
+        builder.add_raw_kv(
+          serde::to_iobuf(unknown_key), serde::to_iobuf(int64_t{0}));
+
+        ss::sstring caught;
+        try {
+            co_await accessor.apply(*stm, std::move(builder).build());
+        } catch (const std::exception& e) {
+            caught = e.what();
+        }
+        ASSERT_NE_CORO(caught.find("Unknown ctp_stm_key"), ss::sstring::npos)
+          << "expected an unknown ctp_stm command key to be rejected, got: "
+          << caught;
+    }
 }
 
 TEST_F_CORO(ctp_stm_fixture, test_truncate_all_epochs) {
