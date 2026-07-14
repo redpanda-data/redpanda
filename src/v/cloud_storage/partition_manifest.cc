@@ -387,6 +387,11 @@ size_t partition_manifest::segments_metadata_bytes() const {
     return _segments.inflated_actual_size().second;
 }
 
+chunked_vector<cstore_frame_info>
+partition_manifest::sealed_segment_frames() const {
+    return _segments.sealed_frames();
+}
+
 size_t partition_manifest::estimate_serialized_size() const {
     constexpr auto bytes_per_segment = 10;
     return _segments.size() * bytes_per_segment;

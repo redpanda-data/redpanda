@@ -304,6 +304,7 @@ redpanda_cc_library(
     visibility = [":__subpackages__"],
     deps = [
         ":types",
+        "//src/v/container:chunked_vector",
         "//src/v/model",
         "//src/v/utils:delta_for",
         "@boost//:iterator",

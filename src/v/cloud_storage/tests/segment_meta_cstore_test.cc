@@ -957,3 +957,43 @@ BOOST_AUTO_TEST_CASE(test_segment_meta_cstore_steady_state_churn_hints) {
     // freshly encoded equivalent
     BOOST_REQUIRE_LE(churned_actual, 4 * fresh_actual);
 }
+
+BOOST_AUTO_TEST_CASE(test_segment_meta_cstore_sealed_frames) {
+    segment_meta_cstore store;
+    auto manifest = generate_metadata(2500);
+    for (const auto& sm : manifest) {
+        store.insert(sm);
+    }
+    store.flush_write_buffer();
+
+    // 2500 elements: two sealed frames of cstore_max_frame_size elements
+    // each, the remaining 452 live in the active frame
+    auto frames = store.sealed_frames();
+    BOOST_REQUIRE_EQUAL(frames.size(), 2);
+    for (const auto& f : frames) {
+        BOOST_REQUIRE_EQUAL(f.elements, cstore_max_frame_size);
+        BOOST_REQUIRE_GT(f.size_bytes, 0);
+    }
+
+    // the active frame is never reported
+    segment_meta_cstore small;
+    for (size_t i = 0; i < cstore_max_frame_size; ++i) {
+        small.insert(manifest[i]);
+    }
+    small.flush_write_buffer();
+    BOOST_REQUIRE_EQUAL(small.sealed_frames().size(), 0);
+
+    // adding one more element seals the first frame
+    small.insert(manifest[cstore_max_frame_size]);
+    small.flush_write_buffer();
+    auto small_frames = small.sealed_frames();
+    BOOST_REQUIRE_EQUAL(small_frames.size(), 1);
+    BOOST_REQUIRE_EQUAL(small_frames[0].elements, cstore_max_frame_size);
+
+    // prefix truncation shrinks the first sealed frame
+    store.prefix_truncate(manifest[100].base_offset);
+    auto truncated = store.sealed_frames();
+    BOOST_REQUIRE_EQUAL(truncated.size(), 2);
+    BOOST_REQUIRE_EQUAL(truncated[0].elements, cstore_max_frame_size - 100);
+    BOOST_REQUIRE_EQUAL(truncated[1].elements, cstore_max_frame_size);
+}

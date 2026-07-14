@@ -11,12 +11,14 @@
 #pragma once
 
 #include "cloud_storage/types.h"
+#include "container/chunked_vector.h"
 #include "utils/delta_for.h"
 
 #include <boost/iterator/iterator_categories.hpp>
 #include <boost/iterator/iterator_facade.hpp>
 
 #include <memory>
+#include <vector>
 
 namespace cloud_storage {
 
@@ -27,6 +29,15 @@ inline constexpr size_t cstore_max_frame_size = 1024;
 // the outer frame is recorded to speed up random access. The distance in
 // elements between consecutive hints is FOR size * cstore_sampling_rate.
 inline constexpr size_t cstore_sampling_rate = 8;
+
+/// Size information about a single sealed (immutable) frame of the column
+/// store. Every column of the store has identical frame boundaries, so a
+/// frame is described by the number of segments it holds and the memory
+/// used by the matching frames of all columns combined.
+struct cstore_frame_info {
+    size_t elements{0};
+    size_t size_bytes{0};
+};
 
 /// Column-store iterator
 ///
@@ -156,6 +167,11 @@ public:
 
     /// Number of base-offset hints currently stored. Test-only inspection.
     size_t hints_size() const;
+
+    /// Sizes of the sealed frames of the store, oldest first. The last
+    /// (actively appended to) frame is excluded. Spillover uses these to
+    /// pick frame-aligned cut points.
+    chunked_vector<cstore_frame_info> sealed_frames() const;
 
     // Access individual columns
     const gauge_col_t& get_size_bytes_column() const;

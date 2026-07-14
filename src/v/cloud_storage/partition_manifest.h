@@ -273,6 +273,11 @@ public:
     // manifest, or 0 if the memory is not being tracked.
     size_t segments_metadata_bytes() const;
 
+    /// Sizes of the sealed (immutable) frames of the segment metadata
+    /// store, oldest first. The frame boundaries are segment aligned.
+    /// Spillover uses these to pick frame-aligned cut points.
+    chunked_vector<cstore_frame_info> sealed_segment_frames() const;
+
     // Return very rough estimate of the size of the serialized manifest
     size_t estimate_serialized_size() const;
 

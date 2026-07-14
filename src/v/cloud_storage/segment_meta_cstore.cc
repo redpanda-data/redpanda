@@ -710,6 +710,52 @@ public:
 
     size_t hints_size() const { return _hints.size(); }
 
+    /// Return sizes of the sealed frames, oldest first. The last frame of
+    /// every column is the one appends go to, so it's excluded. All columns
+    /// share the same frame boundaries because they are appended to and
+    /// truncated in lockstep.
+    chunked_vector<cstore_frame_info> sealed_frames() const {
+        const auto num_frames = _base_offset._frames.size();
+        chunked_vector<cstore_frame_info> res;
+        if (num_frames <= 1) {
+            return res;
+        }
+        res.reserve(num_frames - 1);
+        for (const auto& f : _base_offset._frames) {
+            if (res.size() == num_frames - 1) {
+                break;
+            }
+            res.push_back({.elements = f.size(), .size_bytes = 0});
+        }
+        std::apply(
+          [&](auto&&... col) {
+              auto accumulate = [&](const auto& c) {
+                  vassert(
+                    c._frames.size() == num_frames,
+                    "Column frame count mismatch: {} vs {}",
+                    c._frames.size(),
+                    num_frames);
+                  size_t ix = 0;
+                  for (const auto& f : c._frames) {
+                      if (ix == res.size()) {
+                          break;
+                      }
+                      vassert(
+                        f.size() == res[ix].elements,
+                        "Frame {} boundary mismatch: {} vs {} elements",
+                        ix,
+                        f.size(),
+                        res[ix].elements);
+                      res[ix].size_bytes += f.mem_use();
+                      ++ix;
+                  }
+              };
+              (accumulate(col), ...);
+          },
+          columns());
+        return res;
+    }
+
     /// Return two values: inflated size (size without compression) followed
     /// by the actual size that takes compression into account.
     std::pair<size_t, size_t> inflated_actual_size() const {
@@ -1069,6 +1115,11 @@ public:
         return _col.hints_size();
     }
 
+    chunked_vector<cstore_frame_info> sealed_frames() const {
+        flush_write_buffer();
+        return _col.sealed_frames();
+    }
+
     bool empty() const { return _write_buffer.empty() && _col.empty(); }
 
     bool contains(model::offset o) {
@@ -1188,6 +1239,10 @@ bool segment_meta_cstore::empty() const { return _impl->empty(); }
 size_t segment_meta_cstore::size() const { return _impl->size(); }
 
 size_t segment_meta_cstore::hints_size() const { return _impl->hints_size(); }
+
+chunked_vector<cstore_frame_info> segment_meta_cstore::sealed_frames() const {
+    return _impl->sealed_frames();
+}
 
 segment_meta_cstore::const_iterator
 segment_meta_cstore::upper_bound(model::offset o) const {
