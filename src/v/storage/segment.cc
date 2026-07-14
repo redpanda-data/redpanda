@@ -415,6 +415,7 @@ ss::future<> segment::do_truncate(
       offset_tracker::stable_offset_t{new_max_offset},
       offset_tracker::dirty_offset_t{new_max_offset});
     _tracker.truncate_term_spans(new_max_offset);
+    _idx.set_term_spans(_tracker.term_spans().copy());
     _reader->set_file_size(physical);
     vlog(
       stlog.trace,
@@ -473,9 +474,22 @@ ss::future<bool> segment::materialize_index() {
               offset_tracker::committed_offset_t{_idx.max_offset()},
               offset_tracker::stable_offset_t{_idx.max_offset()},
               offset_tracker::dirty_offset_t{_idx.max_offset()});
+            if (!_idx.term_spans().empty()) {
+                _tracker.reset_term_spans(_idx.term_spans().copy());
+            }
         }
         return yn;
     });
+}
+
+void segment::advance_term(model::term_id t, model::offset base) {
+    check_segment_not_closed("advance_term()");
+    vassert(
+      has_appender(),
+      "advance_term() can only be called on the active segment: {}",
+      *this);
+    _tracker.add_term_span(t, base);
+    _idx.set_term_spans(_tracker.term_spans().copy());
 }
 
 void segment::cache_truncate(model::offset offset) {

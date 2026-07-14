@@ -28,6 +28,20 @@ class iobuf_parser;
 
 namespace storage {
 
+/// A term span of a segment: batches beginning at the base offset were
+/// appended in the given raft term. A span ends where the next span begins;
+/// the last span of a segment extends to its dirty offset. Spans are
+/// strictly monotonic in both base offset and term.
+struct term_span
+  : serde::envelope<term_span, serde::version<0>, serde::compat_version<0>> {
+    model::offset base;
+    model::term_id term;
+
+    auto serde_fields() { return std::tie(base, term); }
+
+    friend bool operator==(const term_span&, const term_span&) = default;
+};
+
 class index_columns {
 public:
     // Accessors
@@ -132,7 +146,7 @@ private:
    1 byte  - non_data_timestamps
  */
 struct index_state
-  : serde::envelope<index_state, serde::version<11>, serde::compat_version<4>> {
+  : serde::envelope<index_state, serde::version<12>, serde::compat_version<4>> {
     static constexpr auto monotonic_timestamps_version = 5;
     static constexpr auto broker_timestamp_version = 6;
     static constexpr auto num_compactible_records_version = 7;
@@ -143,6 +157,7 @@ struct index_state
     static constexpr auto may_have_transaction_control_batches_version = 10;
     static constexpr auto may_have_transaction_data_or_fence_batches_version
       = 11;
+    static constexpr auto term_spans_version = 12;
 
     static index_state
     make_empty_index(model::offset base_offset, offset_delta_time with_offset);
@@ -253,6 +268,14 @@ struct index_state
     // transactional data batches (i.e raft data batches with a transactional
     // bit set) or tx_fence markers.
     bool may_have_transaction_data_or_fence_batches{true};
+
+    // Cache of the segment's term spans, mirroring
+    // segment::offset_tracker. Empty for indices written before
+    // term_spans_version; the segment then covers a single term (the one in
+    // its filename). For unclean segments the authoritative source is the
+    // log itself (raft configuration batch payloads); this cache serves
+    // clean restarts.
+    chunked_vector<term_span> term_spans;
 
     size_t size() const;
 

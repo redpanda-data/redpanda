@@ -17,6 +17,7 @@
 #include "storage/file_sanitizer_types.h"
 #include "storage/fs_utils.h"
 #include "storage/fwd.h"
+#include "storage/index_state.h"
 #include "storage/segment_appender.h"
 #include "storage/segment_index.h"
 #include "storage/segment_reader.h"
@@ -55,15 +56,6 @@ public:
           = named_type<model::offset, struct stable_offset_tag>;
         using dirty_offset_t
           = named_type<model::offset, struct dirty_offset_tag>;
-
-        /// A term span begins at its base offset and ends where the next
-        /// span begins; the last span extends to the segment's dirty
-        /// offset. Spans are strictly monotonic in both base offset and
-        /// term.
-        struct term_span {
-            model::offset base;
-            model::term_id term;
-        };
 
         offset_tracker(model::term_id t, model::offset base)
           : _base_offset(base)
@@ -174,6 +166,31 @@ public:
             _term_spans.push_back(term_span{.base = base, .term = t});
         }
 
+        const chunked_vector<term_span>& term_spans() const {
+            return _term_spans;
+        }
+
+        /// Replace the term spans wholesale, e.g. with spans recovered from
+        /// the segment index or rebuilt from log data. The spans must begin
+        /// at the segment's base offset and be strictly monotonic.
+        void reset_term_spans(chunked_vector<term_span> spans) {
+            vassert(!spans.empty(), "term spans cannot be empty");
+            vassert(
+              spans.front().base == _base_offset,
+              "term spans must begin at the segment base offset {}: {}",
+              _base_offset,
+              spans.front().base);
+            vassert(
+              std::ranges::adjacent_find(
+                spans,
+                [](const term_span& a, const term_span& b) {
+                    return b.base <= a.base || b.term <= a.term;
+                })
+                == spans.end(),
+              "term spans must be strictly monotonic");
+            _term_spans = std::move(spans);
+        }
+
         model::offset get_base_offset() const { return _base_offset; }
         model::offset get_committed_offset() const { return _committed_offset; }
         model::offset get_stable_offset() const { return _stable_offset; }
@@ -249,6 +266,11 @@ public:
     ss::future<> release_appender(readers_cache*);
     ss::future<> truncate(
       model::offset, size_t physical, model::timestamp new_max_timestamp);
+
+    /// Record a term transition at the given base offset in the active
+    /// segment instead of rolling onto a new segment. Keeps the index's
+    /// term span cache in sync with the offset tracker.
+    void advance_term(model::term_id, model::offset base);
 
     /// main write interface
     /// auto indexes record_batch
