@@ -3118,10 +3118,18 @@ ss::future<> ntp_archiver::apply_spillover() {
     }
 
     if (manifest_size_limit.has_value()) {
+        const auto frames = manifest().sealed_segment_frames();
+        size_t sealed_bytes = 0;
+        for (const auto& f : frames) {
+            sealed_bytes += f.size_bytes;
+        }
         vlog(
           _rtclog.debug,
-          "Manifest size: {}, manifest size limit (x2): {}",
+          "Manifest size: {}, sealed frames: {} ({} bytes), manifest size "
+          "limit (x2): {}",
           manifest().segments_metadata_bytes(),
+          frames.size(),
+          sealed_bytes,
           manifest_size_limit.value() * 2);
     } else {
         vlog(
@@ -3132,8 +3140,16 @@ ss::future<> ntp_archiver::apply_spillover() {
     }
     auto stop_condition = [&] {
         if (manifest_size_limit.has_value()) {
-            return manifest().segments_metadata_bytes()
-                   < manifest_size_limit.value() * 2;
+            // Measure only the sealed frames of the manifest. This is the
+            // exact set of bytes the spillover can remove, so the trigger
+            // and the tail construction use the same units and the tail is
+            // guaranteed to make progress once the threshold is crossed.
+            const auto frames = manifest().sealed_segment_frames();
+            size_t sealed_bytes = 0;
+            for (const auto& f : frames) {
+                sealed_bytes += f.size_bytes;
+            }
+            return sealed_bytes < manifest_size_limit.value() * 2;
         }
         return manifest().size() < manifest_max_segments.value() * 2;
     };
@@ -3252,33 +3268,34 @@ cloud_storage::spillover_manifest make_spillover_tail(
   std::optional<size_t> max_segments) {
     cloud_storage::spillover_manifest tail(
       manifest.get_ntp(), manifest.get_revision_id());
-    auto tail_complete = [&] {
-        // Don't allow empty spillover manifests even if the limit
-        // is too low.
-        if (size_limit.has_value()) {
-            return tail.segments_metadata_bytes() >= size_limit.value()
-                   && tail.size() > 0;
+    size_t take_elements = 0;
+    if (size_limit.has_value()) {
+        // Consume whole sealed frames of the manifest's column store until
+        // the limit is reached. The size of the tail is measured on the
+        // frames being removed rather than on a re-encoded copy, so the
+        // limit is reachable by construction. The active frame never
+        // spills, which keeps the manifest non-empty and the cut on a
+        // segment boundary.
+        size_t taken_bytes = 0;
+        for (const auto& frame : manifest.sealed_segment_frames()) {
+            take_elements += frame.elements;
+            taken_bytes += frame.size_bytes;
+            if (taken_bytes >= size_limit.value()) {
+                break;
+            }
         }
-        return max_segments.has_value() && tail.size() >= max_segments.value()
-               && tail.size() > 0;
-    };
-    auto remaining = manifest.size();
+    } else if (max_segments.has_value() && manifest.size() > 0) {
+        // Count-based limit is a test-only config, keep the element-wise
+        // cut but never consume the whole manifest.
+        take_elements = std::min(max_segments.value(), manifest.size() - 1);
+    }
     for (const auto& meta : manifest) {
-        // The limits are not guaranteed to be reachable: the manifest
-        // measures its own metadata size differently from a freshly
-        // encoded copy of the same segments, so the tail may measure
-        // smaller than the manifest it was carved from. The last segment
-        // has to stay behind regardless.
-        if (remaining == 1) {
+        if (tail.size() == take_elements) {
             break;
         }
         tail.add(meta);
         // No performance impact since all writes here are sequential.
         tail.flush_write_buffer();
-        --remaining;
-        if (tail_complete()) {
-            break;
-        }
     }
     return tail;
 }

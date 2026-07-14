@@ -1725,8 +1725,19 @@ static void test_manifest_spillover_impl(
     const int64_t rec_per_segment = 1;
     cloud_storage::partition_manifest manifest(manifest_ntp, manifest_revision);
 
+    // Spillover is frame-aligned and only the sealed frames of the
+    // manifest can spill, so the generated manifest has to accumulate
+    // 'start_manifest_size' bytes in sealed frames.
+    auto sealed_bytes = [&manifest] {
+        size_t total = 0;
+        for (const auto& f : manifest.sealed_segment_frames()) {
+            total += f.size_bytes;
+        }
+        return total;
+    };
+
     int i = 0;
-    while (manifest.segments_metadata_bytes() < start_manifest_size) {
+    while (sealed_bytes() < start_manifest_size) {
         auto bo = model::offset(i * rec_per_segment);
         auto co = model::offset(i * rec_per_segment + rec_per_segment - 1);
         auto delta = model::offset_delta(0);

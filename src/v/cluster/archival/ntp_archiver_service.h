@@ -842,15 +842,22 @@ private:
 };
 
 /// Build the section of the STM manifest that will be offloaded to the
-/// cloud as a spillover manifest. Segments are consumed from the front of
-/// the manifest until the tail reaches 'size_limit' bytes of metadata (or
-/// 'max_segments' elements if the size limit is not set).
+/// cloud as a spillover manifest.
 ///
-/// The tail never covers the entire manifest: at least one segment is
-/// always left behind, otherwise the resulting spillover command would be
-/// rejected by 'partition_manifest::safe_spillover_manifest' which
-/// requires the manifest to remain non-empty after the spillover range is
-/// removed.
+/// With 'size_limit' set (production mode) the cut is frame-aligned:
+/// whole sealed frames of the manifest's column store are consumed from
+/// the front until their combined size reaches the limit. The size is
+/// measured on the frames being removed, so the limit is reachable by
+/// construction, and the active frame never spills. A manifest that fits
+/// entirely in the active frame produces an empty tail.
+///
+/// With only 'max_segments' set (test-only config) the cut is
+/// element-wise, taking up to 'max_segments' segments.
+///
+/// In both modes the tail never covers the entire manifest, otherwise the
+/// resulting spillover command would be rejected by
+/// 'partition_manifest::safe_spillover_manifest' which requires the
+/// manifest to remain non-empty after the spillover range is removed.
 cloud_storage::spillover_manifest make_spillover_tail(
   const cloud_storage::partition_manifest& manifest,
   std::optional<size_t> size_limit,

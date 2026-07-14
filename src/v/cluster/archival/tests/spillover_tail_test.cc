@@ -63,16 +63,50 @@ SEASTAR_THREAD_TEST_CASE(test_spillover_tail_stops_at_segment_limit) {
       manifest.safe_spillover_manifest(tail.make_manifest_metadata()));
 }
 
-SEASTAR_THREAD_TEST_CASE(test_spillover_tail_never_consumes_whole_manifest) {
-    // The size limit is impossible to reach: without a guard the tail
-    // would swallow the entire manifest and the resulting spillover
-    // command would be rejected by safe_spillover_manifest on apply
-    // (there has to be a segment left after the spillover range).
-    auto manifest = make_manifest(20);
-    auto tail = make_spillover_tail(manifest, 100_MiB, std::nullopt);
-    BOOST_REQUIRE_EQUAL(tail.size(), 19);
+SEASTAR_THREAD_TEST_CASE(test_spillover_tail_takes_one_frame) {
+    // Size-based spillover is frame-aligned: even a tiny limit takes
+    // exactly one sealed frame.
+    auto manifest = make_manifest(2500);
+    auto tail = make_spillover_tail(manifest, 1, std::nullopt);
+    BOOST_REQUIRE_EQUAL(tail.size(), cloud_storage::cstore_max_frame_size);
+    BOOST_REQUIRE_EQUAL(
+      tail.get_start_offset().value(), manifest.get_start_offset().value());
     BOOST_REQUIRE(
       manifest.safe_spillover_manifest(tail.make_manifest_metadata()));
+}
+
+SEASTAR_THREAD_TEST_CASE(test_spillover_tail_takes_multiple_frames) {
+    // A limit that the first sealed frame doesn't reach pulls in the next
+    // whole frame.
+    auto manifest = make_manifest(2500);
+    auto frames = manifest.sealed_segment_frames();
+    BOOST_REQUIRE_EQUAL(frames.size(), 2);
+    auto tail = make_spillover_tail(
+      manifest, frames[0].size_bytes + 1, std::nullopt);
+    BOOST_REQUIRE_EQUAL(tail.size(), 2 * cloud_storage::cstore_max_frame_size);
+    BOOST_REQUIRE(
+      manifest.safe_spillover_manifest(tail.make_manifest_metadata()));
+}
+
+SEASTAR_THREAD_TEST_CASE(test_spillover_tail_never_takes_active_frame) {
+    // The size limit is impossible to reach. The tail consumes every
+    // sealed frame but the active frame always stays behind, so the
+    // resulting spillover command remains applicable
+    // (safe_spillover_manifest requires a segment to remain after the
+    // spillover range).
+    auto manifest = make_manifest(2500);
+    auto tail = make_spillover_tail(manifest, 100_MiB, std::nullopt);
+    BOOST_REQUIRE_EQUAL(tail.size(), 2 * cloud_storage::cstore_max_frame_size);
+    BOOST_REQUIRE(
+      manifest.safe_spillover_manifest(tail.make_manifest_metadata()));
+}
+
+SEASTAR_THREAD_TEST_CASE(test_spillover_tail_sub_frame_manifest) {
+    // A manifest that fits entirely in the active frame has nothing to
+    // spill in size mode.
+    auto manifest = make_manifest(20);
+    auto tail = make_spillover_tail(manifest, 100_MiB, std::nullopt);
+    BOOST_REQUIRE_EQUAL(tail.size(), 0);
 }
 
 SEASTAR_THREAD_TEST_CASE(test_spillover_tail_single_segment_manifest) {
@@ -80,4 +114,14 @@ SEASTAR_THREAD_TEST_CASE(test_spillover_tail_single_segment_manifest) {
     auto manifest = make_manifest(1);
     auto tail = make_spillover_tail(manifest, 100_MiB, std::nullopt);
     BOOST_REQUIRE_EQUAL(tail.size(), 0);
+}
+
+SEASTAR_THREAD_TEST_CASE(test_spillover_tail_count_mode_keeps_last_segment) {
+    // The count-based limit (test-only config) keeps the legacy
+    // element-wise cut and never consumes the whole manifest.
+    auto manifest = make_manifest(20);
+    auto tail = make_spillover_tail(manifest, std::nullopt, 100);
+    BOOST_REQUIRE_EQUAL(tail.size(), 19);
+    BOOST_REQUIRE(
+      manifest.safe_spillover_manifest(tail.make_manifest_metadata()));
 }
