@@ -106,6 +106,7 @@ ss::future<segment_set> recover_segments(
   size_t read_buf_size,
   unsigned read_readahead_count,
   std::optional<ss::sstring> last_clean_segment,
+  config_batch_term_parser term_parser,
   storage_resources&,
   ss::sharded<features::feature_table>& feature_table,
   std::optional<ntp_sanitizer_config> ntp_sanitizer_config);

@@ -40,6 +40,7 @@
 #include "pandaproxy/rest/api.h"
 #include "pandaproxy/rest/configuration.h"
 #include "pandaproxy/schema_registry/api.h"
+#include "raft/consensus_utils.h"
 #include "resource_mgmt/cpu_profiler.h"
 #include "resource_mgmt/memory_groups.h"
 #include "resource_mgmt/memory_sampling.h"
@@ -763,6 +764,9 @@ void application::wire_up_bootstrap_services() {
             scheduling_groups::instance(), std::move(c));
           log_cfg.reclaim_opts.background_reclaimer_sg
             = scheduling_groups::instance().cache_background_reclaim_sg();
+          log_cfg.batch_term_parser = [](const model::record_batch& b) {
+              return raft::details::peek_configuration_batch_term(b);
+          };
           return log_cfg;
       },
       std::ref(feature_table))

@@ -261,9 +261,11 @@ maybe_create_contiguous_segment_set(segment_set::underlying_t segs) {
 static ss::future<segment_set> unsafe_do_recover(
   segment_set&& segments,
   std::optional<ss::sstring> last_clean_segment,
+  config_batch_term_parser term_parser,
   ss::abort_source& as) {
     return ss::async([segments = std::move(segments),
                       last_clean_segment = std::move(last_clean_segment),
+                      term_parser = std::move(term_parser),
                       &as]() mutable {
         if (segments.empty() || as.abort_requested()) {
             return std::move(segments);
@@ -392,7 +394,7 @@ static ss::future<segment_set> unsafe_do_recover(
             }
 
             // Check if the segment was marked clean on shutdown
-            auto replayer = log_replayer(*s);
+            auto replayer = log_replayer(*s, term_parser);
             auto recovered = replayer.recover_in_thread();
             if (!recovered) {
                 vlog(stlog.info, "Unable to recover segment: {}", s);
@@ -408,6 +410,14 @@ static ss::future<segment_set> unsafe_do_recover(
                recovered.truncate_file_pos.value(),
                recovered.last_max_timestamp.value())
               .get();
+            // the log data is the authoritative source of term spans for
+            // recovered segments; any cached spans applied from the index
+            // are replaced. without a parser the configuration batches
+            // cannot be decoded, so the index-cached spans are the best
+            // available source and must not be discarded
+            if (term_parser) {
+                s->rebuild_term_spans(recovered.term_transitions);
+            }
             // persist index
             s->index().flush().get();
             vlog(stlog.info, "Recovered: {}", s);
@@ -435,6 +445,7 @@ static ss::future<segment_set> unsafe_do_recover(
 static ss::future<segment_set> do_recover(
   segment_set&& segments,
   std::optional<ss::sstring> last_clean_segment,
+  config_batch_term_parser term_parser,
   ss::abort_source& as) {
     // light-weight copy used for clean-up if recovery fails
     segment_set::underlying_t copy;
@@ -446,7 +457,11 @@ static ss::future<segment_set> do_recover(
     // are any pending io operations on a file associated with the segment
     // at the time of destruction seastar will complain about the file handle
     // being destroyed with pending ops.
-    return unsafe_do_recover(std::move(segments), last_clean_segment, as)
+    return unsafe_do_recover(
+             std::move(segments),
+             last_clean_segment,
+             std::move(term_parser),
+             as)
       .handle_exception(
         [copy = std::move(copy)](const std::exception_ptr& ex) mutable {
             return ss::do_with(
@@ -553,6 +568,7 @@ ss::future<segment_set> recover_segments(
   size_t read_buf_size,
   unsigned read_readahead_count,
   std::optional<ss::sstring> last_clean_segment,
+  config_batch_term_parser term_parser,
   storage_resources& resources,
   ss::sharded<features::feature_table>& feature_table,
   std::optional<ntp_sanitizer_config> ntp_sanitizer_config) {
@@ -577,8 +593,9 @@ ss::future<segment_set> recover_segments(
       })
       .then([&as,
              is_compaction_enabled,
-             last_clean_segment = std::move(last_clean_segment)](
-              segment_set::underlying_t segs) {
+             last_clean_segment = std::move(last_clean_segment),
+             term_parser = std::move(term_parser)](
+              segment_set::underlying_t segs) mutable {
           auto segments = segment_set(std::move(segs));
           // we have to mark compacted segments before recovery to allow reading
           // gaps introduced by compaction
@@ -587,7 +604,11 @@ ss::future<segment_set> recover_segments(
                   s->mark_as_compacted_segment();
               }
           }
-          return do_recover(std::move(segments), last_clean_segment, as);
+          return do_recover(
+            std::move(segments),
+            last_clean_segment,
+            std::move(term_parser),
+            as);
       });
 }
 

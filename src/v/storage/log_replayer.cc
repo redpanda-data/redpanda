@@ -20,9 +20,13 @@
 namespace storage {
 class checksumming_consumer final : public batch_consumer {
 public:
-    checksumming_consumer(segment* s, log_replayer::checkpoint& c)
+    checksumming_consumer(
+      segment* s,
+      log_replayer::checkpoint& c,
+      const config_batch_term_parser& term_parser)
       : _seg(s)
-      , _cfg(c) {
+      , _cfg(c)
+      , _term_parser(term_parser) {
         // we'll reconstruct the state manually
         _seg->index().reset();
     }
@@ -51,6 +55,11 @@ public:
 
     void consume_records(iobuf&& records) override {
         crc_extend_iobuf(_crc, records);
+        if (
+          _term_parser
+          && _header.type == model::record_batch_type::raft_configuration) {
+            _records = std::move(records);
+        }
     }
 
     ss::future<stop_parser> consume_batch_end() override {
@@ -66,10 +75,29 @@ public:
             // have no good way to recover it so just fallback to max_timestamp
             _seg->index().maybe_track(
               _header, std::nullopt, physical_base_offset);
+            maybe_record_term_transition();
             _header = {};
             co_return stop_parser::no;
         }
         co_return stop_parser::yes;
+    }
+
+    /// Term transitions are recoverable from log data alone: every term
+    /// begins with a raft configuration batch, and configurations >= v_8
+    /// carry the replication term in their payload.
+    void maybe_record_term_transition() {
+        if (
+          !_term_parser
+          || _header.type != model::record_batch_type::raft_configuration) {
+            return;
+        }
+        auto batch = model::record_batch(
+          _header, std::move(_records), model::record_batch::tag_ctor_ng{});
+        auto term = _term_parser(batch);
+        if (term.has_value()) {
+            _cfg.term_transitions.emplace_back(
+              *term, batch.header().base_offset);
+        }
     }
 
     bool is_valid_batch_crc() const {
@@ -85,8 +113,10 @@ public:
 
 private:
     model::record_batch_header _header;
+    iobuf _records;
     segment* _seg;
     log_replayer::checkpoint& _cfg;
+    const config_batch_term_parser& _term_parser;
     crc::crc32c _crc;
     size_t _file_pos_to_end_of_batch{0};
 };
@@ -96,7 +126,8 @@ log_replayer::checkpoint log_replayer::recover_in_thread() {
     vlog(stlog.debug, "Recovering segment {}", *_seg);
     // explicitly not using the index to recover the full file
     auto data_stream = _seg->reader().data_stream(0).get();
-    auto consumer = std::make_unique<checksumming_consumer>(_seg, _ckpt);
+    auto consumer = std::make_unique<checksumming_consumer>(
+      _seg, _ckpt, _term_parser);
     auto parser = continuous_batch_parser(
       std::move(consumer), std::move(data_stream), true);
     try {
@@ -110,7 +141,7 @@ log_replayer::checkpoint log_replayer::recover_in_thread() {
           std::current_exception());
     }
     parser.close().get();
-    return _ckpt;
+    return std::move(_ckpt);
 }
 
 fmt::iterator log_replayer::checkpoint::format_to(fmt::iterator it) const {

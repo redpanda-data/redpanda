@@ -492,6 +492,12 @@ void segment::advance_term(model::term_id t, model::offset base) {
     _idx.set_term_spans(_tracker.term_spans().copy());
 }
 
+void segment::rebuild_term_spans(
+  const chunked_vector<std::pair<model::term_id, model::offset>>& transitions) {
+    _tracker.rebuild_term_spans(transitions);
+    _idx.set_term_spans(_tracker.term_spans().copy());
+}
+
 void segment::cache_truncate(model::offset offset) {
     check_segment_not_closed("cache_truncate()");
     if (likely(bool(_cache))) {

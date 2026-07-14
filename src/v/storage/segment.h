@@ -191,6 +191,24 @@ public:
             _term_spans = std::move(spans);
         }
 
+        /// Rebuild spans from the base span (filename term) plus recovered
+        /// term transitions (term, first offset) in offset order.
+        /// Transitions that do not advance the term are ignored (mid-term
+        /// configuration batches).
+        void rebuild_term_spans(
+          const chunked_vector<std::pair<model::term_id, model::offset>>&
+            transitions) {
+            auto base_term = get_base_term();
+            _term_spans.clear();
+            _term_spans.push_back(
+              term_span{.base = _base_offset, .term = base_term});
+            for (const auto& [term, offset] : transitions) {
+                if (term > last_term() && offset > last_term_base_offset()) {
+                    add_term_span(term, offset);
+                }
+            }
+        }
+
         model::offset get_base_offset() const { return _base_offset; }
         model::offset get_committed_offset() const { return _committed_offset; }
         model::offset get_stable_offset() const { return _stable_offset; }
@@ -271,6 +289,12 @@ public:
     /// segment instead of rolling onto a new segment. Keeps the index's
     /// term span cache in sync with the offset tracker.
     void advance_term(model::term_id, model::offset base);
+
+    /// Rebuild the term spans from term transitions recovered from the
+    /// segment's raft configuration batches. Keeps the index's term span
+    /// cache in sync with the offset tracker.
+    void rebuild_term_spans(
+      const chunked_vector<std::pair<model::term_id, model::offset>>&);
 
     /// main write interface
     /// auto indexes record_batch

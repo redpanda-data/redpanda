@@ -13,9 +13,11 @@
 
 #include "base/format_to.h"
 #include "base/seastarx.h"
+#include "container/chunked_vector.h"
 #include "model/fundamental.h"
 #include "model/timestamp.h"
 #include "storage/fwd.h"
+#include "storage/types.h"
 
 #include <seastar/core/io_queue.hh>
 #include <seastar/util/bool_class.hh>
@@ -24,13 +26,19 @@ namespace storage {
 
 class log_replayer {
 public:
-    explicit log_replayer(segment& seg) noexcept
-      : _seg(&seg) {}
+    explicit log_replayer(
+      segment& seg, config_batch_term_parser term_parser = {}) noexcept
+      : _seg(&seg)
+      , _term_parser(std::move(term_parser)) {}
 
     struct checkpoint {
         std::optional<model::offset> last_offset;
         std::optional<size_t> truncate_file_pos;
         std::optional<model::timestamp> last_max_timestamp;
+        // term transitions (term, first offset) recovered from raft
+        // configuration batch payloads, in offset order
+        chunked_vector<std::pair<model::term_id, model::offset>>
+          term_transitions;
         explicit operator bool() const {
             return last_offset && truncate_file_pos && last_max_timestamp;
         }
@@ -38,14 +46,13 @@ public:
         fmt::iterator format_to(fmt::iterator it) const;
     };
 
-    const checkpoint& last_checkpoint() const { return _ckpt; }
-
     // Must be called in the context of a ss::thread
     checkpoint recover_in_thread();
 
 private:
     checkpoint _ckpt;
     segment* _seg;
+    config_batch_term_parser _term_parser;
 };
 
 } // namespace storage

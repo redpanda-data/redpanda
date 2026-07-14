@@ -943,6 +943,7 @@ ss::future<ss::shared_ptr<log>> log_manager::do_manage(
       config::shard_local_cfg().storage_read_buffer_size(),
       config::shard_local_cfg().storage_read_readahead_count(),
       last_clean_segment,
+      _config.batch_term_parser,
       _resources,
       _feature_table,
       std::move(ntp_sanitizer_cfg));
