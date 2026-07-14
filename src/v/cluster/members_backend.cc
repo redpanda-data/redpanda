@@ -121,7 +121,9 @@ void members_backend::handle_single_update(
         return;
     case node_update_type::added:
         stop_node_decommissioning(update.id);
-        _raft0_updates.push_back(update);
+        if (update.need_raft0_update) {
+            _raft0_updates.push_back(update);
+        }
         _new_updates.broadcast();
         return;
     case node_update_type::decommissioned:
@@ -136,7 +138,9 @@ void members_backend::handle_single_update(
         std::erase_if(_updates, [id = update.id](update_meta& meta) {
             return meta.update.id == id;
         });
-        _raft0_updates.push_back(update);
+        if (update.need_raft0_update) {
+            _raft0_updates.push_back(update);
+        }
         _new_updates.broadcast();
         return;
     case node_update_type::interrupted:
@@ -144,12 +148,9 @@ void members_backend::handle_single_update(
         // remove all pending updates for this node
         std::erase_if(
           _updates, [id](update_meta& meta) { return meta.update.id == id; });
-        _raft0_updates.erase(
-          std::remove_if(
-            _raft0_updates.begin(),
-            _raft0_updates.end(),
-            [id](auto& update) { return update.id == id; }),
-          _raft0_updates.end());
+        std::erase_if(
+          _raft0_updates,
+          [id](const members_manager::node_update& u) { return u.id == id; });
         return;
     }
 
@@ -618,6 +619,11 @@ void members_backend::stop_node_addition(model::node_id id) {
     std::erase_if(_updates, [id](update_meta& meta) {
         return meta.update.id == id && meta.update.type == update_t::added;
     });
+    // remove all pending raft0 additions related with this node, they are
+    // canceled by decommissioning
+    std::erase_if(_raft0_updates, [id](const members_manager::node_update& u) {
+        return u.id == id && u.type == node_update_type::added;
+    });
 
     // sort updates to prioritize decommissions/recommissions over node
     // additions, use stable sort to keep de/recommissions order
@@ -656,44 +662,76 @@ ss::future<> members_backend::reconcile_raft0_updates() {
         } catch (const ss::broken_condition_variable& e) {
             co_return;
         }
+        static ss::logger::rate_limit rate(5s);
+        vloglr(
+          clusterlog,
+          ss::log_level::info,
+          rate,
+          "raft_0 updates: {}",
+          fmt::join(_raft0_updates, ", "));
 
-        vlog(
-          clusterlog.trace, "raft_0 updates_size: {}", _raft0_updates.size());
-        // check the _raft0_updates as the predicate may not longer hold
-        if (_raft0_updates.empty()) {
-            continue;
-        }
+        // Walk the queue from the front looking for an update to apply. An
+        // addition is applied only when it is the first queued entry
+        bool made_progress = false;
+        for (size_t idx = 0; idx < _raft0_updates.size();) {
+            // copy: update_raft0_configuration suspends and _raft0_updates can
+            // be mutated by handle_single_update during the suspension.
+            const auto update = _raft0_updates[idx];
 
-        auto update = _raft0_updates.front();
+            if (update.type == node_update_type::added && idx != 0) {
+                vlog(
+                  clusterlog.trace,
+                  "stopping on non-leading raft0 addition: {}",
+                  update);
+                break;
+            }
 
-        if (!update.need_raft0_update) {
-            vlog(clusterlog.trace, "skipping raft 0 update: {}", update);
-            _raft0_updates.pop_front();
-            continue;
-        }
-        vlog(clusterlog.trace, "processing raft 0 update: {}", update);
-        auto err = co_await update_raft0_configuration(update);
-        if (err) {
+            // Execute with the smallest revision still queued (the front of
+            // the queue). Scanning may apply a non-front update, so pinning the
+            // revision to the oldest pending entry keeps the configuration
+            // revision from advancing past updates that are not yet applied.
+            const auto revision = model::revision_id(
+              _raft0_updates.front().offset);
+            vlog(clusterlog.trace, "processing raft 0 update: {}", update);
+            const auto err = co_await update_raft0_configuration(
+              update, revision);
+            if (!err) {
+                // the single in-flight addition was issued, or a removal
+                // succeeded. Remove the processed update by value (the queue
+                // may have shifted during the suspension above) and stop.
+                std::erase_if(
+                  _raft0_updates,
+                  [&update](const members_manager::node_update& x) {
+                      return x.id == update.id && x.type == update.type
+                             && x.offset == update.offset;
+                  });
+                made_progress = true;
+                break;
+            }
+
+            // error: leave the update queued and try the next candidate.
             vlog(
               clusterlog.trace,
               "raft 0 update {} returned an error - {}",
               update,
               err.message());
-            co_await ss::sleep_abortable(200ms, _as.local());
-            continue;
+            ++idx;
         }
-
-        _raft0_updates.pop_front();
+        // back off only if we scanned the queue without making progress.
+        if (!made_progress && !_raft0_updates.empty()) {
+            co_await ss::sleep_abortable(200ms, _as.local());
+        }
     }
 }
 
 ss::future<std::error_code> members_backend::update_raft0_configuration(
-  const members_manager::node_update& update) {
-    model::revision_id revision(update.offset);
+  const members_manager::node_update& update, model::revision_id revision) {
     auto cfg = _raft0->config();
-    if (cfg.revision_id() > model::revision_id(update.offset)) {
-        co_return errc::success;
-    }
+    vlog(
+      clusterlog.debug,
+      "updating raft0 configuration: {}, revision: {}",
+      update,
+      revision);
     const auto updated_vnode = raft::vnode(update.id, raft0_revision);
     if (update.type == node_update_type::added) {
         if (cfg.contains(updated_vnode)) {
