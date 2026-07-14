@@ -31,7 +31,12 @@ class ConfigurationUpdateTest(RedpandaTest):
         node_1 = self.redpanda.get_node(1)
         node_2 = self.redpanda.get_node(2)
 
-        orig_partitions = self.redpanda.storage().partitions("redpanda", "controller")
+        orig_committed = max(
+            r["committed_offset"]
+            for r in self.redpanda._admin.get_partition_state(
+                "redpanda", "controller", 0
+            )["replicas"]
+        )
         # stop both nodes
         self.redpanda.stop_node(node_1)
         self.redpanda.stop_node(node_2)
@@ -51,34 +56,29 @@ class ConfigurationUpdateTest(RedpandaTest):
         self.redpanda.start_node(node_1, altered_port_cfg_1)
         self.redpanda.start_node(node_2, altered_port_cfg_2)
 
-        def check_elements_equal(iterator):
-            iterator = iter(iterator)
-            try:
-                first = next(iterator)
-            except StopIteration:
-                return True
-
-            return all(first == rest for rest in iterator)
-
         def controller_log_replicated():
-            # make sure that we have new segments
-            node_partitions = dict()
-            for p in self.redpanda.storage().partitions("redpanda", "controller"):
-                node_partitions[p.node.name] = p
-
-            for old_p in orig_partitions:
-                nn = p.node.name
-                if len(old_p.segments) <= len(node_partitions[nn].segments):
-                    return False
-
-            all_segments = map(lambda p: p.segments.keys(), node_partitions.values())
-            return check_elements_equal(all_segments)
+            # segment file layout is per-replica (segments no longer roll on
+            # raft term change and roll points depend on local timing), so
+            # compare the replicated raft state instead of file names: the
+            # controller log advanced past its pre-restart offset and all
+            # replicas agree on the committed offset
+            state = self.redpanda._admin.get_partition_state(
+                "redpanda", "controller", 0
+            )
+            committed = {r["committed_offset"] for r in state["replicas"]}
+            self.logger.debug(f"controller replica committed offsets: {committed}")
+            return (
+                len(state["replicas"]) == len(self.redpanda.nodes)
+                and len(committed) == 1
+                and committed.pop() > orig_committed
+            )
 
         wait_until(
             lambda: controller_log_replicated(),
             timeout_sec=60,
             backoff_sec=2,
             err_msg="Controller logs are not the same",
+            retry_on_exc=True,
         )
 
     """

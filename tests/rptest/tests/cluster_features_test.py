@@ -1235,6 +1235,12 @@ PERTURB_ACKNOWLEDGED_FEATURES = frozenset(
         # Iceberg extended-mode topic-config gate; exercising it needs Iceberg
         # topic setup orthogonal to the finalization behavior under test.
         "iceberg_extended_mode_config",
+        # One-way door: once active, local segments are written with the v2
+        # naming scheme, which older binaries refuse to open, so a rollback
+        # after activation is unsupported by design. A real perturbation
+        # exercise (e.g. asserting v2 segments appear only after
+        # finalization) is deferred.
+        "multi_term_segments",
     }
 )
 
