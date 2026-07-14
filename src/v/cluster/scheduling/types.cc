@@ -235,21 +235,20 @@ allocated_partition::~allocated_partition() {
     }
 
     for (const auto& bs : _replicas) {
-        auto orig_it = _original_node2shard.find(bs.node_id);
-        if (orig_it == _original_node2shard.end()) {
-            // new replica
+        if (!_original_node2shard.is_original(bs.node_id)) {
             _state->remove_allocation(bs);
             _state->remove_final_count(bs);
-        } else {
-            // original replica that didn't change, erase from the map in
-            // preparation for the loop below
-            _original_node2shard.get().erase(orig_it);
         }
     }
 
+    // Restore the final count of originals that were moved away.
     for (const auto& kv : _original_node2shard.get()) {
-        model::broker_shard bs{kv.first, kv.second};
-        _state->add_final_count(bs);
+        const auto node = kv.first;
+        const bool still_a_replica = std::ranges::any_of(
+          _replicas, [node](const auto& bs) { return bs.node_id == node; });
+        if (!still_a_replica) {
+            _state->add_final_count(model::broker_shard{node, kv.second});
+        }
     }
 }
 
