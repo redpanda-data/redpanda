@@ -80,7 +80,7 @@ func ctcPartition(id int) int32 {
 //	key   = MAGIC:<id>
 //	value = MAGIC:<id>:<val>:<nonce-hex>:<partition>:<pad>:<crc-hex>
 //
-// following the foo record layout (see makeRecord): the CRC covers everything
+// following the foo record layout (see makeFooRecord): the CRC covers everything
 // before it, the value echoes the key, and the embedded partition lets a
 // reader verify the record was served from the partition it was written to.
 // The pad varies record sizes but is derived from (nonce, id, val) rather
@@ -351,24 +351,16 @@ func produceCtc() error {
 	if err := saveCtcTracker(b, tracker); err != nil {
 		return err
 	}
-	assert.Reachable("workload committed a compacted-topic round",
+	assert.Reachable("workload committed a compacted cloud topic round",
 		map[string]any{"bucket": b, "records": len(recs), "nonce": fmt.Sprintf("%016x", nonce)})
 	fmt.Printf("ctc bucket %d: committed %d records (nonce=%016x)\n", b, len(recs), nonce)
 	return nil
 }
 
 // parallel_driver_sweep_ctc: read one random ctc partition end to end and
-// assert the shape of a compacted log. Compaction removes records but never
-// reorders survivors, so offsets must still be strictly increasing (though
-// gapped, unlike foo, so no contiguity here) and each producer nonce's
-// records must still appear in its produce order — ascending (key id,
-// value), the order build() emits and the idempotent session preserves.
-// Records must be intact and ours. Offset gaps are compaction's fingerprint
-// in an otherwise gapless non-transactional log, so seeing one sometimes
-// proves compaction actually runs and the workload has not degraded to
-// plain produce/consume. The surviving value per key is not yet held
-// against the tracker's committed counters; the tracker exists so a later
-// checker can.
+// assert the shape of a compacted log (see validateCtcRange). The surviving
+// value per key is not yet held against the tracker's committed counters;
+// the tracker exists so a later checker can.
 func sweepCtc() error {
 	part := int32(randN(ctcPartitions))
 	lo, hi, err := partitionBounds(ctcTopic, part)
@@ -381,8 +373,26 @@ func sweepCtc() error {
 	}
 	assert.Sometimes(len(recs) > 0, "compacted cloud topic sweep consumes a non-empty range",
 		map[string]any{"partition": part, "lo": lo, "hi": hi})
+	validateCtcRange(part, lo, hi, recs)
+	return nil
+}
+
+// validateCtcRange asserts that recs — the result of reading [lo, hi) from a
+// ctc partition — have the shape of a compacted log; it backs both the
+// anytime sweep and finally_check_complete. Compaction removes records but
+// never reorders survivors, so offsets must still be strictly increasing
+// (though gapped, unlike foo, so no contiguity here) and each producer
+// nonce's records must still appear in its produce order — ascending (key
+// id, value), the order build() emits and the idempotent session preserves.
+// Records must be intact and ours. Offset gaps are compaction's fingerprint
+// in an otherwise gapless non-transactional log, so seeing one sometimes
+// proves compaction actually runs and the workload has not degraded to
+// plain produce/consume. An empty read is a no-op: the invariants hold on
+// whatever a fault leaves readable, so they never false-positive on
+// truncation.
+func validateCtcRange(part int32, lo, hi int64, recs []*kgo.Record) {
 	if len(recs) == 0 {
-		return nil
+		return
 	}
 
 	type lastPos struct {
@@ -434,21 +444,22 @@ func sweepCtc() error {
 	partial := prev != hi-1
 
 	details := map[string]any{
-		"partition": part, "lo": lo, "hi": hi,
+		"command": cmdName, "partition": part, "lo": lo, "hi": hi,
 		"count": len(recs), "keys": len(latest), "superseded": superseded,
 		"gaps": gaps, "missing": missing,
 		"bad_data": bad, "reordered": reordered,
 		"bad_offset": firstOff, "bad_reason": firstReason,
 	}
-	assert.Always(inOrder, "compacted cloud topic sweep returns in-order offsets", details)
+	assert.Always(inOrder, "compacted cloud topic read returns in-order offsets", details)
 	assert.Always(bad == 0, "compacted cloud topic records are intact and self-consistent", details)
 	assert.Always(reordered == 0, "compacted cloud topic per-producer produce order is preserved", details)
-	assert.Sometimes(gaps > 0, "compacted cloud topic sweep observes compaction gaps", details)
+	if !finallyPhase() {
+		assert.Sometimes(gaps > 0, "compacted cloud topic sweep observes compaction gaps", details)
+	}
 
 	fmt.Printf("ctc sweep %d [%d,%d) -> %d records (keys=%d superseded=%d gaps=%d missing=%d bad=%d reordered=%d partial=%v)\n",
 		part, lo, hi, len(recs), len(latest), superseded, gaps, missing, bad, reordered, partial)
 	if firstReason != "" {
 		fmt.Printf("ctc sweep %d first bad record at offset %d: %s\n", part, firstOff, firstReason)
 	}
-	return nil
 }

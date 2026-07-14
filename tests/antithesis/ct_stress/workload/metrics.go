@@ -104,16 +104,16 @@ func checkCloudIO() error {
 	})
 
 	assert.Sometimes(sums[readMetric] > 0,
-		"cloud topics L1 reader sometimes reads bytes",
+		"cloud topics L1 reader reads bytes",
 		map[string]any{"read_bytes": sums[readMetric]})
 	assert.Sometimes(sums[uploadMetric] > 0,
-		"cloud topics batcher sometimes uploads bytes",
+		"cloud topics batcher uploads bytes",
 		map[string]any{"bytes_uploaded": sums[uploadMetric]})
 	assert.Sometimes(sums[fileReadMetric] > 0,
-		"cloud topics L1 file-io sometimes performs reads",
+		"cloud topics L1 file-io performs reads",
 		map[string]any{"reads": sums[fileReadMetric]})
 	assert.Sometimes(sums[skippedMetric] > 0,
-		"cloud topics L1 reader sometimes skips bytes via index",
+		"cloud topics L1 reader skips bytes via index",
 		map[string]any{"skipped_bytes": sums[skippedMetric]})
 
 	fmt.Printf("L1 read_bytes=%.0f uploaded=%.0f file_reads=%.0f skipped_bytes=%.0f\n",

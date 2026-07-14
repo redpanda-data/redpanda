@@ -52,11 +52,11 @@ func partitionBounds(t string, part int32) (lo, hi int64, err error) {
 	return s.Offset, e.Offset, nil
 }
 
-// randomPartitionRange picks a random foo partition and returns its current
+// randomFooPartitionRange picks a random foo partition and returns its current
 // start and high-watermark offsets.
-func randomPartitionRange() (part int32, lo, hi int64, err error) {
+func randomFooPartitionRange() (part int32, lo, hi int64, err error) {
 	part = int32(randN(fooPartitions))
-	lo, hi, err = partitionBounds(topic, part)
+	lo, hi, err = partitionBounds(fooTopic, part)
 	return part, lo, hi, err
 }
 
@@ -113,25 +113,26 @@ func offsets(recs []*kgo.Record) []int64 {
 	return offs
 }
 
-// check backs both anytime_check_range and parallel_driver_consume: pick a
-// random sub-range of a random partition and validate the records it returns.
-func check() error {
-	part, lo, hi, err := randomPartitionRange()
+// checkFoo backs both anytime_check_range_foo and parallel_driver_consume_foo:
+// pick a random sub-range of a random foo partition and validate the records
+// it returns.
+func checkFoo() error {
+	part, lo, hi, err := randomFooPartitionRange()
 	if err != nil || hi <= lo {
 		return nil // empty or unreadable under faults; nothing to check
 	}
 	o1 := lo + int64(randN(int(hi-lo)))
 	o2 := o1 + 1 + int64(randN(int(hi-o1)))
 
-	recs, err := readRange(topic, part, o1, o2)
+	recs, err := readRange(fooTopic, part, o1, o2)
 	if err != nil {
 		return nil
 	}
-	validateRange(part, lo, hi, o1, o2, recs)
+	validateFooRange(part, lo, hi, o1, o2, recs)
 	return nil
 }
 
-// validateRange asserts that recs — the result of reading [o1, o2) from part —
+// validateFooRange asserts that recs — the result of reading [o1, o2) from part —
 // form a well-formed slice of the log: offsets in order, contiguous, within the
 // requested bounds, and records that are intact, ours, and in per-producer
 // order. lo/hi are the partition's bounds, carried only for context in the
@@ -141,7 +142,7 @@ func check() error {
 //
 // Contiguity assumes non-transactional produce with cleanup.policy=delete
 // (our setup); markers or compaction would create legal gaps.
-func validateRange(part int32, lo, hi, o1, o2 int64, recs []*kgo.Record) {
+func validateFooRange(part int32, lo, hi, o1, o2 int64, recs []*kgo.Record) {
 	if len(recs) == 0 {
 		return
 	}
@@ -159,38 +160,40 @@ func validateRange(part int32, lo, hi, o1, o2 int64, recs []*kgo.Record) {
 	}
 	withinBounds := first >= o1 && last < o2
 	full := first == o1 && int64(len(offs)) == o2-o1
-	v := verifyRecords(part, recs)
+	v := verifyFooRecords(part, recs)
 
 	details := map[string]any{
-		"partition": part, "o1": o1, "o2": o2,
+		"command": cmdName, "partition": part, "o1": o1, "o2": o2,
 		"count": len(offs), "first": first, "last": last, "lo": lo, "hi": hi,
 		"bad_data": v.bad, "reordered": v.reordered,
 		"bad_offset": v.firstOff, "bad_reason": v.firstReason,
 	}
 
-	assert.Reachable("checker read a non-empty cloud topic range", details)
-	assert.Always(inOrder, "cloud topic range read returns in-order offsets", details)
-	assert.Always(contiguous, "cloud topic range read returns contiguous offsets", details)
-	assert.Always(withinBounds, "cloud topic range read stays within requested bounds", details)
-	assert.Always(v.bad == 0, "cloud topic records are intact and self-consistent", details)
-	assert.Always(v.reordered == 0, "cloud topic per-producer record order is preserved", details)
-	assert.Sometimes(full, "cloud topic range read returns the full requested range", details)
+	assert.Always(inOrder, "delete-policy cloud topic range read returns in-order offsets", details)
+	assert.Always(contiguous, "delete-policy cloud topic range read returns contiguous offsets", details)
+	assert.Always(withinBounds, "delete-policy cloud topic range read stays within requested bounds", details)
+	assert.Always(v.bad == 0, "delete-policy cloud topic records are intact and self-consistent", details)
+	assert.Always(v.reordered == 0, "delete-policy cloud topic per-producer produce order is preserved", details)
+	if !finallyPhase() {
+		assert.Reachable("checker read a non-empty delete-policy cloud topic range", details)
+		assert.Sometimes(full, "delete-policy cloud topic range read returns the full requested range", details)
+	}
 
 	fmt.Printf("checked foo/%d offsets %d:%d -> %d records (in_order=%v contiguous=%v bounds=%v full=%v bad_data=%d reordered=%d)\n",
 		part, o1, o2, len(offs), inOrder, contiguous, withinBounds, full, v.bad, v.reordered)
 }
 
-// checkOffsets is a manual command (no test-composer prefix, so it gets no
+// checkFooOffsets is a manual command (no test-composer prefix, so it gets no
 // symlink and Antithesis never schedules it): read and validate an explicit
-// [o1, o2) range on a given partition. Unlike the random anytime_check_range,
+// [o1, o2) range on a given partition. Unlike the random anytime_check_range_foo,
 // the range is fixed by its arguments, so the read replays verbatim. Under the
 // multiverse debugger this lets you roll back to different points in a timeline
 // and repeat the exact same read to pin down when a range first goes bad.
 //
-// Usage: helper_workload check_offsets <partition> <o1> <o2>
-func checkOffsets() error {
+// Usage: helper_workload check_offsets_foo <partition> <o1> <o2>
+func checkFooOffsets() error {
 	if len(cmdArgs) != 3 {
-		return fmt.Errorf("usage: check_offsets <partition> <o1> <o2>")
+		return fmt.Errorf("usage: check_offsets_foo <partition> <o1> <o2>")
 	}
 	part, err := strconv.ParseInt(cmdArgs[0], 10, 32)
 	if err != nil {
@@ -208,38 +211,39 @@ func checkOffsets() error {
 		return fmt.Errorf("empty range: o2 (%d) must be > o1 (%d)", o2, o1)
 	}
 
-	lo, hi, err := partitionBounds(topic, int32(part))
+	lo, hi, err := partitionBounds(fooTopic, int32(part))
 	if err != nil {
-		fmt.Printf("check_offsets: could not read bounds for foo/%d: %v\n", part, err)
+		fmt.Printf("check_offsets_foo: could not read bounds for foo/%d: %v\n", part, err)
 		lo, hi = -1, -1
 	}
-	recs, err := readRange(topic, int32(part), o1, o2)
+	recs, err := readRange(fooTopic, int32(part), o1, o2)
 	if err != nil {
 		return fmt.Errorf("read of foo/%d [%d,%d) failed: %w", part, o1, o2, err)
 	}
-	fmt.Printf("check_offsets: foo/%d [%d,%d) bounds=[%d,%d) -> %d records\n",
+	fmt.Printf("check_offsets_foo: foo/%d [%d,%d) bounds=[%d,%d) -> %d records\n",
 		part, o1, o2, lo, hi, len(recs))
-	validateRange(int32(part), lo, hi, o1, o2, recs)
+	validateFooRange(int32(part), lo, hi, o1, o2, recs)
 	return nil
 }
 
 // readPartitionToEnd re-reads a partition's bounds and consumes the whole
-// [lo, hi) range, retrying until the read reaches the high watermark or the
-// deadline passes. The retries only cover the post-fault recovery window (a
-// finally command runs after faults stop but the cluster may still be settling
-// and there is no concurrent produce, so hi is stable). Returns the last-seen
-// bounds and whatever the final attempt read: the complete slice on success, or
-// a prefix if it gave up.
-func readPartitionToEnd(part int32, deadline time.Time) (lo, hi int64, recs []*kgo.Record) {
+// [lo, hi) range, retrying until the read reaches the high watermark (a
+// record at offset hi-1; on a compacted topic that is fewer than hi-lo
+// records) or the deadline passes. The retries only cover the post-fault
+// recovery window (a finally command runs after faults stop but the cluster
+// may still be settling and there is no concurrent produce, so hi is stable).
+// Returns the last-seen bounds and whatever the final attempt read: the
+// complete slice on success, or a prefix if it gave up.
+func readPartitionToEnd(t string, part int32, deadline time.Time) (lo, hi int64, recs []*kgo.Record) {
 	for {
 		var err error
-		lo, hi, err = partitionBounds(topic, part)
+		lo, hi, err = partitionBounds(t, part)
 		if err == nil {
 			if hi <= lo {
 				return lo, hi, nil // empty partition
 			}
-			recs, err = readRange(topic, part, lo, hi)
-			if err == nil && int64(len(recs)) == hi-lo {
+			recs, err = readRange(t, part, lo, hi)
+			if err == nil && len(recs) > 0 && recs[len(recs)-1].Offset == hi-1 {
 				return lo, hi, recs
 			}
 		}
@@ -251,17 +255,22 @@ func readPartitionToEnd(part int32, deadline time.Time) (lo, hi int64, recs []*k
 }
 
 // finally_check_complete: after Antithesis stops fault injection for the
-// timeline, wait for the cluster to recover, then read every partition of foo
-// from its start offset to its high watermark and assert the log is intact —
-// offsets strictly increasing, contiguous (no gaps), and readable all the way
-// to the high watermark.
+// timeline, wait for the cluster to recover, then read every partition of
+// every test topic from its start offset to its high watermark, assert the
+// read is complete, and run the same shape validation the anytime checkers
+// use: validateFooRange for the delete-policy topic (in-order, contiguous,
+// intact, per-producer order), validateCtcRange for the compacted one (same
+// minus contiguity, since compaction leaves legal gaps).
 //
-// Because this runs on a quiesced, healed cluster with no concurrent produce or
-// faults, completeness is a hard Always here — contrast anytime_check_range,
-// where a fault can truncate the read so completeness is only Sometimes.
-//
-// Contiguity assumes non-transactional produce with cleanup.policy=delete (our
-// setup); markers or compaction would create legal gaps.
+// Because this runs on a quiesced, healed cluster with no concurrent produce
+// or faults, completeness is a hard Always here (one property per cleanup
+// policy, since the predicate differs) — contrast the anytime checkers, where
+// a fault can truncate a read so completeness is only Sometimes. Complete
+// means the read reaches the high watermark; on the
+// delete-policy topic it also means every offset in [lo, hi) is present,
+// while compaction legally removes records anywhere, including at lo (the
+// record at hi-1 is the newest and thus the latest for its key, so it always
+// survives).
 func checkComplete() error {
 	// Faults stop when a finally command starts, but containers need time to
 	// come back. Refuse to validate until the cluster serves metadata again;
@@ -272,44 +281,45 @@ func checkComplete() error {
 		return err
 	}
 
-	for part := range int32(fooPartitions) {
-		lo, hi, recs := readPartitionToEnd(part, time.Now().Add(2*time.Minute))
-		if hi <= lo {
-			continue // empty partition; nothing to verify
-		}
-		offs := offsets(recs)
+	for _, t := range testTopics {
+		for part := range t.partitions {
+			fmt.Printf("finally: checking %s/%d\n", t.name, part)
 
-		first, last := int64(-1), int64(-1)
-		if len(offs) > 0 {
-			first, last = offs[0], offs[len(offs)-1]
-		}
-		inOrder, contiguous := true, true
-		for i := 1; i < len(offs); i++ {
-			if offs[i] <= offs[i-1] {
-				inOrder = false
+			lo, hi, recs := readPartitionToEnd(t.name, part, time.Now().Add(2*time.Minute))
+			if hi <= lo {
+				continue // empty partition; nothing to verify
 			}
-			if offs[i] != offs[i-1]+1 {
-				contiguous = false
+
+			first, last := int64(-1), int64(-1)
+			if len(recs) > 0 {
+				first, last = recs[0].Offset, recs[len(recs)-1].Offset
+			}
+			complete := last == hi-1
+			if !t.compacted {
+				complete = complete && first == lo && int64(len(recs)) == hi-lo
+			}
+
+			details := map[string]any{
+				"topic": t.name, "partition": part, "lo": lo, "hi": hi,
+				"count": len(recs), "first": first, "last": last,
+			}
+			fmt.Printf("finally %s/%d [%d,%d) -> %d records (complete=%v)\n",
+				t.name, part, lo, hi, len(recs), complete)
+
+			// Reachability and completeness are per cleanup policy: distinct
+			// names keep each topic's finally coverage a separate obligation
+			// (foo validating must not mask ctc never getting validated), and
+			// the completeness predicate differs between the policies anyway.
+			if t.compacted {
+				assert.Reachable("finally: validated a non-empty compacted cloud topic partition", details)
+				assert.Always(complete, "finally: compacted cloud topic partition is readable to the high watermark", details)
+				validateCtcRange(part, lo, hi, recs)
+			} else {
+				assert.Reachable("finally: validated a non-empty delete-policy cloud topic partition", details)
+				assert.Always(complete, "finally: delete-policy cloud topic partition is fully readable to the high watermark", details)
+				validateFooRange(part, lo, hi, lo, hi, recs)
 			}
 		}
-		complete := first == lo && last == hi-1 && int64(len(offs)) == hi-lo
-		v := verifyRecords(part, recs)
-
-		details := map[string]any{
-			"partition": part, "lo": lo, "hi": hi,
-			"count": len(offs), "first": first, "last": last,
-			"bad_data": v.bad, "reordered": v.reordered,
-			"bad_offset": v.firstOff, "bad_reason": v.firstReason,
-		}
-		assert.Reachable("finally: validated a non-empty cloud topic partition", details)
-		assert.Always(inOrder, "finally: cloud topic partition offsets are strictly increasing", details)
-		assert.Always(contiguous, "finally: cloud topic partition offsets are contiguous (no gaps)", details)
-		assert.Always(complete, "finally: cloud topic partition is fully readable to the high watermark", details)
-		assert.Always(v.bad == 0, "finally: cloud topic records are intact and self-consistent", details)
-		assert.Always(v.reordered == 0, "finally: cloud topic per-producer record order is preserved", details)
-
-		fmt.Printf("finally foo/%d [%d,%d) -> %d records (in_order=%v contiguous=%v complete=%v bad_data=%d reordered=%d)\n",
-			part, lo, hi, len(offs), inOrder, contiguous, complete, v.bad, v.reordered)
 	}
 	return nil
 }

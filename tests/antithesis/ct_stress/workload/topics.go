@@ -20,6 +20,6 @@ type testTopic struct {
 // testTopics is the single definition of the workload's topics; the
 // create/flip/move drivers all derive from it.
 var testTopics = []testTopic{
-	{name: topic, partitions: fooPartitions, replicas: fooReplicas},
+	{name: fooTopic, partitions: fooPartitions, replicas: fooReplicas},
 	{name: ctcTopic, partitions: ctcPartitions, replicas: ctcReplicas, compacted: true},
 }

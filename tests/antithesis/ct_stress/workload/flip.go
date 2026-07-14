@@ -95,13 +95,24 @@ func flipStorageMode() error {
 		}
 	}
 
-	// One liveness property per direction, so a run only passes this pair
-	// once both transitions have actually been accepted somewhere.
+	// One liveness property per topic and direction, so a run only passes
+	// this set once every transition has been accepted on every topic
+	// somewhere.
 	details := map[string]any{"topic": t, "from": mode, "to": target}
-	if target == storageModeTiered {
-		assert.Sometimes(accepted, "storage mode flip cloud -> tiered accepted", details)
-	} else {
-		assert.Sometimes(accepted, "storage mode flip tiered -> cloud accepted", details)
+	toTiered := target == storageModeTiered
+	switch t {
+	case fooTopic:
+		if toTiered {
+			assert.Sometimes(accepted, "cloud topic foo storage mode flip cloud -> tiered accepted", details)
+		} else {
+			assert.Sometimes(accepted, "cloud topic foo storage mode flip tiered -> cloud accepted", details)
+		}
+	case ctcTopic:
+		if toTiered {
+			assert.Sometimes(accepted, "cloud topic ctc storage mode flip cloud -> tiered accepted", details)
+		} else {
+			assert.Sometimes(accepted, "cloud topic ctc storage mode flip tiered -> cloud accepted", details)
+		}
 	}
 
 	if accepted {

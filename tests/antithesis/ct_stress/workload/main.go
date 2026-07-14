@@ -9,7 +9,7 @@
 
 // Command workload is the ct_stress Antithesis workload. A single binary
 // dispatches on its invocation name (argv[0]) so the test-composer command
-// files (first_create_topic, parallel_driver_produce, ...) are just links
+// files (first_create_topics, parallel_driver_produce_foo, ...) are just links
 // to it. It talks to Redpanda with franz-go and reports properties and
 // draws randomness through the Antithesis Go SDK.
 //
@@ -29,7 +29,7 @@ import (
 )
 
 const (
-	topic         = "foo"
+	fooTopic      = "foo"
 	fooPartitions = 3
 	fooReplicas   = 3
 )
@@ -40,13 +40,13 @@ const (
 // the image build uses to create those links). `setup` is the container
 // entrypoint, not a test command.
 var commands = map[string]func() error{
-	"setup":                   setup,
-	"first_create_topics":     createTestTopics,
-	"parallel_driver_produce": produce,
+	"setup":                       setup,
+	"first_create_topics":         createTestTopics,
+	"parallel_driver_produce_foo": produceFoo,
 	// consume reads and validates the same way the anytime checker does, but
 	// as a parallel driver Antithesis may run several concurrent copies of it,
 	// applying real read pressure while still asserting the invariants.
-	"parallel_driver_consume":           check,
+	"parallel_driver_consume_foo":       checkFoo,
 	"parallel_driver_move_metastore":    moveMetastore,
 	"parallel_driver_move_kafka_topic":  moveKafkaTopic,
 	"parallel_driver_flip_storage_mode": flipStorageMode,
@@ -55,18 +55,35 @@ var commands = map[string]func() error{
 	// values against the producers' progress trackers. See ctc.go.
 	"parallel_driver_produce_ctc": produceCtc,
 	"parallel_driver_sweep_ctc":   sweepCtc,
-	"anytime_check_range":         check,
+	"anytime_check_range_foo":     checkFoo,
 	"anytime_check_cloud_io":      checkCloudIO,
 	"finally_check_complete":      checkComplete,
-	// check_offsets has no test-composer prefix, so it gets no symlink and
+	// check_offsets_foo has no test-composer prefix, so it gets no symlink and
 	// Antithesis never schedules it. It is a manual replay tool for the
-	// multiverse debugger; see checkOffsets.
-	"check_offsets": checkOffsets,
+	// multiverse debugger; see checkFooOffsets.
+	"check_offsets_foo": checkFooOffsets,
 }
 
 // cmdArgs holds the positional arguments that follow the command token, for
-// the few manual commands (e.g. check_offsets) that take parameters.
+// the few manual commands (e.g. check_offsets_foo) that take parameters.
 var cmdArgs []string
+
+// cmdName is the command this invocation resolved to. The checkers shared
+// across commands (validateFooRange, validateCtcRange) carry it in assertion
+// details so a tripped property names the phase it fired in — e.g.
+// parallel_driver_consume_foo vs anytime_check_range_foo vs finally_check_complete.
+var cmdName string
+
+// finallyPhase reports whether this invocation is a finally command, i.e.
+// fault injection has stopped and the cluster has healed. The shared
+// validators skip their Sometimes/Reachable assertions in this phase: those
+// liveness properties exist to prove reads make progress while faults are
+// possible, and a quiesced-cluster read satisfying them would mask timelines
+// where no such read ever succeeded. The finally checks assert their own
+// liveness under distinct names instead.
+func finallyPhase() bool {
+	return strings.HasPrefix(cmdName, "finally_")
+}
 
 // testCommandPrefixes are the Antithesis test-composer command prefixes; a
 // command with one of these is scheduled by Antithesis and needs a symlink.
@@ -118,12 +135,14 @@ func main() {
 	cmd := filepath.Base(os.Args[0])
 	cmdArgs = os.Args[1:]
 	// When invoked by the binary's own name (e.g. the entrypoint's
-	// `helper_workload setup`, or `workload produce` by hand) rather than
-	// through a command symlink, take the command from argv[1].
+	// `helper_workload setup`, or `workload parallel_driver_produce_foo` by
+	// hand) rather than through a command symlink, take the command from
+	// argv[1].
 	if _, known := commands[cmd]; !known && len(os.Args) > 1 {
 		cmd = os.Args[1]
 		cmdArgs = os.Args[2:]
 	}
+	cmdName = cmd
 
 	// Dispatched outside `commands` to avoid an init cycle (it reads the map).
 	if cmd == "list-commands" {

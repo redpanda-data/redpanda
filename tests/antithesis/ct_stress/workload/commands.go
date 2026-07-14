@@ -45,7 +45,7 @@ const storageModeTiered = "tiered"
 
 var storageModes = []string{storageModeCloud, storageModeTiered}
 
-// first_create_topic: create the topics the workload exercises. Runs once
+// first_create_topics: create the topics the workload exercises. Runs once
 // per timeline after setup_complete; must not signal lifecycle itself.
 //
 // Each topic's storage mode is an independent choice between cloud and
@@ -103,9 +103,9 @@ func createOneTopic(adm *kadm.Client, name string, partitions int32, replicas in
 	return fmt.Errorf("failed to create topic %s", name)
 }
 
-// parallel_driver_produce: produce a bounded random batch. Best-effort under
+// parallel_driver_produce_foo: produce a bounded random batch. Best-effort under
 // fault injection — transient failures are expected and not bugs.
-func produce() error {
+func produceFoo() error {
 	// A per-invocation nonce keeps this producer's keys distinct from every
 	// other concurrent producer's, so (nonce, seq) uniquely identifies a
 	// record. It also rides in the ClientID so Redpanda's request logs can be
@@ -113,7 +113,7 @@ func produce() error {
 	nonce := rng.Uint64()
 	cl, err := newClient(
 		kgo.ClientID(fmt.Sprintf("ct_stress/produce/%016x", nonce)),
-		kgo.DefaultProduceTopic(topic),
+		kgo.DefaultProduceTopic(fooTopic),
 		kgo.RequiredAcks(kgo.AllISRAcks()),
 		kgo.ProducerLinger(5*time.Millisecond),
 		// Assign partitions ourselves so each record can carry the partition
@@ -131,7 +131,7 @@ func produce() error {
 	count := 1 + randN(50)
 	recs := make([]*kgo.Record, count)
 	for i := range recs {
-		recs[i] = makeRecord(nonce, i, int32(randN(fooPartitions)))
+		recs[i] = makeFooRecord(nonce, i, int32(randN(fooPartitions)))
 	}
 
 	fmt.Printf("producing %d records to foo (nonce=%016x)\n", count, nonce)

@@ -18,7 +18,7 @@ import (
 	"github.com/twmb/franz-go/pkg/kgo"
 )
 
-// recordMagic tags every value this workload produces. Concurrent producers
+// fooMagic tags every value produced to foo. Concurrent producers
 // land records at offsets none of them can predict, so the offset checks alone
 // cannot tell whether a record's contents are the ones we wrote. A reader
 // recovers that guarantee from the record itself: the magic proves the record
@@ -27,9 +27,9 @@ import (
 // the key echoes the value's identity so a torn-apart key/value pair is caught,
 // and the embedded partition proves the record was served from the partition it
 // was written to.
-const recordMagic = "CTS1"
+const fooMagic = "CTS1"
 
-// makeRecord builds a self-describing record for the given producer nonce,
+// makeFooRecord builds a self-describing record for the given producer nonce,
 // per-producer sequence, and target partition. The nonce keeps keys from
 // concurrent producers distinct. The layout is:
 //
@@ -38,8 +38,8 @@ const recordMagic = "CTS1"
 //
 // where the CRC covers everything before it. Partition is set so a manual
 // partitioner honours it and the value's claim matches where it lands.
-func makeRecord(nonce uint64, seq int, part int32) *kgo.Record {
-	key := fmt.Sprintf("%s:%016x:%d", recordMagic, nonce, seq)
+func makeFooRecord(nonce uint64, seq int, part int32) *kgo.Record {
+	key := fmt.Sprintf("%s:%016x:%d", fooMagic, nonce, seq)
 	body := fmt.Sprintf("%s:%d:%x", key, part, randN(1<<30))
 	crc := crc32.ChecksumIEEE([]byte(body))
 	return &kgo.Record{
@@ -49,60 +49,60 @@ func makeRecord(nonce uint64, seq int, part int32) *kgo.Record {
 	}
 }
 
-// parsedRecord is the decoded identity of a workload record.
-type parsedRecord struct {
+// parsedFooRecord is the decoded identity of a foo record.
+type parsedFooRecord struct {
 	nonce uint64
 	seq   int64
 	part  int32
 }
 
-// parseRecord checks that r, read from partition readPart, is a well-formed,
+// parseFooRecord checks that r, read from partition readPart, is a well-formed,
 // intact record this workload produced, and returns its decoded identity. The
 // reason is empty when the record checks out, otherwise it describes the first
-// problem found and the parsedRecord is zero.
-func parseRecord(r *kgo.Record, readPart int32) (parsedRecord, string) {
+// problem found and the parsedFooRecord is zero.
+func parseFooRecord(r *kgo.Record, readPart int32) (parsedFooRecord, string) {
 	s := string(r.Value)
 	// The CRC is the final colon-separated field; it is hex, so the last
 	// colon in the value always separates body from CRC even though the
 	// payload may itself contain colons.
 	i := strings.LastIndexByte(s, ':')
 	if i < 0 {
-		return parsedRecord{}, "value has no crc field"
+		return parsedFooRecord{}, "value has no crc field"
 	}
 	body, crcStr := s[:i], s[i+1:]
 	crc, err := strconv.ParseUint(crcStr, 16, 32)
 	if err != nil {
-		return parsedRecord{}, "crc is not hex"
+		return parsedFooRecord{}, "crc is not hex"
 	}
 	if uint32(crc) != crc32.ChecksumIEEE([]byte(body)) {
-		return parsedRecord{}, "crc mismatch (corrupt bytes)"
+		return parsedFooRecord{}, "crc mismatch (corrupt bytes)"
 	}
 
 	// body = MAGIC:<nonce>:<seq>:<partition>:<payload>
 	f := strings.SplitN(body, ":", 5)
-	if len(f) != 5 || f[0] != recordMagic {
-		return parsedRecord{}, "bad magic or layout"
+	if len(f) != 5 || f[0] != fooMagic {
+		return parsedFooRecord{}, "bad magic or layout"
 	}
 	nonce, err := strconv.ParseUint(f[1], 16, 64)
 	if err != nil {
-		return parsedRecord{}, "nonce is not hex"
+		return parsedFooRecord{}, "nonce is not hex"
 	}
 	seq, err := strconv.ParseInt(f[2], 10, 64)
 	if err != nil {
-		return parsedRecord{}, "seq is not an int"
+		return parsedFooRecord{}, "seq is not an int"
 	}
 	part, err := strconv.ParseInt(f[3], 10, 32)
 	if err != nil {
-		return parsedRecord{}, "partition is not an int"
+		return parsedFooRecord{}, "partition is not an int"
 	}
 	if int32(part) != readPart {
-		return parsedRecord{}, fmt.Sprintf("partition mismatch: value claims %d, read from %d", part, readPart)
+		return parsedFooRecord{}, fmt.Sprintf("partition mismatch: value claims %d, read from %d", part, readPart)
 	}
 	wantKey := f[0] + ":" + f[1] + ":" + f[2]
 	if string(r.Key) != wantKey {
-		return parsedRecord{}, fmt.Sprintf("key/value mismatch: key=%q, value embeds %q", r.Key, wantKey)
+		return parsedFooRecord{}, fmt.Sprintf("key/value mismatch: key=%q, value embeds %q", r.Key, wantKey)
 	}
-	return parsedRecord{nonce: nonce, seq: seq, part: int32(part)}, ""
+	return parsedFooRecord{nonce: nonce, seq: seq, part: int32(part)}, ""
 }
 
 // verifyResult summarises a scan of a partition's records.
@@ -113,19 +113,19 @@ type verifyResult struct {
 	firstReason string
 }
 
-// verifyRecords scans recs (in the offset order the broker served them) and
-// checks two things: every record is intact and belongs to us (parseRecord),
+// verifyFooRecords scans recs (in the offset order the broker served them) and
+// checks two things: every record is intact and belongs to us (parseFooRecord),
 // and each producer's records appear in strictly increasing sequence order.
 // The order check holds because a producer writes its batch in seq order and
 // the idempotent producer preserves per-partition order, so the seqs of any one
 // nonce form an increasing subsequence within a partition; a non-increasing
 // step means reordering or a duplicate. Records this reader cannot parse are
 // left out of the order check.
-func verifyRecords(part int32, recs []*kgo.Record) verifyResult {
+func verifyFooRecords(part int32, recs []*kgo.Record) verifyResult {
 	res := verifyResult{firstOff: -1}
 	lastSeq := map[uint64]int64{}
 	for _, r := range recs {
-		p, reason := parseRecord(r, part)
+		p, reason := parseFooRecord(r, part)
 		reordered := false
 		if reason == "" {
 			if prev, ok := lastSeq[p.nonce]; ok && p.seq <= prev {

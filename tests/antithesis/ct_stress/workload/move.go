@@ -164,8 +164,15 @@ func moveKafkaTopic() error {
 	part := randN(int(t.partitions))
 	from, to, attempted, accepted := submitMove("kafka", t.name, part)
 	if attempted {
-		assert.Sometimes(accepted, "kafka topic replica move accepted",
-			map[string]any{"topic": t.name, "partition": part, "from": from, "to": to})
+		details := map[string]any{"topic": t.name, "partition": part, "from": from, "to": to}
+		// One liveness property per topic, so a run only proves the mover
+		// works once a move has been accepted on each topic somewhere.
+		switch t.name {
+		case fooTopic:
+			assert.Sometimes(accepted, "cloud topic foo replica move accepted", details)
+		case ctcTopic:
+			assert.Sometimes(accepted, "cloud topic ctc replica move accepted", details)
+		}
 	}
 	return nil
 }
