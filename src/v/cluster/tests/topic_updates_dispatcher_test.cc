@@ -75,6 +75,53 @@ constexpr uint64_t max_cluster_capacity() {
            + node_initial_capacity(4);
 }
 
+// Regression test for a spurious double free which occurred when a no-op
+// reallocation was requested (requested replication factor == existing replica
+// count).
+FIXTURE_TEST(
+  rf_noop_allocate_spurious_dealloc, topic_table_updates_dispatcher_fixture) {
+    const auto& alloc_nodes = allocator.local().state().allocation_nodes();
+    auto total_allocated = [&]() {
+        size_t t = 0;
+        for (const auto& [id, n] : alloc_nodes) {
+            t += n->allocated_partitions();
+        }
+        return t;
+    };
+
+    // Create an RF=3 topic with a single partition: 3 replicas allocated.
+    auto create = make_create_topic_cmd("ct", 1, 3);
+    dispatch_command(create);
+    auto tp_ns = make_tp_ns("ct");
+    BOOST_REQUIRE_EQUAL(total_allocated(), 3);
+
+    // Ask the allocator to (re)allocate the same partition at the SAME rf it
+    // already has (num_new_replicas == 0), exactly as
+    // increase_replication_factor does for a partition that is already at the
+    // target RF.
+    {
+        auto md = table.local().get_topic_metadata(tp_ns);
+        BOOST_REQUIRE(md.has_value());
+        cluster::allocation_request req(tp_ns);
+        for (const auto& [id, p_as] : md->get_assignments()) {
+            req.partitions.emplace_back(p_as, uint16_t{3});
+        }
+        auto res = allocator.local().allocate(std::move(req)).get();
+        BOOST_REQUIRE(res.has_value());
+        logger.info(
+          "allocate(rf==existing) held: total allocated = {}",
+          total_allocated());
+        // units destroyed here -> ~allocation_units releases _added_replicas
+    }
+
+    // The partition's replica set never changed, so all 3 allocations must
+    // still be present. With the bug, ~allocation_units spuriously removed
+    // them and this is 0.
+    logger.info(
+      "after units released: total allocated = {}", total_allocated());
+    BOOST_CHECK_EQUAL(total_allocated(), 3);
+}
+
 FIXTURE_TEST(
   test_dispatching_happy_path_create, topic_table_updates_dispatcher_fixture) {
     create_topics();
