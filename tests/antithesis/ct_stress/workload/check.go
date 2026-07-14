@@ -281,13 +281,25 @@ func checkComplete() error {
 		return err
 	}
 
+	// No producers run in the finally phase, so the acked summaries are the
+	// final word on what the brokers acknowledged.
+	ackedSnap, err := loadCtcAckedSnapshot()
+	if err != nil {
+		return err
+	}
+
 	for _, t := range testTopics {
 		for part := range t.partitions {
 			fmt.Printf("finally: checking %s/%d\n", t.name, part)
 
 			lo, hi, recs := readPartitionToEnd(t.name, part, time.Now().Add(2*time.Minute))
 			if hi <= lo {
-				continue // empty partition; nothing to verify
+				// An empty partition is only innocent if nothing was ever
+				// acked on it; acked keys with no log at all are loss.
+				if t.compacted {
+					validateCtcAcked(part, hi, nil, ackedSnap, true)
+				}
+				continue // empty partition; nothing else to verify
 			}
 
 			first, last := int64(-1), int64(-1)
@@ -313,7 +325,10 @@ func checkComplete() error {
 			if t.compacted {
 				assert.Reachable("finally: validated a non-empty compacted cloud topic partition", details)
 				assert.Always(complete, "finally: compacted cloud topic partition is readable to the high watermark", details)
-				validateCtcRange(part, lo, hi, recs)
+				latest, rangeComplete := validateCtcRange(part, lo, hi, recs)
+				// The cluster is quiesced, so hi cannot move mid-read; a
+				// complete read alone makes the loss check sound here.
+				validateCtcAcked(part, hi, latest, ackedSnap, rangeComplete)
 			} else {
 				assert.Reachable("finally: validated a non-empty delete-policy cloud topic partition", details)
 				assert.Always(complete, "finally: delete-policy cloud topic partition is fully readable to the high watermark", details)

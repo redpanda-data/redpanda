@@ -15,11 +15,11 @@ import (
 	"os"
 	"os/signal"
 	"strconv"
-	"syscall"
 	"time"
 
 	"github.com/antithesishq/antithesis-sdk-go/lifecycle"
 	"github.com/twmb/franz-go/pkg/kadm"
+	"golang.org/x/sys/unix"
 )
 
 // expectedBrokers is the broker count the workload waits for, from the
@@ -76,7 +76,7 @@ func setup() error {
 	fmt.Println("emitted setup_complete; workload container idle")
 
 	sig := make(chan os.Signal, 1)
-	signal.Notify(sig, syscall.SIGINT, syscall.SIGTERM)
+	signal.Notify(sig, unix.SIGINT, unix.SIGTERM)
 	<-sig
 	return nil
 }

@@ -6,6 +6,7 @@ require (
 	github.com/antithesishq/antithesis-sdk-go v0.7.2
 	github.com/twmb/franz-go v1.21.2
 	github.com/twmb/franz-go/pkg/kadm v1.18.0
+	golang.org/x/sys v0.47.0
 )
 
 require (
