@@ -4,6 +4,11 @@ name: Dispatch docs updates on latest release
 on:
   release:
     types: [published]
+  # RC releases only ever exist as draft GitHub releases, so no release event
+  # fires for them. The pushed RC tag is the only reliable signal.
+  push:
+    tags:
+      - 'v*-rc*'
 
 permissions:
   id-token: write
@@ -12,8 +17,8 @@ permissions:
 jobs:
   dispatch-if-latest:
     runs-on: ubuntu-latest
-    # Skip prereleases and drafts
-    if: ${{ !github.event.release.prerelease && !github.event.release.draft }}
+    # Skip tag pushes, prereleases, and drafts
+    if: ${{ github.event_name == 'release' && !github.event.release.prerelease && !github.event.release.draft }}
     steps:
       - name: Log release info
         run: |
@@ -72,3 +77,63 @@ jobs:
           event-type: trigger-property-docs-generation
           client-payload: |
             { "tag": "${{ github.event.release.tag_name }}" }
+
+      # Dispatch to docs repo for rpk docs generation if latest.
+      # The docs workflow targets its main branch for non-RC versions.
+      - name: Dispatch rpk docs generation to docs repo
+        if: steps.latest.outputs.is_latest == 'true'
+        uses: peter-evans/repository-dispatch@v4
+        with:
+          token: ${{ env.ACTIONS_BOT_TOKEN }}
+          repository: redpanda-data/docs
+          event-type: update-rpk-docs
+          client-payload: |
+            { "version": "${{ github.event.release.tag_name }}" }
+
+  # RC tag pushes: trigger rpk docs generation for the beta docs branch.
+  # The docs workflow detects the -rcN suffix and opens its PR against the
+  # docs beta branch, skipping RCs that do not match the current beta line
+  # (for example patch RCs of the stable release).
+  dispatch-rc-rpk-docs:
+    runs-on: ubuntu-latest
+    if: ${{ github.event_name == 'push' }}
+    steps:
+      # The tag filter glob also matches tags like v25.3.999-rc2-test, so
+      # enforce a strict vMAJOR.MINOR.PATCH-rcN format here.
+      - name: Validate RC tag format
+        id: tag
+        run: |
+          set -euo pipefail
+          TAG="$GITHUB_REF_NAME"
+          echo "Pushed tag: $TAG"
+          if [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+-rc[0-9]+$ ]]; then
+            echo "valid=true" >> $GITHUB_OUTPUT
+          else
+            echo "Tag does not match vMAJOR.MINOR.PATCH-rcN; skipping dispatch"
+            echo "valid=false" >> $GITHUB_OUTPUT
+          fi
+
+      # Assume AWS role and fetch ACTIONS_BOT_TOKEN
+      - uses: aws-actions/configure-aws-credentials@v6
+        if: steps.tag.outputs.valid == 'true'
+        with:
+          aws-region: ${{ vars.RP_AWS_CRED_REGION }}
+          role-to-assume: arn:aws:iam::${{ secrets.RP_AWS_CRED_ACCOUNT_ID }}:role/${{ vars.RP_AWS_CRED_BASE_ROLE_NAME }}${{ github.event.repository.name }}
+
+      - id: ghsecrets
+        if: steps.tag.outputs.valid == 'true'
+        uses: aws-actions/aws-secretsmanager-get-secrets@v3
+        with:
+          secret-ids: |
+            ,sdlc/prod/github/actions_bot_token
+          parse-json-secrets: true
+
+      - name: Dispatch rpk docs generation to docs repo
+        if: steps.tag.outputs.valid == 'true'
+        uses: peter-evans/repository-dispatch@v4
+        with:
+          token: ${{ env.ACTIONS_BOT_TOKEN }}
+          repository: redpanda-data/docs
+          event-type: update-rpk-docs
+          client-payload: |
+            { "version": "${{ github.ref_name }}", "draft_missing": "true" }
