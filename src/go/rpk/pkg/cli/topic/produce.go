@@ -28,6 +28,7 @@ import (
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/serde"
 	"github.com/spf13/afero"
 	"github.com/spf13/cobra"
+	"github.com/twmb/franz-go/pkg/kadm"
 	"github.com/twmb/franz-go/pkg/kerr"
 	"github.com/twmb/franz-go/pkg/kgo"
 	"github.com/twmb/franz-go/pkg/sr"
@@ -50,6 +51,7 @@ func newProduceCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 
 		schemaIDFlag    string
 		keySchemaIDFLag string
+		schemaContext   string
 		protoFQN        string
 		protoKeyFQN     string
 
@@ -162,21 +164,55 @@ func newProduceCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 			defer cl.Close()
 			defer cl.Flush(context.Background())
 
+			// resolveSchemaContext picks the Schema Registry context to resolve schemas in for
+			// a given topic:
+			//   - the --schema-context flag, if the user set it (either an empty value or "."
+			//     selects the default context); else
+			//   - the topic's redpanda.schema.registry.context config; else
+			//   - "" (the default context).
+			// This lets `rpk topic produce` resolve/encode schemas in the same context the
+			// Iceberg translator (and other per-topic schema resolution) uses.
+			adm := kadm.NewClient(cl)
+			schemaCtxCache := make(map[string]string)
+			resolveSchemaContext := func(topic string) string {
+				if c, ok := schemaCtxCache[topic]; ok {
+					return c
+				}
+				flagChanged := cmd.Flags().Changed("schema-context")
+				var topicCtx string
+				if !flagChanged && topic != "" {
+					var err error
+					topicCtx, err = schemaContextForTopic(cmd.Context(), adm, topic)
+					// Tolerate an unknown topic (it may be about to be auto-created, and a
+					// fresh topic has no context anyway); bail on any other failure rather
+					// than silently defaulting and encoding against the wrong context.
+					if err != nil && !errors.Is(err, kerr.UnknownTopicOrPartition) {
+						out.Die("unable to determine schema context for topic %q: %v", topic, err)
+					}
+				}
+				c := effectiveSchemaContext(flagChanged, schemaContext, topicCtx)
+				schemaCtxCache[topic] = c
+				return c
+			}
+
 			var defaultKeySerde, defaultValSerde *serde.Serde
 			var srCl *rpsr.Client
 			if isSchemaRegistry {
 				srCl, err = schemaregistry.NewClient(fs, p)
 				out.MaybeDie(err, "unable to initialize schema registry client: %v", err)
 
-				keySchema, valSchema, err := querySchemas(cmd.Context(), srCl, keySchemaID, schemaID)
+				// Numeric --schema-id resolves the schema up front; scope it to the
+				// (default) topic's context so the id is looked up in the right namespace.
+				upCtx := sr.InContext(cmd.Context(), resolveSchemaContext(defaultTopic))
+				keySchema, valSchema, err := querySchemas(upCtx, srCl, keySchemaID, schemaID)
 				out.MaybeDie(err, "unable to query schemas from the registry: %v", err)
 
 				if keySchema != nil {
-					defaultKeySerde, err = serde.NewSerde(cmd.Context(), srCl.Client, keySchema, keySchemaID, protoKeyFQN)
+					defaultKeySerde, err = serde.NewSerde(upCtx, srCl.Client, keySchema, keySchemaID, protoKeyFQN)
 					out.MaybeDie(err, "unable to build serializer for the key schema: %v", err)
 				}
 				if valSchema != nil {
-					defaultValSerde, err = serde.NewSerde(cmd.Context(), srCl.Client, valSchema, schemaID, protoFQN)
+					defaultValSerde, err = serde.NewSerde(upCtx, srCl.Client, valSchema, schemaID, protoFQN)
 					out.MaybeDie(err, "unable to build serializer for the value schema: %v", err)
 				}
 			}
@@ -218,7 +254,7 @@ func newProduceCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 				if defaultKeySerde != nil || isKeyTopicName {
 					keySerde := defaultKeySerde
 					if isKeyTopicName && keySerde == nil {
-						keySerde, err = serdeFromTopicName(cmd.Context(), srCl, topicName, "key", protoKeyFQN, serdeCache)
+						keySerde, err = serdeFromTopicName(sr.InContext(cmd.Context(), resolveSchemaContext(topicName)), srCl, topicName, "key", protoKeyFQN, serdeCache)
 						if err != nil {
 							fmt.Fprintf(os.Stderr, "unable to build key serializer using TopicNameStrategy for topic %q: %v\n", topicName, err)
 							return
@@ -231,7 +267,7 @@ func newProduceCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 				if defaultValSerde != nil || isValTopicName {
 					valSerde := defaultValSerde
 					if isValTopicName && valSerde == nil {
-						valSerde, err = serdeFromTopicName(cmd.Context(), srCl, topicName, "value", protoFQN, serdeCache)
+						valSerde, err = serdeFromTopicName(sr.InContext(cmd.Context(), resolveSchemaContext(topicName)), srCl, topicName, "value", protoFQN, serdeCache)
 						if err != nil {
 							fmt.Fprintf(os.Stderr, "unable to build value serializer using TopicNameStrategy for topic %q: %v\n", topicName, err)
 							return
@@ -272,6 +308,7 @@ func newProduceCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 	cmd.Flags().StringVar(&keySchemaIDFLag, "schema-key-id", "", "Schema ID to encode the record key with, use 'topic' for TopicName strategy")
 	cmd.Flags().StringVar(&protoFQN, "schema-type", "", "Name of the protobuf message type to be used to encode the record value using schema registry")
 	cmd.Flags().StringVar(&protoKeyFQN, "schema-key-type", "", "Name of the protobuf message type to be used to encode the record key using schema registry")
+	cmd.Flags().StringVar(&schemaContext, "schema-context", "", "Schema Registry context to resolve schemas in. Use topic's redpanda.schema.registry.context if unset. '' or '.' force default context.")
 
 	// Deprecated
 	cmd.Flags().IntVarP(new(int), "num", "n", 1, "")
@@ -451,6 +488,21 @@ message name is unnecessary. For example:
 
 Produce to 'foo', using schema ID 1, message FQN Person.Name
     rpk topic produce foo --schema-id 1 --schema-type Person.Name
+
+SCHEMA CONTEXTS
+
+Schemas may live in a non-default Schema Registry context (namespace). By default, rpk
+resolves the schema in the context configured on the topic via its
+'redpanda.schema.registry.context' property (falling back to the default context if the
+topic has none). This matches how the broker resolves schemas for the topic (for example,
+the Iceberg translator), so schema IDs are looked up in the same namespace.
+
+Use the '--schema-context' flag to override this and resolve schemas in a specific context;
+pass either an empty value or a lone dot to force the default context regardless of the
+topic's configuration (both select the default context):
+    rpk topic produce foo --schema-id 1 --schema-context .staging
+    rpk topic produce foo --schema-id=topic --schema-context=
+    rpk topic produce foo --schema-id=topic --schema-context=.
 
 TOMBSTONES
 
