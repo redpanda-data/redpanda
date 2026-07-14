@@ -1664,6 +1664,54 @@ FIXTURE_TEST(test_partial_upload3, archiver_fixture) {
     test_partial_upload_impl(*this, {3, 8}, {9, 9});
 }
 
+SEASTAR_THREAD_TEST_CASE(test_segment_meta_matches_stats_gaps) {
+    ss::abort_source never_abort;
+    retry_chain_node rtc(never_abort);
+    retry_chain_logger ctxlog(test_log, rtc);
+
+    // an upload candidate clamped to a term boundary inside a compacted
+    // multi-term segment: the metadata claims the term's logical end offset
+    // (1911) while compaction removed every batch of the range except the
+    // configuration batch at offset 0
+    cloud_storage::segment_meta meta{
+      .is_compacted = true,
+      .size_bytes = 164,
+      .base_offset = model::offset(0),
+      .committed_offset = model::offset(1911),
+      .delta_offset = model::offset_delta(0),
+      .delta_offset_end = model::offset_delta(1),
+    };
+    cloud_storage::segment_record_stats stats{
+      .base_rp_offset = model::offset(0),
+      .last_rp_offset = model::offset(0),
+      .total_conf_records = 1,
+      .size_bytes = 164,
+    };
+
+    // compacted content tolerates the trailing gap
+    BOOST_REQUIRE(segment_meta_matches_stats(meta, stats, ctxlog, true));
+    // the strict check rejects it (this is the pre-fix behavior that left
+    // the manifest empty for compacted multi-term segments)
+    BOOST_REQUIRE(!segment_meta_matches_stats(meta, stats, ctxlog, false));
+
+    // gaps do not excuse size or config-record-count mismatches
+    auto bad_size = stats;
+    bad_size.size_bytes = 200;
+    BOOST_REQUIRE(!segment_meta_matches_stats(meta, bad_size, ctxlog, true));
+    auto bad_conf = stats;
+    bad_conf.total_conf_records = 2;
+    BOOST_REQUIRE(!segment_meta_matches_stats(meta, bad_conf, ctxlog, true));
+    // nor an offset range outside the metadata range
+    auto bad_range = stats;
+    bad_range.last_rp_offset = model::offset(2000);
+    BOOST_REQUIRE(!segment_meta_matches_stats(meta, bad_range, ctxlog, true));
+
+    // exact physical match passes the strict check
+    auto exact = stats;
+    exact.last_rp_offset = model::offset(1911);
+    BOOST_REQUIRE(segment_meta_matches_stats(meta, exact, ctxlog, false));
+}
+
 SEASTAR_THREAD_TEST_CASE(small_segment_run_test) {
     size_t high_watermark = 100;
     std::vector<cloud_storage::segment_meta> segments = {
