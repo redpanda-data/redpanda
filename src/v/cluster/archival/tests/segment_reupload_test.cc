@@ -723,7 +723,7 @@ TEST(SegmentReuploadUnit, test_segment_name_adjustment) {
       max_upload_size};
 
     collector.collect_segments();
-    auto name = collector.adjust_segment_name();
+    auto name = collector.adjust_segment_name(model::term_id{0});
     ASSERT_EQ(name, cloud_storage::segment_name{"10-0-v1.log"});
 }
 
@@ -757,7 +757,7 @@ TEST(SegmentReuploadUnit, test_segment_name_no_adjustment) {
 
     collector.collect_segments();
 
-    auto name = collector.adjust_segment_name();
+    auto name = collector.adjust_segment_name(model::term_id{0});
     ASSERT_EQ(name, cloud_storage::segment_name{"10-0-v1.log"});
 }
 
@@ -2099,6 +2099,93 @@ TEST(SegmentReuploadUnit, test_new_segment_upload_off_by_one) {
     ASSERT_EQ(collector5.end_inclusive(), model::offset{3});
     ASSERT_TRUE(collector5.segment_ready_for_upload());
     validate_non_compacted_collector(collector5);
+}
+
+TEST(SegmentReuploadUnit, test_new_segment_upload_empty_term_span) {
+    // Compaction can leave a term span of a multi-term segment with no
+    // physical batches. A candidate clamped to such a term boundary must
+    // extend across the empty span instead of producing a zero-length
+    // upload.
+    cloud_storage::partition_manifest m(
+      model::ntp{"test_ns", "test_tpc", 0}, model::initial_revision_id{0});
+
+    temporary_dir tmp_dir("concat_segment_read");
+    auto data_path = tmp_dir.get_path();
+    using namespace storage;
+
+    auto b = make_log_builder(data_path.string());
+    b | start(ntp_config{{"test_ns", "test_tpc", 0}, {data_path}});
+    auto defer = ss::defer([&b] { b.stop().get(); });
+
+    // Segment 1 covers [20, 44] and spans two terms, but its base term's
+    // span [20, 29] holds no batches, as if compaction removed them all.
+    b | add_segment(0) | add_random_batch(0, 20) | add_segment(20)
+      | add_random_batch(30, 15);
+    b.get_segment(1).advance_term(model::term_id{2}, model::offset{30});
+
+    for (auto& s : b.get_disk_log_impl().segments()) {
+        s->release_appender()->close().get();
+    }
+
+    archival::segment_collector collector{
+      segment_collector_mode::new_upload,
+      model::offset{20},
+      m,
+      b.get_disk_log_impl(),
+      max_upload_size,
+      model::offset{44}};
+
+    collector.collect_segments();
+    ASSERT_TRUE(collector.segment_ready_for_upload());
+    ASSERT_EQ(collector.begin_inclusive(), model::offset{20});
+    // clamped to the base term's boundary
+    ASSERT_EQ(collector.end_inclusive(), model::offset{29});
+
+    auto result
+      = collector.make_upload_candidate_stream(segment_lock_timeout).get();
+    ASSERT_TRUE(!has_failure(result));
+    ASSERT_TRUE(!std::holds_alternative<skip_offset_range>(result));
+
+    // The candidate extended across the empty span: all of its content
+    // belongs to the second term.
+    auto cstream = std::move(value(result));
+    ASSERT_EQ(cstream.start_offset, model::offset{20});
+    ASSERT_EQ(cstream.end_offset, model::offset{44});
+    ASSERT_EQ(cstream.term, model::term_id{2});
+    ASSERT_EQ(cstream.size, b.get_segment(1).size_bytes());
+
+    iobuf candidate_data;
+    {
+        auto is = cstream.create_input_stream();
+        while (!is.eof()) {
+            auto buf = is.read().get();
+            if (buf.empty()) {
+                break;
+            }
+            candidate_data.append(std::move(buf));
+        }
+        is.close().get();
+    }
+    ASSERT_EQ(candidate_data.size_bytes(), cstream.size);
+
+    // With nothing to extend into (the target ends at the empty span) the
+    // candidate is rejected instead of producing a zero-length upload.
+    archival::segment_collector clamped_collector{
+      segment_collector_mode::new_upload,
+      model::offset{20},
+      m,
+      b.get_disk_log_impl(),
+      max_upload_size,
+      model::offset{29}};
+
+    clamped_collector.collect_segments();
+    auto clamped_result = clamped_collector
+                            .make_upload_candidate_stream(segment_lock_timeout)
+                            .get();
+    ASSERT_TRUE(has_failure(clamped_result));
+    ASSERT_EQ(
+      std::get<candidate_creation_error>(clamped_result),
+      candidate_creation_error::zero_content_length);
 }
 
 /// Collect all batch boundaries

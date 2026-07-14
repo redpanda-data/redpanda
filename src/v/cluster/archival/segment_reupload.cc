@@ -336,6 +336,9 @@ void segment_collector::do_collect() {
     // manifest segment boundary.
     // In case of new segment upload we don't need to do this.
     bool done = false;
+    // term of the offset the candidate begins at; a remote segment covers
+    // exactly one term
+    std::optional<model::term_id> candidate_term;
     auto can_continue = [&] {
         auto last_collected
           = _segments.empty()
@@ -420,22 +423,31 @@ void segment_collector::do_collect() {
             align_begin_offset_to_manifest();
         }
 
-        // Only segments from the same term can be concatenated together.
+        // A remote segment covers exactly one raft term. Stop collecting
+        // when the next segment begins in a different term; a term ending
+        // inside a collected (multi-term) segment is handled by clamping
+        // the end offset below.
         if (
-          !_segments.empty()
-          && _segments.back()->offsets().get_base_term()
-               != result.segment->offsets().get_base_term()) {
+          candidate_term.has_value()
+          && result.segment->offsets().get_base_term() != *candidate_term) {
             archival_log.debug(
-              "Segment collect for ntp {} stopping collection, last "
-              "segment "
+              "Segment collect for ntp {} stopping collection, candidate "
               "term {} is different from current segment term: {}",
               _manifest.get_ntp(),
-              _segments.back()->offsets().get_base_term(),
+              *candidate_term,
               result.segment->offsets().get_base_term());
             break;
         }
 
         _segments.push_back(result.segment);
+        if (!candidate_term.has_value()) {
+            // _begin_inclusive below the segment base (manifest gap) is
+            // attributed to the base term
+            candidate_term = result.segment->offsets()
+                               .term_at(_begin_inclusive)
+                               .value_or(
+                                 result.segment->offsets().get_base_term());
+        }
         _generations.push_back(result.segment->get_generation_id()());
         _sizes.push_back(result.segment->size_bytes());
         start = model::next_offset(
@@ -449,18 +461,36 @@ void segment_collector::do_collect() {
     }
 
     auto last_collected = _segments.back()->offsets().get_committed_offset();
-    if (last_collected >= projected_end_inclusive) {
+
+    // A remote segment covers exactly one raft term: when a collected
+    // (multi-term) segment contains a term transition, clamp the collected
+    // range to the last offset of the candidate term.
+    auto term_clamped_end = last_collected;
+    for (const auto& seg : _segments) {
+        if (seg->offsets().last_term() != *candidate_term) {
+            auto term_end = seg->offsets().term_last_offset(*candidate_term);
+            if (term_end.has_value()) {
+                term_clamped_end = std::min(term_clamped_end, *term_end);
+            }
+            break;
+        }
+    }
+
+    if (term_clamped_end >= projected_end_inclusive) {
         _can_replace_manifest_segment = true;
     }
 
     if (is_reupload_mode(_mode)) {
         align_end_offset_to_manifest(
-          _target_end_inclusive.value_or(last_collected));
+          std::min(
+            _target_end_inclusive.value_or(last_collected), term_clamped_end));
     } else {
         // In case of new upload we want to end at the end of the segment
         // or at LSO (which is passed through the _target_end_inclusive).
         _end_inclusive = std::min(
-          _target_end_inclusive.value_or(last_collected), last_collected);
+          {_target_end_inclusive.value_or(last_collected),
+           last_collected,
+           term_clamped_end});
     }
 }
 
@@ -736,30 +766,15 @@ bool segment_collector::segment_ready_for_upload() const {
     return _begin_inclusive <= _end_inclusive && !_segments.empty();
 }
 
-cloud_storage::segment_name segment_collector::adjust_segment_name() const {
-    vassert(
-      !_segments.empty(), "Cannot calculate segment name with no segments");
-
-    auto first = _segments.front();
-    auto file_name = first->filename();
-    auto meta = storage::segment_path::parse_segment_filename(file_name);
-    auto version = meta ? meta->version : storage::record_version_type::v1;
-
-    cloud_storage::segment_name name{};
-    if (_begin_inclusive == first->offsets().get_base_offset()) {
-        auto orig_path = std::filesystem::path(file_name);
-        name = cloud_storage::segment_name(orig_path.filename().string());
-        vlog(archival_log.debug, "Using original segment name: {}", name);
-    } else {
-        auto path = storage::segment_path::make_segment_path(
-          *_ntp_cfg,
-          _begin_inclusive,
-          first->offsets().get_base_term(),
-          version);
-        name = cloud_storage::segment_name(path.filename().string());
-        vlog(archival_log.debug, "Using adjusted segment name: {}", name);
-    }
-
+cloud_storage::segment_name
+segment_collector::adjust_segment_name(model::term_id term) const {
+    // remote segments cover exactly one raft term and use the v1 naming
+    // scheme: multi-term (v2) local segments are split at term boundaries
+    // during collection, and older readers do not parse v2 names
+    auto path = storage::segment_path::make_segment_path(
+      *_ntp_cfg, _begin_inclusive, term, storage::record_version_type::v1);
+    auto name = cloud_storage::segment_name(path.filename().string());
+    vlog(archival_log.debug, "Using segment name: {}", name);
     return name;
 }
 
@@ -984,6 +999,63 @@ ss::future<candidate_creation_result> segment_collector::make_upload_candidate(
                             - (head_seek.bytes + last_size_bytes);
     content_length += tail_seek.bytes;
 
+    // Compaction can leave a whole term span of a multi-term segment with
+    // no physical batches: the span holds no config batch when the segment
+    // rolled mid-term, and all its data records may be deduplicated into
+    // later terms of the same segment. A new-upload candidate clamped to
+    // such a term boundary has no content, but the manifest must keep
+    // advancing, so extend the candidate one term span at a time until it
+    // has content. All physical batches of the extended candidate belong
+    // to its last term span (the spans before it are empty), so the
+    // content still covers exactly one term. Reuploads are unaffected:
+    // a zero-content reupload replaces fully-compacted-away manifest
+    // segments and remains valid.
+    auto candidate_term = first->offsets()
+                            .term_at(_begin_inclusive)
+                            .value_or(first->offsets().get_base_term());
+    if (content_length == 0 && !is_reupload_mode(_mode)) {
+        const auto last_collected = last->offsets().get_committed_offset();
+        const auto max_end = std::min(
+          _target_end_inclusive.value_or(last_collected), last_collected);
+        while (content_length == 0 && _end_inclusive < max_end) {
+            auto next_term_opt = last->offsets().term_at(
+              model::next_offset(_end_inclusive));
+            vassert(
+              next_term_opt.has_value(),
+              "offset {} up to {} must be covered by the last collected "
+              "segment",
+              model::next_offset(_end_inclusive),
+              max_end);
+            auto next_term = *next_term_opt;
+            auto span_end
+              = last->offsets().term_last_offset(next_term).value_or(max_end);
+            _end_inclusive = std::min(span_end, max_end);
+            vlog(
+              archival_log.debug,
+              "Candidate for {} has no content, extending across empty term "
+              "span to {} (term {})",
+              _manifest.get_ntp(),
+              _end_inclusive,
+              next_term);
+            auto seek_result = co_await storage::convert_end_offset_to_file_pos(
+              _end_inclusive, last, last->index().max_timestamp());
+            if (seek_result.has_error()) {
+                co_return candidate_creation_error::end_offset_seek_error;
+            }
+            tail_seek = seek_result.value();
+            if (tail_seek.offset_inside_batch) {
+                co_return candidate_creation_error::offset_inside_batch;
+            }
+            content_length = _collected_size
+                             - (head_seek.bytes + last_size_bytes)
+                             + tail_seek.bytes;
+            candidate_term = next_term;
+        }
+        if (content_length == 0) {
+            co_return candidate_creation_error::zero_content_length;
+        }
+    }
+
     auto starting_offset = head_seek.offset;
     if (starting_offset != _begin_inclusive) {
         vlog(
@@ -1037,7 +1109,7 @@ ss::future<candidate_creation_result> segment_collector::make_upload_candidate(
 
     co_return upload_candidate_with_locks{
       upload_candidate{
-        .exposed_name = adjust_segment_name(),
+        .exposed_name = adjust_segment_name(candidate_term),
         .starting_offset = starting_offset,
         .file_offset = head_seek.bytes,
         .content_length = content_length,
@@ -1045,7 +1117,7 @@ ss::future<candidate_creation_result> segment_collector::make_upload_candidate(
         .final_file_offset = tail_seek.bytes,
         .base_timestamp = head_seek.ts,
         .max_timestamp = tail_seek.ts,
-        .term = first->offsets().get_base_term(),
+        .term = candidate_term,
         .sources = _segments,
       },
       std::move(locks_resolved)};
