@@ -117,6 +117,8 @@ std::string_view to_string_view(feature f) {
         return "datalake_iceberg";
     case feature::raft_symmetric_reconfiguration_cancel:
         return "raft_symmetric_reconfiguration_cancel";
+    case feature::multi_term_segments:
+        return "multi_term_segments";
     case feature::datalake_iceberg_ga:
         return "datalake_iceberg_ga";
     case feature::cloud_storage_metadata_rw_fence:
