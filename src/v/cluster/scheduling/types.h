@@ -243,6 +243,7 @@ public:
 
 private:
     friend class partition_allocator;
+    friend class allocated_partition_test;
     reallocation_step(
       model::broker_shard current, std::optional<model::broker_shard> previous)
       : _current(current)
@@ -275,6 +276,7 @@ public:
 
 private:
     friend class partition_allocator;
+    friend class allocated_partition_test;
 
     // construct an object from an original assignment
     allocated_partition(
