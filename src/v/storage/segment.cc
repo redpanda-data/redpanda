@@ -802,12 +802,13 @@ ss::future<ss::lw_shared_ptr<segment>> open_segment(
   storage_resources& resources,
   ss::sharded<features::feature_table>& feature_table,
   std::optional<ntp_sanitizer_config> ntp_sanitizer_config) {
-    if (path.get_version() != record_version_type::v1) {
+    if (
+      path.get_version() != record_version_type::v1
+      && path.get_version() != record_version_type::v2) {
         throw std::runtime_error(
           fmt::format(
-            "Segment has invalid version {} != {} path {}",
+            "Segment has invalid version {} path {}",
             path.get_version(),
-            record_version_type::v1,
             path));
     }
 
