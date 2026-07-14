@@ -445,13 +445,13 @@ TEST_F(storage_test_fixture, truncated_segment_recovery) {
         }
 
         SUCCEED() << "segment: " << *seg_it;
-        auto offsets = (*seg_it)->offsets();
+        const auto& offsets = (*seg_it)->offsets();
         auto truncate_offset = truncate_offsets[i_seg];
 
         ASSERT_EQ(
           offsets.get_dirty_offset(), truncate_offset - model::offset{1});
 
-        auto next_offsets = (*next)->offsets();
+        const auto& next_offsets = (*next)->offsets();
         ASSERT_EQ(next_offsets.get_base_offset(), truncate_offset);
         // segment commited offset has to be lower than next segment base
         // offset

@@ -517,7 +517,7 @@ model::record_batch_reader create_segment_full_reader(
   storage::probe& pb,
   ss::rwlock::holder h,
   std::optional<model::offset> start_offset) {
-    auto o = s->offsets();
+    const auto& o = s->offsets();
     auto reader_cfg = local_log_reader_config(
       start_offset.value_or(o.get_base_offset()), o.get_dirty_offset());
     reader_cfg.skip_batch_cache = true;
@@ -931,7 +931,8 @@ make_concatenated_segment(
     auto& back = segments.back()->offsets();
 
     // offsets span the concatenated range
-    segment::offset_tracker offsets(front.get_term(), front.get_base_offset());
+    segment::offset_tracker offsets(
+      front.get_base_term(), front.get_base_offset());
     const auto committed_offset = std::max(
       front.get_committed_offset(), back.get_committed_offset());
     const auto stable_offset = std::max(
@@ -1044,7 +1045,7 @@ make_concatenated_segment(
 
     co_return std::make_tuple(
       ss::make_lw_shared<segment>(
-        offsets,
+        std::move(offsets),
         std::move(reader),
         std::move(index),
         nullptr,

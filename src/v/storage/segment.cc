@@ -51,7 +51,7 @@ segment::segment(
   segment::generation_id gen) noexcept
   : _resources(resources)
   , _generation_id(gen)
-  , _tracker(tkr)
+  , _tracker(std::move(tkr))
   , _reader(std::move(r))
   , _idx(std::move(i))
   , _appender(std::move(a))
@@ -414,6 +414,7 @@ ss::future<> segment::do_truncate(
       offset_tracker::committed_offset_t{new_max_offset},
       offset_tracker::stable_offset_t{new_max_offset},
       offset_tracker::dirty_offset_t{new_max_offset});
+    _tracker.truncate_term_spans(new_max_offset);
     _reader->set_file_size(physical);
     vlog(
       stlog.trace,
@@ -722,15 +723,23 @@ void segment::advance_stable_offset(size_t filepos) {
 }
 
 fmt::iterator segment::offset_tracker::format_to(fmt::iterator it) const {
-    return fmt::format_to(
+    it = fmt::format_to(
       it,
       "{{term:{}, base_offset:{}, committed_offset:{}, stable_offset:{}, "
-      "dirty_offset:{}}}",
-      get_term(),
+      "dirty_offset:{}",
+      get_base_term(),
       get_base_offset(),
       get_committed_offset(),
       get_stable_offset(),
       get_dirty_offset());
+    if (_term_spans.size() > 1) {
+        it = fmt::format_to(it, ", term_spans:[");
+        for (const auto& [base, term] : _term_spans) {
+            it = fmt::format_to(it, "({}, {})", term, base);
+        }
+        it = fmt::format_to(it, "]");
+    }
+    return fmt::format_to(it, "}}");
 }
 
 fmt::iterator segment::format_to(fmt::iterator it) const {
@@ -877,7 +886,7 @@ ss::future<ss::lw_shared_ptr<segment>> make_segment(
                   .then([seg, &resources](segment_appender_ptr a) {
                       return ss::make_ready_future<ss::lw_shared_ptr<segment>>(
                         ss::make_lw_shared<segment>(
-                          seg->offsets(),
+                          seg->offsets().copy(),
                           seg->release_segment_reader(),
                           std::move(seg->index()),
                           std::move(a),
@@ -907,7 +916,7 @@ ss::future<ss::lw_shared_ptr<segment>> make_segment(
 
                 return ss::make_ready_future<ss::lw_shared_ptr<segment>>(
                   ss::make_lw_shared<segment>(
-                    seg->offsets(),
+                    seg->offsets().copy(),
                     seg->release_segment_reader(),
                     std::move(seg->index()),
                     seg->release_appender(),

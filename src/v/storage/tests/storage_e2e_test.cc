@@ -1799,7 +1799,7 @@ TEST_F(storage_test_fixture, adjacent_segment_compaction) {
 
     // Check if it honors max_compactible offset by setting it to the base
     // offset of first segment. Nothing should be compacted.
-    const auto first_segment_offsets = log->segments().front()->offsets();
+    const auto& first_segment_offsets = log->segments().front()->offsets();
     c_cfg.compact.max_removable_local_log_offset
       = first_segment_offsets.get_base_offset();
     log->housekeeping(c_cfg).get();
@@ -1873,7 +1873,7 @@ TEST_F(storage_test_fixture, adjacent_segment_compaction_terms) {
     ASSERT_EQ(log->segment_count(), 5);
 
     for (int i = 0; i < 5; i++) {
-        ASSERT_EQ(log->segments()[i]->offsets().get_term()(), i + 1);
+        ASSERT_EQ(log->segments()[i]->offsets().get_base_term()(), i + 1);
     }
 }
 

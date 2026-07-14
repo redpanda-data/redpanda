@@ -423,15 +423,15 @@ void segment_collector::do_collect() {
         // Only segments from the same term can be concatenated together.
         if (
           !_segments.empty()
-          && _segments.back()->offsets().get_term()
-               != result.segment->offsets().get_term()) {
+          && _segments.back()->offsets().get_base_term()
+               != result.segment->offsets().get_base_term()) {
             archival_log.debug(
               "Segment collect for ntp {} stopping collection, last "
               "segment "
               "term {} is different from current segment term: {}",
               _manifest.get_ntp(),
-              _segments.back()->offsets().get_term(),
-              result.segment->offsets().get_term());
+              _segments.back()->offsets().get_base_term(),
+              result.segment->offsets().get_base_term());
             break;
         }
 
@@ -752,7 +752,10 @@ cloud_storage::segment_name segment_collector::adjust_segment_name() const {
         vlog(archival_log.debug, "Using original segment name: {}", name);
     } else {
         auto path = storage::segment_path::make_segment_path(
-          *_ntp_cfg, _begin_inclusive, first->offsets().get_term(), version);
+          *_ntp_cfg,
+          _begin_inclusive,
+          first->offsets().get_base_term(),
+          version);
         name = cloud_storage::segment_name(path.filename().string());
         vlog(archival_log.debug, "Using adjusted segment name: {}", name);
     }
@@ -1042,7 +1045,7 @@ ss::future<candidate_creation_result> segment_collector::make_upload_candidate(
         .final_file_offset = tail_seek.bytes,
         .base_timestamp = head_seek.ts,
         .max_timestamp = tail_seek.ts,
-        .term = first->offsets().get_term(),
+        .term = first->offsets().get_base_term(),
         .sources = _segments,
       },
       std::move(locks_resolved)};
