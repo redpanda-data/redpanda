@@ -56,7 +56,12 @@ class RpkRegistryTest(RedpandaTest):
         super(RpkRegistryTest, self).__init__(
             test_context=ctx,
             schema_registry_config=schema_registry_config,
-            extra_rp_conf={"schema_registry_use_rpc": False},
+            extra_rp_conf={
+                "schema_registry_use_rpc": False,
+                # required for the schema-context tests; harmless for the rest (unqualified
+                # subjects still behave the same).
+                "schema_registry_enable_qualified_subjects": True,
+            },
             node_ready_timeout_s=60,
         )
         # SASL Config
@@ -130,15 +135,41 @@ class RpkRegistryTest(RedpandaTest):
         )
 
     def create_schema(
-        self, subject, schema, suffix, references=None, id=None, version=None
+        self,
+        subject,
+        schema,
+        suffix,
+        references=None,
+        id=None,
+        version=None,
+        context=None,
     ):
         with tempfile.NamedTemporaryFile(suffix=suffix) as tf:
             tf.write(bytes(schema, "UTF-8"))
             tf.seek(0)
             out = self._rpk.create_schema(
-                subject, tf.name, references=references, id=id, version=version
+                subject,
+                tf.name,
+                references=references,
+                id=id,
+                version=version,
+                context=context,
             )
             assert out["subject"] == subject
+            # context-local schema id (contexts have independent, per-context id counters)
+            return out["id"]
+
+    def _wire_schema_id(self, topic, offset):
+        # Consume WITHOUT --use-schema-registry so we observe the raw bytes the producer
+        # wrote, and pull the Schema Registry wire header (magic byte + 4-byte big-endian
+        # schema id) off the value. This verifies which schema id `produce` encoded with
+        # WITHOUT relying on the consume side being context-aware (this feature only makes
+        # produce context-aware; a plain --use-schema-registry consume resolves in the
+        # default context and would mis-decode a context-encoded record).
+        msg = json.loads(self._rpk.consume(topic, offset=offset))
+        raw = bytes(msg["value"].encode().decode("unicode-escape"), "utf-8")
+        assert raw[0] == 0, "expected SR wire-format magic byte 0"
+        return int.from_bytes(raw[1:5], "big")
 
     def _schema_topic_created(self):
         # SR should create the topic the first time its accessed.
@@ -639,6 +670,213 @@ message Test3 {
             # Error here is that productId should be an integer and not a string.
             bad_msg = '{"productId":"123","productName":"redpanda","tags":["foo","bar"],"warehouseLocation":{"latitude":37.2795481,"longitude":127.047077}}'
             self._rpk.produce(test_topic, msg=bad_msg, key=key_1, schema_id="topic")
+
+    @cluster(num_nodes=3)
+    def test_produce_schema_context_explicit_flag(self):
+        # --schema-context resolves --schema-id in that context, not the default one.
+        avro = '{"type":"record","name":"r","fields":[{"name":"f1","type":"string"}]}'
+        filler = (
+            '{"type":"record","name":"filler","fields":[{"name":"x","type":"string"}]}'
+        )
+
+        # Default context: this schema gets some id.
+        default_id = self.create_schema("ctx-subject-value", avro, ".avro")
+
+        # Non-default context .team: advance its per-context id counter with a filler so our
+        # target schema lands at a DIFFERENT numeric id than the default one. (Ids are
+        # per-context and start at 1, so without this the two would collide at id 1 and the
+        # wire-header assertion below could not tell the contexts apart.)
+        self.create_schema("filler-value", filler, ".avro", context=".team")
+        ctx_id = self.create_schema("ctx-subject-value", avro, ".avro", context=".team")
+        assert ctx_id != default_id, (
+            f"test needs distinct ids, got {ctx_id} == {default_id}"
+        )
+
+        topic = "ctx_explicit"
+        self._rpk.create_topic(topic)
+        msg = '{"f1":"hello"}'
+
+        # Resolving in .team -> the record must carry the .team-local id.
+        self._rpk.produce(
+            topic, key="k", msg=msg, schema_id=ctx_id, schema_context=".team"
+        )
+        assert self._wire_schema_id(topic, offset="0:1") == ctx_id
+
+        # The same id resolved in the DEFAULT context does not exist there -> produce fails.
+        with expect_exception(RpkException, lambda e: True):
+            self._rpk.produce(topic, key="k", msg=msg, schema_id=ctx_id)
+
+        # Both explicit-default forms (empty and lone dot) select the default context.
+        self._rpk.produce(
+            topic, key="k", msg=msg, schema_id=default_id, schema_context=""
+        )
+        assert self._wire_schema_id(topic, offset="1:2") == default_id
+        self._rpk.produce(
+            topic, key="k", msg=msg, schema_id=default_id, schema_context="."
+        )
+        assert self._wire_schema_id(topic, offset="2:3") == default_id
+
+    @cluster(num_nodes=3)
+    def test_produce_schema_context_from_topic_config(self):
+        # With no --schema-context flag, produce derives the context from the topic's
+        # redpanda.schema.registry.context config.
+        avro = '{"type":"record","name":"r","fields":[{"name":"f1","type":"string"}]}'
+        filler = (
+            '{"type":"record","name":"filler","fields":[{"name":"x","type":"string"}]}'
+        )
+
+        default_id = self.create_schema(
+            "cfgtopic-value", avro, ".avro"
+        )  # default context
+        self.create_schema("filler-value", filler, ".avro", context=".team")
+        ctx_id = self.create_schema("cfgtopic-value", avro, ".avro", context=".team")
+        assert ctx_id != default_id, (
+            f"test needs distinct ids, got {ctx_id} == {default_id}"
+        )
+
+        topic = "cfgtopic"
+        self._rpk.create_topic(
+            topic, config={"redpanda.schema.registry.context": ".team"}
+        )
+
+        # No --schema-context: rpk reads the topic config -> .team -> stamps the .team id.
+        self._rpk.produce(topic, key="k", msg='{"f1":"hi"}', schema_id=ctx_id)
+        assert self._wire_schema_id(topic, offset="0:1") == ctx_id
+
+        # An explicit --schema-context overrides the topic config; empty and "." both force the
+        # default context, so producing the default-context id succeeds and stamps it.
+        self._rpk.produce(
+            topic, key="k", msg='{"f1":"hi"}', schema_id=default_id, schema_context=""
+        )
+        assert self._wire_schema_id(topic, offset="1:2") == default_id
+        self._rpk.produce(
+            topic, key="k", msg='{"f1":"hi"}', schema_id=default_id, schema_context="."
+        )
+        assert self._wire_schema_id(topic, offset="2:3") == default_id
+
+    @cluster(num_nodes=3)
+    def test_consume_schema_context_explicit_flag(self):
+        # consume --schema-context resolves the wire-format id in that context to decode.
+        avro = '{"type":"record","name":"r","fields":[{"name":"f1","type":"string"}]}'
+        filler = (
+            '{"type":"record","name":"filler","fields":[{"name":"x","type":"string"}]}'
+        )
+        self.create_schema("consume-flag-value", avro, ".avro")  # default context
+        self.create_schema("filler-value", filler, ".avro", context=".team")
+        ctx_id = self.create_schema(
+            "consume-flag-value", avro, ".avro", context=".team"
+        )
+
+        topic = "consume_ctx_flag"
+        self._rpk.create_topic(topic)
+        msg = '{"f1":"hello"}'
+        self._rpk.produce(
+            topic, key="k", msg=msg, schema_id=ctx_id, schema_context=".team"
+        )
+
+        # decode in .team -> matches the original record.
+        out = self._rpk.consume(
+            topic, offset="0:1", use_schema_registry="value", schema_context=".team"
+        )
+        assert json.loads(json.loads(out)["value"]) == json.loads(msg)
+
+    @cluster(num_nodes=3)
+    def test_consume_schema_context_from_topic_config(self):
+        # With no --schema-context, consume derives the context from the topic config.
+        avro = '{"type":"record","name":"r","fields":[{"name":"f1","type":"string"}]}'
+        filler = (
+            '{"type":"record","name":"filler","fields":[{"name":"x","type":"string"}]}'
+        )
+        default_id = self.create_schema(
+            "cfgconsume-value", avro, ".avro"
+        )  # default context
+        self.create_schema("filler-value", filler, ".avro", context=".team")
+        ctx_id = self.create_schema("cfgconsume-value", avro, ".avro", context=".team")
+        assert ctx_id != default_id, (
+            f"test needs distinct ids, got {ctx_id} == {default_id}"
+        )
+
+        topic = "cfgconsume"
+        self._rpk.create_topic(
+            topic, config={"redpanda.schema.registry.context": ".team"}
+        )
+        msg = '{"f1":"hi"}'
+        self._rpk.produce(topic, key="k", msg=msg, schema_id=ctx_id)  # config-derived
+        out = self._rpk.consume(topic, offset="0:1", use_schema_registry="value")
+        assert json.loads(json.loads(out)["value"]) == json.loads(msg)
+
+        # An explicit --schema-context overrides the topic config for decoding too: a record
+        # encoded in the default context decodes when the flag forces it (empty or "." both do).
+        self._rpk.produce(
+            topic, key="k", msg=msg, schema_id=default_id, schema_context=""
+        )
+        out = self._rpk.consume(
+            topic, offset="1:2", use_schema_registry="value", schema_context=""
+        )
+        assert json.loads(json.loads(out)["value"]) == json.loads(msg)
+        out = self._rpk.consume(
+            topic, offset="1:2", use_schema_registry="value", schema_context="."
+        )
+        assert json.loads(json.loads(out)["value"]) == json.loads(msg)
+
+    @cluster(num_nodes=3)
+    def test_consume_multi_context_no_cache_collision(self):
+        # A single consume spanning two topics bound to DIFFERENT contexts whose schemas share
+        # the same numeric id but differ. The decode serde cache must key by (context, id); a
+        # bare-id cache would decode the second topic against the first's schema.
+        schema_a = (
+            '{"type":"record","name":"r","fields":[{"name":"afield","type":"string"}]}'
+        )
+        schema_b = (
+            '{"type":"record","name":"r","fields":[{"name":"bfield","type":"string"}]}'
+        )
+        id_a = self.create_schema(
+            "ctxcache-a-value", schema_a, ".avro", context=".actx"
+        )
+        id_b = self.create_schema(
+            "ctxcache-b-value", schema_b, ".avro", context=".bctx"
+        )
+        assert id_a == id_b, (
+            "each is the first schema in its context -> same numeric id"
+        )
+
+        self._rpk.create_topic(
+            "ctxcache-a", config={"redpanda.schema.registry.context": ".actx"}
+        )
+        self._rpk.create_topic(
+            "ctxcache-b", config={"redpanda.schema.registry.context": ".bctx"}
+        )
+        # Two records per topic: the first decode is a cache miss (builds+caches the serde), the
+        # second is a cache hit, exercising both the (context, id) cache paths.
+        for v in ("x1", "x2"):
+            self._rpk.produce(
+                "ctxcache-a", key="k", msg=json.dumps({"afield": v}), schema_id=id_a
+            )
+        for v in ("y1", "y2"):
+            self._rpk.produce(
+                "ctxcache-b", key="k", msg=json.dumps({"bfield": v}), schema_id=id_b
+            )
+
+        # One consume across both topics (regex) -> a shared decode cache.
+        out = self._rpk.consume(
+            "ctxcache-.*", regex=True, n=4, offset="start", use_schema_registry="value"
+        )
+        # rpk consume emits one JSON object per record, but pretty-printed across multiple
+        # lines, so decode consecutive objects from the stream rather than splitting on newlines.
+        by_topic = {}
+        dec = json.JSONDecoder()
+        s, i = out.strip(), 0
+        while i < len(s):
+            while i < len(s) and s[i].isspace():
+                i += 1
+            if i >= len(s):
+                break
+            rec, i = dec.raw_decode(s, i)
+            by_topic.setdefault(rec["topic"], []).append(json.loads(rec["value"]))
+        # Each topic's records decode against its own context's schema (in produce order within
+        # the single partition), never the other context's despite the shared numeric id.
+        assert by_topic["ctxcache-a"] == [{"afield": "x1"}, {"afield": "x2"}], by_topic
+        assert by_topic["ctxcache-b"] == [{"bfield": "y1"}, {"bfield": "y2"}], by_topic
 
     @cluster(num_nodes=1)
     def test_registry_mode(self):
