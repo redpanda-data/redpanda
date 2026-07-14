@@ -148,8 +148,8 @@ replicas_t allocated_partition::release_new_partition(
   chunked_vector<model::broker_shard>& added_replicas) {
     for (const auto& bs : _replicas) {
         if (
-          !_original_node2shard.has_ever_seen_modifications()
-          || !_original_node2shard.is_original(bs.node_id)) {
+          _original_node2shard.has_ever_seen_modifications()
+          && !_original_node2shard.is_original(bs.node_id)) {
             added_replicas.push_back(bs);
         }
     }
