@@ -118,7 +118,7 @@ func NewMemoryChecker(fs afero.Fs) Checker {
 	return NewIntChecker(
 		FreeMemChecker,
 		"Free memory per CPU [MB]",
-		Warning,
+		Fatal,
 		func(current int) bool {
 			return current >= 2048
 		},
