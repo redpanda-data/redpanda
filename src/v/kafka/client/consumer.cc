@@ -34,6 +34,8 @@
 #include <seastar/core/when_all.hh>
 #include <seastar/coroutine/exception.hh>
 
+#include <absl/container/flat_hash_map.h>
+
 #include <algorithm>
 #include <chrono>
 #include <exception>
@@ -545,6 +547,83 @@ consumer::dispatch_fetch(broker_reqs_t::value_type br) {
     co_return res;
 }
 
+ss::future<> consumer::seed_positions_from_committed() {
+    // Collect the assigned partitions that have no fetch position yet --
+    // freshly (re)assigned ones. A partition that already carries an in-RAM
+    // position (e.g. a same-instance rebalance) is left untouched: that
+    // position is at least as recent as the committed offset, so re-seeding
+    // would re-read.
+    chunked_vector<offset_fetch_request_topic> req;
+    absl::flat_hash_map<model::topic_partition, shared_broker_t>
+      broker_by_partition;
+    // Each topic is a unique key in _assignment, so one request entry per
+    // iteration collects all of that topic's initializing partitions.
+    for (const auto& [t, ps] : _assignment) {
+        offset_fetch_request_topic topic_req{.name = t};
+        for (const auto& p : ps) {
+            model::topic_partition tp{t, p};
+            auto leader = _topic_cache.leader(tp);
+            if (!leader) {
+                throw partition_error(
+                  tp, error_code::unknown_topic_or_partition);
+            }
+            auto broker = _brokers.find(*leader);
+            if (_fetch_sessions[broker].has_offset(tp)) {
+                continue;
+            }
+            broker_by_partition.emplace(tp, std::move(broker));
+            topic_req.partition_indexes.push_back(p);
+        }
+        if (!topic_req.partition_indexes.empty()) {
+            req.push_back(std::move(topic_req));
+        }
+    }
+    if (broker_by_partition.empty()) {
+        // Every assigned partition already has a position
+        co_return;
+    }
+
+    auto res = co_await offset_fetch(std::move(req));
+    for (const auto& t : res.data.topics) {
+        for (const auto& part : t.partitions) {
+            model::topic_partition tp{t.name, part.partition_index};
+            // A per-partition error must not be swallowed: skipping it would
+            // leave the partition uninitialized, so the fetch below would start
+            // it at earliest and silently re-read the whole log instead of
+            // resuming. Throw so the retry mitigates (update_metadata for a
+            // transient unknown_topic_or_partition, surfaces the rest).
+            if (part.error_code != error_code::none) {
+                throw partition_error(tp, part.error_code);
+            }
+            auto it = broker_by_partition.find(tp);
+            if (it == broker_by_partition.end()) {
+                continue;
+            }
+            // A committed offset of -1 means the group has none: seed earliest
+            // (log start, the only reset policy pandaproxy allows). Seeding a
+            // concrete value also marks the partition initialized, so committed
+            // is not re-fetched on every poll. Otherwise the fetch position is
+            // committed+1: our commit stores the last consumed offset
+            // (commit-all stores position-1; an explicit REST commit stores the
+            // client's value, so posting X resumes at X+1). If committed+1 is
+            // below the log start after retention, the fetch returns
+            // offset_out_of_range and the reseed to log_start recovers it.
+            const auto pos = part.committed_offset < model::offset{0}
+                               ? model::offset{0}
+                               : part.committed_offset + model::offset{1};
+            vlog(
+              _logger->debug,
+              "Consumer: {}: seeding {} from committed offset {} -> position "
+              "{}",
+              *this,
+              tp,
+              part.committed_offset,
+              pos);
+            _fetch_sessions[it->second].reseed(tp, pos);
+        }
+    }
+}
+
 consumer::broker_reqs_t consumer::build_fetch_requests(
   std::chrono::milliseconds timeout, std::optional<int32_t> max_bytes) {
     broker_reqs_t broker_reqs;
@@ -653,6 +732,12 @@ ss::future<std::pair<fetch_response, bool>> consumer::fetch_round(
 ss::future<fetch_response> consumer::fetch(
   std::chrono::milliseconds timeout, std::optional<int32_t> max_bytes) {
     refresh_inactivity_timer();
+
+    // Before fetching, seed any freshly (re)assigned partition from the group's
+    // committed offset so a fresh consumer instance resumes where the group
+    // left off, mirroring the Java consumer's updateFetchPositions at the start
+    // of poll(). Cheap when nothing is initializing (no OffsetFetch is issued).
+    co_await seed_positions_from_committed();
 
     // An out-of-range partition is reseeded to the log start and stripped from
     // the response (the pandaproxy serializer rejects any partition error), so

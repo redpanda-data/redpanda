@@ -26,6 +26,14 @@ model::offset fetch_session::offset(model::topic_partition_view tpv) const {
     return part_it->second;
 }
 
+bool fetch_session::has_offset(model::topic_partition_view tpv) const {
+    auto topic_it = _offsets.find(tpv.topic);
+    if (topic_it == _offsets.end()) {
+        return false;
+    }
+    return topic_it->second.contains(tpv.partition);
+}
+
 void fetch_session::reseed(
   model::topic_partition_view tpv, model::offset new_offset) {
     _offsets[model::topic{tpv.topic}][tpv.partition] = new_offset;
