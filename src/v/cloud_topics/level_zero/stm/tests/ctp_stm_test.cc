@@ -990,6 +990,67 @@ TEST_F_CORO(
       << "change, allowing an epoch that is below the applied window [7, 8].";
 }
 
+TEST_F_CORO(
+  ctp_stm_fixture, test_failed_epoch_bump_replicate_poisons_seen_window) {
+    // Bug reproduction (Antithesis ct_stress crash): a fence-time epoch bump
+    // whose batch never lands in the log leaves a phantom lower bound in the
+    // seen window, admitting a stale epoch that the log-content invariant
+    // forbids.
+    //
+    // Scenario, all within one term on one leader:
+    // 1. A writer fences epoch 132 (first fence in the term, seen window
+    //    becomes [132, 132]) but its replicate fails - nothing lands in the
+    //    log and the fence guard is dropped.
+    // 2. A writer fences epoch 141 (seen window [132, 141]) and replicates.
+    //    The log's first epoch-bearing batch carries 141, so the
+    //    epoch_window_checker window collapses to [141, 141] and the applied
+    //    state treats epochs <= 140 as inactive (their L0 objects become
+    //    eligible for GC).
+    // 3. A writer fences epoch 132 again. This must be rejected: admitting it
+    //    lands an epoch-132 placeholder after the 141 batch, and every
+    //    replica that applies the batch dies in
+    //    epoch_window_checker::check_epoch with "epoch 132 at N is outside of
+    //    sliding window [141, 141]".
+    co_await start();
+    co_await wait_for_leader(raft::default_timeout());
+
+    auto& leader = node(*get_leader());
+    auto leader_api = api(leader);
+
+    // Step 1: fence epoch 132 and drop the guard without replicating,
+    // simulating a fenced write whose replicate failed (e.g. leadership
+    // churn between the fence and the raft append).
+    {
+        auto fence = co_await leader_api.fence_epoch(ct::cluster_epoch{132});
+        ASSERT_TRUE_CORO(fence.has_value());
+        // Guard dropped here; the seen window keeps [132, 132].
+    }
+
+    // Step 2: fence epoch 141 and replicate a placeholder under the fence.
+    // This is the first epoch-bearing batch in the log.
+    bool ok = co_await replicate_with_epoch(
+      leader, ct::cluster_epoch{141}, model::offset{0}, 0);
+    ASSERT_TRUE_CORO(ok);
+
+    // Step 3: epoch 132 is now below the log window and must be rejected.
+    auto stale_fence = co_await leader_api.fence_epoch(ct::cluster_epoch{132});
+    EXPECT_FALSE(stale_fence.has_value())
+      << "fence_epoch admitted epoch 132 although the log's first epoch "
+         "entry is 141: the seen-window lower bound came from a bump whose "
+         "batch never landed in the log";
+
+    if (stale_fence.has_value()) {
+        // Under the bug, replicating with the granted fence reproduces the
+        // crash: apply trips the epoch_window_checker vassert on every
+        // replica.
+        auto guard = std::move(stale_fence.value());
+        auto batch = make_record_batch(
+          ct::cluster_epoch{132}, model::offset{1}, 1);
+        auto res = co_await replicate_record_batch(leader, std::move(batch));
+        ASSERT_TRUE_CORO(res.has_value());
+    }
+}
+
 // Test for the combined advance_epoch + sync_to_next_placeholder functionality.
 // This is the primary use case: enabling GC progress on idle partitions by
 // recording the current epoch and advancing LRLO past the advance_epoch batch.
