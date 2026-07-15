@@ -29,9 +29,8 @@ faults:
   cpu_mod: true
   node_hang: [redpanda, workload]
   node_throttle: [redpanda, workload]
-  # Explicitly empty: no containers included, so node termination is off. Enable
-  # it by adding brokers -- never minio (single instance, no S3 durability).
-  node_termination: []
+  # Exclude workload for now. Exclude minio (single instance, no S3 durability).
+  node_termination: [redpanda]
   # Containers excluded from network faults. Explicitly empty: nothing excluded,
   # so every container -- minio too -- sees network faults, exercising
   # object-storage disruption.

@@ -74,6 +74,7 @@ services:
 {% endif %}
     volumes:
       - ./scripts:/scripts:ro
+      - /var/lib/redpanda-{{ i }}:/var/lib/redpanda/data
     ulimits:
       nofile:
         soft: 131072
