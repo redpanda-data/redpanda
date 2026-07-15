@@ -89,8 +89,8 @@ class Record:
         self.headers = headers
 
     def kv_dict(self):
-        key = None if self.key == None else self.key.hex()
-        val = None if self.value == None else self.value.hex()
+        key = None if self.key is None else self.key.hex()
+        val = None if self.value is None else self.value.hex()
         return {"k": key, "v": val}
 
 
@@ -283,10 +283,19 @@ class BatchIterator:
     def __init__(self, path, term):
         self.path = path
         self.term = term
-        self.file = open(path, "rb")
+        try:
+            self.file = open(path, "rb")
+        except FileNotFoundError:
+            # the viewer may run against a live node: a segment can be
+            # removed between directory listing and open, e.g. by adjacent
+            # merge compaction (which merges across raft terms)
+            logger.warning(f"segment {path} disappeared before open, skipping")
+            self.file = None
         self.idx = 0
 
     def __next__(self):
+        if self.file is None:
+            raise StopIteration()
         b = Batch.from_stream(self.file, self.idx)
 
         if b is None:
@@ -301,7 +310,8 @@ class BatchIterator:
         return b
 
     def __del__(self):
-        self.file.close()
+        if self.file is not None:
+            self.file.close()
 
 
 class Segment:
