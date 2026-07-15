@@ -20,9 +20,47 @@ import (
 	"github.com/twmb/franz-go/pkg/kgo"
 )
 
+// readPolicy bounds a retried read; a zero value leaves the corresponding
+// bound off. Anytime commands bound attempts and leave time open: on failure
+// they stop, and the test composer reschedules the command, so persistence
+// comes from scheduling. The eventually check bounds time and leaves attempts
+// open: it runs once, after faults stop, and has to wait out post-fault
+// recovery.
+type readPolicy struct {
+	attempts int       // max tries; 0 = unlimited
+	deadline time.Time // no retry after this instant; zero = no deadline
+}
+
+func (p readPolicy) exhausted(attempt int) bool {
+	if p.attempts > 0 && attempt >= p.attempts {
+		return true
+	}
+	return !p.deadline.IsZero() && time.Now().After(p.deadline)
+}
+
+func anytimeRead() readPolicy { return readPolicy{attempts: 3} }
+
+func eventuallyRead() readPolicy {
+	return readPolicy{deadline: time.Now().Add(2 * time.Minute)}
+}
+
 // partitionBounds returns a partition's current start and high-watermark
-// offsets. Records occupy [lo, hi); the partition is empty when hi <= lo.
-func partitionBounds(t string, part int32) (lo, hi int64, err error) {
+// offsets, retrying failed lookups per pol. Records occupy [lo, hi); the
+// partition is empty when hi <= lo. A successful answer is never retried,
+// empty or not: list_offsets replies only after a linearizable barrier
+// (kafka/server/handlers/list_offsets.cc), so it is authoritative.
+func partitionBounds(t string, part int32, pol readPolicy) (lo, hi int64, err error) {
+	for attempt := 1; ; attempt++ {
+		lo, hi, err = partitionBoundsOnce(t, part)
+		if err == nil || pol.exhausted(attempt) {
+			return lo, hi, err
+		}
+		fmt.Printf("bounds of %s/%d attempt %d: %v; retrying\n", t, part, attempt, err)
+		time.Sleep(2 * time.Second)
+	}
+}
+
+func partitionBoundsOnce(t string, part int32) (lo, hi int64, err error) {
 	cl, err := newClient()
 	if err != nil {
 		return 0, 0, err
@@ -41,34 +79,54 @@ func partitionBounds(t string, part int32) (lo, hi int64, err error) {
 		return 0, 0, err
 	}
 
+	// A missing entry (e.g. a topic-level metadata error while the cluster
+	// recovers) must be an error: the zero value would read as an empty
+	// partition at offset 0.
 	s, ok := starts.Lookup(t, part)
-	if !ok || s.Err != nil {
+	if !ok {
+		return 0, 0, fmt.Errorf("%s/%d missing from start-offsets response", t, part)
+	}
+	if s.Err != nil {
 		return 0, 0, s.Err
 	}
 	e, ok := ends.Lookup(t, part)
-	if !ok || e.Err != nil {
+	if !ok {
+		return 0, 0, fmt.Errorf("%s/%d missing from end-offsets response", t, part)
+	}
+	if e.Err != nil {
 		return 0, 0, e.Err
 	}
 	return s.Offset, e.Offset, nil
 }
 
-// randomFooPartitionRange picks a random foo partition and returns its current
-// start and high-watermark offsets.
-func randomFooPartitionRange() (part int32, lo, hi int64, err error) {
-	part = int32(randN(fooPartitions))
-	lo, hi, err = partitionBounds(fooTopic, part)
-	return part, lo, hi, err
+// readRange consumes offsets [o1, o2) from a single partition, retrying per
+// pol until a read reaches o2-1. Returns the records of the last attempt in
+// the order the broker served them: the whole range on success, a prefix if
+// the policy ran out first.
+func readRange(t string, part int32, o1, o2 int64, pol readPolicy) []*kgo.Record {
+	for attempt := 1; ; attempt++ {
+		recs := readRangeOnce(t, part, o1, o2)
+		if len(recs) > 0 && recs[len(recs)-1].Offset == o2-1 {
+			return recs
+		}
+		if pol.exhausted(attempt) {
+			return recs
+		}
+		fmt.Printf("read of %s/%d [%d,%d) attempt %d stopped after %d records; retrying\n",
+			t, part, o1, o2, attempt, len(recs))
+		time.Sleep(2 * time.Second)
+	}
 }
 
-// readRange consumes offsets [o1, o2) from a single partition and returns the
-// records in the order the broker served them. Bounded by a timeout so a fault
-// that stalls the range cannot hang the command.
-func readRange(t string, part int32, o1, o2 int64) ([]*kgo.Record, error) {
+// readRangeOnce is one bounded attempt: it stops at the first fetch error or
+// at its timeout and returns whatever arrived, so a fault that stalls the
+// range cannot hang the command.
+func readRangeOnce(t string, part int32, o1, o2 int64) []*kgo.Record {
 	cl, err := newClient(kgo.ConsumePartitions(map[string]map[int32]kgo.Offset{
 		t: {part: kgo.NewOffset().At(o1)},
 	}))
 	if err != nil {
-		return nil, err
+		return nil
 	}
 	defer cl.Close()
 
@@ -101,7 +159,7 @@ func readRange(t string, part int32, o1, o2 int64) ([]*kgo.Record, error) {
 			break
 		}
 	}
-	return recs, nil
+	return recs
 }
 
 // offsets extracts the offsets of recs in order.
@@ -117,17 +175,16 @@ func offsets(recs []*kgo.Record) []int64 {
 // pick a random sub-range of a random foo partition and validate the records
 // it returns.
 func checkFoo() error {
-	part, lo, hi, err := randomFooPartitionRange()
+	pol := anytimeRead()
+	part := int32(randN(fooPartitions))
+	lo, hi, err := partitionBounds(fooTopic, part, pol)
 	if err != nil || hi <= lo {
 		return nil // empty or unreadable under faults; nothing to check
 	}
 	o1 := lo + int64(randN(int(hi-lo)))
 	o2 := o1 + 1 + int64(randN(int(hi-o1)))
 
-	recs, err := readRange(fooTopic, part, o1, o2)
-	if err != nil {
-		return nil
-	}
+	recs := readRange(fooTopic, part, o1, o2, pol)
 	validateFooRange(part, lo, hi, o1, o2, recs)
 	return nil
 }
@@ -211,48 +268,33 @@ func checkFooOffsets() error {
 		return fmt.Errorf("empty range: o2 (%d) must be > o1 (%d)", o2, o1)
 	}
 
-	lo, hi, err := partitionBounds(fooTopic, int32(part))
+	pol := anytimeRead()
+	lo, hi, err := partitionBounds(fooTopic, int32(part), pol)
 	if err != nil {
 		fmt.Printf("check_offsets_foo: could not read bounds for foo/%d: %v\n", part, err)
 		lo, hi = -1, -1
 	}
-	recs, err := readRange(fooTopic, int32(part), o1, o2)
-	if err != nil {
-		return fmt.Errorf("read of foo/%d [%d,%d) failed: %w", part, o1, o2, err)
-	}
+	recs := readRange(fooTopic, int32(part), o1, o2, pol)
 	fmt.Printf("check_offsets_foo: foo/%d [%d,%d) bounds=[%d,%d) -> %d records\n",
 		part, o1, o2, lo, hi, len(recs))
 	validateFooRange(int32(part), lo, hi, o1, o2, recs)
 	return nil
 }
 
-// readPartitionToEnd re-reads a partition's bounds and consumes the whole
-// [lo, hi) range, retrying until the read reaches the high watermark (a
-// record at offset hi-1; on a compacted topic that is fewer than hi-lo
-// records) or the deadline passes. The retries only cover the post-fault
-// recovery window (an eventually command runs after faults stop but the
-// cluster may still be settling and there is no concurrent produce, so hi is
-// stable).
-// Returns the last-seen bounds and whatever the final attempt read: the
-// complete slice on success, or a prefix if it gave up.
-func readPartitionToEnd(t string, part int32, deadline time.Time) (lo, hi int64, recs []*kgo.Record) {
-	for {
-		var err error
-		lo, hi, err = partitionBounds(t, part)
-		if err == nil {
-			if hi <= lo {
-				return lo, hi, nil // empty partition
-			}
-			recs, err = readRange(t, part, lo, hi)
-			if err == nil && len(recs) > 0 && recs[len(recs)-1].Offset == hi-1 {
-				return lo, hi, recs
-			}
-		}
-		if time.Now().After(deadline) {
-			return lo, hi, recs
-		}
-		time.Sleep(2 * time.Second)
+// readPartitionToEnd reads a partition's bounds and then the whole [lo, hi)
+// range under one policy; a deadline in pol is shared by both steps. The
+// completeness target (a record at offset hi-1; on a compacted topic that is
+// fewer than hi-lo records) is fixed once from the bounds: nothing produces
+// while an eventually command runs, so hi cannot move mid-read.
+// Returns the bounds and the records of the final range attempt — the
+// complete slice on success, a prefix if pol ran out, nil for an empty
+// partition — or an error if the bounds never became readable.
+func readPartitionToEnd(t string, part int32, pol readPolicy) (lo, hi int64, recs []*kgo.Record, err error) {
+	lo, hi, err = partitionBounds(t, part, pol)
+	if err != nil || hi <= lo {
+		return lo, hi, nil, err
 	}
+	return lo, hi, readRange(t, part, lo, hi, pol), nil
 }
 
 // eventually_check_complete: after Antithesis stops fault injection for the
@@ -295,7 +337,15 @@ func checkComplete() error {
 		for part := range t.partitions {
 			fmt.Printf("eventually: checking %s/%d\n", t.name, part)
 
-			lo, hi, recs := readPartitionToEnd(t.name, part, time.Now().Add(2*time.Minute))
+			lo, hi, recs, err := readPartitionToEnd(t.name, part, eventuallyRead())
+			if err != nil {
+				// The cluster serves metadata (waitClusterReady passed) but
+				// this partition's bounds never became readable; that is a
+				// recovery failure, not an empty partition.
+				assert.Unreachable("eventually: partition bounds unreadable after faults stopped",
+					map[string]any{"topic": t.name, "partition": part, "err": err.Error()})
+				continue
+			}
 			if hi <= lo {
 				// An empty partition is only innocent if nothing was ever
 				// acked on it; acked keys with no log at all are loss.

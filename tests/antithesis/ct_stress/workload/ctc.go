@@ -456,21 +456,19 @@ func sweepCtc() error {
 	if err != nil {
 		return err
 	}
+	pol := anytimeRead()
 	part := int32(randN(ctcPartitions))
-	lo, hi, err := partitionBounds(ctcTopic, part)
+	lo, hi, err := partitionBounds(ctcTopic, part, pol)
 	if err != nil || hi <= lo {
 		return nil // empty or unreadable under faults; nothing to sweep
 	}
-	recs, err := readRange(ctcTopic, part, lo, hi)
-	if err != nil {
-		return nil
-	}
+	recs := readRange(ctcTopic, part, lo, hi, pol)
 	assert.Sometimes(len(recs) > 0, "compacted cloud topic sweep consumes a non-empty range",
 		map[string]any{"partition": part, "lo": lo, "hi": hi})
 	latest, complete := validateCtcRange(part, lo, hi, recs)
 	stable := false
 	if complete {
-		_, hi2, err := partitionBounds(ctcTopic, part)
+		_, hi2, err := partitionBounds(ctcTopic, part, pol)
 		stable = err == nil && hi2 == hi
 	}
 	validateCtcAcked(part, hi, latest, acked, complete && stable)
