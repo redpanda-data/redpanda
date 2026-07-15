@@ -7,8 +7,6 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
-import time
-
 from rptest.services.kgo_verifier_services import KgoVerifierProducer
 from ducktape.mark import matrix
 from ducktape.tests.test import TestContext
@@ -23,6 +21,7 @@ from rptest.services.redpanda import (
 )
 from rptest.tests.cloud_topics.e2e_test import EndToEndCloudTopicsBase
 import rptest.tests.cloud_topics.utils as ct_utils
+from rptest.util import check_consistently
 
 
 class CloudTopicsRetentionTest(EndToEndCloudTopicsBase):
@@ -318,32 +317,6 @@ class CloudTopicsRetentionTest(EndToEndCloudTopicsBase):
             self.admin, self.topic_name, 0, lambda size: size == 0
         )
 
-    def _assert_start_offset_stays_zero(
-        self,
-        topic: str,
-        partition: int,
-        duration_sec: int,
-        backoff_sec: int,
-    ):
-        """
-        Poll start_offset for `duration_sec`, asserting it never advances past
-        0. The window spans several housekeeping intervals (5s each), so any
-        retention enforcement would have fired and advanced the offset by the
-        time this returns.
-        """
-        deadline = time.monotonic() + duration_sec
-        while time.monotonic() < deadline:
-            part = self._get_partition_info(topic, partition)
-            self.logger.info(
-                f"start_offset for {topic}:{partition} = {part.start_offset} "
-                f"(hwm={part.high_watermark})"
-            )
-            assert part.start_offset == 0, (
-                f"Retention must not advance start_offset for a compact-only "
-                f"topic, but it advanced to {part.start_offset}"
-            )
-            time.sleep(backoff_sec)
-
     @cluster(num_nodes=4)
     @matrix(
         cloud_storage_type=get_cloud_storage_type(),
@@ -389,7 +362,20 @@ class CloudTopicsRetentionTest(EndToEndCloudTopicsBase):
             self.admin, self.topic_name, 0, lambda size: size > 0
         )
 
-        # Across several housekeeping intervals, the start offset must stay 0.
-        self._assert_start_offset_stays_zero(
-            topic=self.topic_name, partition=0, duration_sec=40, backoff_sec=5
+        # Across several housekeeping intervals (5s each), the start offset
+        # must stay 0. Any retention enforcement would have fired and advanced
+        # it by the time this returns.
+        def start_offset_is_zero() -> bool:
+            part = self._get_partition_info(self.topic_name, 0)
+            self.logger.info(
+                f"start_offset for {self.topic_name}:0 = {part.start_offset} "
+                f"(hwm={part.high_watermark})"
+            )
+            return part.start_offset == 0
+
+        check_consistently(
+            start_offset_is_zero,
+            duration_sec=40,
+            interval_sec=5,
+            err_msg="Retention must not advance start_offset for a compact-only topic",
         )
