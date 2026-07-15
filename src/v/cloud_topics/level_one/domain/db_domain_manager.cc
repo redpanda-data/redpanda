@@ -74,7 +74,7 @@ rpc::errc log_and_convert(const db_update_error& e, std::string_view prefix) {
         break;
     case invalid_update:
         ret = rpc::errc::concurrent_requests;
-        lvl = ss::log_level::debug;
+        lvl = ss::log_level::warn;
         break;
     }
     vlogl(cd_log, lvl, "{}{}", prefix, e);
