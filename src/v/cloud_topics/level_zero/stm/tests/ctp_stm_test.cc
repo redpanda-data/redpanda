@@ -1051,6 +1051,59 @@ TEST_F_CORO(
     }
 }
 
+TEST_F_CORO(ctp_stm_fixture, test_below_max_fence_rejected_without_batches) {
+    // Companion to test_failed_epoch_bump_replicate_poisons_seen_window
+    // covering the concurrent variant: the max-seen epoch's batch is not in
+    // the log yet (here it is never replicated at all - the same state the
+    // fence observes while that batch is still mid-replication). With no
+    // epoch batch applied there is no evidence that anything precedes the
+    // max epoch's first batch, so a below-max fence must be rejected.
+    co_await start();
+    co_await wait_for_leader(raft::default_timeout());
+
+    auto& leader = node(*get_leader());
+    auto leader_api = api(leader);
+
+    // Two fence-time bumps, neither replicates a batch.
+    {
+        auto fence = co_await leader_api.fence_epoch(ct::cluster_epoch{132});
+        ASSERT_TRUE_CORO(fence.has_value());
+    }
+    {
+        auto fence = co_await leader_api.fence_epoch(ct::cluster_epoch{141});
+        ASSERT_TRUE_CORO(fence.has_value());
+    }
+
+    auto stale_fence = co_await leader_api.fence_epoch(ct::cluster_epoch{132});
+    ASSERT_FALSE_CORO(stale_fence.has_value())
+      << "below-max epoch admitted while no epoch batch has been applied";
+}
+
+TEST_F_CORO(ctp_stm_fixture, test_below_max_fence_allowed_after_epoch_landed) {
+    // The window's intended semantics survive the fix: when the previous
+    // epoch's batch actually landed before the bump, a straggler at that
+    // epoch is admitted and its batch is legal in the log (the checker
+    // window is [132, 141]).
+    co_await start();
+    co_await wait_for_leader(raft::default_timeout());
+
+    auto& leader = node(*get_leader());
+    auto leader_api = api(leader);
+
+    bool ok = co_await replicate_with_epoch(
+      leader, ct::cluster_epoch{132}, model::offset{0}, 0);
+    ASSERT_TRUE_CORO(ok);
+    ok = co_await replicate_with_epoch(
+      leader, ct::cluster_epoch{141}, model::offset{1}, 1);
+    ASSERT_TRUE_CORO(ok);
+
+    // The straggler at the previous epoch is fenced and replicated without
+    // tripping the epoch_window_checker.
+    ok = co_await replicate_with_epoch(
+      leader, ct::cluster_epoch{132}, model::offset{2}, 2);
+    ASSERT_TRUE_CORO(ok);
+}
+
 // Test for the combined advance_epoch + sync_to_next_placeholder functionality.
 // This is the primary use case: enabling GC progress on idle partitions by
 // recording the current epoch and advancing LRLO past the advance_epoch batch.
