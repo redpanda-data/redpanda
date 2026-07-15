@@ -73,6 +73,7 @@ redpanda_cc_library(
         "//src/v/json",
         "//src/v/kafka/protocol",
         "//src/v/strings:utf8",
+        "//src/v/utils:base64",
     ],
 )
 

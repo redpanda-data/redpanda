@@ -43,11 +43,33 @@ public:
         }
     }
 
+    /// Decode from a (possibly fragmented) iobuf, without linearizing it.
+    std::pair<bool, std::optional<iobuf>> operator()(iobuf v) {
+        switch (_fmt) {
+        case serialization_format::none:
+            [[fallthrough]];
+        case serialization_format::binary_v2:
+            return decode_base64(std::move(v));
+        case serialization_format::unsupported:
+            [[fallthrough]];
+        default:
+            return {false, std::nullopt};
+        }
+    }
+
     inline std::pair<bool, std::optional<iobuf>>
     decode_base64(std::string_view v) {
         try {
             auto decoded = base64_to_bytes(v);
             return {true, bytes_to_iobuf(decoded)};
+        } catch (const base64_decoder_exception&) {
+            return {false, std::nullopt};
+        }
+    };
+
+    inline std::pair<bool, std::optional<iobuf>> decode_base64(iobuf v) {
+        try {
+            return {true, base64_to_iobuf(v)};
         } catch (const base64_decoder_exception&) {
             return {false, std::nullopt};
         }
