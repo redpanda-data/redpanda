@@ -1158,8 +1158,17 @@ segment_collector::make_upload_candidate_stream(
     stream.min_timestamp = cand.base_timestamp;
     stream.max_timestamp = cand.max_timestamp;
     stream.size = cand.content_length;
-    stream.is_compacted = front->is_compacted_segment()
-                          && eligible_for_compacted_reupload(*front);
+    // describes whether the uploaded bytes may contain gaps, which is true
+    // as soon as a compaction rewrite of the source segment happened (note
+    // that is_compacted_segment() only means the segment belongs to a
+    // compacted topic). this is a weaker condition than
+    // eligible_for_compacted_reupload (finished windowed compaction), which
+    // decides the reupload pipeline: a self-compacted segment that has not
+    // finished windowed compaction is already gapped, and the upload
+    // consistency check must tolerate that (e.g. a candidate clamped to a
+    // term boundary whose tail batches were compacted away).
+    stream.is_compacted = front->has_self_compact_timestamp()
+                          || front->finished_windowed_compaction();
     stream.term = cand.term;
     stream.create_input_stream =
       [segments = cand.sources,
