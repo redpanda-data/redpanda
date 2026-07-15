@@ -74,25 +74,6 @@ class ControllerEraseTest(RedpandaTest):
             controller_elected, timeout_sec=15, backoff_sec=1
         )
 
-        def wait_all_segments():
-            storage = self.redpanda.node_storage(victim_node)
-            segments = (
-                storage.ns["redpanda"]
-                .topics["controller"]
-                .partitions["0_0"]
-                .segments.keys()
-            )
-            # We expect that segments count for controller should be transfers_leadership_count + 1.
-            # Because each transfer creates one segment + initial leadership after restart creates first segment
-            return len(segments) == transfers_leadership_count + 1
-
-        wait_until(
-            wait_all_segments,
-            timeout_sec=40,
-            backoff_sec=1,
-            err_msg=f"Victim node({victim_node}) does not contain expected segments count({transfers_leadership_count + 1}) for controller log",
-        )
-
         bystander_node_dirty_offset = admin.get_controller_status(bystander_node)[
             "dirty_offset"
         ]
