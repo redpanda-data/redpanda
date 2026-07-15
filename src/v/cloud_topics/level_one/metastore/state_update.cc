@@ -628,6 +628,49 @@ replace_objects_update::build(
 
 std::expected<std::monostate, stm_update_error>
 compact_objects_update::can_apply(const state& state) {
+    if (new_objects.empty()) {
+        // Metadata-only commit.
+        if (compaction_updates.empty()) {
+            return std::unexpected(stm_update_error(
+              "Metadata-only compaction request carries no updates"));
+        }
+        for (const auto& [t, t_req] : compaction_updates) {
+            for (const auto& [p, compaction_update] : t_req) {
+                model::topic_id_partition tidp{t, p};
+                auto p_ref = state.partition_state(tidp);
+                if (!p_ref.has_value()) {
+                    return std::unexpected(stm_update_error(
+                      fmt::format("Partition {} not tracked by state", tidp)));
+                }
+                const auto& p_state = p_ref->get();
+                if (
+                  compaction_update.expected_compaction_epoch
+                  != p_state.compaction_epoch) {
+                    return std::unexpected(stm_update_error(
+                      fmt::format(
+                        "Expected compaction epoch {} does not match the "
+                        "current compaction epoch {} for {}",
+                        compaction_update.expected_compaction_epoch,
+                        p_state.compaction_epoch,
+                        tidp)));
+                }
+                // Cleaned ranges must refer to offsets the log has seen.
+                for (const auto& r : compaction_update.new_cleaned_ranges) {
+                    if (r.last_offset >= p_state.next_offset) {
+                        return std::unexpected(stm_update_error(
+                          fmt::format(
+                            "Cleaned range [{}, {}] for {} extends past "
+                            "the next offset {}",
+                            r.base_offset,
+                            r.last_offset,
+                            tidp,
+                            p_state.next_offset)));
+                    }
+                }
+            }
+        }
+        return std::monostate{};
+    }
     auto layout_res = validate_new_objects_layout(state, new_objects);
     if (!layout_res.has_value()) {
         return std::unexpected(layout_res.error());
@@ -784,6 +827,17 @@ compact_objects_update::apply(state& state) {
             model::topic_id_partition tidp{t, p};
             auto& p_state = state.topic_to_state[tidp.topic_id]
                               .pid_to_state[tidp.partition];
+            // An update with no cleaned ranges and no tombstone removals —
+            // the shape a job uses to commit a batch of output objects
+            // mid-run — bumps the epoch but leaves the compaction state
+            // untouched, mirroring the LSM path which skips rewriting the
+            // compaction row.
+            if (
+              compaction_update.new_cleaned_ranges.empty()
+              && compaction_update.removed_tombstones_ranges.empty()) {
+                ++p_state.compaction_epoch;
+                continue;
+            }
             if (!p_state.compaction_state.has_value()) {
                 p_state.compaction_state.emplace();
             }

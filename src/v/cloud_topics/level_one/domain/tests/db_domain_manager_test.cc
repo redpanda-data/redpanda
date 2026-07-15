@@ -1157,6 +1157,382 @@ TEST_F(DbDomainManagerTest, TestGarbageCollectionDeletionDelay) {
       30s, [&] { return all_objects_missing(object_ids); });
 }
 
+namespace {
+// A "partial" compaction commit: a batch of the job's output objects with
+// an empty compaction update. This is the existing compact_objects shape
+// the sink's no-metadata fallback has always used: the epoch is validated
+// and bumped, the extents are replaced span-exact, and no compaction state
+// is recorded. Bumping the epoch on every batch is what fences stale
+// rewriters (straggler compactions, leveling jobs with old read snapshots)
+// out of the job's data for the remainder of the run.
+l1_rpc::compact_objects_request make_partial_compact(
+  const model::topic_id_partition& tp,
+  chunked_vector<new_object> objects,
+  partition_state::compaction_epoch_t expected_epoch) {
+    l1_rpc::compact_objects_request req;
+    req.metastore_partition = model::partition_id(0);
+    req.new_objects = std::move(objects);
+    compaction_state_update csu;
+    csu.cleaned_at = model::timestamp::missing();
+    csu.expected_compaction_epoch = expected_epoch;
+    req.compaction_updates.emplace(tp, std::move(csu));
+    return req;
+}
+} // namespace
+
+// Models a long-running compaction job under the incremental-commit
+// pattern: the job lands each batch of output objects via a partial
+// compaction commit as it is produced (validated span-exact and bumping
+// the compaction epoch every time), then finishes with a metadata-only
+// compact_objects() carrying no objects — just the cleaned ranges,
+// recorded against the epoch its own partials advanced. The job may run
+// arbitrarily longer than the preregistration TTL: by the time the GC
+// could expire anything, the objects are already committed. Together with
+// TestReplaceObjectsAfterPreregistrationExpiry (where a single-shot commit
+// of a job outliving the TTL is rejected), this shows the incremental
+// pattern is what makes long jobs commit safely.
+TEST_F(DbDomainManagerTest, TestPartialCompactsSurvivePreregistrationExpiry) {
+    cfg.get("cloud_topics_long_term_garbage_collection_interval")
+      .set_value(100ms);
+    cfg.get("cloud_topics_preregistered_object_ttl").set_value(1ms);
+
+    auto tp = make_tp();
+    // Seed [0, 30) as three extents.
+    add_preregistered_objects(tp, kafka::offset(0), 3, 10, model::term_id(1));
+
+    auto partial_commit =
+      [&](kafka::offset base, uint32_t count, int expected_epoch) {
+          auto prereg = initial_manager
+                          ->preregister_objects({
+                            .metastore_partition = model::partition_id(0),
+                            .count = count,
+                          })
+                          .get();
+          ASSERT_EQ(prereg.ec, l1_rpc::errc::ok);
+          auto reply = initial_manager
+                         ->compact_objects(make_partial_compact(
+                           tp,
+                           make_new_objects_with_ids(
+                             tp, base, 10, prereg.object_ids),
+                           partition_state::compaction_epoch_t{expected_epoch}))
+                         .get();
+          ASSERT_EQ(reply.ec, l1_rpc::errc::ok);
+      };
+
+    // Incremental phase: partial-commit [0, 20) as the job produces its
+    // first two output objects, bumping the epoch to 1.
+    ASSERT_NO_FATAL_FAILURE(partial_commit(kafka::offset(0), 2, 0));
+
+    // The job outlives the preregistration TTL while the GC cycles; the
+    // committed objects are no longer preregistrations, so there is
+    // nothing for the GC to expire from under the job.
+    ASSERT_EQ(initial_manager->flush_domain({}).get().ec, l1_rpc::errc::ok);
+    initial_manager->start();
+    ss::sleep(1s).get();
+
+    // Tail of the job: the last output object lands the same way.
+    ASSERT_NO_FATAL_FAILURE(partial_commit(kafka::offset(20), 1, 1));
+
+    // Final commit: metadata only. Atomically records the job's cleaned
+    // ranges against the epoch its partials advanced.
+    {
+        l1_rpc::compact_objects_request req;
+        req.metastore_partition = model::partition_id(0);
+        compaction_state_update csu;
+        csu.new_cleaned_ranges.push_back({
+          .base_offset = kafka::offset(0),
+          .last_offset = kafka::offset(29),
+          .has_tombstones = false,
+        });
+        csu.cleaned_at = model::timestamp::now();
+        csu.expected_compaction_epoch = partition_state::compaction_epoch_t{2};
+        req.compaction_updates.emplace(tp, std::move(csu));
+        auto reply = initial_manager->compact_objects(std::move(req)).get();
+        ASSERT_EQ(reply.ec, l1_rpc::errc::ok);
+    }
+
+    // The log is [0, 30) across the job's three output extents, the epoch
+    // advanced once per partial plus once for the metadata commit, and the
+    // log is fully clean.
+    validate_metadata(
+      tp, kafka::offset(0), kafka::offset(30), exact_next::yes, 3);
+    {
+        l1_rpc::get_compaction_info_request req;
+        req.tp = tp;
+        req.tombstone_removal_upper_bound_ts = model::timestamp::max();
+        auto reply = initial_manager->get_compaction_info(std::move(req)).get();
+        ASSERT_EQ(reply.ec, l1_rpc::errc::ok);
+        EXPECT_EQ(
+          reply.compaction_epoch, partition_state::compaction_epoch_t{3});
+        EXPECT_TRUE(reply.dirty_ranges.empty());
+    }
+}
+
+// A truncation advancing the start offset between a job's partial commits
+// and its final commit deletes the extent rows of output objects that
+// fall wholly below the new start offset. The metadata-only final commit
+// references no extents, so it is unaffected and must succeed.
+TEST_F(DbDomainManagerTest, TestMetadataOnlyCompactAfterTruncation) {
+    auto tp = make_tp();
+    // Seed [0, 30) as three extents.
+    add_preregistered_objects(tp, kafka::offset(0), 3, 10, model::term_id(1));
+
+    auto partial_commit =
+      [&](kafka::offset base, uint32_t count, int expected_epoch) {
+          auto prereg = initial_manager
+                          ->preregister_objects({
+                            .metastore_partition = model::partition_id(0),
+                            .count = count,
+                          })
+                          .get();
+          ASSERT_EQ(prereg.ec, l1_rpc::errc::ok);
+          auto reply = initial_manager
+                         ->compact_objects(make_partial_compact(
+                           tp,
+                           make_new_objects_with_ids(
+                             tp, base, 10, prereg.object_ids),
+                           partition_state::compaction_epoch_t{expected_epoch}))
+                         .get();
+          ASSERT_EQ(reply.ec, l1_rpc::errc::ok);
+      };
+
+    ASSERT_NO_FATAL_FAILURE(partial_commit(kafka::offset(0), 2, 0));
+
+    // Retention truncates to offset 15 mid-job: the first output object's
+    // extent [0, 9] is deleted; [10, 19] straddles the start offset and
+    // survives.
+    {
+        l1_rpc::set_start_offset_request req;
+        req.tp = tp;
+        req.start_offset = kafka::offset(15);
+        auto reply = initial_manager->set_start_offset(std::move(req)).get();
+        ASSERT_EQ(reply.ec, l1_rpc::errc::ok);
+    }
+
+    ASSERT_NO_FATAL_FAILURE(partial_commit(kafka::offset(20), 1, 1));
+
+    {
+        l1_rpc::compact_objects_request req;
+        req.metastore_partition = model::partition_id(0);
+        compaction_state_update csu;
+        csu.new_cleaned_ranges.push_back({
+          .base_offset = kafka::offset(0),
+          .last_offset = kafka::offset(29),
+          .has_tombstones = false,
+        });
+        csu.cleaned_at = model::timestamp::now();
+        csu.expected_compaction_epoch = partition_state::compaction_epoch_t{2};
+        req.compaction_updates.emplace(tp, std::move(csu));
+        auto reply = initial_manager->compact_objects(std::move(req)).get();
+        ASSERT_EQ(reply.ec, l1_rpc::errc::ok);
+    }
+
+    // The surviving log has start offset 15, next offset 30, and extents
+    // [10, 19] and [20, 29]; the epoch advanced once per partial plus once
+    // for the metadata commit, and the live region is fully clean.
+    {
+        auto offsets_reply = initial_manager->get_offsets({.tp = tp}).get();
+        ASSERT_EQ(offsets_reply.ec, l1_rpc::errc::ok);
+        EXPECT_EQ(offsets_reply.start_offset, kafka::offset(15));
+        EXPECT_EQ(offsets_reply.next_offset, kafka::offset(30));
+    }
+    {
+        l1_rpc::get_compaction_info_request req;
+        req.tp = tp;
+        req.tombstone_removal_upper_bound_ts = model::timestamp::max();
+        auto reply = initial_manager->get_compaction_info(std::move(req)).get();
+        ASSERT_EQ(reply.ec, l1_rpc::errc::ok);
+        EXPECT_EQ(
+          reply.compaction_epoch, partition_state::compaction_epoch_t{3});
+        EXPECT_TRUE(reply.dirty_ranges.empty());
+    }
+}
+
+// The metadata-only commit is still fenced by the compaction epoch: a job
+// whose epoch is stale (another compaction committed since it began) must
+// be rejected.
+TEST_F(DbDomainManagerTest, TestMetadataOnlyCompactRejectsStaleEpoch) {
+    auto tp = make_tp();
+    add_preregistered_objects(tp, kafka::offset(0), 1, 10, model::term_id(1));
+
+    l1_rpc::compact_objects_request req;
+    req.metastore_partition = model::partition_id(0);
+    compaction_state_update csu;
+    csu.new_cleaned_ranges.push_back({
+      .base_offset = kafka::offset(0),
+      .last_offset = kafka::offset(9),
+      .has_tombstones = false,
+    });
+    csu.cleaned_at = model::timestamp::now();
+    csu.expected_compaction_epoch = partition_state::compaction_epoch_t{1};
+    req.compaction_updates.emplace(tp, std::move(csu));
+    auto reply = initial_manager->compact_objects(std::move(req)).get();
+    EXPECT_EQ(reply.ec, l1_rpc::errc::concurrent_requests);
+}
+
+// A metadata-only commit may only mark offsets the log has seen as
+// cleaned.
+TEST_F(DbDomainManagerTest, TestMetadataOnlyCompactRejectsRangeBeyondNext) {
+    auto tp = make_tp();
+    add_preregistered_objects(tp, kafka::offset(0), 3, 10, model::term_id(1));
+
+    l1_rpc::compact_objects_request req;
+    req.metastore_partition = model::partition_id(0);
+    compaction_state_update csu;
+    csu.new_cleaned_ranges.push_back({
+      .base_offset = kafka::offset(0),
+      .last_offset = kafka::offset(49),
+      .has_tombstones = false,
+    });
+    csu.cleaned_at = model::timestamp::now();
+    csu.expected_compaction_epoch = partition_state::compaction_epoch_t{0};
+    req.compaction_updates.emplace(tp, std::move(csu));
+    auto reply = initial_manager->compact_objects(std::move(req)).get();
+    EXPECT_EQ(reply.ec, l1_rpc::errc::concurrent_requests);
+}
+
+// The job commits each batch of output objects via a partial compaction commit
+// (bumping the epoch every time), then finishes with a metadata-only
+// compact_objects recording the cleaned ranges against the epoch its partials
+// advanced.
+TEST_F(DbDomainManagerTest, TestPartialCompactsThenMetadataOnlyCompact) {
+    auto tp = make_tp();
+    // Seed [0, 30) as three extents.
+    add_preregistered_objects(tp, kafka::offset(0), 3, 10, model::term_id(1));
+
+    // Three partial commits, one per output object; each bumps the epoch.
+    for (int i = 0; i < 3; ++i) {
+        auto prereg = initial_manager
+                        ->preregister_objects({
+                          .metastore_partition = model::partition_id(0),
+                          .count = 1,
+                        })
+                        .get();
+        ASSERT_EQ(prereg.ec, l1_rpc::errc::ok);
+        auto reply = initial_manager
+                       ->compact_objects(make_partial_compact(
+                         tp,
+                         make_new_objects_with_ids(
+                           tp, kafka::offset(i * 10), 10, prereg.object_ids),
+                         partition_state::compaction_epoch_t{i}))
+                       .get();
+        ASSERT_EQ(reply.ec, l1_rpc::errc::ok);
+    }
+
+    // Final commit: metadata only, against the epoch the partials advanced.
+    {
+        l1_rpc::compact_objects_request req;
+        req.metastore_partition = model::partition_id(0);
+        compaction_state_update csu;
+        csu.new_cleaned_ranges.push_back({
+          .base_offset = kafka::offset(0),
+          .last_offset = kafka::offset(29),
+          .has_tombstones = false,
+        });
+        csu.cleaned_at = model::timestamp::now();
+        csu.expected_compaction_epoch = partition_state::compaction_epoch_t{3};
+        req.compaction_updates.emplace(tp, std::move(csu));
+        auto reply = initial_manager->compact_objects(std::move(req)).get();
+        ASSERT_EQ(reply.ec, l1_rpc::errc::ok);
+    }
+
+    validate_metadata(
+      tp, kafka::offset(0), kafka::offset(30), exact_next::yes, 3);
+    {
+        l1_rpc::get_compaction_info_request req;
+        req.tp = tp;
+        req.tombstone_removal_upper_bound_ts = model::timestamp::max();
+        auto reply = initial_manager->get_compaction_info(std::move(req)).get();
+        ASSERT_EQ(reply.ec, l1_rpc::errc::ok);
+        EXPECT_EQ(
+          reply.compaction_epoch, partition_state::compaction_epoch_t{4});
+        EXPECT_TRUE(reply.dirty_ranges.empty());
+    }
+}
+
+// A partial commit fences straggler compaction jobs: once one job's
+// partial bumps the epoch, another job still pinned at the old epoch is
+// rejected on its very first partial rather than wasting a full run.
+TEST_F(DbDomainManagerTest, TestPartialCompactFencesStragglerCompaction) {
+    auto tp = make_tp();
+    add_preregistered_objects(tp, kafka::offset(0), 2, 10, model::term_id(1));
+
+    auto partial = [&](kafka::offset base, int expected_epoch) {
+        auto prereg = initial_manager
+                        ->preregister_objects({
+                          .metastore_partition = model::partition_id(0),
+                          .count = 1,
+                        })
+                        .get();
+        EXPECT_EQ(prereg.ec, l1_rpc::errc::ok);
+        return initial_manager
+          ->compact_objects(make_partial_compact(
+            tp,
+            make_new_objects_with_ids(tp, base, 10, prereg.object_ids),
+            partition_state::compaction_epoch_t{expected_epoch}))
+          .get();
+    };
+
+    // Job A's first partial bumps the epoch to 1.
+    ASSERT_EQ(partial(kafka::offset(0), 0).ec, l1_rpc::errc::ok);
+    // Straggler job B, still pinned at epoch 0, is fenced immediately —
+    // even on a range job A never touched.
+    EXPECT_EQ(
+      partial(kafka::offset(10), 0).ec, l1_rpc::errc::concurrent_requests);
+    // Job A continues at the epoch its own partial advanced.
+    EXPECT_EQ(partial(kafka::offset(10), 1).ec, l1_rpc::errc::ok);
+}
+
+// A partial commit fences leveling jobs with stale read snapshots: a
+// leveling replace_objects carries the epoch it read at, so once a
+// compaction partial bumps the epoch, the stale repackaging can no longer
+// land on top of the job's deduplicated output (or anywhere else in the
+// partition).
+TEST_F(DbDomainManagerTest, TestPartialCompactFencesStaleLeveling) {
+    auto tp = make_tp();
+    add_preregistered_objects(tp, kafka::offset(0), 2, 10, model::term_id(1));
+
+    // A leveling job "reads" at epoch 0 here (its replace below carries
+    // expected epoch 0). Compaction's partial then bumps the epoch.
+    {
+        auto prereg = initial_manager
+                        ->preregister_objects({
+                          .metastore_partition = model::partition_id(0),
+                          .count = 1,
+                        })
+                        .get();
+        ASSERT_EQ(prereg.ec, l1_rpc::errc::ok);
+        auto reply = initial_manager
+                       ->compact_objects(make_partial_compact(
+                         tp,
+                         make_new_objects_with_ids(
+                           tp, kafka::offset(0), 10, prereg.object_ids),
+                         partition_state::compaction_epoch_t{0}))
+                       .get();
+        ASSERT_EQ(reply.ec, l1_rpc::errc::ok);
+    }
+
+    // The stale leveling commit — same boundaries as what it read, so
+    // span-exact alone would let it through — is rejected by the epoch.
+    {
+        auto prereg = initial_manager
+                        ->preregister_objects({
+                          .metastore_partition = model::partition_id(0),
+                          .count = 1,
+                        })
+                        .get();
+        ASSERT_EQ(prereg.ec, l1_rpc::errc::ok);
+        l1_rpc::replace_objects_request req{
+          .metastore_partition = model::partition_id(0),
+          .new_objects = make_new_objects_with_ids(
+            tp, kafka::offset(10), 10, prereg.object_ids),
+          .expected_epochs = {{tp, partition_state::compaction_epoch_t{0}}},
+        };
+        auto reply = initial_manager->replace_objects(std::move(req)).get();
+        EXPECT_EQ(reply.ec, l1_rpc::errc::concurrent_requests);
+    }
+}
+
 TEST_F(DbDomainManagerTest, TestGetSizeBasic) {
     auto tp = make_tp();
     // Add 3 objects, each with an extent of size 512 bytes.
