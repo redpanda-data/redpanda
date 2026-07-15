@@ -12,6 +12,7 @@
 #pragma once
 
 #include "base/vlog.h"
+#include "json/chunked_buffer.h"
 #include "json/iobuf_writer.h"
 #include "json/json.h"
 #include "json/types.h"
@@ -359,7 +360,7 @@ void rjson_serialize(::json::iobuf_writer<Buffer>& w, const schema_value& val) {
 }
 
 template<typename Encoding = ::json::UTF8<>>
-class schema_value_handler final : public json::base_handler<Encoding> {
+class schema_value_handler : public json::base_handler<Encoding> {
     enum class state {
         empty = 0,
         object,
@@ -389,6 +390,7 @@ class schema_value_handler final : public json::base_handler<Encoding> {
     };
     ss::sstring metadata_property_key;
     mutable_schema _schema;
+    ::json::generic_chunked_buffer<Encoding> _def_sink;
 
 public:
     using Ch = typename json::base_handler<Encoding>::Ch;
@@ -397,6 +399,27 @@ public:
 
     schema_value_handler()
       : json::base_handler<Encoding>{json::serialization_format::none} {}
+
+    /// The schema string is consumed through a chunked sink so that the JSON
+    /// reader decodes it directly into an iobuf, avoiding a large contiguous
+    /// allocation in the reader's stack for big schemas.
+    using ChunkedStringSinkType = ::json::generic_chunked_buffer<Encoding>;
+
+    bool AcceptsChunkedString() const { return _state == state::definition; }
+
+    ChunkedStringSinkType& ChunkedStringSink() {
+        _def_sink.Clear();
+        return _def_sink;
+    }
+
+    bool ChunkedString(::json::SizeType) {
+        auto buf = std::move(_def_sink).as_iobuf();
+        // drop the '\0' terminator appended by the reader
+        buf.trim_back(sizeof(Ch));
+        _schema.def = typename schema_definition::raw_string{std::move(buf)};
+        _state = state::object;
+        return true;
+    }
 
     bool Key(const Ch* str, ::json::SizeType len, bool) {
         auto sv = std::string_view{str, len};
@@ -529,11 +552,6 @@ public:
             _state = state::object;
             return true;
         }
-        case state::definition: {
-            _schema.def = schema_definition::raw_string{sv};
-            _state = state::object;
-            return true;
-        }
         case state::type: {
             auto type = from_string_view<schema_type>(sv);
             if (type.has_value()) {
@@ -560,6 +578,8 @@ public:
         }
         case state::empty:
         case state::object:
+        // the schema string is handled by ChunkedString()
+        case state::definition:
         case state::version:
         case state::id:
         case state::deleted:
