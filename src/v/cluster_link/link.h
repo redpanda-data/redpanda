@@ -22,6 +22,8 @@
 #include "ssx/mutex.h"
 #include "utils/notification_list.h"
 
+#include <seastar/core/shared_future.hh>
+
 namespace cluster_link {
 
 class link_probe;
@@ -153,5 +155,12 @@ private:
     std::unique_ptr<link_probe> _probe;
     ss::gate _gate;
     ss::abort_source _as;
+    // stop() is called by both the link-removal handler and manager shutdown,
+    // which can race. The first call does the work; later calls must wait for
+    // it to COMPLETE (not return early): the removal handler frees the link
+    // right after stop() resolves, so an early return would let it destroy
+    // the link while the first stop is still suspended inside it.
+    bool _stop_requested{false};
+    ss::shared_promise<> _stopped;
 };
 } // namespace cluster_link

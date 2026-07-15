@@ -150,15 +150,45 @@ ss::future<> manager::stop() {
     vlog(cllog.info, "Stopping cluster link manager");
 
     co_await on_controller_stepdown();
+    vlog(cllog.debug, "manager stop: controller stepdown complete");
 
-    co_await _queue.shutdown();
     _link_task_reconciler_timer.cancel();
     _as.request_abort();
     _link_created_cv.broken();
-    co_await _g.close();
-    for (auto& [_, link] : _links) {
+
+    // Stop the links (which aborts their tasks) BEFORE draining the work
+    // queue and the gate: a queued link-change handler or an in-flight
+    // reconcile tick can be blocked on task machinery that only unblocks once
+    // the tasks' run fibers are aborted. Draining first sequences that abort
+    // behind the very drain that waits on it, deadlocking shutdown until the
+    // node-stop timeout kills the process.
+    //
+    // The queue is still live here and its one executing item may mutate
+    // _links, so stop by id snapshot and re-lookup; a link created after the
+    // snapshot is caught by the sweep below.
+    chunked_vector<id_t> ids;
+    ids.reserve(_links.size());
+    for (const auto& [id, _] : _links) {
+        ids.push_back(id);
+    }
+    for (const auto& id : ids) {
+        if (auto it = _links.find(id); it != _links.end()) {
+            co_await it->second->stop();
+        }
+    }
+    vlog(cllog.debug, "manager stop: links stopped");
+
+    co_await _queue.shutdown();
+    vlog(cllog.debug, "manager stop: work queue drained");
+
+    // The queue is drained and the reconcile timer canceled, so _links is
+    // stable now; sweep up any link a mid-flight handler created after the
+    // snapshot (stop() is idempotent, so re-stopping the rest is a no-op).
+    for (const auto& [_, link] : _links) {
         co_await link->stop();
     }
+
+    co_await _g.close();
 
     vlog(cllog.info, "Cluster link manager stopped");
 }
@@ -880,6 +910,11 @@ ss::future<> manager::link_task_reconciler() {
     auto units = std::move(fut).get();
 
     for (const auto& [_, link] : _links) {
+        // Shutdown aborts before stopping links; registering a task on a
+        // link that is about to stop would leak a never-stopped runner.
+        if (_as.abort_requested()) {
+            co_return;
+        }
         vlog(
           cllog.trace,
           "Reconciling tasks for cluster link {} ({})",
