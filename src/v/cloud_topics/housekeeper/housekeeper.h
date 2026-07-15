@@ -88,6 +88,9 @@ public:
     public:
         virtual ~retention_configuration() = default;
 
+        // Whether the cleanup policy enables deletion.
+        virtual bool deletion_enabled(const model::topic_id_partition&) = 0;
+
         // The amount of bytes to retain in the partition.
         virtual std::optional<size_t>
         retention_bytes(const model::topic_id_partition&) = 0;

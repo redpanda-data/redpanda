@@ -158,6 +158,12 @@ public:
         state)
       : _state(state) {}
 
+    bool deletion_enabled(const model::topic_id_partition& tidp) override {
+        auto& state = _state->at(tidp);
+        return model::is_deletion_enabled(
+          state.partition->get_ntp_config().cleanup_policy());
+    }
+
     std::optional<size_t>
     retention_bytes(const model::topic_id_partition& tidp) override {
         auto& state = _state->at(tidp);
