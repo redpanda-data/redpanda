@@ -408,6 +408,113 @@ TEST_F(ReducerTestFixture, LinearKeyValueReducerSetStartOffset) {
     ASSERT_TRUE(compaction_info->offsets_response.dirty_ranges.empty());
 }
 
+// Retention can move the start offset under a running compaction job, and
+// the job still commits: it removes records, but its cleaned ranges are all
+// rejected against the start offset it snapshotted before the truncation,
+// so nothing is marked clean. Verify the emptied range is left dirty with
+// the epoch advanced, and that a fresh pass then converges the log.
+TEST_F(ReducerTestFixture, RetentionRaceEmptiesRangeWithoutCleaning) {
+    auto [ntp, tidp] = make_ntidp("test_topic");
+
+    // Three extents, two keys, newest copies at the head:
+    //   [0,1]: a b
+    //   [2,3]: a b
+    //   [4,5]: a b
+    auto add_extent = [&](kafka::offset base, const ss::sstring& sfx) {
+        std::vector<tests::kv_t> kvs;
+        kvs.emplace_back("a", "a" + sfx);
+        kvs.emplace_back("b", "b" + sfx);
+        chunked_circular_buffer<model::record_batch> batches;
+        batches.push_back(
+          tests::batch_from_kvs(
+            kvs,
+            model::offset{base()},
+            model::timestamp::now(),
+            model::compression::none));
+        std::vector<tidp_batches_t> tidp_batches;
+        tidp_batches.emplace_back(tidp, std::move(batches));
+        return make_l1_objects(std::move(tidp_batches));
+    };
+    add_extent(kafka::offset{0}, "0").get();
+    add_extent(kafka::offset{2}, "2").get();
+    add_extent(kafka::offset{4}, "4").get();
+
+    auto info_spec = l1::metastore::compaction_info_spec{
+      .tidp = tidp,
+      .tombstone_removal_upper_bound_ts = model::timestamp::max()};
+
+    // The job snapshots its inputs: start offset 0, the whole log dirty.
+    auto before_truncate = _metastore.get_compaction_info(info_spec).get();
+    ASSERT_TRUE(before_truncate.has_value());
+    ASSERT_EQ(before_truncate->start_offset, kafka::offset{0});
+    ASSERT_TRUE(before_truncate->offsets_response.dirty_ranges.covers(
+      kafka::offset{0}, kafka::offset{5}));
+    const auto initial_epoch = before_truncate->compaction_epoch;
+
+    // Retention fires mid-job: truncate to 2, deleting extent [0,1].
+    auto sso_res = _metastore.set_start_offset(tidp, kafka::offset{2}).get();
+    ASSERT_TRUE(sso_res.has_value());
+
+    // The job finishes with its pre-truncation snapshot. Dedup rewrites
+    // [2,3] empty -- both records are superseded by the copies at [4,5] --
+    // and the max compactible offset stops it before it reaches [4,5]
+    // itself.
+    do_compact(
+      tidp,
+      ntp,
+      std::move(before_truncate->offsets_response),
+      before_truncate->compaction_epoch,
+      /*pre-truncation start_offset=*/kafka::offset{0},
+      &_metastore,
+      &_io,
+      0ms,
+      /*max_compactible_offset=*/kafka::offset{3})
+      .get();
+
+    // The job's commit went through: the epoch advanced and [2,3]'s records
+    // are gone. Nothing was recorded clean, since the compaction did't read
+    // [0,1] and believed the start offset to be 0.
+    auto after_compact = _metastore.get_compaction_info(info_spec).get();
+    ASSERT_TRUE(after_compact.has_value());
+    EXPECT_EQ(
+      after_compact->compaction_epoch,
+      l1::metastore::compaction_epoch{initial_epoch() + 1});
+    EXPECT_EQ(after_compact->start_offset, kafka::offset{2});
+    ASSERT_FLOAT_EQ(after_compact->dirty_ratio, 1.0);
+    ASSERT_TRUE(after_compact->offsets_response.dirty_ranges.covers(
+      kafka::offset{2}, kafka::offset{5}));
+    {
+        auto batches = read_all(make_reader(ntp, tidp, kafka::offset{2}));
+        ASSERT_EQ(batches.size(), 1);
+        EXPECT_EQ(batches.front().base_offset(), model::offset{4});
+        EXPECT_EQ(batches.front().record_count(), 2);
+    }
+
+    // A fresh pass converges: [2,3] is deemed clean since it is empty, [4,5]
+    // gets cleaned.
+    auto fresh = _metastore.get_compaction_info(info_spec).get();
+    ASSERT_TRUE(fresh.has_value());
+    do_compact(
+      tidp,
+      ntp,
+      std::move(fresh->offsets_response),
+      fresh->compaction_epoch,
+      fresh->start_offset,
+      &_metastore,
+      &_io)
+      .get();
+
+    auto final_info = _metastore.get_compaction_info(info_spec).get();
+    ASSERT_TRUE(final_info.has_value());
+    EXPECT_FLOAT_EQ(final_info->dirty_ratio, 0.0);
+    EXPECT_TRUE(final_info->offsets_response.dirty_ranges.empty());
+
+    latest_kv_map_t latest_kv;
+    latest_kv.insert_or_assign("a", "a4");
+    latest_kv.insert_or_assign("b", "b4");
+    verify_compacted_log(ntp, tidp, latest_kv, /*records=*/2, /*batches=*/1);
+}
+
 TEST_F(ReducerTestFixture, TombstoneReducer) {
     ss::abort_source as;
     auto [ntp, tidp] = make_ntidp("test_topic");
