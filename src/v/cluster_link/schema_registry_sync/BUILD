@@ -89,6 +89,7 @@ redpanda_cc_library(
         "//src/v/metrics",
         "//src/v/model",
         "//src/v/schema:registry",
+        "//src/v/ssx:mutex",
         "//src/v/ssx:semaphore",
         "@seastar",
     ],

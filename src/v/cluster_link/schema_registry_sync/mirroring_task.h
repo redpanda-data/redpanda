@@ -17,6 +17,7 @@
 #include "cluster_link/task.h"
 #include "container/chunked_hash_map.h"
 #include "schema/registry.h"
+#include "ssx/mutex.h"
 
 #include <seastar/core/abort_source.hh>
 #include <seastar/util/noncopyable_function.hh>
@@ -237,6 +238,14 @@ private:
     schema::registry* _destination;
     source_reader_factory* _source_factory;
     std::unique_ptr<source_reader> _reader;
+    // Serializes stopping and replacing _reader. stop() (reader-first, while
+    // run_impl is still live) and reset_reader() (run by run_impl on a config
+    // change) both stop the reader and then free it via reassignment; without
+    // serialization one can free the reader while the other's stop() is
+    // suspended mid-shutdown, a use-after-free. Held only around the
+    // stop+reassign, never across the run-fiber join, so it cannot deadlock
+    // with task::stop().
+    ssx::mutex _reader_lifecycle{"cluster_link/sr_source/reader_lifecycle"};
     inventory _destination_inventory;
     model::schema_registry_sync_status _status;
     // Live counters for the in-flight reconcile; reflected by get_status_report

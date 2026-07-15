@@ -154,31 +154,58 @@ ss::future<cl_result<void>> mirroring_task::start() {
 }
 
 ss::future<cl_result<void>> mirroring_task::stop() noexcept {
-    auto res = co_await task::stop();
-    _probe.clear();
-    // task::stop() closed the runner's gate, so no run_impl is in flight and it
-    // is safe to reset the state directly (unlike update_config, which races a
-    // running fiber and defers via _config_changed). Reset so a later leader
-    // starts fresh: this instance may regain _schemas/0 leadership (A->B->A)
-    // and would otherwise report a prior tenure's stale counters/inventory and
-    // skip its first full sync on a still-recent _last_full_sync.
-    reset_sync_state();
-    // The run loop has stopped, so no fiber is using the reader; release its
-    // HTTP transport. as_future guards the noexcept contract.
-    if (_reader) {
-        auto stopped = co_await ss::coroutine::as_future(_reader->stop());
-        if (stopped.failed()) {
-            auto ex = stopped.get_exception();
-            vlog(
-              logger().warn,
-              "Error stopping Schema Registry source reader: {}",
-              ex);
+    // Stop the reader BEFORE joining the run fiber: run_impl can be parked on
+    // reader-internal waits that only the reader's own shutdown aborts (the
+    // rate limiter's token queue and Retry-After pause -- up to 60s -- and the
+    // connection pool's slot queue are deaf to the runner's abort source).
+    // Joining first would sequence that abort behind the join that needs it.
+    // The reader is built to be stopped under fire: in-flight and queued
+    // requests fail promptly with abort-classified errors and run_impl
+    // unwinds. as_future guards the noexcept contract.
+    //
+    // Under _reader_lifecycle: run_impl is still live here (reader-first), so a
+    // concurrent reset_reader() could otherwise free the reader while this
+    // stop() is suspended mid-shutdown. The lock is dropped before the join
+    // below, so it cannot deadlock against a reset_reader() the join waits on.
+    {
+        auto reader_units = co_await _reader_lifecycle.get_units();
+        if (_reader) {
+            auto stopped = co_await ss::coroutine::as_future(_reader->stop());
+            if (stopped.failed()) {
+                auto ex = stopped.get_exception();
+                vlog(
+                  logger().warn,
+                  "Error stopping Schema Registry source reader: {}",
+                  ex);
+            }
         }
     }
+    auto res = co_await task::stop();
+    _probe.clear();
+    // task::stop() closed the runner's gate, so no run_impl is in flight and
+    // it is safe to reset the state directly (unlike update_config, which
+    // races a running fiber and defers via _config_changed). Reset so a later
+    // leader starts fresh: this instance may regain _schemas/0 leadership
+    // (A->B->A) and would otherwise report a prior tenure's stale
+    // counters/inventory and skip its first full sync on a still-recent
+    // _last_full_sync.
+    reset_sync_state();
+    // Replace the stopped reader with a fresh one for that possible A->B->A
+    // re-acquisition. The reader's stop() is permanent by design (it refuses
+    // to rebuild its client so an unwinding fiber cannot resurrect it during
+    // teardown), and run_impl only rebuilds the reader on a config change, so
+    // a restarted task would otherwise keep using the dead reader and never
+    // sync. No lock needed: the run fibers have been joined, so reset_reader()
+    // cannot run and none is mid-request on the old reader.
+    _reader = _source_factory->create(_config.api_mode());
     co_return res;
 }
 
 ss::future<> mirroring_task::reset_reader() {
+    // Serialize with stop() (see _reader_lifecycle): both stop and then free
+    // the reader by reassignment, and either can be suspended in the reader's
+    // shutdown when the other reaches the free.
+    auto reader_units = co_await _reader_lifecycle.get_units();
     if (_reader) {
         auto stopped = co_await ss::coroutine::as_future(_reader->stop());
         if (stopped.failed()) {
