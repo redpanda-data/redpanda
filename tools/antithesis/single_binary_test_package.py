@@ -18,7 +18,7 @@
 # Package Bazel-built C++ binaries into Antithesis-compatible Docker
 # images. Supports single targets, multiple targets, and Bazel patterns.
 # Builds Docker images directly using named build contexts, optionally
-# pushes the workload/config images to the registry (--push) and launches
+# pushes the built images to the registry (--push) and launches
 # an Antithesis test run (--submit; reads the API password from
 # $AT_PASSWORD).
 #
@@ -89,6 +89,9 @@ INSTALL_PREFIX = "/opt/antithesis"
 DATA_DIR = f"{INSTALL_PREFIX}/data"
 LIB_DIR = f"{INSTALL_PREFIX}/lib"
 DRIVER_DIR = f"{INSTALL_PREFIX}/test/v1/single_binary_tests"
+
+IMAGE = "bazel-target"
+CONFIG_IMAGE = "bazel-target-config"
 
 _ROOTPATH_RE = r"\$\(rootpath\s+([^)]+)\)"
 
@@ -345,7 +348,7 @@ def build_workload_image(
 ) -> str:
     """Build the workload Docker image using named build contexts.
     Returns the built reference."""
-    print(f"==> Building workload image: {name}")
+    print(f"==> Building image: {name}")
 
     with tempfile.TemporaryDirectory() as tmpdir:
         ctx = Path(tmpdir)
@@ -421,7 +424,10 @@ def main() -> None:
         "--binary-args", default="", help="Extra runtime arguments for all binaries"
     )
     parser.add_argument(
-        "--name", default="", help="Image name (default: derived from first target)"
+        "--name",
+        default="bazel-target",
+        help="Test run name, also the .antithesis/ output directory "
+        "(default: bazel-target)",
     )
     parser.add_argument(
         "--log-level",
@@ -450,9 +456,6 @@ def main() -> None:
         args.targets, extra_bazel_args, tests_only=args.tests_only
     )
 
-    _, first_name = parse_bazel_target(targets[0])
-    target_name = args.name or first_name
-
     # Build all targets.
     if not args.skip_bazel_build:
         build_targets(args.targets, extra_bazel_args)
@@ -469,27 +472,21 @@ def main() -> None:
         sys.exit("Error: no binaries found. Run without --skip-bazel-build?")
 
     # Build workload image.
-    workload_ref = build_workload_image(binaries, target_name)
-
-    hostname = target_name.replace("_", "-")
+    workload_ref = build_workload_image(binaries, IMAGE)
 
     def compose_with(image: str) -> str:
-        return render_template(
-            DEPS_DIR / "compose.yaml.j2", image_tag=image, hostname=hostname
-        )
+        return render_template(DEPS_DIR / "compose.yaml.j2", image=image)
 
     # The config compose references the stable <name>:latest name, so the
     # config image changes only when the environment itself changes, not on
     # every image rebuild. In the Antithesis environment the submitted
     # antithesis.images digest overrides that name (a digest entry is
     # tagged latest there).
-    config_ref = build_config_image(
-        f"{target_name}-config", compose_with(f"{target_name}:latest")
-    )
+    config_ref = build_config_image(CONFIG_IMAGE, compose_with(f"{IMAGE}:latest"))
 
     # Write a compose pinning the exact built image, so local runs keep
     # running this build regardless of later packagings.
-    compose_out = REPO_ROOT / ".antithesis" / target_name
+    compose_out = REPO_ROOT / ".antithesis" / args.name
     compose_out.mkdir(parents=True, exist_ok=True)
     (compose_out / "docker-compose.yaml").write_text(compose_with(workload_ref))
 
@@ -502,15 +499,15 @@ def main() -> None:
 
     compose_file = compose_out / "docker-compose.yaml"
     drivers_list = "\n".join(
-        f"  docker compose -f {compose_file} exec workload \\\n"
+        f"  docker compose -f {compose_file} exec {IMAGE} \\\n"
         f"      {DRIVER_DIR}/singleton_driver_{b.name}.sh"
         for b in binaries
     )
 
     print(f"""
 Images built:
-  workload: {workload_ref}
-  config:   {config_ref}
+  image:  {workload_ref}
+  config: {config_ref}
 
 Run locally ({len(binaries)} driver{"s" if len(binaries) != 1 else ""}):
   docker compose -f {compose_file} up -d
@@ -521,7 +518,7 @@ Run locally ({len(binaries)} driver{"s" if len(binaries) != 1 else ""}):
 """)
 
     # Last so its status is the final thing the user sees.
-    maybe_submit(args, test_name=target_name, pushed=pushed, config_ref=config_ref)
+    maybe_submit(args, test_name=args.name, pushed=pushed, config_ref=config_ref)
 
 
 if __name__ == "__main__":
