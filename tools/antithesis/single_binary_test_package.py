@@ -500,8 +500,6 @@ def main() -> None:
         pushed = upload_images(args.registry, refs)
         upload_images(args.registry, aliases)
 
-    maybe_submit(args, test_name=target_name, pushed=pushed, config_ref=config_ref)
-
     compose_file = compose_out / "docker-compose.yaml"
     drivers_list = "\n".join(
         f"  docker compose -f {compose_file} exec workload \\\n"
@@ -521,6 +519,9 @@ Run locally ({len(binaries)} driver{"s" if len(binaries) != 1 else ""}):
 
 {registry_help_str(args.registry, pushed=args.push, refs=[*refs, *aliases])}
 """)
+
+    # Last so its status is the final thing the user sees.
+    maybe_submit(args, test_name=target_name, pushed=pushed, config_ref=config_ref)
 
 
 if __name__ == "__main__":

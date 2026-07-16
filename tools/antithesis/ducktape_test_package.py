@@ -333,8 +333,6 @@ def main() -> None:
         pushed = upload_images(args.registry, refs)
         upload_images(args.registry, aliases)
 
-    maybe_submit(args, test_name=args.name, pushed=pushed, config_ref=config_ref)
-
     print(f"""
 Images built:
   node:   {node_ref}
@@ -349,6 +347,9 @@ Run locally:
 
 {registry_help_str(args.registry, pushed=args.push, refs=[*refs, *aliases])}
 """)
+
+    # Last so its status is the final thing the user sees.
+    maybe_submit(args, test_name=args.name, pushed=pushed, config_ref=config_ref)
 
 
 if __name__ == "__main__":

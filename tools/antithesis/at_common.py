@@ -24,6 +24,10 @@ from pathlib import Path
 from jinja2 import StrictUndefined, Template
 
 LAUNCH_URL = "https://redpanda.antithesis.com/api/v1/launch/basic_test"
+RUNS_URL = "https://redpanda.antithesis.com/runs"
+
+_VERBOSE = False
+
 
 DEFAULT_REGISTRY = "us-central1-docker.pkg.dev/molten-verve-216720/redpanda-repository"
 
@@ -93,6 +97,11 @@ def add_common_args(parser: argparse.ArgumentParser) -> None:
         "Default: ephemeral, for ad-hoc runs. Pass --no-ephemeral for a "
         "persistent run recorded to history (requires --source).",
     )
+    parser.add_argument(
+        "--verbose",
+        action="store_true",
+        help="Echo the underlying commands and the raw launch response",
+    )
 
 
 def add_build_args(parser: argparse.ArgumentParser) -> None:
@@ -120,6 +129,8 @@ def validate_common_args(
 ) -> None:
     """Validate the flags added by add_common_args, erroring via the parser
     on contradictory or out-of-range values. --submit implies --push."""
+    global _VERBOSE
+    _VERBOSE = args.verbose
     if args.submit:
         args.push = True
     if args.submit and args.duration < MIN_DURATION_MIN:
@@ -140,14 +151,24 @@ def run(
     cwd: Path | None = None,
     capture: bool = False,
 ) -> subprocess.CompletedProcess:
-    print(f"  $ {' '.join(str(c) for c in cmd)}")
-    return subprocess.run(
+    if _VERBOSE:
+        print(f"  $ {' '.join(str(c) for c in cmd)}")
+    result = subprocess.run(
         cmd,
-        check=check,
+        check=False,
         cwd=cwd,
         capture_output=capture,
         text=True,
     )
+    if check and result.returncode != 0:
+        # Surface captured output before failing, or the error is invisible.
+        if capture:
+            sys.stdout.write(result.stdout or "")
+            sys.stderr.write(result.stderr or "")
+        raise subprocess.CalledProcessError(
+            result.returncode, cmd, result.stdout, result.stderr
+        )
+    return result
 
 
 def render_template(path: Path, **kwargs) -> str:
@@ -191,6 +212,7 @@ def push_image(registry: str, local_ref: str) -> str:
     reference (registry/name@sha256:...), the immutable form recommended
     for antithesis.images."""
     ref = f"{registry}/{local_ref}"
+    print(f"==> Pushing image: {ref}")
     run(["docker", "tag", local_ref, ref])
     run(["docker", "push", ref])
     repo = f"{registry}/{local_ref.rsplit(':', 1)[0]}"
@@ -296,11 +318,14 @@ def submit_test_run(
 
     body = json.dumps({"params": params})
 
-    print(f"  $ curl --fail -u redpanda:*** -X POST {LAUNCH_URL} -d {body}")
-    subprocess.run(
+    print("==> Submitting Antithesis test run")
+    if _VERBOSE:
+        print(f"  $ curl --fail -u redpanda:*** -X POST {LAUNCH_URL} -d {body}")
+    result = subprocess.run(
         [
             "curl",
             "--fail",
+            "-sS",
             "-u",
             f"redpanda:{password}",
             "-X",
@@ -309,9 +334,35 @@ def submit_test_run(
             "-d",
             body,
         ],
-        check=True,
+        check=False,
+        capture_output=True,
         text=True,
     )
+    if _VERBOSE and result.stdout:
+        print(result.stdout)
+    if result.returncode != 0:
+        detail = result.stderr.strip() or result.stdout.strip()
+        sys.exit(f"\nError: test run submission failed: {detail}")
+
+    try:
+        run_id = json.loads(result.stdout).get("runId", "")
+    except (json.JSONDecodeError, AttributeError):
+        run_id = ""
+
+    lines = [
+        "",
+        "Submitted Antithesis test run:",
+        f"  name:      {test_name or '(unnamed)'}",
+    ]
+    if run_id:
+        lines.append(f"  run id:    {run_id}")
+    lines.append(f"  duration:  {duration_min} min")
+    if source:
+        lines.append(f"  source:    {source}")
+    if ephemeral:
+        lines.append("  ephemeral: yes (not recorded in the findings history)")
+    lines += [f"  runs:      {RUNS_URL}", ""]
+    print("\n".join(lines))
 
 
 def maybe_submit(
@@ -351,7 +402,10 @@ def registry_help_str(registry: str, *, pushed: bool, refs: list[str]) -> str:
     if pushed:
         return f"Pushed to the Antithesis registry: {registry}"
     lines = [
-        "Push to the Antithesis registry (rerun with --push, implied by --submit):",
+        "Images were not pushed to the Antithesis registry. Rerun with --push to push,",
+        "or with --submit to also launch an Antithesis test run.",
+        "Alternatively, push manually:",
+        "",
         f"  REGISTRY={registry}",
     ]
     for ref in refs:
