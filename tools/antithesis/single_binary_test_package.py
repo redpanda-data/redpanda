@@ -502,9 +502,11 @@ def main() -> None:
 
     maybe_submit(args, test_name=target_name, pushed=pushed, config_ref=config_ref)
 
-    binary_names = [b.name for b in binaries]
+    compose_file = compose_out / "docker-compose.yaml"
     drivers_list = "\n".join(
-        f"  {DRIVER_DIR}/singleton_driver_{n}.sh" for n in binary_names
+        f"  docker compose -f {compose_file} exec workload \\\n"
+        f"      {DRIVER_DIR}/singleton_driver_{b.name}.sh"
+        for b in binaries
     )
 
     print(f"""
@@ -512,14 +514,10 @@ Images built:
   workload: {workload_ref}
   config:   {config_ref}
 
-Singleton drivers ({len(binary_names)}):
+Run locally ({len(binaries)} driver{"s" if len(binaries) != 1 else ""}):
+  docker compose -f {compose_file} up -d
 {drivers_list}
-
-Run locally:
-  docker compose -f {compose_out}/docker-compose.yaml up -d
-  docker compose -f {compose_out}/docker-compose.yaml exec workload \\
-      {DRIVER_DIR}/singleton_driver_<binary>.sh
-  docker compose -f {compose_out}/docker-compose.yaml down
+  docker compose -f {compose_file} down
 
 {registry_help_str(args.registry, pushed=args.push, refs=[*refs, *aliases])}
 """)
