@@ -586,6 +586,24 @@ server::routes_t get_schema_registry_routes(ss::gate& gate, one_shot& es) {
     return routes;
 }
 
+ss::future<> service::ensure_topic_loaded() {
+    // `service` is a peering_sharded_service, so each shard has its own
+    // `_ensure_started` one_shot. If the first requests after start-up land on
+    // several shards at once, each shard's one_shot would independently run
+    // do_start() and launch its own full `_schemas` replay on the reader
+    // shard. Redundant replays each pay the full recovery cost, so N racing
+    // shards make recovery up to N times slower.
+    //
+    // Funnel all shards through a single one_shot on the reader shard, so the
+    // topic is loaded exactly once. The per-shard `_ensure_started` one_shot
+    // still caches completion, so once started this costs nothing on later
+    // requests; only the first request on each shard pays the cross-shard hop.
+    return container().invoke_on(
+      seq_writer::reader_shard, _ctx.smp_sg, [](service& s) {
+          return s._load_once();
+      });
+}
+
 ss::future<> service::do_start() {
     if (_is_started) {
         co_return;
@@ -773,7 +791,8 @@ service::service(
   , _topic_metadata_cache(std::move(topic_metadata_cache))
   , _controller(controller)
   , _audit_mgr(audit_mgr)
-  , _ensure_started{[this]() { return do_start(); }}
+  , _ensure_started{[this]() { return ensure_topic_loaded(); }}
+  , _load_once{[this]() { return do_start(); }}
   , _auth{
       config::always_true(),
       config::shard_local_cfg().superusers.bind(),
