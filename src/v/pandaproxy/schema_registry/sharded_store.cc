@@ -204,21 +204,27 @@ ss::future<bool> sharded_store::upsert(
   subject_schema schema,
   schema_id id,
   schema_version version,
-  is_deleted deleted) {
-    auto canonical_fut = co_await ss::coroutine::as_future(
-      make_canonical_schema(schema.share(), normalize::no, false));
-    bool processing_failed = canonical_fut.failed();
-    if (processing_failed) {
-        canonical_fut.ignore_ready_future();
-    } else {
-        schema = canonical_fut.get();
+  is_deleted deleted,
+  defer_processing defer) {
+    // A deferred schema is stored raw and marked; otherwise canonicalise
+    // inline and mark only on failure. Marked schemas are canonicalised by
+    // process_marked_schemas() once the whole topic has been loaded into
+    // the store.
+    bool mark_schema = defer == defer_processing::yes;
+    if (defer == defer_processing::no) {
+        auto canonical_fut = co_await ss::coroutine::as_future(
+          make_canonical_schema(schema.share(), normalize::no, false));
+        mark_schema = canonical_fut.failed();
+        if (mark_schema) {
+            canonical_fut.ignore_ready_future();
+        } else {
+            schema = canonical_fut.get();
+        }
     }
 
     auto [sub, def] = std::move(schema).destructure();
-    // mark schemas that failed to be processed here. They will be given
-    // one more chance once we have loaded all the topic to the store.
     co_await upsert_schema(
-      context_schema_id{sub.ctx, id}, std::move(def), processing_failed);
+      context_schema_id{sub.ctx, id}, std::move(def), mark_schema);
     co_return co_await upsert_subject(
       marker, std::move(sub), version, id, deleted);
 }

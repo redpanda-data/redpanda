@@ -3986,6 +3986,14 @@ configuration::configuration()
        .visibility = visibility::user,
        .aliases = {"schema_registry_normalize_on_startup"}},
       false)
+  , schema_registry_deferred_recovery(
+      *this,
+      "schema_registry_deferred_recovery",
+      "Defer schema compilation during Schema Registry startup, then compile "
+      "the loaded schemas in parallel across cores. If disabled, every "
+      "replayed record is compiled sequentially during the replay.",
+      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
+      true)
   , schema_registry_avro_use_named_references(
       *this, "schema_registry_avro_use_named_references")
   , schema_registry_enable_qualified_subjects(

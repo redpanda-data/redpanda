@@ -1097,6 +1097,106 @@ SEASTAR_THREAD_TEST_CASE(test_sharded_store_list_subject_versions) {
       contains_subject_version(in_other, c, pps::schema_version{1}));
 }
 
+// Deferred processing: upsert with defer_processing::yes stores the raw
+// definition and marks the schema; process_marked_schemas() canonicalises
+// every marked schema afterwards. Deferral makes topic order irrelevant: a
+// schema upserted before the schema it references still converges to the
+// same state as inline canonicalisation in dependency order.
+SEASTAR_THREAD_TEST_CASE(test_sharded_store_deferred_processing) {
+    const pps::schema_version ver1{1};
+    const auto marker = pps::seq_marker{
+      std::nullopt, std::nullopt, ver1, pps::seq_marker_key_type::schema};
+    const auto simple_schema = pps::subject_schema{
+      pps::context_subject::unqualified("simple.proto"), simple.share()};
+    const auto imported_schema = pps::subject_schema{
+      pps::context_subject::unqualified("imported.proto"), imported.share()};
+
+    // Reference pass: inline canonicalisation, in dependency order. Capture
+    // the canonical definitions, then stop the store (two live stores would
+    // double-register metrics).
+    std::vector<iobuf> expected_defs;
+    {
+        pps::sharded_store inline_store;
+        inline_store
+          .start(pps::is_mutable::yes, ss::default_smp_service_group())
+          .get();
+        auto stop_inline = ss::defer(
+          [&inline_store]() { inline_store.stop().get(); });
+        inline_store
+          .upsert(
+            marker,
+            simple_schema.share(),
+            pps::schema_id{1},
+            ver1,
+            pps::is_deleted::no)
+          .get();
+        inline_store
+          .upsert(
+            marker,
+            imported_schema.share(),
+            pps::schema_id{2},
+            ver1,
+            pps::is_deleted::no)
+          .get();
+        for (auto id : {pps::schema_id{1}, pps::schema_id{2}}) {
+            expected_defs.push_back(
+              inline_store.get_schema_definition({pps::default_context, id})
+                .get()
+                .raw()()
+                .copy());
+        }
+    }
+
+    // Deferred store: forward-reference order, canonicalisation deferred.
+    pps::sharded_store deferred_store;
+    deferred_store.start(pps::is_mutable::yes, ss::default_smp_service_group())
+      .get();
+    auto stop_deferred = ss::defer(
+      [&deferred_store]() { deferred_store.stop().get(); });
+    deferred_store
+      .upsert(
+        marker,
+        imported_schema.share(),
+        pps::schema_id{2},
+        ver1,
+        pps::is_deleted::no,
+        pps::defer_processing::yes)
+      .get();
+
+    // No canonicalisation was attempted: the raw definition is stored as-is.
+    auto raw_def = deferred_store
+                     .get_schema_definition(
+                       {pps::default_context, pps::schema_id{2}})
+                     .get();
+    BOOST_REQUIRE_EQUAL(raw_def.raw()(), imported.raw()());
+
+    deferred_store
+      .upsert(
+        marker,
+        simple_schema.share(),
+        pps::schema_id{1},
+        ver1,
+        pps::is_deleted::no,
+        pps::defer_processing::yes)
+      .get();
+
+    deferred_store.process_marked_schemas().get();
+
+    // Both stores converge to the same canonical definitions.
+    for (auto id : {pps::schema_id{1}, pps::schema_id{2}}) {
+        auto got = deferred_store
+                     .get_schema_definition({pps::default_context, id})
+                     .get();
+        BOOST_REQUIRE_EQUAL(got.raw()(), expected_defs[id() - 1]);
+    }
+
+    // Reference tracking is unaffected by deferral.
+    auto referenced_by
+      = deferred_store.referenced_by(simple_schema.sub(), ver1).get();
+    BOOST_REQUIRE_EQUAL(referenced_by.size(), 1);
+    BOOST_REQUIRE_EQUAL(referenced_by[0].id, pps::schema_id{2});
+}
+
 SEASTAR_THREAD_TEST_CASE(test_sharded_store_find_unordered) {
     pps::sharded_store store;
     store.start(pps::is_mutable::no, ss::default_smp_service_group()).get();
