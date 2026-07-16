@@ -271,6 +271,9 @@ def build_runtime_args(
             if not any(a.startswith(prefix) for a in args):
                 args.extend(flag.split())
         if log_level:
+            # Moderate default volume for Antithesis (<200MB/core-hour),
+            # keeping the target's per-logger overrides; resubmit a narrower
+            # test with a higher --log-level when a finding needs more.
             args = [a for a in args if not a.startswith("--default-log-level")]
             args.append(f"--default-log-level={log_level}")
     if binary_args:
@@ -431,8 +434,9 @@ def main() -> None:
     )
     parser.add_argument(
         "--log-level",
-        default="",
-        help="Override default log level (e.g. warn, error, info)",
+        default="info",
+        help="Default log level applied to every binary, replacing the "
+        "target's own; per-logger overrides are kept (default: info)",
     )
     parser.add_argument(
         "--tests-only",
