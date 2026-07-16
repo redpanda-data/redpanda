@@ -767,6 +767,7 @@ redpanda_cc_gtest(
     ],
     deps = [
         "//src/v/model",
+        "//src/v/storage",
         "//src/v/storage/tests:disk_log_builder",
         "//src/v/test_utils:gtest",
         "@googletest//:gtest",
