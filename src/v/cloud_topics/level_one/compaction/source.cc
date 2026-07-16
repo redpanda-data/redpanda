@@ -219,20 +219,30 @@ ss::future<ss::stop_iteration> compaction_source::map_building_iteration() {
         map_is_full = res.map_is_full;
         auto max_indexed_offset = res.max_indexed_offset;
 
-        if (max_indexed_offset.has_value()) {
-            bool range_has_tombstones = res.range_has_tombstones;
-            auto base_offset = start_offset;
-            auto last_offset = map_is_full ? model::offset_cast(
-                                               max_indexed_offset.value())
-                                           : max_offset;
+        if (!map_is_full) {
+            // The scan completed without the map filling up, implying it
+            // read through the whole range. Regardless of whether we actually
+            // indexed anything (we may not have, e.g. if the log was prefix
+            // truncated, or if there's a gap caused by aborted transactions),
+            // we should treat this range as clean upon completion.
+            _new_cleaned_ranges.push_back(
+              {.base_offset = start_offset,
+               .last_offset = max_offset,
+               .has_tombstones = res.range_has_tombstones});
+        } else if (max_indexed_offset.has_value()) {
+            // The map filled mid-range: only the prefix up to the last
+            // indexed record is covered.
+            auto last_offset = model::offset_cast(max_indexed_offset.value());
             dassert(
-              base_offset <= last_offset,
+              start_offset <= last_offset,
               "Cleaned range must be properly bounded.");
             _new_cleaned_ranges.push_back(
-              {.base_offset = base_offset,
+              {.base_offset = start_offset,
                .last_offset = last_offset,
-               .has_tombstones = range_has_tombstones});
+               .has_tombstones = res.range_has_tombstones});
         }
+        // Otherwise the map filled before indexing anything in this range
+        // (it was already at capacity on entry); nothing to clean.
 
         if (map_is_full) {
             co_return ss::stop_iteration::yes;
