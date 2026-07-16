@@ -48,6 +48,14 @@ def add_common_args(parser: argparse.ArgumentParser) -> None:
         help="Docker registry to upload images to",
     )
     parser.add_argument(
+        "--tag",
+        action="append",
+        default=[],
+        metavar="TAG",
+        help="Additional tag applied to every built image and pushed "
+        "alongside the implicit image-ID tag (repeatable), e.g. --tag nightly",
+    )
+    parser.add_argument(
         "--submit",
         action="store_true",
         help="Launch an Antithesis test run after pushing "
@@ -56,7 +64,7 @@ def add_common_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--description",
         default="",
-        help="Antithesis run description (default: the image/test name)",
+        help="Antithesis run description (default: none)",
     )
     parser.add_argument(
         "--duration",
@@ -69,6 +77,21 @@ def add_common_args(parser: argparse.ArgumentParser) -> None:
         "--recipients",
         default="",
         help="Semicolon-separated report email recipients (default: none)",
+    )
+    parser.add_argument(
+        "--source",
+        default="",
+        help="antithesis.source: groups property history across runs. Use a "
+        "stable key such as the git branch; runs sharing a source share "
+        "history. Required for --no-ephemeral runs.",
+    )
+    parser.add_argument(
+        "--ephemeral",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Keep the run out of the findings history (antithesis.is_ephemeral). "
+        "Default: ephemeral, for ad-hoc runs. Pass --no-ephemeral for a "
+        "persistent run recorded to history (requires --source).",
     )
 
 
@@ -101,6 +124,13 @@ def validate_common_args(
         parser.error("--submit requires uploading images (drop --skip-registry-upload)")
     if args.submit and args.duration < MIN_DURATION_MIN:
         parser.error(f"--duration must be at least {MIN_DURATION_MIN} minutes")
+    if args.submit and not args.ephemeral and not args.source:
+        parser.error(
+            "--no-ephemeral runs must set --source; use a stable grouping key "
+            'such as the git branch, e.g. --source "$(git branch --show-current)"'
+        )
+    if args.submit and not os.environ.get("AT_PASSWORD"):
+        parser.error("--submit requires the AT_PASSWORD environment variable")
 
 
 def run(
@@ -155,35 +185,59 @@ def packaging_artifact(
     return path
 
 
-def image_ref(registry: str, name: str) -> str:
-    """Fully-qualified :latest reference for an image in the registry."""
-    return f"{registry}/{name}:latest"
+def push_image(registry: str, local_ref: str) -> str:
+    """Push a local image to the registry, preserving its tag: local_ref
+    is pushed as {registry}/{local_ref}. Returns the pushed reference."""
+    ref = f"{registry}/{local_ref}"
+    run(["docker", "tag", local_ref, ref])
+    run(["docker", "push", ref])
+    return ref
 
 
-def upload_images(registry: str, images: dict[str, str]) -> None:
-    """Tag and push each built image to the registry.
-
-    images maps the remote image name (without registry or tag) to the
-    local image tag to push, e.g. {"redpanda-ducktape-node": "...-node:latest"}.
-    Everything is pushed as :latest.
-    """
-    for remote, local_tag in images.items():
-        ref = image_ref(registry, remote)
-        run(["docker", "tag", local_tag, ref])
-        run(["docker", "push", ref])
+def upload_images(registry: str, refs: list[str]) -> dict[str, str]:
+    """Push each local image ref to the registry, preserving tags.
+    Returns {local_ref: pushed_ref}."""
+    return {ref: push_image(registry, ref) for ref in refs}
 
 
-def build_config_image(tag: str, compose_content: str) -> None:
+def tag_images(refs: list[str], tags: list[str]) -> list[str]:
+    """Apply each tag to each reference's image: <name>:<x> gains
+    <name>:<tag>. Returns the alias references."""
+    aliases: list[str] = []
+    for ref in refs:
+        name = ref.rsplit(":", 1)[0]
+        for tag in tags:
+            alias = f"{name}:{tag}"
+            run(["docker", "tag", ref, alias])
+            aliases.append(alias)
+    return aliases
+
+
+def docker_build(name: str, build_args: list[str], context: Path | str) -> str:
+    """Run docker build and tag the result by its image ID: <name>:<id12>.
+    Image IDs are content-derived, so the reference identifies exactly one
+    build and identical inputs rebuild to the identical reference. Returns
+    the tagged reference."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        iidfile = Path(tmpdir) / "iid"
+        run(["docker", "build", "--iidfile", str(iidfile), *build_args, str(context)])
+        iid = iidfile.read_text().strip()
+    ref = f"{name}:{iid.removeprefix('sha256:')[:12]}"
+    run(["docker", "tag", iid, ref])
+    return ref
+
+
+def build_config_image(name: str, compose_content: str) -> str:
     """Package a docker-compose.yaml into a FROM scratch Antithesis config
-    image."""
-    print(f"==> Building config image: {tag}")
+    image. Returns the built reference."""
+    print(f"==> Building config image: {name}")
     with tempfile.TemporaryDirectory() as tmpdir:
         tmp = Path(tmpdir)
         (tmp / "docker-compose.yaml").write_text(compose_content)
         (tmp / "Dockerfile").write_text(
             "FROM scratch\nCOPY docker-compose.yaml /docker-compose.yaml\n"
         )
-        run(["docker", "build", "--tag", tag, str(tmp)])
+        return docker_build(name, [], tmp)
 
 
 def submit_test_run(
@@ -253,32 +307,34 @@ def submit_test_run(
 def maybe_submit(
     args: argparse.Namespace,
     *,
-    name: str,
-    images: dict[str, str],
-    config_key: str,
+    test_name: str,
+    pushed: dict[str, str],
+    config_ref: str,
+    extra_params: dict[str, str] | None = None,
 ) -> None:
     """Launch a test run from parsed args when --submit was given.
 
-    name is the fallback run description; images is the {remote: local}
-    map already passed to upload_images; config_key names the entry that
-    is the Antithesis config image (every other entry is a workload image).
+    pushed maps local image refs to their pushed references (as returned by
+    upload_images); config_ref names the entry that is the Antithesis config
+    image (every other entry is sent as a workload image).
     """
     if not args.submit:
         return
-    password = os.environ.get("AT_PASSWORD")
-    if not password:
-        sys.exit("Error: --submit requires the AT_PASSWORD environment variable")
     submit_test_run(
-        password=password,
-        description=args.description or name,
+        password=os.environ["AT_PASSWORD"],
+        test_name=test_name,
+        description=args.description or None,
+        source=args.source or None,
+        ephemeral=args.ephemeral,
         duration_min=args.duration,
-        config_image=image_ref(args.registry, config_key),
-        images=[image_ref(args.registry, r) for r in images if r != config_key],
+        config_image=pushed[config_ref],
+        images=[remote for local, remote in pushed.items() if local != config_ref],
         recipients=[r for r in args.recipients.split(";") if r] or None,
+        extra_params=extra_params,
     )
 
 
-def registry_help_str(registry: str, *, skipped: bool, images: dict[str, str]) -> str:
+def registry_help_str(registry: str, *, skipped: bool, refs: list[str]) -> str:
     """Render the closing registry status block for a script's summary:
     a one-line confirmation when images were pushed, or the manual docker
     tag/push commands to push them later when --skip-registry-upload was set."""
@@ -291,8 +347,7 @@ def registry_help_str(registry: str, *, skipped: bool, images: dict[str, str]) -
         "Push to the Antithesis registry (skipped via --skip-registry-upload):",
         f"  REGISTRY={registry}",
     ]
-    for remote, local_tag in images.items():
-        ref = f"$REGISTRY/{remote}:latest"
-        lines.append(f"  docker tag {local_tag} {ref}")
-        lines.append(f"  docker push {ref}")
+    for ref in refs:
+        lines.append(f"  docker tag {ref} $REGISTRY/{ref}")
+        lines.append(f"  docker push $REGISTRY/{ref}")
     return "\n".join(lines)

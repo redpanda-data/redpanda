@@ -53,10 +53,12 @@ from at_common import (
     add_build_args,
     add_common_args,
     build_config_image,
+    docker_build,
     maybe_submit,
     registry_help_str,
     render_template,
     run as _run,
+    tag_images,
     upload_images,
     validate_common_args,
 )
@@ -333,10 +335,11 @@ def collect_binary_info(
 
 def build_workload_image(
     binaries: list[BinaryInfo],
-    image_tag: str,
-) -> None:
-    """Build the workload Docker image using named build contexts."""
-    print(f"==> Building workload image: {image_tag}")
+    name: str,
+) -> str:
+    """Build the workload Docker image using named build contexts.
+    Returns the built reference."""
+    print(f"==> Building workload image: {name}")
 
     with tempfile.TemporaryDirectory() as tmpdir:
         ctx = Path(tmpdir)
@@ -396,7 +399,7 @@ def build_workload_image(
         for ctx_name, src_dir in data_contexts.items():
             build_ctx_args += ["--build-context", f"{ctx_name}={src_dir}"]
 
-        run(["docker", "build", *build_ctx_args, "--tag", image_tag, tmpdir])
+        return docker_build(name, build_ctx_args, tmpdir)
 
 
 def main() -> None:
@@ -413,9 +416,6 @@ def main() -> None:
     )
     parser.add_argument(
         "--name", default="", help="Image name (default: derived from first target)"
-    )
-    parser.add_argument(
-        "--tag", default="", help="Docker image tag (default: <name>:latest)"
     )
     parser.add_argument(
         "--log-level",
@@ -440,11 +440,6 @@ def main() -> None:
 
     _, first_name = parse_bazel_target(targets[0])
     target_name = args.name or first_name
-    image_tag = args.tag or f"{target_name}:latest"
-    if ":" not in image_tag:
-        image_tag += ":latest"
-    base, tag = image_tag.rsplit(":", 1)
-    config_tag = f"{base}-config:{tag}"
 
     extra_bazel_args = list(_BASE_BAZEL_ARGS)
     if args.bazel_args:
@@ -468,29 +463,28 @@ def main() -> None:
         sys.exit("Error: no binaries found. Run without --skip-bazel-build?")
 
     # Build workload image.
-    build_workload_image(binaries, image_tag)
+    workload_ref = build_workload_image(binaries, target_name)
 
     # Build config image.
     hostname = target_name.replace("_", "-")
     compose = render_template(
-        DEPS_DIR / "compose.yaml.j2", image_tag=image_tag, hostname=hostname
+        DEPS_DIR / "compose.yaml.j2", image_tag=workload_ref, hostname=hostname
     )
-    build_config_image(config_tag, compose)
+    config_ref = build_config_image(f"{target_name}-config", compose)
 
     # Write compose for local testing.
     compose_out = REPO_ROOT / ".antithesis" / target_name
     compose_out.mkdir(parents=True, exist_ok=True)
     (compose_out / "docker-compose.yaml").write_text(compose)
 
-    config_key = f"{target_name}-config"
-    images = {
-        target_name: image_tag,
-        config_key: config_tag,
-    }
+    refs = [workload_ref, config_ref]
+    aliases = tag_images(refs, args.tag)
+    pushed: dict[str, str] = {}
     if not args.skip_registry_upload:
-        upload_images(args.registry, images)
+        pushed = upload_images(args.registry, refs)
+        upload_images(args.registry, aliases)
 
-    maybe_submit(args, name=target_name, images=images, config_key=config_key)
+    maybe_submit(args, test_name=target_name, pushed=pushed, config_ref=config_ref)
 
     binary_names = [b.name for b in binaries]
     drivers_list = "\n".join(
@@ -499,8 +493,8 @@ def main() -> None:
 
     print(f"""
 Images built:
-  workload: {image_tag}
-  config:   {config_tag}
+  workload: {workload_ref}
+  config:   {config_ref}
 
 Singleton drivers ({len(binary_names)}):
 {drivers_list}
@@ -511,7 +505,7 @@ Run locally:
       {DRIVER_DIR}/singleton_driver_<binary>.sh
   docker compose -f {compose_out}/docker-compose.yaml down
 
-{registry_help_str(args.registry, skipped=args.skip_registry_upload, images=images)}
+{registry_help_str(args.registry, skipped=args.skip_registry_upload, refs=[*refs, *aliases])}
 """)
 
 

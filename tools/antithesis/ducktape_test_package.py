@@ -51,11 +51,13 @@ from at_common import (
     add_common_args,
     bazel_build,
     build_config_image,
+    docker_build,
     maybe_submit,
     packaging_artifact,
     registry_help_str,
     render_template,
     run,
+    tag_images,
     upload_images,
     validate_common_args,
 )
@@ -149,16 +151,14 @@ def build_test_node_image(image_tag: str) -> None:
             dockerignore_dst.unlink()
 
 
-def build_node_image(
-    base_image: str, node_tag: str, rp_image: str | None = None
-) -> None:
+def build_node_image(base_image: str, name: str, rp_image: str | None = None) -> str:
     """Layer Redpanda binaries on top of the test-node image.
 
     If rp_image is provided, binaries are extracted from that Docker image
     (e.g. a nightly build from Docker Hub) instead of from the local Bazel
-    build output.
+    build output. Returns the built reference.
     """
-    print(f"==> Building node image: {node_tag}")
+    print(f"==> Building node image: {name}")
 
     with tempfile.TemporaryDirectory() as tmpdir:
         tmp = Path(tmpdir)
@@ -177,14 +177,15 @@ def build_node_image(
                 hint="Run without --skip-bazel-build or use --rp-image.",
             ).parent
             build_ctx_args += ["--build-context", f"packages={pkg_root}"]
-        run(["docker", "build", *build_ctx_args, "--tag", node_tag, tmpdir])
+        return docker_build(name, build_ctx_args, tmpdir)
 
 
 def build_runner_image(
-    node_image: str, runner_tag: str, cluster_json: str, globals_json: str
-) -> None:
-    """Layer test code, config, and driver on top of the node image."""
-    print(f"==> Building runner image: {runner_tag}")
+    node_image: str, name: str, cluster_json: str, globals_json: str
+) -> str:
+    """Layer test code, config, and driver on top of the node image.
+    Returns the built reference."""
+    print(f"==> Building runner image: {name}")
 
     with tempfile.TemporaryDirectory() as tmpdir:
         tmp = Path(tmpdir)
@@ -199,18 +200,15 @@ def build_runner_image(
             )
         )
 
-        run(
+        return docker_build(
+            name,
             [
-                "docker",
-                "build",
                 "--build-context",
                 f"deps={DEPS_DIR}",
                 "--build-context",
                 f"rptest={REPO_ROOT / 'tests' / 'rptest'}",
-                "--tag",
-                runner_tag,
-                tmpdir,
-            ]
+            ],
+            tmpdir,
         )
 
 
@@ -277,9 +275,6 @@ def main() -> None:
     validate_common_args(parser, args)
 
     base_image = args.test_node_image or "vectorized/redpanda-test-node"
-    node_tag = f"{args.name}-node:latest"
-    runner_tag = f"{args.name}-runner:latest"
-    config_tag = f"{args.name}-config:latest"
 
     rp_image = args.rp_image or None
     if not rp_image and not args.skip_bazel_build:
@@ -295,41 +290,41 @@ def main() -> None:
     print("==> Generating config files")
     cluster_json = generate_cluster_json(args.nodes)
     globals_json = generate_globals_json(args.log_level)
+
+    node_ref = build_node_image(base_image, f"{args.name}-node", rp_image=rp_image)
+    runner_ref = build_runner_image(
+        node_ref, f"{args.name}-runner", cluster_json, globals_json
+    )
     compose = generate_compose(
-        node_image=node_tag,
-        runner_image=runner_tag,
+        node_image=node_ref,
+        runner_image=runner_ref,
         nodes=args.nodes,
         test_args=args.ducktape_args,
         max_parallel=args.max_parallel,
         test_timeout=args.test_timeout,
         disable_faults=args.disable_faults,
     )
-
-    build_node_image(base_image, node_tag, rp_image=rp_image)
-    build_runner_image(node_tag, runner_tag, cluster_json, globals_json)
-    build_config_image(config_tag, compose)
+    config_ref = build_config_image(f"{args.name}-config", compose)
 
     # Write compose file for local testing.
     compose_out = REPO_ROOT / ".antithesis" / args.name
     compose_out.mkdir(parents=True, exist_ok=True)
     (compose_out / "docker-compose.yaml").write_text(compose)
 
-    config_key = f"{args.name}-config"
-    images = {
-        f"{args.name}-node": node_tag,
-        f"{args.name}-runner": runner_tag,
-        config_key: config_tag,
-    }
+    refs = [node_ref, runner_ref, config_ref]
+    aliases = tag_images(refs, args.tag)
+    pushed: dict[str, str] = {}
     if not args.skip_registry_upload:
-        upload_images(args.registry, images)
+        pushed = upload_images(args.registry, refs)
+        upload_images(args.registry, aliases)
 
-    maybe_submit(args, name=args.name, images=images, config_key=config_key)
+    maybe_submit(args, test_name=args.name, pushed=pushed, config_ref=config_ref)
 
     print(f"""
 Images built:
-  node:   {node_tag}
-  runner: {runner_tag}
-  config: {config_tag}
+  node:   {node_ref}
+  runner: {runner_ref}
+  config: {config_ref}
 
 Run locally:
   docker compose -f {compose_out}/docker-compose.yaml up -d
@@ -337,7 +332,7 @@ Run locally:
       /opt/antithesis/test/v1/ducktape/singleton_driver_ducktape.sh
   docker compose -f {compose_out}/docker-compose.yaml down
 
-{registry_help_str(args.registry, skipped=args.skip_registry_upload, images=images)}
+{registry_help_str(args.registry, skipped=args.skip_registry_upload, refs=[*refs, *aliases])}
 """)
 
 
