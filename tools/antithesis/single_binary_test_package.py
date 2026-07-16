@@ -39,12 +39,12 @@
 
 import argparse
 import functools
+import json
 import re
 import shlex
 import shutil
 import sys
 import tempfile
-import xml.etree.ElementTree as ET
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -198,48 +198,54 @@ def query_seastar_targets(patterns: list[str]) -> set[str]:
 
 def resolve_and_query_targets(
     patterns: list[str],
+    extra_bazel_args: list[str],
     tests_only: bool = False,
 ) -> tuple[list[str], dict[str, TargetInfo]]:
-    """Resolve patterns and query target info in a single bazel query."""
+    """Resolve patterns and query target info in a single bazel cquery.
+
+    cquery runs after analysis with the build's own flags, so select()ed
+    attributes (e.g. the reactor backend from //bazel:io_uring) resolve to
+    the branch the build actually uses; a loading-phase query would report
+    the union of all branches."""
     kind_filter = "cc_test" if tests_only else "cc_test|cc_binary"
     query_expr = f"kind('{kind_filter}', set(" + " ".join(patterns) + "))"
     print("==> Resolving and querying targets")
-    result = run(["bazel", "query", "--output=xml", query_expr], capture=True)
+    result = run(
+        ["bazel", "cquery", "--output=jsonproto", *extra_bazel_args, query_expr],
+        capture=True,
+    )
 
-    root = ET.fromstring(result.stdout)
-    rules = root.findall(".//rule")
-    targets = [rule.get("name", "") for rule in rules]
-    seastar_targets = query_seastar_targets(patterns) if targets else set()
+    rules = [
+        r["target"]["rule"]
+        for r in json.loads(result.stdout).get("results", [])
+        if "rule" in r.get("target", {})
+    ]
+    seastar_targets = query_seastar_targets(patterns) if rules else set()
 
     info: dict[str, TargetInfo] = {}
     for rule in rules:
-        label = rule.get("name", "")
-
-        args_elem = rule.find("list[@name='args']")
+        attrs = {a["name"]: a for a in rule.get("attribute", [])}
         rule_args = [
-            s.get("value", "").replace("'", "")
-            for s in (args_elem if args_elem is not None else [])
-            if s.get("value")
+            value.replace("'", "")
+            for value in attrs.get("args", {}).get("stringListValue", [])
+            if value
         ]
-
-        env: dict[str, str] = {}
-        env_elem = rule.find("dict[@name='env']")
-        for pair in env_elem if env_elem is not None else []:
-            strings = pair.findall("string")
-            if len(strings) == 2 and strings[0].get("value"):
-                env[strings[0].get("value", "")] = strings[1].get("value", "")
-
-        info[label] = TargetInfo(
-            rule_kind=rule.get("class", "cc_binary"),
+        env = {
+            e["key"]: e.get("value", "")
+            for e in attrs.get("env", {}).get("stringDictValue", [])
+            if e.get("key")
+        }
+        info[rule["name"]] = TargetInfo(
+            rule_kind=rule.get("ruleClass", "cc_binary"),
             args=rule_args,
             env=env,
-            uses_seastar=label in seastar_targets,
+            uses_seastar=rule["name"] in seastar_targets,
         )
 
-    if not targets:
+    if not info:
         sys.exit("Error: no targets resolved from the given patterns")
-    print(f"    Resolved {len(targets)} target(s)")
-    return targets, info
+    print(f"    Resolved {len(info)} target(s)")
+    return list(info), info
 
 
 def _flatten_args(args: list[str]) -> list[str]:
@@ -433,19 +439,19 @@ def main() -> None:
 
     validate_common_args(parser, args)
 
-    # Resolve patterns and query target info.
-    targets, target_info = resolve_and_query_targets(
-        args.targets, tests_only=args.tests_only
-    )
-
-    _, first_name = parse_bazel_target(targets[0])
-    target_name = args.name or first_name
-
     extra_bazel_args = list(_BASE_BAZEL_ARGS)
     if args.bazel_args:
         extra_bazel_args.extend(shlex.split(args.bazel_args))
     if args.instrumented:
         extra_bazel_args.append("--config=antithesis")
+
+    # Resolve patterns and query configured target info.
+    targets, target_info = resolve_and_query_targets(
+        args.targets, extra_bazel_args, tests_only=args.tests_only
+    )
+
+    _, first_name = parse_bazel_target(targets[0])
+    target_name = args.name or first_name
 
     # Build all targets.
     if not args.skip_bazel_build:
