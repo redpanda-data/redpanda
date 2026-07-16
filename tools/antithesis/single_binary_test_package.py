@@ -17,10 +17,10 @@
 #
 # Package Bazel-built C++ binaries into Antithesis-compatible Docker
 # images. Supports single targets, multiple targets, and Bazel patterns.
-# Builds Docker images directly using named build contexts, then uploads
-# the workload/config images to the registry (unless --skip-registry-upload)
-# and optionally launches an Antithesis test run (--submit; reads the API
-# password from $AT_PASSWORD).
+# Builds Docker images directly using named build contexts, optionally
+# pushes the workload/config images to the registry (--push) and launches
+# an Antithesis test run (--submit; reads the API password from
+# $AT_PASSWORD).
 #
 # Usage:
 #   # Single target:
@@ -490,7 +490,7 @@ def main() -> None:
     refs = [workload_ref, config_ref]
     aliases = tag_images(refs, args.tag)
     pushed: dict[str, str] = {}
-    if not args.skip_registry_upload:
+    if args.push:
         pushed = upload_images(args.registry, refs)
         upload_images(args.registry, aliases)
 
@@ -515,7 +515,7 @@ Run locally:
       {DRIVER_DIR}/singleton_driver_<binary>.sh
   docker compose -f {compose_out}/docker-compose.yaml down
 
-{registry_help_str(args.registry, skipped=args.skip_registry_upload, refs=[*refs, *aliases])}
+{registry_help_str(args.registry, pushed=args.push, refs=[*refs, *aliases])}
 """)
 
 

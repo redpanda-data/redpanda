@@ -35,12 +35,12 @@ PACKAGING_ROOT = REPO_ROOT / "bazel-bin" / "bazel" / "packaging"
 
 
 def add_common_args(parser: argparse.ArgumentParser) -> None:
-    """Add the registry-upload and test-submission flags shared by both
+    """Add the registry-push and test-submission flags shared by both
     packaging scripts. Pair with validate_common_args after parsing."""
     parser.add_argument(
-        "--skip-registry-upload",
+        "--push",
         action="store_true",
-        help="Skip uploading the built images to the registry",
+        help="Push the built images to the registry (implied by --submit)",
     )
     parser.add_argument(
         "--registry",
@@ -119,9 +119,9 @@ def validate_common_args(
     parser: argparse.ArgumentParser, args: argparse.Namespace
 ) -> None:
     """Validate the flags added by add_common_args, erroring via the parser
-    on contradictory or out-of-range values."""
-    if args.submit and args.skip_registry_upload:
-        parser.error("--submit requires uploading images (drop --skip-registry-upload)")
+    on contradictory or out-of-range values. --submit implies --push."""
+    if args.submit:
+        args.push = True
     if args.submit and args.duration < MIN_DURATION_MIN:
         parser.error(f"--duration must be at least {MIN_DURATION_MIN} minutes")
     if args.submit and not args.ephemeral and not args.source:
@@ -344,17 +344,14 @@ def maybe_submit(
     )
 
 
-def registry_help_str(registry: str, *, skipped: bool, refs: list[str]) -> str:
+def registry_help_str(registry: str, *, pushed: bool, refs: list[str]) -> str:
     """Render the closing registry status block for a script's summary:
     a one-line confirmation when images were pushed, or the manual docker
-    tag/push commands to push them later when --skip-registry-upload was set."""
-    if not skipped:
-        return (
-            f"Pushed to the Antithesis registry: {registry}\n"
-            f"  (re-run with --skip-registry-upload to build without pushing)"
-        )
+    tag/push commands to push them later."""
+    if pushed:
+        return f"Pushed to the Antithesis registry: {registry}"
     lines = [
-        "Push to the Antithesis registry (skipped via --skip-registry-upload):",
+        "Push to the Antithesis registry (rerun with --push, implied by --submit):",
         f"  REGISTRY={registry}",
     ]
     for ref in refs:
