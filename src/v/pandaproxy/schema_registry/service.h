@@ -69,6 +69,7 @@ public:
     std::unique_ptr<cluster::controller>& controller() { return _controller; }
 
 private:
+    // Only ever invoked on the reader shard, via _load_once.
     ss::future<> do_start();
     /// Route every shard's start-up through a single one_shot on the reader
     /// shard, so the `_schemas` topic is replayed exactly once regardless of
@@ -101,7 +102,6 @@ private:
     // once, no matter how many shards enter start-up concurrently.
     one_shot _load_once;
     request_authenticator _auth;
-    bool _is_started{false};
 };
 
 } // namespace pandaproxy::schema_registry
