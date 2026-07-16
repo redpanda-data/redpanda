@@ -605,9 +605,12 @@ ss::future<> service::ensure_topic_loaded() {
 }
 
 ss::future<> service::do_start() {
-    if (_is_started) {
-        co_return;
-    }
+    // Invoked only on the reader shard, via _load_once, so it runs exactly
+    // once and can drive the reader-shard-only fetch directly.
+    vassert(
+      ss::this_shard_id() == seq_writer::reader_shard,
+      "do_start must run on the reader shard, not {}",
+      ss::this_shard_id());
     auto guard = _gate.hold();
     try {
         co_await create_internal_topic();
@@ -622,60 +625,51 @@ ss::future<> service::do_start() {
           std::current_exception());
         throw;
     }
-    co_await container().invoke_on_all(
-      _ctx.smp_sg, [](this auto, service& s) -> ss::future<> {
-          s._is_started = true;
-          if (ss::this_shard_id() != seq_writer::reader_shard) {
-              co_return;
-          }
+    using namespace std::chrono_literals;
 
-          using namespace std::chrono_literals;
-
-          // create_internal_topic returns once the controller commits
-          // the topic, but the metadata cache and partition leadership
-          // are established asynchronously. Retry transient errors in
-          // that window with exponential backoff (100ms..5s, ~26s total).
-          constexpr int max_attempts = 10;
-          constexpr auto max_backoff = 5000ms;
-          auto backoff = 100ms;
-          for (int attempts = 0;; ++attempts) {
-              auto fut = co_await ss::coroutine::as_future(
-                s.fetch_internal_topic());
-              if (!fut.failed()) {
-                  co_return;
-              }
-              auto eptr = fut.get_exception();
-              if (attempts >= max_attempts) {
-                  std::rethrow_exception(eptr);
-              }
-              try {
-                  std::rethrow_exception(eptr);
-              } catch (const kafka::exception_base& e) {
-                  if (!kafka::is_retriable(e.error)) {
-                      throw;
-                  }
-              } catch (const exception& e) {
-                  // kafka_client_transport wraps "topic missing" as
-                  // unknown_server_error via schema_registry::exception.
-                  // treat this as retriable and rethrow anything else.
-                  if (e.code() != kafka::error_code::unknown_server_error) {
-                      throw;
-                  }
-              }
-              vlog(
-                srlog.info,
-                "Retriable error encountered while initializing the schemas "
-                "topic: {}. Retrying in {}ms",
-                eptr,
-                backoff.count());
-              try {
-                  co_await ss::sleep_abortable(backoff, s._as);
-              } catch (const ss::sleep_aborted&) {
-                  std::rethrow_exception(eptr);
-              }
-              backoff = std::min(backoff * 2, max_backoff);
-          }
-      });
+    // create_internal_topic returns once the controller commits the topic,
+    // but the metadata cache and partition leadership are established
+    // asynchronously. Retry transient errors in that window with exponential
+    // backoff (100ms..5s, ~26s total).
+    constexpr int max_attempts = 10;
+    constexpr auto max_backoff = 5000ms;
+    auto backoff = 100ms;
+    for (int attempts = 0;; ++attempts) {
+        auto fut = co_await ss::coroutine::as_future(fetch_internal_topic());
+        if (!fut.failed()) {
+            co_return;
+        }
+        auto eptr = fut.get_exception();
+        if (attempts >= max_attempts) {
+            std::rethrow_exception(eptr);
+        }
+        try {
+            std::rethrow_exception(eptr);
+        } catch (const kafka::exception_base& e) {
+            if (!kafka::is_retriable(e.error)) {
+                throw;
+            }
+        } catch (const exception& e) {
+            // kafka_client_transport wraps "topic missing" as
+            // unknown_server_error via schema_registry::exception.
+            // treat this as retriable and rethrow anything else.
+            if (e.code() != kafka::error_code::unknown_server_error) {
+                throw;
+            }
+        }
+        vlog(
+          srlog.info,
+          "Retriable error encountered while initializing the schemas "
+          "topic: {}. Retrying in {}ms",
+          eptr,
+          backoff.count());
+        try {
+            co_await ss::sleep_abortable(backoff, _as);
+        } catch (const ss::sleep_aborted&) {
+            std::rethrow_exception(eptr);
+        }
+        backoff = std::min(backoff * 2, max_backoff);
+    }
 }
 
 ss::future<> service::ensure_internal_topic() {
