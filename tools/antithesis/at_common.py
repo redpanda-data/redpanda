@@ -30,6 +30,9 @@ DEFAULT_REGISTRY = "us-central1-docker.pkg.dev/molten-verve-216720/redpanda-repo
 # Antithesis enforces a floor on run length; also our default.
 MIN_DURATION_MIN = 5
 
+REPO_ROOT = Path(__file__).resolve().parent.parent.parent
+PACKAGING_ROOT = REPO_ROOT / "bazel-bin" / "bazel" / "packaging"
+
 
 def add_common_args(parser: argparse.ArgumentParser) -> None:
     """Add the registry-upload and test-submission flags shared by both
@@ -66,6 +69,26 @@ def add_common_args(parser: argparse.ArgumentParser) -> None:
         "--recipients",
         default="",
         help="Semicolon-separated report email recipients (default: none)",
+    )
+
+
+def add_build_args(parser: argparse.ArgumentParser) -> None:
+    """Add the Bazel-build flags shared by the packaging scripts."""
+    parser.add_argument(
+        "--instrumented",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Build with --config=antithesis (default: enabled)",
+    )
+    parser.add_argument(
+        "--bazel-args",
+        default="",
+        help="Extra arguments passed to bazel build",
+    )
+    parser.add_argument(
+        "--skip-bazel-build",
+        action="store_true",
+        help="Skip the Bazel build (use existing artifacts)",
     )
 
 
@@ -108,6 +131,28 @@ def render_template(path: Path, **kwargs) -> str:
     template.globals["shquote"] = shlex.quote
     template.environment.filters["shquote"] = shlex.quote
     return template.render(**kwargs)
+
+
+def bazel_build(target: str, *, instrumented: bool, bazel_args: str = "") -> None:
+    """Build a Bazel target from the repo root, with --config=antithesis
+    when instrumented."""
+    print(f"==> Building {target}")
+    cmd = ["bazel", "build", target]
+    if instrumented:
+        cmd.append("--config=antithesis")
+    cmd.extend(shlex.split(bazel_args))
+    run(cmd, cwd=REPO_ROOT)
+
+
+def packaging_artifact(
+    name: str, *, hint: str = "Run without --skip-bazel-build."
+) -> Path:
+    """Path of a //bazel/packaging build output, exiting with hint when it
+    has not been built."""
+    path = PACKAGING_ROOT / name
+    if not path.exists():
+        sys.exit(f"Error: {path} not found. {hint}")
+    return path
 
 
 def image_ref(registry: str, name: str) -> str:

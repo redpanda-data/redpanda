@@ -41,16 +41,18 @@
 
 import argparse
 import json
-import shlex
 import shutil
-import sys
 import tempfile
 from pathlib import Path
 
 from at_common import (
+    REPO_ROOT,
+    add_build_args,
     add_common_args,
+    bazel_build,
     build_config_image,
     maybe_submit,
+    packaging_artifact,
     registry_help_str,
     render_template,
     run,
@@ -60,7 +62,6 @@ from at_common import (
 
 TOOLS_DIR = Path(__file__).resolve().parent
 DEPS_DIR = TOOLS_DIR / "ducktape_deps"
-REPO_ROOT = TOOLS_DIR.parent.parent
 
 # Root for installed binaries, matching tools/dt and RedpandaInstaller.
 INSTALL_ROOT = "/opt/redpanda_installs"
@@ -124,19 +125,6 @@ def generate_compose(
     )
 
 
-def build_redpanda(instrumented: bool, extra_bazel_args: list[str]) -> None:
-    print("==> Building Redpanda ducktape packages")
-    cmd = [
-        "bazel",
-        "build",
-        "//bazel/packaging:ducktape",
-    ]
-    if instrumented:
-        cmd.append("--config=antithesis")
-    cmd.extend(extra_bazel_args)
-    run(cmd, cwd=REPO_ROOT)
-
-
 def build_test_node_image(image_tag: str) -> None:
     print(f"==> Building base test node image: {image_tag}")
 
@@ -184,13 +172,10 @@ def build_node_image(
         )
         build_ctx_args: list[str] = []
         if not rp_image:
-            pkg_root = REPO_ROOT / "bazel-bin" / "bazel" / "packaging"
-            for pkg in ("redpanda_ducktape",):
-                if not (pkg_root / pkg).exists():
-                    sys.exit(
-                        f"Error: {pkg_root / pkg} not found. "
-                        f"Run without --skip-bazel-build or use --rp-image."
-                    )
+            pkg_root = packaging_artifact(
+                "redpanda_ducktape",
+                hint="Run without --skip-bazel-build or use --rp-image.",
+            ).parent
             build_ctx_args += ["--build-context", f"packages={pkg_root}"]
         run(["docker", "build", *build_ctx_args, "--tag", node_tag, tmpdir])
 
@@ -248,12 +233,6 @@ def main() -> None:
         help="Base name for images (default: redpanda-ducktape)",
     )
     parser.add_argument(
-        "--instrumented",
-        action=argparse.BooleanOptionalAction,
-        default=True,
-        help="Build with --config=antithesis for coverage (default: enabled)",
-    )
-    parser.add_argument(
         "--max-parallel",
         type=int,
         default=1,
@@ -274,9 +253,6 @@ def main() -> None:
         "--log-level", default="info", help="Redpanda log level (default: info)"
     )
     parser.add_argument(
-        "--bazel-args", default="", help="Extra arguments passed to bazel build"
-    )
-    parser.add_argument(
         "--rp-image",
         default="",
         help="Use a pre-built Redpanda Docker image instead of building "
@@ -289,15 +265,11 @@ def main() -> None:
         "(e.g. docker.redpanda.com/redpandadata/redpanda-test-node:dev-amd64-cache)",
     )
     parser.add_argument(
-        "--skip-bazel-build",
-        action="store_true",
-        help="Skip building Redpanda (use existing artifacts)",
-    )
-    parser.add_argument(
         "--skip-docker-build",
         action="store_true",
         help="Skip building the base test-node Docker image",
     )
+    add_build_args(parser)
     add_common_args(parser)
 
     args = parser.parse_args()
@@ -308,11 +280,14 @@ def main() -> None:
     node_tag = f"{args.name}-node:latest"
     runner_tag = f"{args.name}-runner:latest"
     config_tag = f"{args.name}-config:latest"
-    extra_bazel_args = shlex.split(args.bazel_args) if args.bazel_args else []
 
     rp_image = args.rp_image or None
     if not rp_image and not args.skip_bazel_build:
-        build_redpanda(args.instrumented, extra_bazel_args)
+        bazel_build(
+            "//bazel/packaging:ducktape",
+            instrumented=args.instrumented,
+            bazel_args=args.bazel_args,
+        )
 
     if not args.test_node_image and not args.skip_docker_build:
         build_test_node_image(base_image)

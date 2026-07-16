@@ -32,9 +32,9 @@
 #   ./tools/antithesis/single_binary_test_package.py \
 #       //src/v/cluster/tests/...
 #
-#   # With instrumentation:
+#   # Without Antithesis instrumentation:
 #   ./tools/antithesis/single_binary_test_package.py \
-#       //src/v/lsm/db/tests:db_bench --instrumented
+#       //src/v/lsm/db/tests:db_bench --no-instrumented
 #
 
 import argparse
@@ -49,6 +49,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from at_common import (
+    REPO_ROOT,
+    add_build_args,
     add_common_args,
     build_config_image,
     maybe_submit,
@@ -60,7 +62,6 @@ from at_common import (
 )
 
 
-REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 DEPS_DIR = Path(__file__).resolve().parent / "single_binary_deps"
 
 # bazel and docker commands in this script must run from the repo root.
@@ -417,26 +418,16 @@ def main() -> None:
         "--tag", default="", help="Docker image tag (default: <name>:latest)"
     )
     parser.add_argument(
-        "--bazel-args", default="", help="Extra arguments passed to bazel build"
-    )
-    parser.add_argument(
-        "--instrumented", action="store_true", help="Build with --config=antithesis"
-    )
-    parser.add_argument(
         "--log-level",
         default="",
         help="Override default log level (e.g. warn, error, info)",
-    )
-    parser.add_argument(
-        "--skip-bazel-build",
-        action="store_true",
-        help="Skip bazel build, use existing artifacts",
     )
     parser.add_argument(
         "--tests-only",
         action="store_true",
         help="Only package cc_test targets, excluding cc_binary",
     )
+    add_build_args(parser)
     add_common_args(parser)
     args = parser.parse_args()
 
