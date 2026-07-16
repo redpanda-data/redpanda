@@ -3994,6 +3994,15 @@ configuration::configuration()
       "replayed record is compiled sequentially during the replay.",
       {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
       true)
+  , schema_registry_replay_on_startup(
+      *this,
+      "schema_registry_replay_on_startup",
+      "Replay the internal `_schemas` topic into the store at Schema Registry "
+      "start-up instead of lazily on the first request. Makes recovery time "
+      "predictable and keeps the first request from blocking behind a full "
+      "replay.",
+      {.needs_restart = needs_restart::no, .visibility = visibility::user},
+      false)
   , schema_registry_avro_use_named_references(
       *this, "schema_registry_avro_use_named_references")
   , schema_registry_enable_qualified_subjects(

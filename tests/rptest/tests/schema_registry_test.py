@@ -12134,3 +12134,108 @@ class SchemaRegistryStartupRecoveryTest(RedpandaTest):
         )
         assert r.status_code == requests.codes.ok, r.text
         assert len(r.json()) >= self.N_SUBJECTS
+
+    @cluster(num_nodes=3, log_allow_list=_SR_STARTUP_RECOVERY_LOG_ALLOW_LIST)
+    def test_replay_on_startup_without_request(self):
+        """
+        With schema_registry_replay_on_startup enabled, the store must hydrate
+        proactively at startup without any client request driving it.
+
+        admin restart_service re-runs service::start() (via api::restart ->
+        start -> service::start), which is where the eager trigger lives, and
+        does not restart the broker process, so the log persists and we can
+        watch for the replay without touching the SR API.
+        """
+        node = self.redpanda.nodes[0]
+        host = node.account.hostname
+
+        # Populate _schemas so a restart has a topic to replay.
+        self._register_schemas(host)
+        wait_until(
+            lambda: self._all_subjects_served(host),
+            timeout_sec=30,
+            backoff_sec=1,
+            err_msg="subjects not visible after registration",
+        )
+
+        self.redpanda.set_cluster_config({"schema_registry_replay_on_startup": True})
+
+        init_before = self.redpanda.count_log_node(node, self.INIT_MARKER)
+
+        admin = Admin(self.redpanda)
+        result = admin.restart_service(rp_service="schema-registry", node=node)
+        assert result.status_code == requests.codes.ok, (
+            f"restart_service failed: {result.status_code} {result.text}"
+        )
+
+        # Deliberately issue NO SR request. The eager startup trigger must drive
+        # the replay on its own. count_log_node greps the broker log over ssh,
+        # so polling here does not hit the SR API and cannot trigger the lazy
+        # path.
+        wait_until(
+            lambda: self.redpanda.count_log_node(node, self.INIT_MARKER) > init_before,
+            timeout_sec=60,
+            backoff_sec=1,
+            err_msg="eager startup replay did not run without any request",
+        )
+
+        replays = self.redpanda.count_log_node(node, self.INIT_MARKER) - init_before
+        assert replays == 1, (
+            f"expected exactly one eager replay, saw {replays} "
+            f"('{self.INIT_MARKER}' delta)."
+        )
+
+        # The store hydrated without a request; a request now succeeds
+        # immediately rather than blocking on a cold replay.
+        assert self._all_subjects_served(host)
+
+    @cluster(num_nodes=3, log_allow_list=_SR_STARTUP_RECOVERY_LOG_ALLOW_LIST)
+    def test_no_replay_on_startup_by_default(self):
+        """
+        With schema_registry_replay_on_startup unset (the default), recovery
+        stays lazy: a restart does not replay _schemas until a request (or an
+        internal access) arrives. The complement of
+        test_replay_on_startup_without_request, and a guard that the config
+        actually gates the eager path.
+        """
+        node = self.redpanda.nodes[0]
+        host = node.account.hostname
+
+        self._register_schemas(host)
+        wait_until(
+            lambda: self._all_subjects_served(host),
+            timeout_sec=30,
+            backoff_sec=1,
+            err_msg="subjects not visible after registration",
+        )
+
+        # Deliberately leave schema_registry_replay_on_startup at its default
+        # (off). do_start() logs INIT_MARKER once per run, so a flat count after
+        # a restart with no request means recovery did not run.
+        init_before = self.redpanda.count_log_node(node, self.INIT_MARKER)
+
+        admin = Admin(self.redpanda)
+        result = admin.restart_service(rp_service="schema-registry", node=node)
+        assert result.status_code == requests.codes.ok, (
+            f"restart_service failed: {result.status_code} {result.text}"
+        )
+
+        # No SR request is issued. Give recovery ample time to (not) happen;
+        # a real replay of this topic completes in well under a second.
+        time.sleep(15)
+        assert self.redpanda.count_log_node(node, self.INIT_MARKER) == init_before, (
+            "recovery ran at startup without the config set and without a "
+            "request; it should be lazy by default"
+        )
+
+        # The first request now lazily triggers exactly one replay and serves.
+        wait_until(
+            lambda: self._all_subjects_served(host),
+            timeout_sec=30,
+            backoff_sec=1,
+            err_msg="lazy recovery did not serve after the first request",
+        )
+        replays = self.redpanda.count_log_node(node, self.INIT_MARKER) - init_before
+        assert replays == 1, (
+            f"expected exactly one lazy replay after the first request, saw {replays}."
+        )

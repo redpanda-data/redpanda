@@ -36,6 +36,7 @@
 #include "security/audit/audit_log_manager.h"
 #include "security/authorizer.h"
 #include "security/request_auth.h"
+#include "ssx/future-util.h"
 #include "ssx/semaphore.h"
 
 #include <seastar/core/coroutine.hh>
@@ -801,10 +802,30 @@ service::service(
 ss::future<> service::start() {
     static std::vector<model::broker_endpoint> not_advertised{};
     _server.routes(get_schema_registry_routes(_gate, _ensure_started));
-    co_return co_await _server.start(
+    co_await _server.start(
       _config.schema_registry_api(),
       _config.schema_registry_api_tls(),
       not_advertised);
+
+    if (
+      ss::this_shard_id() == seq_writer::reader_shard
+      && config::shard_local_cfg().schema_registry_replay_on_startup()) {
+        // Proactively hydrate the store rather than wait for the first request.
+        // Fire-and-forget under the gate: a large topic can take a while to
+        // replay and must not block broker start-up. This goes through the
+        // single-flight ensure_started(), so a request that races it still
+        // triggers exactly one replay.
+        ssx::spawn_with_gate(_gate, [this] {
+            return ensure_started().handle_exception(
+              [](const std::exception_ptr& e) {
+                  vlog(
+                    srlog.warn,
+                    "eager _schemas replay failed at start-up; will retry on "
+                    "the first request: {}",
+                    e);
+              });
+        });
+    }
 }
 
 ss::future<> service::stop() {
