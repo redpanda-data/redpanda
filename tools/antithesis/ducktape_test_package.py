@@ -340,7 +340,7 @@ Images built:
   config: {config_ref}
 
 Run locally:
-  docker compose -f {compose_out}/docker-compose.yaml up -d
+  docker compose -f {compose_out}/docker-compose.yaml up --force-recreate --detach
   docker compose -f {compose_out}/docker-compose.yaml exec ducktape-runner \\
       /opt/antithesis/test/v1/ducktape/singleton_driver_ducktape.sh
   docker compose -f {compose_out}/docker-compose.yaml down
