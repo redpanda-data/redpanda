@@ -117,10 +117,12 @@ public:
     // Seeds the destination registry with one (subject, version).
     void seed_destination(std::string_view subject, int32_t version) {
         _registry
-          .import_schema(make_schema(
-            ppsr::context_subject::unqualified(subject),
-            version,
-            fmt::format("{{\"v\":{}}}", version)))
+          .import_schema(
+            make_schema(
+              ppsr::context_subject::unqualified(subject),
+              version,
+              fmt::format("{{\"v\":{}}}", version)),
+            nullptr)
           .get();
     }
 
@@ -811,7 +813,7 @@ TEST_F(mirroring_task_test, hard_deletes_already_soft_deleted_version) {
     // longer has it at all, so it is purged (directly, no re-soft-delete).
     _registry
       .import_schema(
-        make_schema(orders, 1, R"({"v":1})", ppsr::is_deleted::yes))
+        make_schema(orders, 1, R"({"v":1})", ppsr::is_deleted::yes), nullptr)
       .get();
 
     lead_schema_registry();
@@ -973,8 +975,9 @@ TEST_F(mirroring_task_test, removes_destination_override_absent_at_source) {
     // source subject exists but has no explicit override. The sync must remove
     // the stale destination overrides.
     seed_destination("orders-value", 1);
-    _registry.write_mode(orders, ppsr::mode::read_only).get();
-    _registry.write_config(orders, ppsr::compatibility_level::full).get();
+    _registry.write_mode(orders, ppsr::mode::read_only, nullptr).get();
+    _registry.write_config(orders, ppsr::compatibility_level::full, nullptr)
+      .get();
     _source_state.add(orders, 1);
 
     lead_schema_registry();
@@ -1414,6 +1417,59 @@ TEST_F(mirroring_task_test, metric_values_are_fetched_live_on_scrape) {
     probe.clear();
 }
 
+// Fixture whose destination parks imports until the abort handle passed by
+// the task fires: stop() can only drain the runner if the task threads its
+// run abort_source into destination operations.
+class mirroring_task_abort_gated_import_test : public mirroring_task_test {
+public:
+    // If the task never passes its abort handle (the red state of the test
+    // below), the parked import would wedge the base teardown's task stop;
+    // unwedge it first.
+    ss::future<> TearDownAsync() override {
+        _gated.release();
+        co_await mirroring_task_test::TearDownAsync();
+    }
+
+protected:
+    schema::registry* dest() override { return &_gated; }
+
+    // The first import forwards (the run publishes a status snapshot), the
+    // second parks -- same proven shape as mirroring_task_blocking_import_test.
+    abort_gated_import_registry _gated{&_registry, /*block_after=*/1};
+};
+
+TEST_F(
+  mirroring_task_abort_gated_import_test,
+  stop_aborts_parked_destination_write) {
+    // A destination write parked at broker teardown resolves only through
+    // the task's abort_source. Losing leadership stops the task; the runner
+    // gate must drain -- observed via the metric series stop() drops after
+    // the drain -- without the test releasing the park. Red while the task
+    // does not thread its run abort into destination operations.
+    _source_state.add(ppsr::context_subject::unqualified("a"), 1);
+    _source_state.add(ppsr::context_subject::unqualified("b"), 1);
+
+    lead_schema_registry();
+    fixture()->upsert_link(get_default_metadata()).get();
+
+    _gated.entered().get();
+    auto status
+      = wait_for_sync_status([](const auto& s) {
+            return s.current_sync.has_value()
+                   && s.totals_since_task_start.subject_versions_changed == 1;
+        }).get();
+    EXPECT_TRUE(status.has_value());
+
+    unlead_schema_registry();
+    ASSERT_TRUE(wait_for_task_state(model::task_state::stopped).get());
+
+    ::tests::cooperative_spin_wait_with_timeout(wait_interval, [] {
+        return !sr_sync_metric(
+                  "subject_versions_changed", ss::metrics::default_handle())
+                  .has_value();
+    }).get();
+}
+
 // Fixture whose destination parks an import mid-reconcile, so a test can
 // observe the task while _reconcile_stats holds counts not yet folded into
 // _status.
@@ -1531,11 +1587,12 @@ TEST_F(mirroring_task_test, destination_inventory_spans_contexts_and_deleted) {
     // Default-context "a": v1 active, v2 soft-deleted. Context ".b" subject
     // "c": v1 active. The scan must span both contexts and separate active from
     // soft-deleted.
-    _registry.import_schema(make_schema(a, 1, R"({"v":1})")).get();
+    _registry.import_schema(make_schema(a, 1, R"({"v":1})"), nullptr).get();
     _registry
-      .import_schema(make_schema(a, 2, R"({"v":2})", ppsr::is_deleted::yes))
+      .import_schema(
+        make_schema(a, 2, R"({"v":2})", ppsr::is_deleted::yes), nullptr)
       .get();
-    _registry.import_schema(make_schema(c, 1, R"({"v":1})")).get();
+    _registry.import_schema(make_schema(c, 1, R"({"v":1})"), nullptr).get();
 
     ss::abort_source as;
     srs::context_mapper identity;

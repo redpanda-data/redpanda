@@ -23,6 +23,7 @@
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 
+#include <optional>
 #include <vector>
 
 namespace pps = pandaproxy::schema_registry;
@@ -105,7 +106,9 @@ public:
 
     pps::rpc_transport& transport() { return *_transport; }
 
-    model::offset hwm() { return transport().get_high_watermark().get(); }
+    model::offset hwm() {
+        return transport().get_high_watermark(std::nullopt).get();
+    }
 
     void set_errors(int n) {
         _kd->local_partition_manager()->set_errors(n);
@@ -201,7 +204,8 @@ TEST_P(SchemaRegistryRpcTransportTest, ConsumeRangeProducedBatches) {
             max_consumed = std::max(max_consumed, b.base_offset());
             records_consumed.push_back(std::move(b));
             co_return ss::stop_iteration::no;
-        })
+        },
+        std::nullopt)
       .get();
 
     EXPECT_EQ(records_consumed.size(), records_produced.size());
@@ -225,7 +229,8 @@ TEST_P(SchemaRegistryRpcTransportTest, ConsumeRangeRetriesOnTransientError) {
           this auto, model::record_batch) -> ss::future<ss::stop_iteration> {
             ++consumed_count;
             co_return ss::stop_iteration::no;
-        })
+        },
+        std::nullopt)
       .get();
     EXPECT_EQ(consumed_count, 1);
 }
@@ -242,7 +247,8 @@ TEST_P(SchemaRegistryRpcTransportTest, ConsumeRangeEmpty) {
           this auto, model::record_batch) -> ss::future<ss::stop_iteration> {
             ++consumed_count;
             co_return ss::stop_iteration::no;
-        })
+        },
+        std::nullopt)
       .get();
     EXPECT_EQ(consumed_count, 0);
 }
@@ -259,7 +265,8 @@ TEST_P(SchemaRegistryRpcTransportTest, ConsumeRangePastHwmThrows) {
           hwm() + model::offset(10),
           [](model::record_batch) -> ss::future<ss::stop_iteration> {
               co_return ss::stop_iteration::no;
-          })
+          },
+          std::nullopt)
         .get(),
       kafka::exception);
 }

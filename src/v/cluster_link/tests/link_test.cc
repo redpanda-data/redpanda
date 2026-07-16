@@ -689,7 +689,8 @@ ss::future<> seed_subject(
           subject_schema{ppsr::context_subject{std::move(ctx), ppsr::subject{std::move(sub)}}, ppsr::schema_definition{ppsr::schema_definition::raw_string{R"({"type":"string"})"}, ppsr::schema_type::avro}},
         .version = ppsr::schema_version{1},
         .id = ppsr::schema_id{1},
-        .deleted = deleted});
+        .deleted = deleted},
+      nullptr);
 }
 } // namespace
 

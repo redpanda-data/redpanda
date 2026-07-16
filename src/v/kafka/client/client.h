@@ -27,6 +27,7 @@
 #include "kafka/protocol/fetch.h"
 #include "kafka/protocol/list_offset.h"
 #include "kafka/protocol/metadata.h"
+#include "ssx/abort_source.h"
 #include "ssx/semaphore.h"
 #include "utils/prefix_logger.h"
 #include "utils/unresolved_address.h"
@@ -89,6 +90,31 @@ public:
           _as);
     }
 
+    /// \brief Like gated_retry_with_mitigation, but also aborts when the
+    /// caller-supplied abort source fires: retries and backoff sleeps respond
+    /// to whichever of the client's internal abort source or `ext_as` fires
+    /// first. An in-flight wire request still runs to its own timeout.
+    template<typename Func>
+    std::invoke_result_t<Func> gated_retry_with_mitigation_ext(
+      Func func,
+      std::optional<std::reference_wrapper<ss::abort_source>> ext_as) {
+        if (!ext_as.has_value()) {
+            return gated_retry_with_mitigation(std::move(func));
+        }
+        return ss::do_with(
+          ssx::composite_abort_source(_as, ext_as->get()),
+          [this,
+           func{std::move(func)}](ssx::composite_abort_source& cas) mutable {
+              return gated_retry_with_mitigation_impl(
+                _gate,
+                _retries_config.max_retries,
+                _retries_config.retry_base_backoff,
+                std::move(func),
+                [this](std::exception_ptr ex) { return mitigate_error(ex); },
+                cas.as());
+          });
+    }
+
     /// \brief Dispatch a request to any broker.
     template<typename Func>
     requires requires {
@@ -118,15 +144,23 @@ public:
     ss::future<produce_response>
     produce_records(model::topic topic, chunked_vector<record_essence> batch);
 
-    ss::future<list_offsets_response> list_offsets(list_offsets_request req);
+    ss::future<list_offsets_response> list_offsets(
+      list_offsets_request req,
+      std::optional<std::reference_wrapper<ss::abort_source>> ext_as
+      = std::nullopt);
 
-    ss::future<list_offsets_response> list_offsets(model::topic_partition tp);
+    ss::future<list_offsets_response> list_offsets(
+      model::topic_partition tp,
+      std::optional<std::reference_wrapper<ss::abort_source>> ext_as
+      = std::nullopt);
 
     ss::future<fetch_response> fetch_partition(
       model::topic_partition tp,
       model::offset offset,
       std::chrono::milliseconds timeout,
-      std::optional<int32_t> max_bytes = std::nullopt);
+      std::optional<int32_t> max_bytes = std::nullopt,
+      std::optional<std::reference_wrapper<ss::abort_source>> ext_as
+      = std::nullopt);
 
     ss::future<member_id>
     create_consumer(const group_id& g_id, member_id name = kafka::no_member);
