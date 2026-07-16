@@ -668,19 +668,31 @@ ss::future<> build_compaction_index(
   compaction::compaction_config cfg,
   storage_resources& resources,
   bool tx_batch_compaction_enabled) {
-    auto transactional_stm_type = stm_hookset->transactional_stm_type();
-    auto w = storage::make_file_backed_compacted_index(
-      p, false, resources, cfg.sanitizer_config);
-    auto reducer = tx_reducer(
-      p.get_ntp(),
-      stm_hookset,
-      transactional_stm_type,
-      std::move(aborted_txs),
-      w.get(),
-      tx_batch_compaction_enabled);
+    std::unique_ptr<compacted_index_writer> w;
+    std::optional<tx_reducer> reducer;
+    std::exception_ptr setup_error;
+    try {
+        auto transactional_stm_type = stm_hookset->transactional_stm_type();
+        w = storage::make_file_backed_compacted_index(
+          p, false, resources, cfg.sanitizer_config);
+        reducer.emplace(
+          p.get_ntp(),
+          stm_hookset,
+          transactional_stm_type,
+          std::move(aborted_txs),
+          w.get(),
+          tx_batch_compaction_enabled);
+    } catch (...) {
+        setup_error = std::current_exception();
+    }
+    auto rdr_impl = std::move(rdr).release();
+    if (setup_error) {
+        co_await rdr_impl->finally();
+        co_await ss::coroutine::return_exception_ptr(std::move(setup_error));
+    }
     auto index_builder = co_await ss::coroutine::as_future<tx_reducer::stats>(
-      std::move(rdr)
-        .consume(std::move(reducer), model::no_timeout)
+      model::record_batch_reader(std::move(rdr_impl))
+        .consume(std::move(*reducer), model::no_timeout)
         .finally([&w] { return w->close(); }));
     if (index_builder.failed()) {
         auto exception = index_builder.get_exception();

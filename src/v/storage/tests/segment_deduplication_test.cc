@@ -26,8 +26,10 @@
 #include "storage/types.h"
 #include "test_utils/test.h"
 
+#include <seastar/core/gate.hh>
 #include <seastar/core/seastar.hh>
 #include <seastar/util/defer.hh>
+#include <seastar/util/later.hh>
 
 #include <chrono>
 #include <stdexcept>
@@ -698,4 +700,82 @@ TEST(CopyReducerCompressionReuseTest, ReusesCompressedPayloadWhenUnchanged) {
         EXPECT_EQ(stats.records_discarded, 1);
         EXPECT_EQ(stats.compressed_batches_reused, 0);
     }
+}
+
+namespace {
+
+// Transactional stm fake whose aborted_tx_ranges() parks until the test
+// unblocks it, letting the test stop the stm_hookset at a precise point
+// during compaction index rebuild.
+class blocking_tx_stm final : public storage::snapshotable_stm {
+public:
+    storage::stm_type type() override {
+        return storage::stm_type::user_topic_transactional;
+    }
+    ss::future<> ensure_local_snapshot_exists(model::offset) override {
+        return ss::now();
+    }
+    void write_local_snapshot_in_background() override {}
+    model::offset max_removable_local_log_offset() override {
+        return model::offset::max();
+    }
+    std::optional<kafka::offset> lowest_pinned_data_offset() const override {
+        return std::nullopt;
+    }
+    model::offset last_locally_snapshotted_offset() const override {
+        return model::offset{};
+    }
+    model::offset last_applied() const override { return model::offset{}; }
+    const ss::sstring& name() override { return _name; }
+    ss::future<chunked_vector<model::tx_range>>
+    aborted_tx_ranges(model::offset, model::offset) override {
+        entered = true;
+        co_await _unblock.get_future();
+        co_return chunked_vector<model::tx_range>{};
+    }
+
+    bool entered{false};
+    ss::promise<> _unblock;
+
+private:
+    ss::sstring _name{"blocking_tx_stm"};
+};
+
+} // anonymous namespace
+
+// Stopping the stm_hookset after aborted tx ranges are fetched but before the
+// compaction index is built makes stm_hookset::transactional_stm_type() throw
+// synchronously. This used to destroy the freshly-created segment reader
+// while it still held a live reader, tripping the assert in ~log_reader
+// (e.g. partition shutdown racing compaction during a partition move).
+TEST(RebuildCompactionIndexTest, TestHooksetStoppedDuringRebuild) {
+    storage::disk_log_builder b;
+    build_segments(b, 1);
+    auto cleanup = ss::defer([&] { b.stop().get(); });
+    auto& disk_log = b.get_disk_log_impl();
+    auto seg = disk_log.segments().front();
+
+    compaction::compaction_config cfg(
+      model::offset{30},
+      model::offset{30},
+      model::offset{30},
+      std::nullopt,
+      std::nullopt,
+      never_abort);
+    probe pb;
+
+    auto stm = ss::make_shared<blocking_tx_stm>();
+    auto hookset = ss::make_lw_shared<storage::stm_hookset>();
+    hookset->add_stm(stm);
+    hookset->start();
+
+    auto fut = storage::internal::rebuild_compaction_index(
+      seg, hookset, cfg, pb, disk_log.resources(), false);
+    while (!stm->entered) {
+        ss::yield().get();
+    }
+    ASSERT_FALSE(fut.available());
+    hookset->stop();
+    stm->_unblock.set_value();
+    ASSERT_THROW(fut.get(), ss::gate_closed_exception);
 }
