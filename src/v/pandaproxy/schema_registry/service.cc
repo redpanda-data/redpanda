@@ -743,12 +743,24 @@ ss::future<> service::fetch_internal_topic() {
     auto max_offset = co_await _transport->get_high_watermark();
     vlog(srlog.debug, "Schema registry: _schemas max_offset: {}", max_offset);
 
+    using namespace std::chrono_literals;
     const auto defer = defer_processing{
       config::shard_local_cfg().schema_registry_deferred_recovery()};
+    auto replay_start = ss::lowres_clock::now();
     co_await _transport->consume_range(
       model::offset{0}, max_offset, consume_to_store{_store, writer(), defer});
+    auto replay_done = ss::lowres_clock::now();
 
     co_await _store.process_marked_schemas();
+
+    vlog(
+      srlog.info,
+      "Schema registry recovery complete: replayed to offset {} in {}ms "
+      "(deferred={}), canonicalised marked schemas in {}ms",
+      max_offset,
+      (replay_done - replay_start) / 1ms,
+      defer == defer_processing::yes,
+      (ss::lowres_clock::now() - replay_done) / 1ms);
 }
 
 service::service(
