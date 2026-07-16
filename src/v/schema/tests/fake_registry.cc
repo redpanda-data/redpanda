@@ -183,8 +183,8 @@ schema::fake_registry::create_schema(ppsr::subject_schema unparsed) {
     co_return _store.schemas.back().context_id();
 }
 
-ss::future<ppsr::context_schema_id>
-schema::fake_registry::import_schema(ppsr::stored_schema imported) {
+ss::future<ppsr::context_schema_id> schema::fake_registry::import_schema(
+  ppsr::stored_schema imported, ssx::sharded_abort_source*) {
     maybe_throw_injected_failure();
     if (imported.schema.sub().ctx != ppsr::default_context) {
         _contexts.insert(imported.schema.sub().ctx);
@@ -225,7 +225,9 @@ schema::fake_registry::import_schema(ppsr::stored_schema imported) {
 }
 
 ss::future<bool> schema::fake_registry::soft_delete_schema(
-  ppsr::context_subject sub, ppsr::schema_version version) {
+  ppsr::context_subject sub,
+  ppsr::schema_version version,
+  ssx::sharded_abort_source*) {
     maybe_throw_injected_failure();
     for (auto& s : _store.schemas) {
         if (s.schema.sub() == sub && s.version == version) {
@@ -238,7 +240,9 @@ ss::future<bool> schema::fake_registry::soft_delete_schema(
 
 ss::future<chunked_vector<ppsr::schema_version>>
 schema::fake_registry::permanent_delete_schema(
-  ppsr::context_subject sub, std::optional<ppsr::schema_version> version) {
+  ppsr::context_subject sub,
+  std::optional<ppsr::schema_version> version,
+  ssx::sharded_abort_source*) {
     maybe_throw_injected_failure();
     chunked_vector<ppsr::schema_version> deleted;
     std::erase_if(_store.schemas, [&](const ppsr::stored_schema& schema) {
@@ -258,8 +262,8 @@ schema::fake_registry::permanent_delete_schema(
     co_return deleted;
 }
 
-ss::future<bool>
-schema::fake_registry::write_mode(ppsr::context_subject sub, ppsr::mode mode) {
+ss::future<bool> schema::fake_registry::write_mode(
+  ppsr::context_subject sub, ppsr::mode mode, ssx::sharded_abort_source*) {
     maybe_throw_injected_failure();
     auto it = _modes.find(sub);
     if (it == _modes.end()) {
@@ -273,13 +277,16 @@ schema::fake_registry::write_mode(ppsr::context_subject sub, ppsr::mode mode) {
     co_return true;
 }
 
-ss::future<bool> schema::fake_registry::delete_mode(ppsr::context_subject sub) {
+ss::future<bool> schema::fake_registry::delete_mode(
+  ppsr::context_subject sub, ssx::sharded_abort_source*) {
     maybe_throw_injected_failure();
     co_return _modes.erase(sub) > 0;
 }
 
 ss::future<bool> schema::fake_registry::write_config(
-  ppsr::context_subject sub, ppsr::compatibility_level compat) {
+  ppsr::context_subject sub,
+  ppsr::compatibility_level compat,
+  ssx::sharded_abort_source*) {
     maybe_throw_injected_failure();
     auto it = _configs.find(sub);
     if (it == _configs.end()) {
@@ -293,8 +300,8 @@ ss::future<bool> schema::fake_registry::write_config(
     co_return true;
 }
 
-ss::future<bool>
-schema::fake_registry::delete_config(ppsr::context_subject sub) {
+ss::future<bool> schema::fake_registry::delete_config(
+  ppsr::context_subject sub, ssx::sharded_abort_source*) {
     maybe_throw_injected_failure();
     co_return _configs.erase(sub) > 0;
 }

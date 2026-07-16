@@ -106,6 +106,7 @@ TEST(reconciler, remove_policy_does_not_count_on_import_failure) {
     auto r = srs::reconciler{
       &reader,
       &destination,
+      /*dest_as=*/nullptr,
       [](const ppsr::context_subject&) { return true; },
       mapper,
       lim,
@@ -378,7 +379,7 @@ TEST(reconciler, propagates_soft_delete_over_active_destination) {
     auto a = ppsr::context_subject::unqualified("a");
     // Destination already holds a:v1 active; the source has soft-deleted it but
     // does not echo the flag, so only the listing-derived set conveys it.
-    h.destination.import_schema(make_schema(a, 1, R"({"v":1})")).get();
+    h.destination.import_schema(make_schema(a, 1, R"({"v":1})"), nullptr).get();
     h.source.reports_deleted_flag = false;
     h.source.add(a, 1, ppsr::is_deleted::yes);
 
@@ -516,7 +517,7 @@ TEST(reconciler, import_conflict_counts_as_error) {
     {
         auto conflicting = make_schema(b, 1, R"({"conflict":true})");
         conflicting.id = ppsr::schema_id{99};
-        h.destination.import_schema(std::move(conflicting)).get();
+        h.destination.import_schema(std::move(conflicting), nullptr).get();
     }
 
     srs::work_set work;
@@ -576,6 +577,7 @@ TEST(reconciler, import_errors_are_per_item_and_cascade) {
     auto r = srs::reconciler{
       &reader,
       &destination,
+      /*dest_as=*/nullptr,
       [](const ppsr::context_subject&) { return true; },
       mapper,
       lim,
@@ -664,6 +666,7 @@ TEST(reconciler, abort_mid_sync_drains_cleanly) {
     auto r = srs::reconciler{
       &reader,
       &destination,
+      /*dest_as=*/nullptr,
       [](const ppsr::context_subject&) { return true; },
       mapper,
       lim,
@@ -720,6 +723,7 @@ TEST(reconciler, reports_progress_live) {
     auto r = srs::reconciler{
       &reader,
       &destination,
+      /*dest_as=*/nullptr,
       [](const ppsr::context_subject&) { return true; },
       mapper,
       lim,
@@ -913,6 +917,7 @@ TEST(reconciler, remaps_context_at_import) {
     auto r = srs::reconciler{
       &reader,
       &destination,
+      /*dest_as=*/nullptr,
       [](const ppsr::context_subject&) { return true; },
       mapper,
       lim,

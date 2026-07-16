@@ -16,10 +16,14 @@
 #include "model/fundamental.h"
 #include "model/record.h"
 
+#include <seastar/core/abort_source.hh>
 #include <seastar/core/coroutine.hh>
 #include <seastar/core/future.hh>
 #include <seastar/core/loop.hh>
 #include <seastar/util/noncopyable_function.hh>
+
+#include <functional>
+#include <optional>
 
 namespace pandaproxy::schema_registry {
 
@@ -47,7 +51,9 @@ public:
     virtual ss::future<produce_result> produce(model::record_batch batch) = 0;
 
     /// Get the high watermark (next offset) for the _schemas topic.
-    virtual ss::future<model::offset> get_high_watermark() = 0;
+    virtual ss::future<model::offset> get_high_watermark(
+      std::optional<std::reference_wrapper<ss::abort_source>> as = std::nullopt)
+      = 0;
 
     /// Consume batches from [start, end) on the _schemas topic.
     /// Calls consumer(batch) for each batch. Handles pagination internally.
@@ -56,7 +62,9 @@ public:
       model::offset start,
       model::offset end,
       ss::noncopyable_function<
-        ss::future<ss::stop_iteration>(model::record_batch)> consumer) = 0;
+        ss::future<ss::stop_iteration>(model::record_batch)> consumer,
+      std::optional<std::reference_wrapper<ss::abort_source>> as = std::nullopt)
+      = 0;
 
     /// Create the internal schema registry topic.
     virtual ss::future<cluster::errc> create_topic(

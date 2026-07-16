@@ -131,10 +131,20 @@ kafka_client_transport::produce(model::record_batch batch) {
     co_return produce_result{.base_offset = res.base_offset};
 }
 
-ss::future<model::offset> kafka_client_transport::get_high_watermark() {
+ss::future<model::offset> kafka_client_transport::get_high_watermark(
+  std::optional<std::reference_wrapper<ss::abort_source>> as) {
+    if (as.has_value()) {
+        as->get().check();
+    }
     auto offsets_f = co_await ss::coroutine::as_future(
-      _client->list_offsets(model::schema_registry_internal_tp));
+      _client->list_offsets(model::schema_registry_internal_tp, as));
     if (offsets_f.failed()) {
+        // A fired abort supersedes whatever the client surfaced: fetch/produce
+        // paths can launder abort exceptions into generic kafka errors, and a
+        // shutdown must be classifiable as one by the caller.
+        if (as.has_value()) {
+            as->get().check();
+        }
         rethrow_partition_error(offsets_f.get_exception());
     }
     auto offsets = std::move(offsets_f).get();
@@ -152,22 +162,37 @@ ss::future<> kafka_client_transport::consume_range(
   model::offset start,
   model::offset end,
   ss::noncopyable_function<ss::future<ss::stop_iteration>(model::record_batch)>
-    consumer) {
+    consumer,
+  std::optional<std::reference_wrapper<ss::abort_source>> as) {
+    if (as.has_value()) {
+        as->get().check();
+    }
     struct batch_consumer {
         ss::noncopyable_function<ss::future<ss::stop_iteration>(
           model::record_batch)>
           fn;
+        std::optional<std::reference_wrapper<ss::abort_source>> as;
         ss::future<ss::stop_iteration> operator()(model::record_batch batch) {
+            // Abort between batches: the catch-up read can span many slices
+            // and must not outlive a shutdown by more than one of them.
+            if (as.has_value()) {
+                as->get().check();
+            }
             return fn(std::move(batch));
         }
         void end_of_stream() {}
     };
     auto rdr = kafka::client::make_client_fetch_batch_reader(
-      *_client, model::schema_registry_internal_tp, start, end);
+      *_client, model::schema_registry_internal_tp, start, end, as);
     auto fut = co_await ss::coroutine::as_future(
       std::move(rdr).consume(
-        batch_consumer{std::move(consumer)}, model::no_timeout));
+        batch_consumer{std::move(consumer), as}, model::no_timeout));
     if (fut.failed()) {
+        // See get_high_watermark: a fired abort must surface as itself, not
+        // as the laundered kafka error the fetch path may report.
+        if (as.has_value()) {
+            as->get().check();
+        }
         rethrow_partition_error(fut.get_exception());
     }
 }
