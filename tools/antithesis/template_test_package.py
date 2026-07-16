@@ -18,7 +18,11 @@
 # Package template-based Antithesis tests into config images.
 #
 # Each directory under tests/antithesis/ containing a test.yml manifest is
-# a test. The manifest provides a name (sent as antithesis.test_name, the run's
+# a test: one environment (compose topology, fault posture, companion images).
+# By convention each Antithesis test template within the environment lives in
+# its own subdirectory, which doubles as the build context of the companion
+# image carrying its test commands (/opt/antithesis/test/v1/<subdir name>/).
+# The manifest provides a name (sent as antithesis.test_name, the run's
 # name in reports) and default template variables:
 #
 #   name: <one line>
@@ -35,15 +39,15 @@
 #
 # Usage:
 #   ./tools/antithesis/template_test_package.py --list
-#   ./tools/antithesis/template_test_package.py ct_stress \
+#   ./tools/antithesis/template_test_package.py cloud_cluster_stress \
 #       --redpanda-image my-instrumented-redpanda:abc123
-#   ./tools/antithesis/template_test_package.py ct_stress \
+#   ./tools/antithesis/template_test_package.py cloud_cluster_stress \
 #       --var nodes=3 --bootstrap-set write_caching_default=true --submit
 #
 # With --build-redpanda-image, Redpanda is built with Bazel (instrumented
 # via --config=antithesis unless --no-instrumented) and layered over the
 # stock image, and the result is used as the redpanda image:
-#   ./tools/antithesis/template_test_package.py ct_stress --build-redpanda-image
+#   ./tools/antithesis/template_test_package.py cloud_cluster_stress --build-redpanda-image
 #
 
 import argparse

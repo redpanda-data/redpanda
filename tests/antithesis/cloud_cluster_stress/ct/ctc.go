@@ -71,7 +71,7 @@ func ctcTrackerDir() string {
 	if d := os.Getenv("CTC_TRACKER_DIR"); d != "" {
 		return d
 	}
-	return "/var/lib/ct_stress"
+	return "/var/lib/ct"
 }
 
 // ctcKey is the compaction identity of logical key id. Ids map to partitions
@@ -383,7 +383,7 @@ func produceCtc() error {
 	}
 
 	cl, err := newClient(
-		kgo.ClientID(fmt.Sprintf("ct_stress/produce_ctc/%016x", nonce)),
+		kgo.ClientID(fmt.Sprintf("ct/produce_ctc/%016x", nonce)),
 		kgo.DefaultProduceTopic(ctcTopic),
 		kgo.RequiredAcks(kgo.AllISRAcks()),
 		kgo.ProducerLinger(5*time.Millisecond),

@@ -100,7 +100,7 @@ services:
 
   # franz-go workload. Its entrypoint (workload setup) waits for the cluster,
   # emits setup_complete, then idles so Antithesis runs the baked-in test
-  # commands (/opt/antithesis/test/v1/main/) in this container.
+  # commands (/opt/antithesis/test/v1/ct/) in this container.
   workload:
     image: {{ workload_image }}
     container_name: workload

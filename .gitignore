@@ -294,4 +294,4 @@ src/go/rpk/cmd/rpk/rpk
 
 # antithesis
 /.antithesis
-tests/antithesis/ct_stress/workload/workload
+tests/antithesis/cloud_cluster_stress/ct/ct

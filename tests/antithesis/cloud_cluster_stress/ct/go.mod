@@ -1,4 +1,4 @@
-module github.com/redpanda-data/redpanda/tests/antithesis/ct_stress/workload
+module github.com/redpanda-data/redpanda/tests/antithesis/cloud_cluster_stress/ct
 
 go 1.26
 

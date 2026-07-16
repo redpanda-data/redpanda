@@ -7,7 +7,8 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
-// Command workload is the ct_stress Antithesis workload. A single binary
+// Command workload is the ct test template's Antithesis workload. A single
+// binary
 // dispatches on its invocation name (argv[0]) so the test-composer command
 // files (first_create_topics, parallel_driver_produce_foo, ...) are just links
 // to it. It talks to Redpanda with franz-go and reports properties and
@@ -36,7 +37,7 @@ const (
 
 // commands maps every invocation name to its handler. Entries whose name
 // carries an Antithesis test-composer prefix are the test commands, exposed
-// as symlinks under /opt/antithesis/test/v1/main/ (see `list-commands`, which
+// as symlinks under /opt/antithesis/test/v1/ct/ (see `list-commands`, which
 // the image build uses to create those links). `setup` is the container
 // entrypoint, not a test command.
 var commands = map[string]func() error{

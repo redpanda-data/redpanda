@@ -112,7 +112,7 @@ func produceFoo() error {
 	// correlated back to this batch.
 	nonce := rng.Uint64()
 	cl, err := newClient(
-		kgo.ClientID(fmt.Sprintf("ct_stress/produce/%016x", nonce)),
+		kgo.ClientID(fmt.Sprintf("ct/produce/%016x", nonce)),
 		kgo.DefaultProduceTopic(fooTopic),
 		kgo.RequiredAcks(kgo.AllISRAcks()),
 		kgo.ProducerLinger(5*time.Millisecond),

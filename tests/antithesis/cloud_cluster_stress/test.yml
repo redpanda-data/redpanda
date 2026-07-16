@@ -7,11 +7,11 @@
 # is built, tagged with a hash of its build context, exposed to the templates
 # as the named variable, and (for real runs) pushed and registered with
 # Antithesis so libvoidstar is injected into it.
-name: cloud topics stress testing
+name: cloud cluster stress testing
 
 images:
   workload_image:
-    context: workload
+    context: ct
 
 # Antithesis fault scoping, applied at launch (--submit). List entries name
 # container roles: `redpanda` expands to every broker (redpanda-0..nodes-1),
@@ -49,7 +49,7 @@ vars:
   # 1 GiB would need the whole 10G), so expect a cosmetic memory warning.
   smp: 2
   memory: 1200M
-  bucket: ct-stress
+  bucket: cloud-cluster-stress
   s3_access_key: panda-user
   s3_secret_key: panda-secret
   s3_region: panda-region

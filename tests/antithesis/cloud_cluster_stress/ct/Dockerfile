@@ -11,7 +11,7 @@
 # by the Apache License, Version 2.0
 # ==================================================================
 #
-# ct_stress Antithesis workload image. Builds the franz-go workload with
+# Workload image for the ct test template. Builds the franz-go workload with
 # Antithesis assertion cataloging, then ships it on a glibc base so the SDK
 # can dlopen /usr/lib/libvoidstar.so (injected by Antithesis) at runtime.
 # CGO must stay enabled for that path; without libvoidstar the SDK falls
@@ -39,12 +39,12 @@ ENV NO_COLOR=1
 # of the container (e.g. by `snouty validate` or Antithesis discovery); an
 # absolute symlink to a path outside the template would dangle. The binary
 # reports its own commands, so the list lives only in the Go source.
-COPY --from=build /out/workload /opt/antithesis/test/v1/main/helper_workload
-RUN cd /opt/antithesis/test/v1/main \
+COPY --from=build /out/workload /opt/antithesis/test/v1/ct/helper_workload
+RUN cd /opt/antithesis/test/v1/ct \
     && for c in $(./helper_workload list-commands); do \
          ln -s helper_workload "$c"; \
        done
 
 # The container idles here (setup waits for health, emits setup_complete,
 # then blocks) so Antithesis can execute the test commands inside it.
-ENTRYPOINT ["/opt/antithesis/test/v1/main/helper_workload", "setup"]
+ENTRYPOINT ["/opt/antithesis/test/v1/ct/helper_workload", "setup"]
