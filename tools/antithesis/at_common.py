@@ -41,17 +41,18 @@ PACKAGING_ROOT = REPO_ROOT / "bazel-bin" / "bazel" / "packaging"
 def add_common_args(parser: argparse.ArgumentParser) -> None:
     """Add the registry-push and test-submission flags shared by both
     packaging scripts. Pair with validate_common_args after parsing."""
-    parser.add_argument(
+    group = parser.add_argument_group("registry and submission")
+    group.add_argument(
         "--push",
         action="store_true",
         help="Push the built images to the registry (implied by --submit)",
     )
-    parser.add_argument(
+    group.add_argument(
         "--registry",
         default=DEFAULT_REGISTRY,
         help="Docker registry to upload images to",
     )
-    parser.add_argument(
+    group.add_argument(
         "--tag",
         action="append",
         default=[],
@@ -59,37 +60,37 @@ def add_common_args(parser: argparse.ArgumentParser) -> None:
         help="Additional tag applied to every built image and pushed "
         "alongside the implicit image-ID tag (repeatable), e.g. --tag nightly",
     )
-    parser.add_argument(
+    group.add_argument(
         "--submit",
         action="store_true",
         help="Launch an Antithesis test run after pushing "
         "(requires the AT_PASSWORD environment variable)",
     )
-    parser.add_argument(
+    group.add_argument(
         "--description",
         default="",
         help="Antithesis run description (default: none)",
     )
-    parser.add_argument(
+    group.add_argument(
         "--duration",
         type=int,
         default=MIN_DURATION_MIN,
         help=f"Antithesis run duration in minutes "
         f"(default and minimum: {MIN_DURATION_MIN})",
     )
-    parser.add_argument(
+    group.add_argument(
         "--recipients",
         default="",
         help="Semicolon-separated report email recipients (default: none)",
     )
-    parser.add_argument(
+    group.add_argument(
         "--source",
         default="",
         help="antithesis.source: groups property history across runs. Use a "
         "stable key such as the git branch; runs sharing a source share "
         "history. Required for --no-ephemeral runs.",
     )
-    parser.add_argument(
+    group.add_argument(
         "--ephemeral",
         action=argparse.BooleanOptionalAction,
         default=True,
@@ -106,18 +107,19 @@ def add_common_args(parser: argparse.ArgumentParser) -> None:
 
 def add_build_args(parser: argparse.ArgumentParser) -> None:
     """Add the Bazel-build flags shared by the packaging scripts."""
-    parser.add_argument(
+    group = parser.add_argument_group("build")
+    group.add_argument(
         "--instrumented",
         action=argparse.BooleanOptionalAction,
         default=True,
         help="Build with --config=antithesis (default: enabled)",
     )
-    parser.add_argument(
+    group.add_argument(
         "--bazel-args",
         default="",
         help="Extra arguments passed to bazel build",
     )
-    parser.add_argument(
+    group.add_argument(
         "--skip-bazel-build",
         action="store_true",
         help="Skip the Bazel build (use existing artifacts)",

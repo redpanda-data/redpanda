@@ -15,27 +15,9 @@
 # by the Apache License, Version 2.0
 # ==================================================================
 #
-# Package Bazel-built C++ binaries into Antithesis-compatible Docker
-# images. Supports single targets, multiple targets, and Bazel patterns.
-# Builds Docker images directly using named build contexts, optionally
-# pushes the built images to the registry (--push) and launches
-# an Antithesis test run (--submit; reads the API password from
-# $AT_PASSWORD).
-#
-# Usage:
-#   # Single target:
-#   ./tools/antithesis/single_binary_test_package.py \
-#       //src/v/lsm/db/tests:db_bench \
-#       --binary-args='--smp 1 --num 1000 --benchmarks mixedworkload --verify'
-#
-#   # Bazel pattern (all cc_test/cc_binary in a package):
-#   ./tools/antithesis/single_binary_test_package.py \
-#       //src/v/cluster/tests/...
-#
-#   # Without Antithesis instrumentation:
-#   ./tools/antithesis/single_binary_test_package.py \
-#       //src/v/lsm/db/tests:db_bench --no-instrumented
-#
+# Package Bazel-built C++ test binaries into Antithesis-ready Docker
+# images: every binary becomes a test-composer singleton driver in a
+# single bazel-target image. See --help for the full flow and examples.
 
 import argparse
 import functools
@@ -416,7 +398,31 @@ def build_workload_image(
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Package Bazel C++ binaries for Antithesis testing."
+        description="""\
+Package Bazel-built C++ test binaries into Antithesis-ready images.
+
+Builds the targets (instrumented with --config=antithesis by default)
+and bakes every binary, each wrapped in a test-composer singleton
+driver, into a single bazel-target image tagged by its image ID. A
+matching bazel-target-config image carries the docker-compose.yaml,
+and a compose pinning the exact build is written to .antithesis/<name>/
+for local runs. --push uploads the images to the Antithesis registry;
+--submit also launches an Antithesis test run (reads the API password
+from $AT_PASSWORD).""",
+        epilog="""\
+examples:
+  # package a single test target and print the local run commands
+  tools/antithesis/single_binary_test_package.py //src/v/storage/opfuzz:opfuzz_test
+
+  # package every test under a package and submit a 2-hour ad-hoc run
+  tools/antithesis/single_binary_test_package.py //src/v/cluster/tests/... \\
+      --tests-only --submit --duration 120
+
+  # nightly: record findings history and move the nightly alias tags
+  tools/antithesis/single_binary_test_package.py //src/v/raft/tests/... \\
+      --submit --no-ephemeral --source dev --tag nightly \\
+      --name raft-fixture-tests --description 'nightly raft fixture tests'""",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     parser.add_argument(
         "targets",
@@ -445,6 +451,13 @@ def main() -> None:
     )
     add_build_args(parser)
     add_common_args(parser)
+    if len(sys.argv) == 1:
+        parser.print_help(sys.stderr)
+        parser.exit(
+            2,
+            f"\n{parser.prog}: error: the following arguments are required: targets\n",
+        )
+
     args = parser.parse_args()
 
     validate_common_args(parser, args)
