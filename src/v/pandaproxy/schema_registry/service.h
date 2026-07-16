@@ -76,6 +76,7 @@ public:
     }
 
 private:
+    // Only ever invoked on the reader shard, via _load_once.
     ss::future<> do_start();
     ss::future<> configure();
     ss::future<> inform(model::node_id);
@@ -116,7 +117,6 @@ private:
     one_shot _load_once;
     request_authenticator _auth;
     bool _has_ephemeral_credentials{false};
-    bool _is_started{false};
 };
 
 } // namespace pandaproxy::schema_registry

@@ -628,9 +628,12 @@ ss::future<> service::ensure_topic_loaded() {
 }
 
 ss::future<> service::do_start() {
-    if (_is_started) {
-        co_return;
-    }
+    // Invoked only on the reader shard, via _load_once, so it runs exactly
+    // once and can drive the reader-shard-only fetch directly.
+    vassert(
+      ss::this_shard_id() == seq_writer::reader_shard,
+      "do_start must run on the reader shard, not {}",
+      ss::this_shard_id());
     auto guard = _gate.hold();
     try {
         co_await create_internal_topic();
@@ -645,12 +648,7 @@ ss::future<> service::do_start() {
           std::current_exception());
         throw;
     }
-    co_await container().invoke_on_all(_ctx.smp_sg, [](service& s) {
-        s._is_started = true;
-        return ss::this_shard_id() == seq_writer::reader_shard
-                 ? s.fetch_internal_topic()
-                 : ss::now();
-    });
+    co_await fetch_internal_topic();
 }
 
 ss::future<> create_acls(cluster::security_frontend& security_fe) {
