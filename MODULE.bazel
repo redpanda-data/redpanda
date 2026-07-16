@@ -240,20 +240,20 @@ COMPILERS = {
 # Go Toolchain
 # ====================================
 go_sdk = use_extension("@rules_go//go:extensions.bzl", "go_sdk", dev_dependency = True)
-go_sdk.download(version = "1.26.4")
+go_sdk.download(version = "1.26.5")
 
 # The microsoft compiler versions can be listed at their github release under the `asset.json` file
 go_sdk.download(
     name = "go_sdk_with_systemcrypto",
     experiments = ["systemcrypto"],
     sdks = {
-        "linux_amd64": ("30d6f3c908b93744d77f0cfcc29a8d0b/go1.26.4-20260602.8.linux-amd64.tar.gz", "fe7d72e1e83e15633d0a99bd67ce5ffbb67d8a5f71dcea309ff274457ef3c927"),
-        "linux_arm64": ("4c37d72249bf2963ca1588c288cb547b/go1.26.4-20260602.8.linux-arm64.tar.gz", "9c1c8660dd3cec69415c476232ffb32d529e158d2b2deca4038804f1766f2f78"),
-        "darwin_amd64": ("b4fd14d59150fa3fff40bec803473350/go1.26.4-20260602.8.darwin-amd64.tar.gz", "2ae7f888d38d04e891cc5512622da48cadb3c24afc96a3634723ee71ff35042c"),
-        "darwin_arm64": ("c8a11ca9a3d0828665e27739dce2a60a/go1.26.4-20260602.8.darwin-arm64.tar.gz", "396705207e67a387f9052d789ac9d0bd2ddfaf5fe57f4bc720ba9881567f8e42"),
+        "linux_amd64": ("96d1f4b28a670f8e9b3259194508ae2f/go1.26.5-20260709.6.linux-amd64.tar.gz", "df9f45167cf1cd825aa8555b76c5b24cb89dfbd771f48cc0007458236c414715"),
+        "linux_arm64": ("af17683a03acab86aec9ba37afbd5ff1/go1.26.5-20260709.6.linux-arm64.tar.gz", "9990f8fcfefcbd15fb888dd777c7a72f1745889c9e94836ffe26f7e46e43328d"),
+        "darwin_amd64": ("d45676061dfccb09b72f2579a6d8927f/go1.26.5-20260709.6.darwin-amd64.tar.gz", "7a4f0bd26ccf1ce912bc509fccb473ee39bdd149b804fa581e59a72b7708e78e"),
+        "darwin_arm64": ("f8da58db7007fa456d93c4f56bf6c337/go1.26.5-20260709.6.darwin-arm64.tar.gz", "a6d2124035c18602926af78d1e3ae523abc613e36b2086da9b451991ce4288c4"),
     },
-    urls = ["https://download.visualstudio.microsoft.com/download/pr/88c9f950-d0f1-46ac-90d0-8e8b4095e743/{}"],
-    version = "1.26.4",
+    urls = ["https://download.visualstudio.microsoft.com/download/pr/a38f1e38-3cd4-48b2-b032-ca38793ec901/{}"],
+    version = "1.26.5",
 )
 
 go_deps = use_extension("@gazelle//:extensions.bzl", "go_deps")

@@ -1,6 +1,6 @@
 module github.com/redpanda-data/redpanda/bazel/packaging
 
-go 1.25.5
+go 1.26.5
 
 require github.com/goreleaser/nfpm/v2 v2.35.0
 
