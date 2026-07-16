@@ -75,6 +75,13 @@ DRIVER_DIR = f"{INSTALL_PREFIX}/test/v1/single_binary_tests"
 IMAGE = "bazel-target"
 CONFIG_IMAGE = "bazel-target-config"
 
+# Fault posture sent with every submitted run, explicit rather than the
+# webhook defaults: vary simulated clocks and CPU/instruction speed.
+FAULT_PARAMS = {
+    "custom.clock_skew": "true",
+    "custom.cpu_mod": "true",
+}
+
 _ROOTPATH_RE = r"\$\(rootpath\s+([^)]+)\)"
 
 
@@ -535,7 +542,13 @@ Run locally ({len(binaries)} driver{"s" if len(binaries) != 1 else ""}):
 """)
 
     # Last so its status is the final thing the user sees.
-    maybe_submit(args, test_name=args.name, pushed=pushed, config_ref=config_ref)
+    maybe_submit(
+        args,
+        test_name=args.name,
+        pushed=pushed,
+        config_ref=config_ref,
+        extra_params=FAULT_PARAMS,
+    )
 
 
 if __name__ == "__main__":
