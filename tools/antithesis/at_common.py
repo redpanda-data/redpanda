@@ -116,26 +116,46 @@ def upload_images(registry: str, images: dict[str, str]) -> None:
 def submit_test_run(
     *,
     password: str,
-    description: str,
     duration_min: int,
     config_image: str,
     images: list[str],
+    test_name: str | None = None,
+    description: str | None = None,
+    source: str | None = None,
+    ephemeral: bool = False,
     recipients: list[str] | None = None,
+    extra_params: dict[str, str] | None = None,
 ) -> None:
     """Launch a basic_test run via the Antithesis API.
 
-    config_image and images are fully-qualified registry references (the
-    ones produced by upload_images). recipients is an optional list of
-    report email addresses.
+    test_name sets antithesis.test_name, the run's name in reports; without it
+    runs carry the launch endpoint's built-in name ("Basic Test"). description
+    sets antithesis.description, shown in report headers. source sets
+    antithesis.source (groups property history across runs); ephemeral sets
+    antithesis.is_ephemeral, keeping the run out of that history. config_image
+    and images are fully-qualified registry references (the ones produced by
+    upload_images). recipients is an optional list of report email addresses.
+    extra_params are additional launch parameters (e.g. tenant-custom `custom.*`
+    fault-scoping keys) merged into the body.
     """
     params = {
-        "antithesis.description": description,
         "antithesis.duration": str(duration_min),
         "antithesis.config_image": config_image,
-        "antithesis.images": ";".join(images),
     }
+    if test_name:
+        params["antithesis.test_name"] = test_name
+    if description:
+        params["antithesis.description"] = description
+    if source:
+        params["antithesis.source"] = source
+    if ephemeral:
+        params["antithesis.is_ephemeral"] = "true"
+    if images:
+        params["antithesis.images"] = ";".join(images)
     if recipients:
         params["antithesis.report.recipients"] = ";".join(recipients)
+    if extra_params:
+        params.update(extra_params)
 
     body = json.dumps({"params": params})
 
