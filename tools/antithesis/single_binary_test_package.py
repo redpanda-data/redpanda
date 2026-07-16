@@ -50,6 +50,7 @@ from pathlib import Path
 
 from at_common import (
     add_common_args,
+    build_config_image,
     maybe_submit,
     registry_help_str,
     render_template,
@@ -395,23 +396,6 @@ def build_workload_image(
             build_ctx_args += ["--build-context", f"{ctx_name}={src_dir}"]
 
         run(["docker", "build", *build_ctx_args, "--tag", image_tag, tmpdir])
-
-
-def build_config_image(config_tag: str, compose_content: str) -> None:
-    print(f"==> Building config image: {config_tag}")
-    with tempfile.TemporaryDirectory() as tmpdir:
-        (Path(tmpdir) / "docker-compose.yaml").write_text(compose_content)
-        run(
-            [
-                "docker",
-                "build",
-                "-f",
-                str(DEPS_DIR / "config.Dockerfile"),
-                "--tag",
-                config_tag,
-                tmpdir,
-            ]
-        )
 
 
 def main() -> None:

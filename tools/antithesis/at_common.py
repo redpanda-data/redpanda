@@ -18,6 +18,7 @@ import os
 import shlex
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 from jinja2 import StrictUndefined, Template
@@ -125,6 +126,19 @@ def upload_images(registry: str, images: dict[str, str]) -> None:
         ref = image_ref(registry, remote)
         run(["docker", "tag", local_tag, ref])
         run(["docker", "push", ref])
+
+
+def build_config_image(tag: str, compose_content: str) -> None:
+    """Package a docker-compose.yaml into a FROM scratch Antithesis config
+    image."""
+    print(f"==> Building config image: {tag}")
+    with tempfile.TemporaryDirectory() as tmpdir:
+        tmp = Path(tmpdir)
+        (tmp / "docker-compose.yaml").write_text(compose_content)
+        (tmp / "Dockerfile").write_text(
+            "FROM scratch\nCOPY docker-compose.yaml /docker-compose.yaml\n"
+        )
+        run(["docker", "build", "--tag", tag, str(tmp)])
 
 
 def submit_test_run(

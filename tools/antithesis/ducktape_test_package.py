@@ -49,6 +49,7 @@ from pathlib import Path
 
 from at_common import (
     add_common_args,
+    build_config_image,
     maybe_submit,
     registry_help_str,
     render_template,
@@ -226,19 +227,6 @@ def build_runner_image(
                 tmpdir,
             ]
         )
-
-
-def build_config_image(config_tag: str, compose_content: str) -> None:
-    """Build a FROM scratch config image with docker-compose.yaml at /."""
-    print(f"==> Building config image: {config_tag}")
-
-    with tempfile.TemporaryDirectory() as tmpdir:
-        tmp = Path(tmpdir)
-        (tmp / "docker-compose.yaml").write_text(compose_content)
-        (tmp / "Dockerfile").write_text(
-            "FROM scratch\nCOPY docker-compose.yaml /docker-compose.yaml\n"
-        )
-        run(["docker", "build", "--tag", config_tag, tmpdir])
 
 
 def main() -> None:
