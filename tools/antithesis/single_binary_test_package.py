@@ -48,12 +48,11 @@ import xml.etree.ElementTree as ET
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from jinja2 import Template
-
 from at_common import (
     add_common_args,
     maybe_submit,
     registry_help_str,
+    render_template,
     run as _run,
     upload_images,
     validate_common_args,
@@ -105,14 +104,6 @@ class BinaryInfo:
     runtime_args: list[str] = field(default_factory=list)
     env: dict[str, str] = field(default_factory=dict)
     data_files: dict[str, Path] = field(default_factory=dict)
-
-
-def render_template(template_path: Path, **kwargs) -> str:
-    with open(template_path) as f:
-        tmpl = Template(f.read())
-    tmpl.globals["shquote"] = shlex.quote
-    tmpl.environment.filters["shquote"] = shlex.quote
-    return tmpl.render(**kwargs)
 
 
 @functools.cache

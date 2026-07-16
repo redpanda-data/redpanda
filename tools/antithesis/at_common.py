@@ -10,16 +10,17 @@
 # ==================================================================
 #
 # Shared helpers for the Antithesis test-packaging scripts
-# (ducktape_test_package.py and single_binary_test_package.py): running
-# subprocesses, pushing built images to a registry, and launching a test
-# run via the Antithesis API.
+# (ducktape_test_package.py and single_binary_test_package.py).
 
 import argparse
 import json
 import os
+import shlex
 import subprocess
 import sys
 from pathlib import Path
+
+from jinja2 import StrictUndefined, Template
 
 LAUNCH_URL = "https://redpanda.antithesis.com/api/v1/launch/basic_test"
 
@@ -93,6 +94,19 @@ def run(
         capture_output=capture,
         text=True,
     )
+
+
+def render_template(path: Path, **kwargs) -> str:
+    """Render a Jinja2 template file. Undefined variables are errors, and
+    shquote (usable as a filter or a function) shell-quotes values."""
+    template = Template(
+        path.read_text(),
+        undefined=StrictUndefined,
+        keep_trailing_newline=True,
+    )
+    template.globals["shquote"] = shlex.quote
+    template.environment.filters["shquote"] = shlex.quote
+    return template.render(**kwargs)
 
 
 def image_ref(registry: str, name: str) -> str:

@@ -47,12 +47,11 @@ import sys
 import tempfile
 from pathlib import Path
 
-from jinja2 import Template
-
 from at_common import (
     add_common_args,
     maybe_submit,
     registry_help_str,
+    render_template,
     run,
     upload_images,
     validate_common_args,
@@ -64,11 +63,6 @@ REPO_ROOT = TOOLS_DIR.parent.parent
 
 # Root for installed binaries, matching tools/dt and RedpandaInstaller.
 INSTALL_ROOT = "/opt/redpanda_installs"
-
-
-def render_template(template_path: Path, **kwargs) -> str:
-    with open(template_path) as f:
-        return Template(f.read()).render(**kwargs)
 
 
 def generate_cluster_json(nodes: int) -> str:
