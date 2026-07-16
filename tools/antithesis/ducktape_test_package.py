@@ -68,6 +68,10 @@ DEPS_DIR = TOOLS_DIR / "ducktape_deps"
 # Root for installed binaries, matching tools/dt and RedpandaInstaller.
 INSTALL_ROOT = "/opt/redpanda_installs"
 
+NODE_IMAGE = "ducktape-node"
+RUNNER_IMAGE = "ducktape-runner"
+CONFIG_IMAGE = "ducktape-config"
+
 
 def generate_cluster_json(nodes: int) -> str:
     cluster_nodes = []
@@ -228,7 +232,8 @@ def main() -> None:
     parser.add_argument(
         "--name",
         default="redpanda-ducktape",
-        help="Base name for images (default: redpanda-ducktape)",
+        help="Test run name, also the .antithesis/ output directory "
+        "(default: redpanda-ducktape)",
     )
     parser.add_argument(
         "--max-parallel",
@@ -291,10 +296,8 @@ def main() -> None:
     cluster_json = generate_cluster_json(args.nodes)
     globals_json = generate_globals_json(args.log_level)
 
-    node_ref = build_node_image(base_image, f"{args.name}-node", rp_image=rp_image)
-    runner_ref = build_runner_image(
-        node_ref, f"{args.name}-runner", cluster_json, globals_json
-    )
+    node_ref = build_node_image(base_image, NODE_IMAGE, rp_image=rp_image)
+    runner_ref = build_runner_image(node_ref, RUNNER_IMAGE, cluster_json, globals_json)
 
     def compose_with(node_image: str, runner_image: str) -> str:
         return generate_compose(
@@ -313,8 +316,8 @@ def main() -> None:
     # antithesis.images digests override those names (a digest entry is
     # tagged latest there).
     config_ref = build_config_image(
-        f"{args.name}-config",
-        compose_with(f"{args.name}-node:latest", f"{args.name}-runner:latest"),
+        CONFIG_IMAGE,
+        compose_with(f"{NODE_IMAGE}:latest", f"{RUNNER_IMAGE}:latest"),
     )
 
     # Write a compose pinning the exact built images, so local runs keep
