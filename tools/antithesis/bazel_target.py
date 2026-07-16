@@ -70,7 +70,7 @@ _EXCLUDED_ENV = {
 INSTALL_PREFIX = "/opt/antithesis"
 DATA_DIR = f"{INSTALL_PREFIX}/data"
 LIB_DIR = f"{INSTALL_PREFIX}/lib"
-DRIVER_DIR = f"{INSTALL_PREFIX}/test/v1/single_binary_tests"
+DRIVER_DIR = f"{INSTALL_PREFIX}/test/v1/main"
 
 IMAGE = "bazel-target"
 CONFIG_IMAGE = "bazel-target-config"
