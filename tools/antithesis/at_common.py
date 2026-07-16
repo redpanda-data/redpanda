@@ -78,9 +78,8 @@ def add_common_args(parser: argparse.ArgumentParser) -> None:
     group.add_argument(
         "--duration",
         type=int,
-        default=MIN_DURATION_MIN,
         help=f"Antithesis run duration in minutes "
-        f"(default and minimum: {MIN_DURATION_MIN})",
+        f"(required with --submit; minimum: {MIN_DURATION_MIN})",
     )
     group.add_argument(
         "--recipients",
@@ -139,6 +138,8 @@ def validate_common_args(
     _VERBOSE = args.verbose
     if args.submit:
         args.push = True
+    if args.submit and args.duration is None:
+        parser.error("--submit requires --duration")
     if args.submit and args.duration < MIN_DURATION_MIN:
         parser.error(f"--duration must be at least {MIN_DURATION_MIN} minutes")
     if args.submit and not args.ephemeral and not args.source:

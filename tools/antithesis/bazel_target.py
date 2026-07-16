@@ -427,7 +427,7 @@ examples:
 
   # nightly: record findings history and move the nightly alias tags
   tools/antithesis/bazel_target.py //src/v/raft/tests/... \\
-      --submit --no-ephemeral --source dev --tag nightly \\
+      --submit --duration 360 --no-ephemeral --source dev --tag nightly \\
       --name raft-fixture-tests --description 'nightly raft fixture tests'""",
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
