@@ -36,6 +36,7 @@ redpanda_cc_library(
         "//src/v/pandaproxy/schema_registry:server",
         "//src/v/pandaproxy/schema_registry:store",
         "//src/v/pandaproxy/schema_registry:types",
+        "//src/v/ssx:abort_source",
         "@seastar",
     ],
 )

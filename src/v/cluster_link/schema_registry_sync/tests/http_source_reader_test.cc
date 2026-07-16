@@ -113,6 +113,62 @@ TEST(http_source_reader, list_contexts_enumerates_all_contexts) {
         pps::default_context, pps::context{".dev"}, pps::context{".prod"}));
 }
 
+// Stopping the reader while a request is in flight aborts the request rather
+// than waiting for it out: mirroring_task::stop() stops the reader before
+// joining the run fibers, relying on exactly this to unwedge fibers parked in
+// reader-internal waits (rate-limiter token/pause queues, pool slots).
+TEST(http_source_reader, stop_aborts_in_flight_requests) {
+    std::deque<ss::promise<http::downloaded_response>> parked;
+    auto reader = reader_over([&](mock_client& m) {
+        ON_CALL(m, request_and_collect_response(_, _, _))
+          .WillByDefault([&](
+                           bh::request_header<>&&,
+                           std::optional<iobuf>,
+                           ss::lowres_clock::duration) {
+              parked.emplace_back();
+              return parked.back().get_future();
+          });
+        // Like the real transport, shutdown fails the requests it is
+        // servicing.
+        ON_CALL(m, shutdown_and_stop()).WillByDefault([&] {
+            for (auto& request : parked) {
+                request.set_exception(
+                  std::make_exception_ptr(ss::abort_requested_exception{}));
+            }
+            parked.clear();
+            return ss::make_ready_future<>();
+        });
+    });
+    ss::abort_source as;
+    auto req = reader.list_contexts(as);
+    RPTEST_REQUIRE_EVENTUALLY(5s, [&] { return !parked.empty(); });
+
+    reader.stop().get();
+    auto res = req.get();
+    ASSERT_FALSE(res.has_value());
+    EXPECT_EQ(res.error().kind, srs::source_error_kind::source_unavailable);
+}
+
+// A reader call after stop() must fail fast instead of lazily rebuilding the
+// client: the reconcile engine's fibers can still be unwinding when the
+// reader is stopped, and a rebuilt client would never be shut down.
+TEST(http_source_reader, calls_after_stop_fail_without_rebuild) {
+    srs::http_source_connection conn{
+      .address = net::unresolved_address("example.invalid", 8081),
+      .endpoint = "http://example.invalid:8081",
+    };
+    srs::http_source_reader reader{std::move(conn)};
+    reader.stop().get();
+
+    ss::abort_source as;
+    auto res = reader.list_contexts(as).get();
+    ASSERT_FALSE(res.has_value());
+    EXPECT_EQ(res.error().kind, srs::source_error_kind::source_unavailable);
+    EXPECT_THAT(res.error().message, HasSubstr("stopped"));
+    // stop() stays idempotent.
+    reader.stop().get();
+}
+
 // stop() is idempotent: the task teardown can stop the reader more than once
 // (an in-flight reconciler stopping the task before link teardown stops it
 // again). A second stop() must not double-close the rest_client's gate, which

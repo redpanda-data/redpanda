@@ -17,6 +17,8 @@
 #include "cluster_link/task.h"
 #include "container/chunked_hash_map.h"
 #include "schema/registry.h"
+#include "ssx/abort_source.h"
+#include "ssx/mutex.h"
 
 #include <seastar/core/abort_source.hh>
 #include <seastar/util/noncopyable_function.hh>
@@ -46,7 +48,8 @@ ss::future<inventory> scan_destination_inventory(
   schema::registry& destination,
   ss::noncopyable_function<bool(const ppsr::context_subject&)> in_scope,
   const context_mapper& mapper,
-  ss::abort_source& as);
+  ss::abort_source& as,
+  ssx::sharded_abort_source* dest_as = nullptr);
 
 /// Shadows a source Schema Registry into the local (destination) Schema
 /// Registry. Runs on the shard leading `_schemas/0`, a cluster-wide singleton.
@@ -84,6 +87,9 @@ public:
 
 protected:
     ss::future<state_transition> run_impl(ss::abort_source&) override;
+
+    /// The body of run_impl, wrapped so _run_sas brackets every exit path.
+    ss::future<state_transition> do_run_impl(ss::abort_source&);
 
     bool should_start_impl(ss::shard_id, ::model::node_id) const final;
 
@@ -250,12 +256,25 @@ private:
     schema::registry* _destination;
     source_reader_factory* _source_factory;
     std::unique_ptr<source_reader> _reader;
+    // Serializes stopping and replacing _reader. stop() (reader-first, while
+    // run_impl is still live) and reset_reader() (run by run_impl on a config
+    // change) both stop the reader and then free it via reassignment; without
+    // serialization one can free the reader while the other's stop() is
+    // suspended mid-shutdown, a use-after-free. Held only around the
+    // stop+reassign, never across the run-fiber join, so it cannot deadlock
+    // with task::stop().
+    ssx::mutex _reader_lifecycle{"cluster_link/sr_source/reader_lifecycle"};
     inventory _destination_inventory;
     model::schema_registry_sync_status _status;
     // Live counters for the in-flight reconcile; reflected by get_status_report
     // for mid-sync progress, then folded into _status at end of run.
     reconcile_stats _reconcile_stats;
     probe _probe;
+    // Per-run fan-out of the runner's abort to every shard: destination
+    // seq_writer waits run on shard zero while the runner's abort_source
+    // lives on the shard leading _schemas/0, and ss::abort_source is not
+    // cross-shard safe. Started/stopped by run_impl around each run.
+    ssx::sharded_abort_source _run_sas;
     std::optional<ss::lowres_clock::time_point> _last_full_sync;
     // Set by update_config, consumed by run_impl to force a full scan. A flag
     // (rather than mutating _status/_last_full_sync in update_config) avoids

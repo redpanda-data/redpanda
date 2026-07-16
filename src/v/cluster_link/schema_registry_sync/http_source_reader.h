@@ -99,6 +99,10 @@ private:
     // Connection inputs for the lazy build; nullopt once a client is injected.
     std::optional<http_source_connection> _conn;
     std::unique_ptr<rc::client> _client;
+    // Set by stop(): the reader is stopped while the reconcile engine's
+    // fibers may still be unwinding, and a late call must fail rather than
+    // lazily rebuild the client (which nothing would ever stop).
+    bool _stopped{false};
     // Serializes the lazy client build only. Requests run concurrently: the
     // reconcile engine drives this reader from several fibers, and the
     // rest_client's pooled transport bounds them to one in-flight request per

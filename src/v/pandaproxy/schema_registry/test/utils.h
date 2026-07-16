@@ -11,6 +11,10 @@
 #include "pandaproxy/schema_registry/seq_writer.h"
 #include "pandaproxy/schema_registry/transport.h"
 
+#include <seastar/core/abort_source.hh>
+
+#include <functional>
+#include <optional>
 #include <stdexcept>
 
 class sequence_state_checker_test
@@ -47,7 +51,8 @@ public:
     produce(model::record_batch) override {
         throw std::runtime_error("noop_transport::produce not implemented");
     }
-    ss::future<model::offset> get_high_watermark() override {
+    ss::future<model::offset> get_high_watermark(
+      std::optional<std::reference_wrapper<ss::abort_source>>) override {
         throw std::runtime_error(
           "noop_transport::get_high_watermark not implemented");
     }
@@ -55,7 +60,8 @@ public:
       model::offset,
       model::offset,
       ss::noncopyable_function<
-        ss::future<ss::stop_iteration>(model::record_batch)>) override {
+        ss::future<ss::stop_iteration>(model::record_batch)>,
+      std::optional<std::reference_wrapper<ss::abort_source>>) override {
         throw std::runtime_error(
           "noop_transport::consume_range not implemented");
     }
@@ -81,7 +87,8 @@ public:
           pandaproxy::schema_registry::produce_result{.base_offset = base});
     }
 
-    ss::future<model::offset> get_high_watermark() override {
+    ss::future<model::offset> get_high_watermark(
+      std::optional<std::reference_wrapper<ss::abort_source>>) override {
         return ss::make_ready_future<model::offset>(model::offset{0});
     }
 

@@ -177,10 +177,25 @@ http_source_reader::http_source_reader(std::unique_ptr<rc::client> client)
 
 ss::future<source_result<rc::client*>>
 http_source_reader::ensure_client(ss::abort_source& as) {
+    // Checked before the fast path: stop() nulls _client, and a call arriving
+    // after stop (fibers may still be unwinding when the reader is stopped)
+    // must fail rather than rebuild a client nothing would ever stop.
+    if (_stopped) {
+        co_return std::unexpected(
+          source_error{
+            .kind = source_error_kind::source_unavailable,
+            .message = "source reader is stopped"});
+    }
     if (_client) {
         co_return _client.get();
     }
     auto build = co_await ss::get_units(_build, 1, as);
+    if (_stopped) {
+        co_return std::unexpected(
+          source_error{
+            .kind = source_error_kind::source_unavailable,
+            .message = "source reader is stopped"});
+    }
     if (_client) {
         co_return _client.get();
     }
@@ -389,7 +404,12 @@ ss::future<> http_source_reader::stop() {
     // Idempotent: the reader can be stopped more than once (e.g. an in-flight
     // reconciler stopping the task before link teardown stops it again). The
     // rest_client's gate must be closed exactly once, so release the client
-    // after shutting it down and skip it on a repeat call.
+    // after shutting it down and skip it on a repeat call. The sticky
+    // _stopped flag rejects post-stop rebuilds, and waiting out the build
+    // mutex means a build that raced this stop is shut down here rather than
+    // leaked.
+    _stopped = true;
+    auto build = co_await ss::get_units(_build, 1);
     if (auto client = std::move(_client); client) {
         co_await client->shutdown();
     }

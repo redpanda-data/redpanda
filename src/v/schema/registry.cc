@@ -54,15 +54,16 @@ public:
         co_return reader;
     }
 
-    ss::future<ss::lowres_clock::time_point>
-    sync(ss::lowres_clock::duration max_age) override {
+    ss::future<ss::lowres_clock::time_point> sync(
+      ss::lowres_clock::duration max_age,
+      ssx::sharded_abort_source* as) override {
         auto now = ss::lowres_clock::now();
 
         if (
           now - _last_sync_time > max_age
           || max_age == ss::lowres_clock::duration{}) {
             auto [reader, writer] = co_await service();
-            co_await writer->read_sync();
+            co_await writer->read_sync(as);
             _last_sync_time = now;
         }
 
@@ -116,11 +117,11 @@ public:
         co_return ppsr::context_schema_id{std::move(ctx), result.id};
     }
 
-    ss::future<ppsr::context_schema_id>
-    import_schema(ppsr::stored_schema schema) override {
+    ss::future<ppsr::context_schema_id> import_schema(
+      ppsr::stored_schema schema, ssx::sharded_abort_source* as) override {
         auto ctx = schema.schema.sub().ctx;
         auto [reader, writer] = co_await service();
-        co_await writer->read_sync();
+        co_await writer->read_sync(as);
         auto parsed = co_await reader->make_canonical_schema(
           std::move(schema.schema),
           ppsr::normalize::no,
@@ -128,63 +129,79 @@ public:
         co_await reader->validate_schema(parsed.share());
         schema.schema = std::move(parsed);
         auto result = co_await writer->write_subject_version_imported(
-          std::move(schema));
+          std::move(schema), as);
         _last_sync_time = ss::lowres_clock::now();
         co_return ppsr::context_schema_id{std::move(ctx), result.id};
     }
 
     ss::future<bool> soft_delete_schema(
-      ppsr::context_subject sub, ppsr::schema_version version) override {
+      ppsr::context_subject sub,
+      ppsr::schema_version version,
+      ssx::sharded_abort_source* as) override {
         auto [_, writer] = co_await service();
         auto result = co_await writer->delete_subject_version(
-          std::move(sub), version, ppsr::write_source::schema_registry_sync);
+          std::move(sub),
+          version,
+          ppsr::write_source::schema_registry_sync,
+          as);
         _last_sync_time = ss::lowres_clock::now();
         co_return result;
     }
 
     ss::future<chunked_vector<ppsr::schema_version>> permanent_delete_schema(
       ppsr::context_subject sub,
-      std::optional<ppsr::schema_version> version) override {
+      std::optional<ppsr::schema_version> version,
+      ssx::sharded_abort_source* as) override {
         auto [_, writer] = co_await service();
         auto result = co_await writer->delete_subject_permanent(
-          std::move(sub), version, ppsr::write_source::schema_registry_sync);
+          std::move(sub),
+          version,
+          ppsr::write_source::schema_registry_sync,
+          as);
         _last_sync_time = ss::lowres_clock::now();
         co_return result;
     }
 
-    ss::future<bool>
-    write_mode(ppsr::context_subject sub, ppsr::mode m) override {
+    ss::future<bool> write_mode(
+      ppsr::context_subject sub,
+      ppsr::mode m,
+      ssx::sharded_abort_source* as) override {
         auto [_, writer] = co_await service();
         auto result = co_await writer->write_mode(
           std::move(sub),
           m,
           ppsr::force::yes,
-          ppsr::write_source::schema_registry_sync);
+          ppsr::write_source::schema_registry_sync,
+          as);
         _last_sync_time = ss::lowres_clock::now();
         co_return result;
     }
 
-    ss::future<bool> delete_mode(ppsr::context_subject sub) override {
+    ss::future<bool> delete_mode(
+      ppsr::context_subject sub, ssx::sharded_abort_source* as) override {
         auto [_, writer] = co_await service();
         auto result = co_await writer->delete_mode(
-          std::move(sub), ppsr::write_source::schema_registry_sync);
+          std::move(sub), ppsr::write_source::schema_registry_sync, as);
         _last_sync_time = ss::lowres_clock::now();
         co_return result;
     }
 
     ss::future<bool> write_config(
-      ppsr::context_subject sub, ppsr::compatibility_level compat) override {
+      ppsr::context_subject sub,
+      ppsr::compatibility_level compat,
+      ssx::sharded_abort_source* as) override {
         auto [_, writer] = co_await service();
         auto result = co_await writer->write_config(
-          std::move(sub), compat, ppsr::write_source::schema_registry_sync);
+          std::move(sub), compat, ppsr::write_source::schema_registry_sync, as);
         _last_sync_time = ss::lowres_clock::now();
         co_return result;
     }
 
-    ss::future<bool> delete_config(ppsr::context_subject sub) override {
+    ss::future<bool> delete_config(
+      ppsr::context_subject sub, ssx::sharded_abort_source* as) override {
         auto [_, writer] = co_await service();
         auto result = co_await writer->delete_config(
-          std::move(sub), ppsr::write_source::schema_registry_sync);
+          std::move(sub), ppsr::write_source::schema_registry_sync, as);
         _last_sync_time = ss::lowres_clock::now();
         co_return result;
     }
@@ -223,7 +240,7 @@ public:
           "invalid attempted usage of a disabled schema registry");
     }
     ss::future<ss::lowres_clock::time_point>
-    sync(ss::lowres_clock::duration) override {
+    sync(ss::lowres_clock::duration, ssx::sharded_abort_source*) override {
         throw std::logic_error(
           "invalid attempted usage of a disabled schema registry");
     }
@@ -265,34 +282,43 @@ public:
           "invalid attempted usage of a disabled schema registry");
     }
     ss::future<ppsr::context_schema_id>
-    import_schema(ppsr::stored_schema) override {
+    import_schema(ppsr::stored_schema, ssx::sharded_abort_source*) override {
         throw std::logic_error(
           "invalid attempted usage of a disabled schema registry");
     }
-    ss::future<bool>
-    soft_delete_schema(ppsr::context_subject, ppsr::schema_version) override {
+    ss::future<bool> soft_delete_schema(
+      ppsr::context_subject,
+      ppsr::schema_version,
+      ssx::sharded_abort_source*) override {
         throw std::logic_error(
           "invalid attempted usage of a disabled schema registry");
     }
     ss::future<chunked_vector<ppsr::schema_version>> permanent_delete_schema(
-      ppsr::context_subject, std::optional<ppsr::schema_version>) override {
+      ppsr::context_subject,
+      std::optional<ppsr::schema_version>,
+      ssx::sharded_abort_source*) override {
         throw std::logic_error(
           "invalid attempted usage of a disabled schema registry");
     }
-    ss::future<bool> write_mode(ppsr::context_subject, ppsr::mode) override {
-        throw std::logic_error(
-          "invalid attempted usage of a disabled schema registry");
-    }
-    ss::future<bool> delete_mode(ppsr::context_subject) override {
+    ss::future<bool> write_mode(
+      ppsr::context_subject, ppsr::mode, ssx::sharded_abort_source*) override {
         throw std::logic_error(
           "invalid attempted usage of a disabled schema registry");
     }
     ss::future<bool>
-    write_config(ppsr::context_subject, ppsr::compatibility_level) override {
+    delete_mode(ppsr::context_subject, ssx::sharded_abort_source*) override {
         throw std::logic_error(
           "invalid attempted usage of a disabled schema registry");
     }
-    ss::future<bool> delete_config(ppsr::context_subject) override {
+    ss::future<bool> write_config(
+      ppsr::context_subject,
+      ppsr::compatibility_level,
+      ssx::sharded_abort_source*) override {
+        throw std::logic_error(
+          "invalid attempted usage of a disabled schema registry");
+    }
+    ss::future<bool>
+    delete_config(ppsr::context_subject, ssx::sharded_abort_source*) override {
         throw std::logic_error(
           "invalid attempted usage of a disabled schema registry");
     }

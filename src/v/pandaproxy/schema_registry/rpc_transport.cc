@@ -71,7 +71,8 @@ ss::future<produce_result> rpc_transport::produce(model::record_batch batch) {
     co_return produce_result{.base_offset = *res.base_offset};
 }
 
-ss::future<model::offset> rpc_transport::get_high_watermark() {
+ss::future<model::offset> rpc_transport::get_high_watermark(
+  std::optional<std::reference_wrapper<ss::abort_source>>) {
     auto result = co_await _client.get_single_partition_offsets(
       model::schema_registry_internal_tp);
     if (result.has_error()) {
@@ -85,7 +86,8 @@ ss::future<> rpc_transport::consume_range(
   model::offset start,
   model::offset end,
   ss::noncopyable_function<ss::future<ss::stop_iteration>(model::record_batch)>
-    consumer) {
+    consumer,
+  std::optional<std::reference_wrapper<ss::abort_source>>) {
     // The RPC consume API may not return all records in a single call,
     // so loop until we've consumed up to the desired end offset.
 

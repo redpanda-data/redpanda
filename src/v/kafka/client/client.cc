@@ -380,18 +380,20 @@ void throw_on_error(const T& r) {
 
 } // namespace
 
-ss::future<list_offsets_response>
-client::list_offsets(list_offsets_request req) {
-    co_return co_await gated_retry_with_mitigation([this, &req]() {
-        return do_list_offsets(req);
-    }).then([](auto res) {
-        throw_on_error<list_offsets_response>(res);
-        return res;
-    });
+ss::future<list_offsets_response> client::list_offsets(
+  list_offsets_request req,
+  std::optional<std::reference_wrapper<ss::abort_source>> ext_as) {
+    co_return co_await gated_retry_with_mitigation_ext(
+      [this, &req]() { return do_list_offsets(req); }, ext_as)
+      .then([](auto res) {
+          throw_on_error<list_offsets_response>(res);
+          return res;
+      });
 }
 
-ss::future<list_offsets_response>
-client::list_offsets(model::topic_partition tp) {
+ss::future<list_offsets_response> client::list_offsets(
+  model::topic_partition tp,
+  std::optional<std::reference_wrapper<ss::abort_source>> ext_as) {
     kafka::list_offsets_request req;
     req.data.topics.emplace_back(
       kafka::list_offset_topic{
@@ -400,7 +402,7 @@ client::list_offsets(model::topic_partition tp) {
           .partition_index = tp.partition,
           .max_num_offsets = 1,
         }}});
-    return list_offsets(std::move(req));
+    return list_offsets(std::move(req), ext_as);
 }
 
 ss::future<list_offsets_response>
@@ -497,7 +499,8 @@ ss::future<fetch_response> client::fetch_partition(
   model::topic_partition tp,
   model::offset offset,
   std::chrono::milliseconds timeout,
-  std::optional<int32_t> max_bytes) {
+  std::optional<int32_t> max_bytes,
+  std::optional<std::reference_wrapper<ss::abort_source>> ext_as) {
     const auto min_bytes = _consumer_config.fetch_min_bytes;
     const int32_t max_bytes_value = max_bytes.value_or(
       _consumer_config.fetch_max_bytes);
@@ -510,24 +513,26 @@ ss::future<fetch_response> client::fetch_partition(
     return ss::do_with(
       std::move(build_request),
       std::move(tp),
-      [this](auto& build_request, model::topic_partition& tp) {
-          return gated_retry_with_mitigation([this, &tp, &build_request]() {
-                     auto leader_id = _cluster->get_topics().leader(tp);
-                     if (!leader_id) {
-                         return ss::make_exception_future<fetch_response>(
-                           partition_error(
-                             tp, error_code::unknown_topic_or_partition));
-                     }
-                     return _cluster
-                       ->dispatch_to(
-                         *leader_id,
-                         build_request(tp),
-                         api_version_for(fetch_api::key))
-                       .then([leader_id, &tp](fetch_response res) {
-                           return maybe_throw_exception(
-                             *leader_id, tp, std::move(res));
-                       });
-                 })
+      [this, ext_as](auto& build_request, model::topic_partition& tp) {
+          return gated_retry_with_mitigation_ext(
+                   [this, &tp, &build_request]() {
+                       auto leader_id = _cluster->get_topics().leader(tp);
+                       if (!leader_id) {
+                           return ss::make_exception_future<fetch_response>(
+                             partition_error(
+                               tp, error_code::unknown_topic_or_partition));
+                       }
+                       return _cluster
+                         ->dispatch_to(
+                           *leader_id,
+                           build_request(tp),
+                           api_version_for(fetch_api::key))
+                         .then([leader_id, &tp](fetch_response res) {
+                             return maybe_throw_exception(
+                               *leader_id, tp, std::move(res));
+                         });
+                   },
+                   ext_as)
             .handle_exception([&tp](std::exception_ptr ex) {
                 return make_fetch_response(tp, ex);
             });

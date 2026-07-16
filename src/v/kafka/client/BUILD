@@ -371,6 +371,7 @@ redpanda_cc_library(
         "//src/v/net",
         "//src/v/random:generators",
         "//src/v/security",
+        "//src/v/ssx:abort_source",
         "//src/v/ssx:future_util",
         "//src/v/ssx:mutex",
         "//src/v/ssx:semaphore",

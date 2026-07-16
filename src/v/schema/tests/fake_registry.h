@@ -53,7 +53,7 @@ public:
     }
 
     ss::future<ss::lowres_clock::time_point>
-    sync(ss::lowres_clock::duration) override {
+    sync(ss::lowres_clock::duration, ssx::sharded_abort_source*) override {
         return ss::make_ready_future<ss::lowres_clock::time_point>(
           ss::lowres_clock::now());
     }
@@ -88,32 +88,38 @@ public:
     ss::future<pandaproxy::schema_registry::context_schema_id> create_schema(
       pandaproxy::schema_registry::subject_schema unparsed) override;
 
-    ss::future<pandaproxy::schema_registry::context_schema_id>
-    import_schema(pandaproxy::schema_registry::stored_schema imported) override;
+    ss::future<pandaproxy::schema_registry::context_schema_id> import_schema(
+      pandaproxy::schema_registry::stored_schema imported,
+      ssx::sharded_abort_source* as) override;
 
     ss::future<bool> soft_delete_schema(
       pandaproxy::schema_registry::context_subject sub,
-      pandaproxy::schema_registry::schema_version version) override;
+      pandaproxy::schema_registry::schema_version version,
+      ssx::sharded_abort_source* as) override;
 
     ss::future<chunked_vector<pandaproxy::schema_registry::schema_version>>
     permanent_delete_schema(
       pandaproxy::schema_registry::context_subject sub,
-      std::optional<pandaproxy::schema_registry::schema_version> version)
-      override;
+      std::optional<pandaproxy::schema_registry::schema_version> version,
+      ssx::sharded_abort_source* as) override;
 
     ss::future<bool> write_mode(
       pandaproxy::schema_registry::context_subject sub,
-      pandaproxy::schema_registry::mode mode) override;
+      pandaproxy::schema_registry::mode mode,
+      ssx::sharded_abort_source* as) override;
 
-    ss::future<bool>
-    delete_mode(pandaproxy::schema_registry::context_subject sub) override;
+    ss::future<bool> delete_mode(
+      pandaproxy::schema_registry::context_subject sub,
+      ssx::sharded_abort_source* as) override;
 
     ss::future<bool> write_config(
       pandaproxy::schema_registry::context_subject sub,
-      pandaproxy::schema_registry::compatibility_level compat) override;
+      pandaproxy::schema_registry::compatibility_level compat,
+      ssx::sharded_abort_source* as) override;
 
-    ss::future<bool>
-    delete_config(pandaproxy::schema_registry::context_subject sub) override;
+    ss::future<bool> delete_config(
+      pandaproxy::schema_registry::context_subject sub,
+      ssx::sharded_abort_source* as) override;
 
     ss::future<>
     delete_context(pandaproxy::schema_registry::context ctx) override;

@@ -136,6 +136,14 @@ ss::future<> link::start() {
 }
 
 ss::future<> link::stop() noexcept {
+    // Idempotent AND join-safe: the removal handler and manager shutdown both
+    // stop links and can race during teardown. A late caller waits for the
+    // first stop to complete rather than returning early -- the removal
+    // handler destroys the link right after its stop() resolves, so an early
+    // return would free the link out from under the still-running first stop.
+    if (std::exchange(_stop_requested, true)) {
+        co_return co_await _stopped.get_shared_future();
+    }
     vlog(
       cllog.info,
       "Stopping cluster link {} ({})",
@@ -187,6 +195,9 @@ ss::future<> link::stop() noexcept {
     _probe.reset(nullptr);
 
     vlog(cllog.info, "Stopped link {} ({})", _config->name, _config->uuid);
+    // Release any callers joined on a concurrent stop; they may free the link
+    // as soon as this resolves.
+    _stopped.set_value();
 }
 
 ss::future<cl_result<void>> link::register_task(task_factory* tf) {

@@ -86,7 +86,8 @@ ss::future<inventory> scan_destination_inventory(
   schema::registry& destination,
   ss::noncopyable_function<bool(const ppsr::context_subject&)> in_scope,
   const context_mapper& mapper,
-  ss::abort_source& as) {
+  ss::abort_source& as,
+  ssx::sharded_abort_source* dest_as) {
     as.check();
     // A destination node is in scope iff its context reverse-maps to a source
     // context `in_scope` accepts (identity mapper: reduces to `in_scope`).
@@ -99,7 +100,7 @@ ss::future<inventory> scan_destination_inventory(
     };
     // list_subject_versions reads the store as-is; sync first so the scan
     // isn't stale (e.g. on a freshly-elected _schemas/0 leader).
-    co_await destination.sync();
+    co_await destination.sync({}, dest_as);
     auto versions = co_await destination.list_subject_versions(
       std::move(dest_in_scope), ppsr::include_deleted::yes);
     inventory inv;
@@ -168,31 +169,58 @@ ss::future<cl_result<void>> mirroring_task::start() {
 }
 
 ss::future<cl_result<void>> mirroring_task::stop() noexcept {
-    auto res = co_await task::stop();
-    _probe.clear();
-    // task::stop() closed the runner's gate, so no run_impl is in flight and it
-    // is safe to reset the state directly (unlike update_config, which races a
-    // running fiber and defers via _config_changed). Reset so a later leader
-    // starts fresh: this instance may regain _schemas/0 leadership (A->B->A)
-    // and would otherwise report a prior tenure's stale counters/inventory and
-    // skip its first full sync on a still-recent _last_full_sync.
-    reset_sync_state();
-    // The run loop has stopped, so no fiber is using the reader; release its
-    // HTTP transport. as_future guards the noexcept contract.
-    if (_reader) {
-        auto stopped = co_await ss::coroutine::as_future(_reader->stop());
-        if (stopped.failed()) {
-            auto ex = stopped.get_exception();
-            vlog(
-              logger().warn,
-              "Error stopping Schema Registry source reader: {}",
-              ex);
+    // Stop the reader BEFORE joining the run fiber: run_impl can be parked on
+    // reader-internal waits that only the reader's own shutdown aborts (the
+    // rate limiter's token queue and Retry-After pause -- up to 60s -- and the
+    // connection pool's slot queue are deaf to the runner's abort source).
+    // Joining first would sequence that abort behind the join that needs it.
+    // The reader is built to be stopped under fire: in-flight and queued
+    // requests fail promptly with abort-classified errors and run_impl
+    // unwinds. as_future guards the noexcept contract.
+    //
+    // Under _reader_lifecycle: run_impl is still live here (reader-first), so a
+    // concurrent reset_reader() could otherwise free the reader while this
+    // stop() is suspended mid-shutdown. The lock is dropped before the join
+    // below, so it cannot deadlock against a reset_reader() the join waits on.
+    {
+        auto reader_units = co_await _reader_lifecycle.get_units();
+        if (_reader) {
+            auto stopped = co_await ss::coroutine::as_future(_reader->stop());
+            if (stopped.failed()) {
+                auto ex = stopped.get_exception();
+                vlog(
+                  logger().warn,
+                  "Error stopping Schema Registry source reader: {}",
+                  ex);
+            }
         }
     }
+    auto res = co_await task::stop();
+    _probe.clear();
+    // task::stop() closed the runner's gate, so no run_impl is in flight and
+    // it is safe to reset the state directly (unlike update_config, which
+    // races a running fiber and defers via _config_changed). Reset so a later
+    // leader starts fresh: this instance may regain _schemas/0 leadership
+    // (A->B->A) and would otherwise report a prior tenure's stale
+    // counters/inventory and skip its first full sync on a still-recent
+    // _last_full_sync.
+    reset_sync_state();
+    // Replace the stopped reader with a fresh one for that possible A->B->A
+    // re-acquisition. The reader's stop() is permanent by design (it refuses
+    // to rebuild its client so an unwinding fiber cannot resurrect it during
+    // teardown), and run_impl only rebuilds the reader on a config change, so
+    // a restarted task would otherwise keep using the dead reader and never
+    // sync. No lock needed: the run fibers have been joined, so reset_reader()
+    // cannot run and none is mid-request on the old reader.
+    _reader = _source_factory->create(_config.api_mode());
     co_return res;
 }
 
 ss::future<> mirroring_task::reset_reader() {
+    // Serialize with stop() (see _reader_lifecycle): both stop and then free
+    // the reader by reassignment, and either can be suspended in the reader's
+    // shutdown when the other reaches the free.
+    auto reader_units = co_await _reader_lifecycle.get_units();
     if (_reader) {
         auto stopped = co_await ss::coroutine::as_future(_reader->stop());
         if (stopped.failed()) {
@@ -274,7 +302,8 @@ ss::future<> mirroring_task::refresh_destination_inventory(
       *_destination,
       [&in_scope](const ppsr::context_subject& cs) { return in_scope(cs); },
       _mapper,
-      as);
+      as,
+      &_run_sas);
 
     chunked_hash_set<ppsr::context_subject> subjects;
     for (const auto& key : _destination_inventory.active) {
@@ -291,9 +320,10 @@ ss::future<> mirroring_task::hard_delete_target(
   ppsr::schema_version version,
   bool was_active) {
     if (was_active) {
-        co_await _destination->soft_delete_schema(dest_sub, version);
+        co_await _destination->soft_delete_schema(dest_sub, version, &_run_sas);
     }
-    co_await _destination->permanent_delete_schema(dest_sub, version);
+    co_await _destination->permanent_delete_schema(
+      dest_sub, version, &_run_sas);
 }
 
 ss::future<> mirroring_task::purge_one(
@@ -480,6 +510,7 @@ ss::future<> mirroring_task::sync_mode_and_config(
     if (unavailable.has_value()) {
         co_return;
     }
+    as.check();
     // Read the source in its own (source) namespace; write to the destination
     // under the remapped context. Identity leaves dest_target == target.
     auto dest_ctx = _mapper.forward(target.ctx);
@@ -507,8 +538,8 @@ ss::future<> mirroring_task::sync_mode_and_config(
         // override
         auto write = co_await ss::coroutine::as_future(
           mode.value().has_value()
-            ? _destination->write_mode(dest_target, *mode.value())
-            : _destination->delete_mode(dest_target));
+            ? _destination->write_mode(dest_target, *mode.value(), &_run_sas)
+            : _destination->delete_mode(dest_target, &_run_sas));
         if (write.failed()) {
             auto ex = write.get_exception();
             if (ssx::is_shutdown_exception(ex)) {
@@ -525,6 +556,7 @@ ss::future<> mirroring_task::sync_mode_and_config(
     if (unavailable.has_value()) {
         co_return;
     }
+    as.check();
     auto config = co_await _reader->read_config(target, as);
     if (!config.has_value()) {
         if (config.error().kind == source_error_kind::source_unavailable) {
@@ -546,8 +578,8 @@ ss::future<> mirroring_task::sync_mode_and_config(
 
     auto write = co_await ss::coroutine::as_future(
       cfg.compatibility.has_value()
-        ? _destination->write_config(dest_target, *cfg.compatibility)
-        : _destination->delete_config(dest_target));
+        ? _destination->write_config(dest_target, *cfg.compatibility, &_run_sas)
+        : _destination->delete_config(dest_target, &_run_sas));
     if (write.failed()) {
         auto ex = write.get_exception();
         if (ssx::is_shutdown_exception(ex)) {
@@ -679,6 +711,7 @@ ss::future<task::state_transition> mirroring_task::full_source_sync(
     // scopes discovery, keeping source and destination sides consistent.
     chunked_vector<ppsr::context_subject> subjects;
     for (const auto& ctx : contexts) {
+        as.check();
         auto subjects_res = co_await _reader->list_subjects(ctx, as);
         if (!subjects_res.has_value()) {
             if (
@@ -779,6 +812,7 @@ ss::future<task::state_transition> mirroring_task::full_source_sync(
     auto rec = reconciler{
       _reader.get(),
       _destination,
+      &_run_sas,
       [&in_scope](const ppsr::context_subject& cs) { return in_scope(cs); },
       _mapper,
       limits,
@@ -891,6 +925,21 @@ ss::future<task::state_transition> mirroring_task::full_source_sync(
 
 ss::future<task::state_transition>
 mirroring_task::run_impl(ss::abort_source& as) {
+    // Bracket the run with the sharded fan-out of the runner's abort: every
+    // destination write below hands &_run_sas down to seq_writer, whose
+    // waits resolve it per-shard. Stop on every exit path so the sharded
+    // instances never outlive the run.
+    co_await _run_sas.start(as);
+    auto res = co_await ss::coroutine::as_future(do_run_impl(as));
+    co_await _run_sas.stop();
+    if (res.failed()) {
+        std::rethrow_exception(res.get_exception());
+    }
+    co_return std::move(res).get();
+}
+
+ss::future<mirroring_task::state_transition>
+mirroring_task::do_run_impl(ss::abort_source& as) {
     // Stamp the cumulative summary's start time once per leadership acquisition
     // (the proto documents totals_since_task_start.start_time as the task
     // start). stop() clears the status on losing leadership, so the next leader
