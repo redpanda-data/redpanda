@@ -10,9 +10,11 @@
  */
 #include "security/scram_credential_cache.h"
 
+#include "base/vlog.h"
 #include "bytes/random.h"
 #include "crypto/crypto.h"
 #include "hashing/secure.h"
+#include "security/logger.h"
 
 #include <seastar/core/shared_ptr.hh>
 
@@ -98,6 +100,35 @@ scram_credential_cache::stats_t scram_credential_cache::stats() const {
       .hits = s.hit_count,
       .misses = s.access_count - s.hit_count,
       .size = s.index_size};
+}
+
+scram_credential_cache_holder::scram_credential_cache_holder(
+  config::binding<bool> enabled, size_t capacity)
+  : _enabled(std::move(enabled))
+  , _capacity(capacity) {
+    _enabled.watch([this] {
+        if (!_enabled() && _cache) {
+            vlog(seclog.info, "SCRAM credential cache disabled, flushing");
+            _cache.reset();
+        }
+    });
+}
+
+scram_credential_cache* scram_credential_cache_holder::get() {
+    if (!_enabled()) {
+        return nullptr;
+    }
+    if (!_cache) {
+        // Constructed here rather than in the watch so that a throwing
+        // construction surfaces on the authentication path (which simply
+        // retries next call) instead of failing a config update.
+        _cache.emplace(_capacity);
+        vlog(
+          seclog.debug,
+          "SCRAM credential cache constructed, capacity {}",
+          _capacity);
+    }
+    return &*_cache;
 }
 
 } // namespace security

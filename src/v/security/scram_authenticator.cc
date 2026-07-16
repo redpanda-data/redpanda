@@ -206,12 +206,13 @@ std::optional<std::string_view> validate_scram_credential(
 
 std::optional<std::string_view> validate_scram_credential(
   const scram_credential& cred, const credential_password& password) {
-    if (config::shard_local_cfg().scram_credential_cache_enabled()) {
-        static thread_local scram_credential_cache cache{
-          scram_credential_cache::default_capacity};
-        return detail::validate_scram_credential(cred, password, &cache);
-    }
-    return detail::validate_scram_credential(cred, password, nullptr);
+    // Constructed on first use, which forces the shard's configuration
+    // thread_local into existence first and therefore destroys the holder
+    // (and its config binding) before the configuration at thread exit.
+    static thread_local scram_credential_cache_holder holder{
+      config::shard_local_cfg().scram_credential_cache_enabled.bind(),
+      scram_credential_cache::default_capacity};
+    return detail::validate_scram_credential(cred, password, holder.get());
 }
 
 } // namespace security

@@ -42,6 +42,7 @@ redpanda_cc_btest(
     ],
     deps = [
         "//src/v/bytes",
+        "//src/v/config",
         "//src/v/security",
         "//src/v/test_utils:random_bytes",
         "@boost//:test",

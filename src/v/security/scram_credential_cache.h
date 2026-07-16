@@ -12,6 +12,7 @@
 
 #include "base/seastarx.h"
 #include "bytes/bytes.h"
+#include "config/property.h"
 #include "security/scram_credential.h"
 #include "security/types.h"
 #include "utils/chunked_kv_cache.h"
@@ -110,6 +111,26 @@ private:
 
     zeroizing_bytes _digest_key;
     utils::chunked_kv_cache<key_t, zeroizing_bytes> _cache;
+};
+
+/// \brief Ties a shard's scram_credential_cache to its enable config.
+///
+/// get() returns the cache while enabled (constructing it on first use) and
+/// nullptr while disabled. Disabling flushes eagerly: the config watch
+/// destroys the cache, securely erasing every memoized derivation, without
+/// waiting for the next authentication on the shard. Re-enabling builds a
+/// fresh cache with a fresh digest key.
+class scram_credential_cache_holder {
+public:
+    scram_credential_cache_holder(
+      config::binding<bool> enabled, size_t capacity);
+
+    scram_credential_cache* get();
+
+private:
+    config::binding<bool> _enabled;
+    size_t _capacity;
+    std::optional<scram_credential_cache> _cache;
 };
 
 } // namespace security

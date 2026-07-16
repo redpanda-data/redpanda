@@ -114,6 +114,11 @@ std::optional<std::string_view> validate_scram_credential(
 
 namespace detail {
 /// As above, against a caller-provided cache.
+///
+/// Neither the cache pointer nor any view it returns may be held across a
+/// scheduling point: a config watch may flush (destroy) the cache between
+/// suspensions. Validation is currently synchronous end to end, which is
+/// what makes them safe.
 std::optional<std::string_view> validate_scram_credential(
   const scram_credential& cred,
   const credential_password& password,

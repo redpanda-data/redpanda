@@ -11,6 +11,8 @@
 #define BOOST_TEST_MODULE security
 
 #include "bytes/bytes.h"
+#include "config/configuration.h"
+#include "config/mock_property.h"
 #include "security/scram_algorithm.h"
 #include "security/scram_authenticator.h"
 #include "security/scram_credential_cache.h"
@@ -191,6 +193,63 @@ BOOST_AUTO_TEST_CASE(cached_validate_scram_credential_password_change) {
     BOOST_REQUIRE(
       !detail::validate_scram_credential(new_cred, password(), &cache)
          .has_value());
+}
+
+BOOST_AUTO_TEST_CASE(holder_disabled_returns_no_cache) {
+    config::mock_property<bool> enabled(false);
+    scram_credential_cache_holder holder(enabled.bind(), 16);
+    BOOST_REQUIRE(holder.get() == nullptr);
+}
+
+BOOST_AUTO_TEST_CASE(holder_flushes_on_disable) {
+    config::mock_property<bool> enabled(true);
+    scram_credential_cache_holder holder(enabled.bind(), 16);
+    auto salt = tests::random_bytes(16);
+    auto stored_key = tests::random_bytes(32);
+
+    auto* cache = holder.get();
+    BOOST_REQUIRE(cache != nullptr);
+    cache->put(
+      scram_algorithm_t::sha256, password(), salt, iterations, stored_key);
+    BOOST_REQUIRE(
+      cache->get(scram_algorithm_t::sha256, password(), salt, iterations)
+      != nullptr);
+
+    // Disabling flushes: the cache is destroyed eagerly, without waiting for
+    // the next authentication.
+    enabled.update(false);
+    BOOST_REQUIRE(holder.get() == nullptr);
+
+    // Re-enabling builds a fresh cache: the old entry is gone.
+    enabled.update(true);
+    auto* fresh = holder.get();
+    BOOST_REQUIRE(fresh != nullptr);
+    BOOST_REQUIRE(
+      fresh->get(scram_algorithm_t::sha256, password(), salt, iterations)
+      == nullptr);
+    BOOST_REQUIRE_EQUAL(fresh->stats().size, 0);
+}
+
+BOOST_AUTO_TEST_CASE(public_validate_survives_config_toggling) {
+    auto& enabled = config::shard_local_cfg().scram_credential_cache_enabled;
+    auto cred = scram_sha256::make_credentials(
+      password()(), scram_sha256::min_iterations);
+
+    enabled.set_value(true);
+    BOOST_REQUIRE(validate_scram_credential(cred, password()).has_value());
+    BOOST_REQUIRE(validate_scram_credential(cred, password()).has_value());
+
+    // Disable mid-stream: validation falls back to plain derivation.
+    enabled.set_value(false);
+    BOOST_REQUIRE(validate_scram_credential(cred, password()).has_value());
+
+    // Re-enable: caching resumes with a fresh cache.
+    enabled.set_value(true);
+    BOOST_REQUIRE(validate_scram_credential(cred, password()).has_value());
+    const credential_password wrong{"wrong-password"};
+    BOOST_REQUIRE(!validate_scram_credential(cred, wrong).has_value());
+
+    enabled.reset();
 }
 
 } // namespace security
