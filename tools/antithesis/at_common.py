@@ -10,7 +10,7 @@
 # ==================================================================
 #
 # Shared helpers for the Antithesis test-packaging scripts
-# (ducktape_test_package.py and single_binary_test_package.py).
+# (ducktape_test_package.py and bazel_target.py).
 
 import argparse
 import json

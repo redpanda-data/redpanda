@@ -46,7 +46,7 @@ from at_common import (
 )
 
 
-DEPS_DIR = Path(__file__).resolve().parent / "single_binary_deps"
+DEPS_DIR = Path(__file__).resolve().parent / "bazel_target_deps"
 
 # bazel and docker commands in this script must run from the repo root.
 run = functools.partial(_run, cwd=REPO_ROOT)
@@ -373,7 +373,7 @@ def build_workload_image(
 
         (ctx / "Dockerfile").write_text(
             render_template(
-                DEPS_DIR / "workload.Dockerfile.j2",
+                DEPS_DIR / "bazel-target.Dockerfile.j2",
                 install_prefix=INSTALL_PREFIX,
                 lib_dir=LIB_DIR,
                 data_dir=DATA_DIR,
@@ -412,14 +412,14 @@ from $AT_PASSWORD).""",
         epilog="""\
 examples:
   # package a single test target and print the local run commands
-  tools/antithesis/single_binary_test_package.py //src/v/storage/opfuzz:opfuzz_test
+  tools/antithesis/bazel_target.py //src/v/storage/opfuzz:opfuzz_test
 
   # package every test under a package and submit a 2-hour ad-hoc run
-  tools/antithesis/single_binary_test_package.py //src/v/cluster/tests/... \\
+  tools/antithesis/bazel_target.py //src/v/cluster/tests/... \\
       --tests-only --submit --duration 120
 
   # nightly: record findings history and move the nightly alias tags
-  tools/antithesis/single_binary_test_package.py //src/v/raft/tests/... \\
+  tools/antithesis/bazel_target.py //src/v/raft/tests/... \\
       --submit --no-ephemeral --source dev --tag nightly \\
       --name raft-fixture-tests --description 'nightly raft fixture tests'""",
         formatter_class=argparse.RawDescriptionHelpFormatter,
