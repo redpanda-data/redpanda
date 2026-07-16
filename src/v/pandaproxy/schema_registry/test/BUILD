@@ -631,6 +631,33 @@ redpanda_cc_bench(
     ],
 )
 
+redpanda_cc_bench(
+    name = "recovery_rpbench",
+    timeout = "moderate",
+    srcs = [
+        "recovery_bench.cc",
+    ],
+    # The cross-shard costs this benchmark exercises need more than one
+    # shard to exist.
+    cpu = 2,
+    # recovery_inline compiles every replayed record; keep test mode to
+    # the cheap marked variant.
+    test_regex = ".*marked_replay",
+    deps = [
+        ":utils",
+        "//src/v/bytes:iobuf",
+        "//src/v/container:chunked_vector",
+        "//src/v/model",
+        "//src/v/pandaproxy/schema_registry:seq_writer",
+        "//src/v/pandaproxy/schema_registry:store",
+        "//src/v/pandaproxy/schema_registry:types",
+        "//src/v/storage:record_batch_builder",
+        "@fmt",
+        "@seastar",
+        "@seastar//:benchmark",
+    ],
+)
+
 redpanda_cc_gtest(
     name = "rpc_transport_test",
     timeout = "short",
