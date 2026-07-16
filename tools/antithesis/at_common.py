@@ -187,16 +187,26 @@ def packaging_artifact(
 
 def push_image(registry: str, local_ref: str) -> str:
     """Push a local image to the registry, preserving its tag: local_ref
-    is pushed as {registry}/{local_ref}. Returns the pushed reference."""
+    is pushed as {registry}/{local_ref}. Returns the pushed image's digest
+    reference (registry/name@sha256:...), the immutable form recommended
+    for antithesis.images."""
     ref = f"{registry}/{local_ref}"
     run(["docker", "tag", local_ref, ref])
     run(["docker", "push", ref])
-    return ref
+    repo = f"{registry}/{local_ref.rsplit(':', 1)[0]}"
+    digests = run(
+        ["docker", "image", "inspect", ref, "--format", "{{json .RepoDigests}}"],
+        capture=True,
+    ).stdout
+    for digest_ref in json.loads(digests):
+        if digest_ref.startswith(f"{repo}@"):
+            return digest_ref
+    sys.exit(f"Error: no digest recorded for {ref} after push")
 
 
 def upload_images(registry: str, refs: list[str]) -> dict[str, str]:
     """Push each local image ref to the registry, preserving tags.
-    Returns {local_ref: pushed_ref}."""
+    Returns {local_ref: pushed_digest_ref}."""
     return {ref: push_image(registry, ref) for ref in refs}
 
 

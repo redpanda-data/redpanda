@@ -295,21 +295,33 @@ def main() -> None:
     runner_ref = build_runner_image(
         node_ref, f"{args.name}-runner", cluster_json, globals_json
     )
-    compose = generate_compose(
-        node_image=node_ref,
-        runner_image=runner_ref,
-        nodes=args.nodes,
-        test_args=args.ducktape_args,
-        max_parallel=args.max_parallel,
-        test_timeout=args.test_timeout,
-        disable_faults=args.disable_faults,
-    )
-    config_ref = build_config_image(f"{args.name}-config", compose)
 
-    # Write compose file for local testing.
+    def compose_with(node_image: str, runner_image: str) -> str:
+        return generate_compose(
+            node_image=node_image,
+            runner_image=runner_image,
+            nodes=args.nodes,
+            test_args=args.ducktape_args,
+            max_parallel=args.max_parallel,
+            test_timeout=args.test_timeout,
+            disable_faults=args.disable_faults,
+        )
+
+    # The config compose references stable <name>:latest names, so the
+    # config image changes only when the environment itself changes, not on
+    # every image rebuild. In the Antithesis environment the submitted
+    # antithesis.images digests override those names (a digest entry is
+    # tagged latest there).
+    config_ref = build_config_image(
+        f"{args.name}-config",
+        compose_with(f"{args.name}-node:latest", f"{args.name}-runner:latest"),
+    )
+
+    # Write a compose pinning the exact built images, so local runs keep
+    # running this build regardless of later packagings.
     compose_out = REPO_ROOT / ".antithesis" / args.name
     compose_out.mkdir(parents=True, exist_ok=True)
-    (compose_out / "docker-compose.yaml").write_text(compose)
+    (compose_out / "docker-compose.yaml").write_text(compose_with(node_ref, runner_ref))
 
     refs = [node_ref, runner_ref, config_ref]
     aliases = tag_images(refs, args.tag)

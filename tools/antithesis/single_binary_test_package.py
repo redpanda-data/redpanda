@@ -465,17 +465,27 @@ def main() -> None:
     # Build workload image.
     workload_ref = build_workload_image(binaries, target_name)
 
-    # Build config image.
     hostname = target_name.replace("_", "-")
-    compose = render_template(
-        DEPS_DIR / "compose.yaml.j2", image_tag=workload_ref, hostname=hostname
-    )
-    config_ref = build_config_image(f"{target_name}-config", compose)
 
-    # Write compose for local testing.
+    def compose_with(image: str) -> str:
+        return render_template(
+            DEPS_DIR / "compose.yaml.j2", image_tag=image, hostname=hostname
+        )
+
+    # The config compose references the stable <name>:latest name, so the
+    # config image changes only when the environment itself changes, not on
+    # every image rebuild. In the Antithesis environment the submitted
+    # antithesis.images digest overrides that name (a digest entry is
+    # tagged latest there).
+    config_ref = build_config_image(
+        f"{target_name}-config", compose_with(f"{target_name}:latest")
+    )
+
+    # Write a compose pinning the exact built image, so local runs keep
+    # running this build regardless of later packagings.
     compose_out = REPO_ROOT / ".antithesis" / target_name
     compose_out.mkdir(parents=True, exist_ok=True)
-    (compose_out / "docker-compose.yaml").write_text(compose)
+    (compose_out / "docker-compose.yaml").write_text(compose_with(workload_ref))
 
     refs = [workload_ref, config_ref]
     aliases = tag_images(refs, args.tag)
