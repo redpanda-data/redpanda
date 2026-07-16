@@ -23,6 +23,10 @@ from pathlib import Path
 
 from jinja2 import StrictUndefined, Template
 
+# Keep the ==> stage headers ordered with subprocess output when stdout
+# is a pipe (e.g. CI logs); interactively stdout is line-buffered anyway.
+sys.stdout.reconfigure(line_buffering=True)
+
 LAUNCH_URL = "https://redpanda.antithesis.com/api/v1/launch/basic_test"
 RUNS_URL = "https://redpanda.antithesis.com/runs"
 
