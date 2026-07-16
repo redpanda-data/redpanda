@@ -39,16 +39,16 @@ BOOST_AUTO_TEST_CASE(cache_miss_then_hit) {
     auto stored_key = tests::random_bytes(32);
 
     BOOST_REQUIRE(
-      !cache.get(scram_algorithm_t::sha256, password(), salt, iterations)
-         .has_value());
+      cache.get(scram_algorithm_t::sha256, password(), salt, iterations)
+      == nullptr);
 
     cache.put(
       scram_algorithm_t::sha256, password(), salt, iterations, stored_key);
 
     auto hit = cache.get(
       scram_algorithm_t::sha256, password(), salt, iterations);
-    BOOST_REQUIRE(hit.has_value());
-    BOOST_REQUIRE(*hit == stored_key);
+    BOOST_REQUIRE(hit != nullptr);
+    BOOST_REQUIRE(hit->data == stored_key);
 
     auto stats = cache.stats();
     BOOST_REQUIRE_EQUAL(stats.hits, 1);
@@ -66,28 +66,28 @@ BOOST_AUTO_TEST_CASE(cache_key_includes_all_inputs) {
     // Same inputs: hit.
     BOOST_REQUIRE(
       cache.get(scram_algorithm_t::sha256, password(), salt, iterations)
-        .has_value());
+      != nullptr);
     // Different password: miss.
-    BOOST_REQUIRE(!cache
-                     .get(
-                       scram_algorithm_t::sha256,
-                       credential_password{"other-password"},
-                       salt,
-                       iterations)
-                     .has_value());
+    BOOST_REQUIRE(
+      cache.get(
+        scram_algorithm_t::sha256,
+        credential_password{"other-password"},
+        salt,
+        iterations)
+      == nullptr);
     // Different salt (i.e. the credential was updated): miss.
     auto other_salt = tests::random_bytes(16);
     BOOST_REQUIRE(
-      !cache.get(scram_algorithm_t::sha256, password(), other_salt, iterations)
-         .has_value());
+      cache.get(scram_algorithm_t::sha256, password(), other_salt, iterations)
+      == nullptr);
     // Different iteration count: miss.
     BOOST_REQUIRE(
-      !cache.get(scram_algorithm_t::sha256, password(), salt, iterations * 2)
-         .has_value());
+      cache.get(scram_algorithm_t::sha256, password(), salt, iterations * 2)
+      == nullptr);
     // Different mechanism: miss.
     BOOST_REQUIRE(
-      !cache.get(scram_algorithm_t::sha512, password(), salt, iterations)
-         .has_value());
+      cache.get(scram_algorithm_t::sha512, password(), salt, iterations)
+      == nullptr);
 }
 
 BOOST_AUTO_TEST_CASE(cache_is_bounded) {
@@ -105,13 +105,13 @@ BOOST_AUTO_TEST_CASE(cache_is_bounded) {
     }
 
     // A one-hit-wonder inserted early must have been evicted.
-    BOOST_REQUIRE(!cache
-                     .get(
-                       scram_algorithm_t::sha256,
-                       credential_password{"password-0"},
-                       salt,
-                       iterations)
-                     .has_value());
+    BOOST_REQUIRE(
+      cache.get(
+        scram_algorithm_t::sha256,
+        credential_password{"password-0"},
+        salt,
+        iterations)
+      == nullptr);
     // The index may retain evicted (ghost) entries, but remains bounded well
     // below the number of insertions.
     BOOST_REQUIRE_LT(cache.stats().size, capacity * 5);
@@ -128,7 +128,7 @@ BOOST_AUTO_TEST_CASE(cache_tiny_capacity_does_not_crash) {
           scram_algorithm_t::sha256, password(), salt, iterations, stored_key);
         BOOST_REQUIRE(
           cache.get(scram_algorithm_t::sha256, password(), salt, iterations)
-            .has_value());
+          != nullptr);
     }
 }
 

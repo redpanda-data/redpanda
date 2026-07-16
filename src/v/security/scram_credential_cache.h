@@ -10,10 +10,13 @@
  */
 #pragma once
 
+#include "base/seastarx.h"
 #include "bytes/bytes.h"
 #include "security/scram_credential.h"
 #include "security/types.h"
 #include "utils/chunked_kv_cache.h"
+
+#include <seastar/core/shared_ptr.hh>
 
 #include <array>
 #include <cstddef>
@@ -40,6 +43,7 @@ namespace security {
 /// store already holds. The memoized mapping is purely functional, so entries
 /// never go stale: updating a credential generates a fresh salt, which
 /// changes the cache key.
+///
 class scram_credential_cache {
 public:
     static constexpr size_t default_capacity = 1024;
@@ -50,10 +54,25 @@ public:
         size_t size;
     };
 
+    /// Secret bytes, securely erased on destruction: eviction, flush, and
+    /// shutdown all scrub the cache's secrets through this one destructor.
+    struct zeroizing_bytes {
+        explicit zeroizing_bytes(bytes b) noexcept
+          : data(std::move(b)) {}
+        zeroizing_bytes(const zeroizing_bytes&) = delete;
+        zeroizing_bytes& operator=(const zeroizing_bytes&) = delete;
+        zeroizing_bytes(zeroizing_bytes&&) = delete;
+        zeroizing_bytes& operator=(zeroizing_bytes&&) = delete;
+        ~zeroizing_bytes();
+
+        bytes data;
+    };
+
     explicit scram_credential_cache(size_t capacity);
 
-    /// Returns the memoized stored key for the derivation inputs, if any.
-    std::optional<bytes> get(
+    /// Returns the memoized stored key for the derivation inputs, or null on
+    /// a miss.
+    ss::shared_ptr<const zeroizing_bytes> get(
       scram_algorithm_t mech,
       const credential_password& password,
       bytes_view salt,
@@ -89,8 +108,8 @@ private:
       bytes_view salt,
       int iterations) const;
 
-    bytes _digest_key;
-    utils::chunked_kv_cache<key_t, bytes> _cache;
+    zeroizing_bytes _digest_key;
+    utils::chunked_kv_cache<key_t, zeroizing_bytes> _cache;
 };
 
 } // namespace security

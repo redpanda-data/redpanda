@@ -164,8 +164,8 @@ bool match_password(
     if (cache != nullptr) {
         auto cached = cache->get(
           mech, password, cred.salt(), cred.iterations());
-        if (cached.has_value()) {
-            return *cached == cred.stored_key();
+        if (cached != nullptr) {
+            return cached->data == cred.stored_key();
         }
     }
     auto stored_key = scram::derive_stored_key(

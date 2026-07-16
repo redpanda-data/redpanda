@@ -11,6 +11,7 @@
 #include "security/scram_credential_cache.h"
 
 #include "bytes/random.h"
+#include "crypto/crypto.h"
 #include "hashing/secure.h"
 
 #include <seastar/core/shared_ptr.hh>
@@ -24,6 +25,10 @@ namespace {
 // The S3-FIFO probationary queue is conventionally ~10% of the cache.
 constexpr size_t small_queue_ratio = 10;
 } // namespace
+
+scram_credential_cache::zeroizing_bytes::~zeroizing_bytes() {
+    crypto::secure_erase({data.data(), data.size()});
+}
 
 scram_credential_cache::scram_credential_cache(size_t capacity)
   : _digest_key(random_generators::get_crypto_bytes(digest_size))
@@ -46,7 +51,7 @@ scram_credential_cache::key_t scram_credential_cache::make_key(
     // cannot be matched against password guesses. HMAC rather than
     // sha256(secret ‖ inputs) because direct hashing has a length-extension
     // weakness; HMAC is the standard way to key a hash with a secret.
-    hmac_sha256 mac(_digest_key);
+    hmac_sha256 mac(_digest_key.data);
     // The packing must keep field boundaries unambiguous: password and
     // salt are both variable-length fields, so the password length is
     // written first; without it, (password "ab", salt "c") and (password
@@ -63,16 +68,17 @@ scram_credential_cache::key_t scram_credential_cache::make_key(
     return {.digest = mac.reset()};
 }
 
-std::optional<bytes> scram_credential_cache::get(
+ss::shared_ptr<const scram_credential_cache::zeroizing_bytes>
+scram_credential_cache::get(
   scram_algorithm_t mech,
   const credential_password& password,
   bytes_view salt,
   int iterations) {
     auto val = _cache.get_value(make_key(mech, password, salt, iterations));
     if (!val) {
-        return std::nullopt;
+        return nullptr;
     }
-    return **val;
+    return std::move(*val);
 }
 
 void scram_credential_cache::put(
@@ -83,7 +89,7 @@ void scram_credential_cache::put(
   bytes stored_key) {
     _cache.try_insert(
       make_key(mech, password, salt, iterations),
-      ss::make_shared<bytes>(std::move(stored_key)));
+      ss::make_shared<zeroizing_bytes>(std::move(stored_key)));
 }
 
 scram_credential_cache::stats_t scram_credential_cache::stats() const {
