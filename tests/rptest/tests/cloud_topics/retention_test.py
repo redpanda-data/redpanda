@@ -7,6 +7,8 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
+import time
+
 from rptest.services.kgo_verifier_services import KgoVerifierProducer
 from ducktape.mark import matrix
 from ducktape.tests.test import TestContext
@@ -298,4 +300,76 @@ class CloudTopicsRetentionTest(EndToEndCloudTopicsBase):
         # Waits until the the partition size reaches a reported size of 0
         ct_utils.wait_until_l1_partition_size(
             self.admin, self.topic_name, 0, lambda size: size == 0
+        )
+
+    def _assert_start_offset_stays_zero(
+        self,
+        topic: str,
+        partition: int,
+        duration_sec: int,
+        backoff_sec: int,
+    ):
+        """
+        Poll start_offset for `duration_sec`, asserting it never advances past
+        0. The window spans several housekeeping intervals (5s each), so any
+        retention enforcement would have fired and advanced the offset by the
+        time this returns.
+        """
+        deadline = time.monotonic() + duration_sec
+        while time.monotonic() < deadline:
+            part = self._get_partition_info(topic, partition)
+            self.logger.info(
+                f"start_offset for {topic}:{partition} = {part.start_offset} "
+                f"(hwm={part.high_watermark})"
+            )
+            assert part.start_offset == 0, (
+                f"Retention must not advance start_offset for a compact-only "
+                f"topic, but it advanced to {part.start_offset}"
+            )
+            time.sleep(backoff_sec)
+
+    @cluster(num_nodes=4)
+    @matrix(
+        cloud_storage_type=get_cloud_storage_type(),
+    )
+    def test_compact_only_topic_ignores_retention(
+        self, cloud_storage_type: CloudStorageType
+    ):
+        """
+        A compact-only topic (cleanup.policy=compact) must never have its start
+        offset advanced by retention, even with retention.bytes and retention.ms
+        set aggressively low. Retention (log deletion) only applies when the
+        cleanup policy enables deletion; compaction alone rewrites data but must
+        keep the log start offset pinned at 0.
+        """
+        num_messages = 3000
+        total_bytes = num_messages * 1024  # ~3MB, far above retention.bytes
+
+        rpk = RpkTool(self.redpanda)
+        rpk.create_topic(
+            topic=self.topic_name,
+            partitions=1,
+            replicas=3,
+            config={
+                TopicSpec.PROPERTY_STORAGE_MODE: TopicSpec.STORAGE_MODE_CLOUD,
+                "cleanup.policy": TopicSpec.CLEANUP_COMPACT,
+                # Aggressively low retention that WOULD advance the start offset
+                # if it were (incorrectly) applied to a compact-only topic.
+                "retention.bytes": "1024",
+                "retention.ms": "10",
+            },
+        )
+
+        self._produce(topic=self.topic_name, bytes_to_produce=total_bytes)
+        self.wait_until_reconciled(topic=self.topic_name, partition=0)
+
+        # Confirm data actually landed in L1, so retention would have something
+        # to act on.
+        ct_utils.wait_until_l1_partition_size(
+            self.admin, self.topic_name, 0, lambda size: size > 0
+        )
+
+        # Across several housekeeping intervals, the start offset must stay 0.
+        self._assert_start_offset_stays_zero(
+            topic=self.topic_name, partition=0, duration_sec=40, backoff_sec=5
         )

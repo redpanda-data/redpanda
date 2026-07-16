@@ -144,6 +144,7 @@ private:
 struct simple_retention_config {
     std::optional<size_t> bytes;
     std::optional<std::chrono::milliseconds> duration;
+    bool deletion_enabled = true;
 };
 
 class retention_config_impl
@@ -151,6 +152,10 @@ class retention_config_impl
 public:
     explicit retention_config_impl(const simple_retention_config& cfg)
       : _cfg(cfg) {}
+
+    bool deletion_enabled(const model::topic_id_partition&) override {
+        return _cfg.deletion_enabled;
+    }
 
     std::optional<size_t>
     retention_bytes(const model::topic_id_partition&) override {
@@ -535,6 +540,31 @@ TEST_F(HousekeeperTest, MixedRetentionBothDeleteAll) {
 
     housekeeper.do_housekeeping().get();
     EXPECT_EQ(start_offset(), kafka::offset{250});
+}
+
+TEST_F(HousekeeperTest, RetentionSkippedWhenDeletionDisabled) {
+    // A compact-only topic disables deletion: even aggressive retention must
+    // not advance the start offset.
+    simple_retention_config cfg;
+    cfg.bytes = 50_KiB;
+    cfg.duration = 5min;
+    cfg.deletion_enabled = false;
+    auto housekeeper = make_housekeeper(cfg);
+    EXPECT_EQ(start_offset(), kafka::offset{0});
+
+    add_object({
+      .records = 100,
+      .size = 2_MiB,
+      .max_timestamp = model::timestamp_clock::now() - 2h,
+    });
+    add_object({
+      .records = 150,
+      .size = 2_MiB,
+      .max_timestamp = model::timestamp_clock::now() - 1h,
+    });
+
+    housekeeper.do_housekeeping().get();
+    EXPECT_EQ(start_offset(), kafka::offset{0});
 }
 
 TEST_F(HousekeeperTest, MultipleObjectsTimeRetention) {

@@ -49,28 +49,31 @@ ss::future<> housekeeper::stop() {
 }
 
 ss::future<> housekeeper::do_housekeeping() {
-    kafka::offset new_start_offset = kafka::offset::min();
-    if (auto retention_bytes = _config->retention_bytes(_tidp)) {
-        new_start_offset = co_await do_bytes_retention(*retention_bytes);
-    }
-    if (auto retention_duration = _config->retention_duration(_tidp)) {
-        auto offset = co_await do_time_retention(*retention_duration);
-        new_start_offset = std::max(new_start_offset, offset);
-    }
-    auto max_allowed_start_offset = _l0_metastore->get_max_allowed_start_offset(
-      _tidp);
-    if (max_allowed_start_offset < new_start_offset) {
-        vlog(
-          cd_log.trace,
-          "{} - Pinning requested new start offset {} by max allowed start "
-          "offset {}",
-          _tidp,
-          new_start_offset,
-          max_allowed_start_offset);
-        new_start_offset = max_allowed_start_offset;
-    }
-    if (new_start_offset != kafka::offset::min()) {
-        co_await _l0_metastore->set_start_offset(_tidp, new_start_offset, &_as);
+    if (_config->deletion_enabled(_tidp)) {
+        kafka::offset new_start_offset = kafka::offset::min();
+        if (auto retention_bytes = _config->retention_bytes(_tidp)) {
+            new_start_offset = co_await do_bytes_retention(*retention_bytes);
+        }
+        if (auto retention_duration = _config->retention_duration(_tidp)) {
+            auto offset = co_await do_time_retention(*retention_duration);
+            new_start_offset = std::max(new_start_offset, offset);
+        }
+        auto max_allowed_start_offset
+          = _l0_metastore->get_max_allowed_start_offset(_tidp);
+        if (max_allowed_start_offset < new_start_offset) {
+            vlog(
+              cd_log.trace,
+              "{} - Pinning requested new start offset {} by max allowed start "
+              "offset {}",
+              _tidp,
+              new_start_offset,
+              max_allowed_start_offset);
+            new_start_offset = max_allowed_start_offset;
+        }
+        if (new_start_offset != kafka::offset::min()) {
+            co_await _l0_metastore->set_start_offset(
+              _tidp, new_start_offset, &_as);
+        }
     }
     // Sync the start offset back to the L1 metastore.
     // DeleteRecords may advance the L0 start offset past the L1 start offset.
