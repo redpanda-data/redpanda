@@ -719,6 +719,45 @@ replicated_metastore::get_end_offset_for_term(
 }
 
 ss::future<std::expected<void, metastore::errc>>
+replicated_metastore::commit_compaction_metadata(
+  const metastore::compaction_map_t& compaction_updates) {
+    chunked_hash_map<
+      model::partition_id,
+      chunked_hash_map<model::topic_id_partition, compaction_state_update>>
+      compaction_updates_by_partition;
+    for (auto& [tp, update] : compaction_updates) {
+        auto metastore_partition = fe_.metastore_partition(tp);
+        if (!metastore_partition) {
+            vlog(cd_log.warn, "Unable to get metastore partition for {}", tp);
+            co_return std::unexpected(errc::transport_error);
+        }
+        compaction_updates_by_partition[*metastore_partition].emplace(
+          tp, meta_to_rpc_compact_update(update));
+    }
+    for (auto& [partition_id, updates] : compaction_updates_by_partition) {
+        rpc::compact_objects_request req;
+        req.metastore_partition = partition_id;
+        req.compaction_updates = std::move(updates);
+        auto reply_fut = co_await ss::coroutine::as_future(
+          fe_.compact_objects(std::move(req)));
+        if (reply_fut.failed()) {
+            auto ex = reply_fut.get_exception();
+            vlog(cd_log.warn, "Error while sending request: {}", ex);
+            co_return std::unexpected(metastore::errc::transport_error);
+        }
+        auto reply = reply_fut.get();
+        if (reply.ec != rpc::errc::ok) {
+            vlog(
+              cd_log.debug,
+              "Error code received for request {}",
+              int(reply.ec));
+            co_return std::unexpected(rpc_to_meta_errc(reply.ec));
+        }
+    }
+    co_return std::expected<void, errc>{};
+}
+
+ss::future<std::expected<void, metastore::errc>>
 replicated_metastore::compact_objects(
   const metastore::object_metadata_builder& builder,
   const metastore::compaction_map_t& compaction_updates) {

@@ -74,6 +74,8 @@ public:
       const object_metadata_builder&, const compaction_map_t&) override;
     ss::future<std::expected<void, errc>> compact_objects(
       const chunked_vector<object_metadata>&, const compaction_map_t&);
+    ss::future<std::expected<void, errc>>
+    commit_compaction_metadata(const compaction_map_t&) override;
 
     ss::future<std::expected<compaction_offsets_response, errc>>
     get_compaction_offsets(const model::topic_id_partition&, model::timestamp);
