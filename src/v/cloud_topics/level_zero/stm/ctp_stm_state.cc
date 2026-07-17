@@ -17,14 +17,19 @@ namespace cloud_topics {
 
 void ctp_stm_state::advance_max_seen_epoch(
   model::term_id term, cluster_epoch epoch) noexcept {
-    if (term >= _seen_window_term && epoch > _max_seen_epoch) {
-        if (term > _seen_window_term) {
-            // If this is a new term, reset the window.
-            _previous_seen_epoch = epoch;
-            _seen_window_term = term;
-        } else {
-            _previous_seen_epoch = _max_seen_epoch.value_or(epoch);
-        }
+    if (term > _seen_window_term) {
+        // A new term always resets the window. The old window may carry a
+        // stale _max_seen_epoch above the new epoch (a fenced bump whose
+        // batch never landed before the leadership change); it must not
+        // survive into the new term or it blocks the reset and lets the
+        // stale window admit epochs the log no longer allows.
+        _seen_window_term = term;
+        _previous_seen_epoch = epoch;
+        _max_seen_epoch = epoch;
+        return;
+    }
+    if (term == _seen_window_term && epoch > _max_seen_epoch) {
+        _previous_seen_epoch = _max_seen_epoch.value_or(epoch);
         _max_seen_epoch = epoch;
     }
 }

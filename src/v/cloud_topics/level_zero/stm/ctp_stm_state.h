@@ -49,6 +49,10 @@ public:
 
     /// This is invoked in the write path before the batch with new
     /// epoch value is even replicated.
+    ///
+    /// A term newer than the seen-window term always resets the window to
+    /// [epoch, epoch]; within the same term only a larger epoch advances the
+    /// max (the previous max becomes the window min).
     void
     advance_max_seen_epoch(model::term_id term, cluster_epoch epoch) noexcept;
 

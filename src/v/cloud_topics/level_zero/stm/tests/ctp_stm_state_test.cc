@@ -341,6 +341,32 @@ TEST(ctp_stm_state_test, below_max_fence_allowed_with_applied_evidence) {
     EXPECT_FALSE(state.epoch_in_window(term, 131_epoch));
 }
 
+TEST(ctp_stm_state_test, seen_window_resets_on_term_change_despite_stale_max) {
+    // A fenced bump whose batch never lands can leave a very large
+    // _max_seen_epoch behind. A bump in a newer term must reset the window
+    // even when the new epoch is below the stale max, otherwise the stale
+    // window blocks the reset and the new term keeps fencing against it.
+    ct::ctp_stm_state state;
+    model::term_id term1(1);
+    model::term_id term2(2);
+
+    state.advance_max_seen_epoch(term1, 100_epoch);
+    EXPECT_EQ(state.get_max_seen_epoch(term1), 100_epoch);
+
+    // Epochs 7 and 8 land and apply (e.g. replicated by another leader).
+    state.advance_epoch(7_epoch, model::offset{0});
+    state.advance_epoch(8_epoch, model::offset{1});
+
+    // In the new term the stale window is invisible...
+    EXPECT_EQ(state.get_max_seen_epoch(term2), std::nullopt);
+    // ...and a bump below the stale max resets it.
+    state.advance_max_seen_epoch(term2, 9_epoch);
+    EXPECT_EQ(state.get_max_seen_epoch(term2), 9_epoch);
+    EXPECT_TRUE(state.epoch_in_window(term2, 9_epoch));
+    // Pre-bump epochs are fenced off until the bump batch applies.
+    EXPECT_FALSE(state.epoch_in_window(term2, 8_epoch));
+}
+
 TEST(ctp_stm_state_test, l0_simulation) {
     struct uploaded_l0_file_batch {
         ct::cluster_epoch epoch;
