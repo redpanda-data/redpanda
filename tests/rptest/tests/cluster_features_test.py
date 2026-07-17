@@ -23,7 +23,7 @@ from rptest.clients.admin.proto.redpanda.core.admin.v2 import (
 )
 from rptest.clients.admin.v2 import Admin as AdminV2
 from rptest.clients.kafka_cli_tools import KafkaCliTools
-from rptest.clients.rpk import RpkException, RpkTool
+from rptest.clients.rpk import RpkException, RpkTool, RpkUpgradeFinalizationState
 from rptest.clients.types import TopicSpec
 from rptest.services.admin import Admin
 from rptest.services.cluster import cluster
@@ -1252,12 +1252,17 @@ class ManualFinalizationUpgradeTest(UnfinalizedUpgradeMixin, FeaturesTestBase):
 
     It mirrors three ManualFinalizationTest scenarios end to end:
       - auto-finalization disabled blocks the post-upgrade advance,
-      - an explicit FinalizeUpgrade drives the advance, and
-      - GetUpgradeStatus reports the finalization lifecycle.
+      - an explicit finalize drives the advance, and
+      - the upgrade status reports the finalization lifecycle.
+
+    Where ManualFinalizationTest calls the admin v2 RPCs directly (pinning the
+    server-side API contract), this test drives the workflow through
+    `rpk cluster upgrade` status/finalize -- the operator surface built on
+    those RPCs -- so the rpk subcommands get end-to-end coverage.
 
     The old release has neither the gating logic nor the v2 RPCs, so the opt-out
     is set on the old binary (which also exercises the backported knob) and the
-    status/finalize RPCs are only invoked once every node is on HEAD.
+    status/finalize commands are only invoked once every node is on HEAD.
     """
 
     # DescribeRedpandaRoles occupies the reserved Redpanda Kafka API key range
@@ -1764,20 +1769,20 @@ class ManualFinalizationUpgradeTest(UnfinalizedUpgradeMixin, FeaturesTestBase):
         # even run. The active version is held at the old (downgrade floor)
         # version, with the uniform higher version available to finalize.
         status = self._wait_for_status_state(
-            features_pb2.FINALIZATION_STATE_READY_TO_FINALIZE
+            RpkUpgradeFinalizationState.READY_TO_FINALIZE
         )
         assert self.admin.get_features()["cluster_version"] == self.old_logical
-        assert status.active_version == self.old_logical
-        assert status.version_after_finalization == self.new_logical
-        assert not status.auto_finalization_enabled
+        assert status["active_version"] == self.old_logical
+        assert status["version_after_finalization"] == self.new_logical
+        assert not status["auto_finalization_enabled"]
 
         # Dwell and re-check: the version must stay held across subsequent
         # gating-loop ticks, not advance late.
         time.sleep(MANUAL_FINALIZE_HOLD_DWELL_SEC)
         assert self.admin.get_features()["cluster_version"] == self.old_logical
         assert (
-            self._get_upgrade_status().state
-            == features_pb2.FINALIZATION_STATE_READY_TO_FINALIZE
+            self._get_upgrade_status()["state"]
+            == RpkUpgradeFinalizationState.READY_TO_FINALIZE
         )
 
     @cluster(num_nodes=3, log_allow_list=RESTART_LOG_ALLOW_LIST)
@@ -1793,7 +1798,7 @@ class ManualFinalizationUpgradeTest(UnfinalizedUpgradeMixin, FeaturesTestBase):
         The old release has no v2 RPCs, so (unlike the synthetic test) the
         FINALIZED-at-rest state cannot be observed before the upgrade; the
         lifecycle is observed from READY_TO_FINALIZE (post-upgrade) through
-        FINALIZED, checked against both the v2 status and the v1 features API.
+        FINALIZED, checked against both the rpk status and the v1 features API.
         """
         self._start_at_old()
         self._disable_auto_finalization()
@@ -1803,26 +1808,28 @@ class ManualFinalizationUpgradeTest(UnfinalizedUpgradeMixin, FeaturesTestBase):
         self._restart_at_new(self.redpanda.nodes)
 
         status = self._wait_for_status_state(
-            features_pb2.FINALIZATION_STATE_READY_TO_FINALIZE
+            RpkUpgradeFinalizationState.READY_TO_FINALIZE
         )
-        assert status.active_version == self.old_logical
-        assert status.version_after_finalization == self.new_logical
-        # The v1 features API agrees with the v2 status: the advance is deferred,
-        # so cluster_version is still held at the old (downgrade-floor) version.
+        assert status["active_version"] == self.old_logical
+        assert status["version_after_finalization"] == self.new_logical
+        # The v1 features API agrees with the rpk status: the advance is
+        # deferred, so cluster_version is still held at the old
+        # (downgrade-floor) version.
         assert self.admin.get_features()["cluster_version"] == self.old_logical
-        assert len(status.members) == len(self.redpanda.nodes)
-        assert all(m.version_known and m.alive for m in status.members)
-        assert all(m.logical_version == self.new_logical for m in status.members)
+        members = status["members"]
+        assert len(members) == len(self.redpanda.nodes)
+        assert all(m["version_known"] and m["alive"] for m in members)
+        assert all(m["logical_version"] == self.new_logical for m in members)
         # release_version is plumbed through from the per-node health report.
-        assert all(m.release_version for m in status.members)
+        assert all(m["release_version"] for m in members)
 
         # Finalize: the active version catches up; no downgrade after this.
         self._finalize()
         self._wait_for_version_everywhere(self.new_logical)
 
-        status = self._wait_for_status_state(features_pb2.FINALIZATION_STATE_FINALIZED)
-        assert status.active_version == self.new_logical
-        assert status.version_after_finalization == self.new_logical
+        status = self._wait_for_status_state(RpkUpgradeFinalizationState.FINALIZED)
+        assert status["active_version"] == self.new_logical
+        assert status["version_after_finalization"] == self.new_logical
 
     @cluster(num_nodes=3, log_allow_list=RESTART_LOG_ALLOW_LIST)
     def test_config_passes_through_multi_hop_upgrade(self):
@@ -1905,15 +1912,15 @@ class ManualFinalizationUpgradeTest(UnfinalizedUpgradeMixin, FeaturesTestBase):
                 # so downgrade back across this hop IS preserved until it is
                 # finalized.
                 status = self._wait_for_status_state(
-                    features_pb2.FINALIZATION_STATE_READY_TO_FINALIZE
+                    RpkUpgradeFinalizationState.READY_TO_FINALIZE
                 )
                 assert self.admin.get_features()["cluster_version"] == held_version
-                assert status.active_version == held_version
-                assert status.version_after_finalization == hop_logical
+                assert status["active_version"] == held_version
+                assert status["version_after_finalization"] == hop_logical
                 # The decisive passthrough check: this binary sees
                 # auto-finalization as disabled even though the flag was set
                 # only once, on the oldest release.
-                assert not status.auto_finalization_enabled
+                assert not status["auto_finalization_enabled"]
 
                 if final_hop:
                     # Dwell and re-check: the version must stay held across
@@ -1926,10 +1933,10 @@ class ManualFinalizationUpgradeTest(UnfinalizedUpgradeMixin, FeaturesTestBase):
                 self._finalize()
                 self._wait_for_version_everywhere(hop_logical)
                 finalized = self._wait_for_status_state(
-                    features_pb2.FINALIZATION_STATE_FINALIZED
+                    RpkUpgradeFinalizationState.FINALIZED
                 )
-                assert finalized.active_version == hop_logical
-                assert finalized.version_after_finalization == hop_logical
+                assert finalized["active_version"] == hop_logical
+                assert finalized["version_after_finalization"] == hop_logical
             held_version = hop_logical
 
     @cluster(num_nodes=3, log_allow_list=RESTART_LOG_ALLOW_LIST)
@@ -1960,10 +1967,10 @@ class ManualFinalizationUpgradeTest(UnfinalizedUpgradeMixin, FeaturesTestBase):
             # what keeps the downgrade available.
             self._restart_at_new(self.redpanda.nodes)
             status = self._wait_for_status_state(
-                features_pb2.FINALIZATION_STATE_READY_TO_FINALIZE
+                RpkUpgradeFinalizationState.READY_TO_FINALIZE
             )
             assert self.admin.get_features()["cluster_version"] == old_logical
-            assert not status.auto_finalization_enabled
+            assert not status["auto_finalization_enabled"]
 
             self._perturb(f"cycle{cycle}-upgraded-unfinalized")
 
@@ -1983,14 +1990,12 @@ class ManualFinalizationUpgradeTest(UnfinalizedUpgradeMixin, FeaturesTestBase):
         # finalizing. The active version advances to the head version.
         self.logger.info("final attempt: upgrade -> finalize")
         self._restart_at_new(self.redpanda.nodes)
-        self._wait_for_status_state(features_pb2.FINALIZATION_STATE_READY_TO_FINALIZE)
+        self._wait_for_status_state(RpkUpgradeFinalizationState.READY_TO_FINALIZE)
         self._finalize()
         self._wait_for_version_everywhere(self.new_logical)
-        finalized = self._wait_for_status_state(
-            features_pb2.FINALIZATION_STATE_FINALIZED
-        )
-        assert finalized.active_version == self.new_logical
-        assert finalized.version_after_finalization == self.new_logical
+        finalized = self._wait_for_status_state(RpkUpgradeFinalizationState.FINALIZED)
+        assert finalized["active_version"] == self.new_logical
+        assert finalized["version_after_finalization"] == self.new_logical
 
         # With the upgrade finalized, the v26.2 feature gates have opened:
         # confirm the features actually work.
@@ -2028,10 +2033,10 @@ class ManualFinalizationUpgradeTest(UnfinalizedUpgradeMixin, FeaturesTestBase):
         # Upgrade and this time finalize, advancing the active version past what
         # the old binary supports.
         self._restart_at_new(self.redpanda.nodes)
-        self._wait_for_status_state(features_pb2.FINALIZATION_STATE_READY_TO_FINALIZE)
+        self._wait_for_status_state(RpkUpgradeFinalizationState.READY_TO_FINALIZE)
         self._finalize()
         self._wait_for_version_everywhere(self.new_logical)
-        self._wait_for_status_state(features_pb2.FINALIZATION_STATE_FINALIZED)
+        self._wait_for_status_state(RpkUpgradeFinalizationState.FINALIZED)
 
         # Attempt to roll a single node back to the old release. The old binary
         # reads the persisted feature table, sees the cluster advanced past the
