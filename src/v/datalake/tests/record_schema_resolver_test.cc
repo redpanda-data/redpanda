@@ -594,7 +594,7 @@ public:
         co_return &_store;
     }
     ss::future<ss::lowres_clock::time_point>
-    sync(ss::lowres_clock::duration, ssx::sharded_abort_source*) override {
+    sync(ss::lowres_clock::duration) override {
         co_return ss::lowres_clock::now();
     }
     ss::future<pandaproxy::schema_registry::schema_definition>
@@ -642,50 +642,44 @@ public:
     }
 
     ss::future<pandaproxy::schema_registry::context_schema_id> import_schema(
-      pandaproxy::schema_registry::stored_schema imported,
-      ssx::sharded_abort_source* as) override {
-        return _registry.import_schema(std::move(imported), as);
+      pandaproxy::schema_registry::stored_schema imported) override {
+        return _registry.import_schema(std::move(imported));
     }
 
     ss::future<bool> soft_delete_schema(
       pandaproxy::schema_registry::context_subject sub,
-      pandaproxy::schema_registry::schema_version version,
-      ssx::sharded_abort_source* as) override {
-        return _registry.soft_delete_schema(std::move(sub), version, as);
+      pandaproxy::schema_registry::schema_version version) override {
+        return _registry.soft_delete_schema(std::move(sub), version);
     }
 
     ss::future<chunked_vector<pandaproxy::schema_registry::schema_version>>
     permanent_delete_schema(
       pandaproxy::schema_registry::context_subject sub,
-      std::optional<pandaproxy::schema_registry::schema_version> version,
-      ssx::sharded_abort_source* as) override {
-        return _registry.permanent_delete_schema(std::move(sub), version, as);
+      std::optional<pandaproxy::schema_registry::schema_version> version)
+      override {
+        return _registry.permanent_delete_schema(std::move(sub), version);
     }
 
     ss::future<bool> write_mode(
       pandaproxy::schema_registry::context_subject sub,
-      pandaproxy::schema_registry::mode mode,
-      ssx::sharded_abort_source* as) override {
-        return _registry.write_mode(std::move(sub), mode, as);
+      pandaproxy::schema_registry::mode mode) override {
+        return _registry.write_mode(std::move(sub), mode);
     }
 
-    ss::future<bool> delete_mode(
-      pandaproxy::schema_registry::context_subject sub,
-      ssx::sharded_abort_source* as) override {
-        return _registry.delete_mode(std::move(sub), as);
+    ss::future<bool>
+    delete_mode(pandaproxy::schema_registry::context_subject sub) override {
+        return _registry.delete_mode(std::move(sub));
     }
 
     ss::future<bool> write_config(
       pandaproxy::schema_registry::context_subject sub,
-      pandaproxy::schema_registry::compatibility_level compat,
-      ssx::sharded_abort_source* as) override {
-        return _registry.write_config(std::move(sub), compat, as);
+      pandaproxy::schema_registry::compatibility_level compat) override {
+        return _registry.write_config(std::move(sub), compat);
     }
 
-    ss::future<bool> delete_config(
-      pandaproxy::schema_registry::context_subject sub,
-      ssx::sharded_abort_source* as) override {
-        return _registry.delete_config(std::move(sub), as);
+    ss::future<bool>
+    delete_config(pandaproxy::schema_registry::context_subject sub) override {
+        return _registry.delete_config(std::move(sub));
     }
 
     ss::future<>

@@ -19,9 +19,7 @@
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/sharded.hh>
 
-#include <functional>
 #include <memory>
-#include <optional>
 
 namespace kafka::data::rpc {
 class topic_creator;
@@ -42,14 +40,12 @@ public:
     ss::future<> stop() final;
 
     ss::future<produce_result> produce(model::record_batch batch) override;
-    ss::future<model::offset> get_high_watermark(
-      std::optional<std::reference_wrapper<ss::abort_source>> as) override;
+    ss::future<model::offset> get_high_watermark() override;
     ss::future<> consume_range(
       model::offset start,
       model::offset end,
       ss::noncopyable_function<
-        ss::future<ss::stop_iteration>(model::record_batch)> consumer,
-      std::optional<std::reference_wrapper<ss::abort_source>> as) override;
+        ss::future<ss::stop_iteration>(model::record_batch)> consumer) override;
 
     ss::future<> configure();
     ss::future<cluster::errc> create_topic(

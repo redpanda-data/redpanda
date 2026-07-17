@@ -108,7 +108,6 @@ public:
     reconciler(
       source_reader* source,
       schema::registry* destination,
-      ssx::sharded_abort_source* dest_as,
       ss::noncopyable_function<bool(const ppsr::context_subject&)> in_scope,
       const context_mapper& mapper,
       limits lim,
@@ -224,8 +223,6 @@ private:
 
     source_reader* _source;
     schema::registry* _destination;
-    // Run-scoped destination abort handle, forwarded to import_schema.
-    ssx::sharded_abort_source* _dest_as;
     ss::noncopyable_function<bool(const ppsr::context_subject&)> _in_scope;
     const context_mapper* _mapper;
     limits _limits;

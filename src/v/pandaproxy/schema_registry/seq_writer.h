@@ -18,7 +18,6 @@
 #include "pandaproxy/schema_registry/transport.h"
 #include "pandaproxy/schema_registry/types.h"
 #include "random/simple_time_jitter.h"
-#include "ssx/abort_source.h"
 #include "ssx/semaphore.h"
 #include "utils/retry.h"
 
@@ -62,7 +61,7 @@ public:
       , _node_id(node_id)
       , _state_checker(std::move(state_checker)) {}
 
-    ss::future<> read_sync(ssx::sharded_abort_source* as = nullptr);
+    ss::future<> read_sync();
 
     // Throws 42205 if the subject cannot be modified
     ss::future<> check_mutable(
@@ -79,19 +78,16 @@ public:
     /// Internal sync path for importing a subject version with caller-supplied
     /// schema ID, version, and deleted state. Bypasses client write guards
     /// such as read-only mode and mode_mutability.
-    ss::future<sharded_store::insert_result> write_subject_version_imported(
-      stored_schema schema, ssx::sharded_abort_source* as = nullptr);
+    ss::future<sharded_store::insert_result>
+    write_subject_version_imported(stored_schema schema);
 
     ss::future<bool> write_config(
       context_subject ctx_sub,
       compatibility_level compat,
-      write_source src = write_source::client,
-      ssx::sharded_abort_source* as = nullptr);
+      write_source src = write_source::client);
 
     ss::future<bool> delete_config(
-      context_subject ctx_sub,
-      write_source src = write_source::client,
-      ssx::sharded_abort_source* as = nullptr);
+      context_subject ctx_sub, write_source src = write_source::client);
 
     /// \param f bypasses only the import-mode emptiness check, never
     /// mode_mutability.
@@ -99,13 +95,10 @@ public:
       context_subject ctx_sub,
       mode m,
       force f,
-      write_source src = write_source::client,
-      ssx::sharded_abort_source* as = nullptr);
+      write_source src = write_source::client);
 
     ss::future<bool> delete_mode(
-      context_subject ctx_sub,
-      write_source src = write_source::client,
-      ssx::sharded_abort_source* as = nullptr);
+      context_subject ctx_sub, write_source src = write_source::client);
 
     ss::future<>
     delete_context(context ctx, write_source src = write_source::client);
@@ -113,8 +106,7 @@ public:
     ss::future<bool> delete_subject_version(
       context_subject sub,
       schema_version version,
-      write_source src = write_source::client,
-      ssx::sharded_abort_source* as = nullptr);
+      write_source src = write_source::client);
 
     ss::future<chunked_vector<schema_version>> delete_subject_impermanent(
       context_subject sub, write_source src = write_source::client);
@@ -122,8 +114,7 @@ public:
     ss::future<chunked_vector<schema_version>> delete_subject_permanent(
       context_subject sub,
       std::optional<schema_version> version,
-      write_source src = write_source::client,
-      ssx::sharded_abort_source* as = nullptr);
+      write_source src = write_source::client);
 
 private:
     ss::smp_submit_to_options _smp_opts;
@@ -185,59 +176,39 @@ private:
     /// Helper for write paths that use sequence+retry logic to synchronize
     /// multiple writing nodes.
     template<typename F>
-    auto sequenced_write(
-      F f,
-      context ctx,
-      write_source src = write_source::client,
-      ssx::sharded_abort_source* as = nullptr) {
+    auto
+    sequenced_write(F f, context ctx, write_source src = write_source::client) {
         if (_state_checker->writes_disabled(src, ctx)) [[unlikely]] {
             throw as_exception(writes_disabled());
         }
         auto base_backoff = _jitter.next_duration();
-        auto remote = [base_backoff, f, as](seq_writer& seq) {
-            return seq.sequenced_write_remote(f, base_backoff, as);
+        auto remote = [base_backoff, f](seq_writer& seq) {
+            if (auto waiters = seq._write_sem.waiters(); waiters != 0) {
+                vlog(
+                  srlog.trace,
+                  "sequenced_write waiting for {} waiters",
+                  waiters);
+            }
+            return ss::with_semaphore(
+              seq._write_sem, 1, [&seq, f, base_backoff]() {
+                  if (
+                    auto waiters = seq._wait_for_sem.waiters(); waiters != 0) {
+                      vlog(
+                        srlog.debug,
+                        "sequenced_write acquired write_sem with {} "
+                        "wait_for_sem waiters",
+                        waiters);
+                  }
+                  return retry_with_backoff(
+                    max_retries,
+                    [f, &seq]() { return seq.sequenced_write_inner(f); },
+                    base_backoff);
+              });
         };
 
         return container()
           .invoke_on(reader_shard, _smp_opts, remote)
           .then([](auto res) { return std::move(res).value(); });
-    }
-
-    /// The shard-zero body of sequenced_write: serialize on _write_sem, then
-    /// run the read-then-write attempt loop. A member coroutine (not a lambda
-    /// coroutine) so the frame owns its state across suspensions. `as` is the
-    /// caller's abort handle, resolved to this shard's instance here (after
-    /// the hop): it aborts the semaphore wait and the retry loop's pre-checks
-    /// and backoff sleeps.
-    template<
-      typename F,
-      typename invoke_result_t = typename std::
-        invoke_result_t<F, model::offset, seq_writer&>::value_type::value_type>
-    ss::future<
-      outcome::outcome<invoke_result_t, std::error_code, std::exception_ptr>>
-    sequenced_write_remote(
-      F f,
-      ss::lowres_clock::duration base_backoff,
-      ssx::sharded_abort_source* as) {
-        if (auto waiters = _write_sem.waiters(); waiters != 0) {
-            vlog(
-              srlog.trace, "sequenced_write waiting for {} waiters", waiters);
-        }
-        auto units = as != nullptr
-                       ? co_await ss::get_units(_write_sem, 1, as->local())
-                       : co_await ss::get_units(_write_sem, 1);
-        if (auto waiters = _wait_for_sem.waiters(); waiters != 0) {
-            vlog(
-              srlog.debug,
-              "sequenced_write acquired write_sem with {} "
-              "wait_for_sem waiters",
-              waiters);
-        }
-        co_return co_await retry_with_backoff(
-          max_retries,
-          [&f, this, as]() { return sequenced_write_inner(f, as); },
-          base_backoff,
-          as != nullptr ? std::optional{std::ref(as->local())} : std::nullopt);
     }
 
     /// The part of sequenced_write that runs on shard zero
@@ -254,10 +225,10 @@ private:
         invoke_result_t<F, model::offset, seq_writer&>::value_type::value_type>
     ss::future<
       outcome::outcome<invoke_result_t, std::error_code, std::exception_ptr>>
-    sequenced_write_inner(F f, ssx::sharded_abort_source* as = nullptr) {
+    sequenced_write_inner(F f) {
         // If we run concurrently with them, redundant replays to the store
         // will be safely dropped based on offset.
-        co_await read_sync(as);
+        co_await read_sync();
 
         auto next_offset = _loaded_offset + model::offset{1};
         std::optional<invoke_result_t> r;
@@ -279,10 +250,7 @@ private:
       std::optional<model::offset> write_at, model::record_batch batch);
 
     /// Block until this offset is available, fetching if necessary
-    ss::future<>
-    wait_for(model::offset offset, ssx::sharded_abort_source* as = nullptr);
-    ss::future<>
-    wait_for_inner(model::offset offset, ssx::sharded_abort_source* as);
+    ss::future<> wait_for(model::offset offset);
 
     std::unique_ptr<sequence_state_checker> _state_checker;
 

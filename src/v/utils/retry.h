@@ -67,10 +67,8 @@ ss::futurize_t<std::invoke_result_t<Func>> retry_with_backoff(
                      if (as.has_value()) {
                          try {
                              as->get().check();
-                         } catch (...) {
-                             // Preserve the concrete abort exception type so
-                             // callers can classify it as a shutdown.
-                             promise.set_exception(std::current_exception());
+                         } catch (const std::exception& e) {
+                             promise.set_exception(e);
                              return ss::make_ready_future<stop_iteration>(
                                stop_iteration::yes);
                          }
@@ -104,7 +102,7 @@ ss::futurize_t<std::invoke_result_t<Func>> retry_with_backoff(
                              auto sleep_dur = base_backoff * next;
                              auto f = (as.has_value())
                                         ? ss::sleep_abortable(sleep_dur, *as)
-                                        : ss::sleep(sleep_dur);
+                                        : ss::sleep(sleep_dur * next);
                              return f.then([] { return stop_iteration::no; })
                                .handle_exception(
                                  [&promise](std::exception_ptr e) {

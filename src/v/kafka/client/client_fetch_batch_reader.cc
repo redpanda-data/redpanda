@@ -26,14 +26,12 @@ public:
       kafka::client::client& client,
       model::topic_partition tp,
       model::offset first,
-      model::offset last,
-      std::optional<std::reference_wrapper<ss::abort_source>> ext_as)
+      model::offset last)
       : _client{client}
       , _tp{std::move(tp)}
       , _next_offset{first}
       , _last_offset{last}
-      , _batch_reader{}
-      , _ext_as{ext_as} {}
+      , _batch_reader{} {}
 
     // Implements model::record_batch_reader::impl
     bool is_end_of_stream() const final { return _next_offset >= _last_offset; }
@@ -50,9 +48,7 @@ public:
               _tp,
               _next_offset,
               std::chrono::duration_cast<std::chrono::milliseconds>(
-                t - model::timeout_clock::now()),
-              std::nullopt,
-              _ext_as);
+                t - model::timeout_clock::now()));
             vlog(
               _client.logger().debug,
               "fetch_batch_reader: fetch result: {}",
@@ -97,17 +93,15 @@ private:
     model::offset _next_offset;
     model::offset _last_offset;
     std::optional<kafka::batch_reader> _batch_reader;
-    std::optional<std::reference_wrapper<ss::abort_source>> _ext_as;
 };
 
 model::record_batch_reader make_client_fetch_batch_reader(
   kafka::client::client& client,
   model::topic_partition tp,
   model::offset first,
-  model::offset last,
-  std::optional<std::reference_wrapper<ss::abort_source>> ext_as) {
+  model::offset last) {
     return model::make_record_batch_reader<client_fetcher>(
-      client, std::move(tp), first, last, ext_as);
+      client, std::move(tp), first, last);
 }
 
 } // namespace kafka::client

@@ -42,7 +42,6 @@ redpanda_test_cc_library(
         "//src/v/pandaproxy/schema_registry:types",
         "//src/v/schema:registry",
         "//src/v/schema/tests:fake_registry",
-        "//src/v/ssx:abort_source",
         "@seastar",
     ],
 )

@@ -20,12 +20,10 @@
 #include "pandaproxy/schema_registry/types.h"
 #include "schema/registry.h"
 #include "schema/tests/fake_registry.h"
-#include "ssx/abort_source.h"
 
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/coroutine.hh>
 #include <seastar/core/future.hh>
-#include <seastar/core/sleep.hh>
 #include <seastar/util/noncopyable_function.hh>
 
 #include <memory>
@@ -401,7 +399,6 @@ struct reconcile_harness {
         return srs::reconciler{
           &reader,
           &destination,
-          /*dest_as=*/nullptr,
           std::move(in_scope),
           mapper,
           lim,
@@ -429,9 +426,9 @@ public:
     explicit delegating_registry(schema::registry* inner)
       : _inner(inner) {}
 
-    ss::future<ppsr::context_schema_id> import_schema(
-      ppsr::stored_schema schema, ssx::sharded_abort_source* as) override {
-        return _inner->import_schema(std::move(schema), as);
+    ss::future<ppsr::context_schema_id>
+    import_schema(ppsr::stored_schema schema) override {
+        return _inner->import_schema(std::move(schema));
     }
     bool is_enabled() const override { return _inner->is_enabled(); }
     ss::future<> ensure_internal_topic() override {
@@ -443,10 +440,9 @@ public:
     ss::future<ppsr::schema_getter*> synced_getter() const override {
         return _inner->synced_getter();
     }
-    ss::future<ss::lowres_clock::time_point> sync(
-      ss::lowres_clock::duration max_age,
-      ssx::sharded_abort_source* as) override {
-        return _inner->sync(max_age, as);
+    ss::future<ss::lowres_clock::time_point>
+    sync(ss::lowres_clock::duration max_age) override {
+        return _inner->sync(max_age);
     }
     ss::future<ppsr::schema_definition>
     get_schema_definition(ppsr::context_schema_id id) const override {
@@ -479,36 +475,27 @@ public:
         return _inner->create_schema(std::move(s));
     }
     ss::future<bool> soft_delete_schema(
-      ppsr::context_subject sub,
-      ppsr::schema_version v,
-      ssx::sharded_abort_source* as) override {
-        return _inner->soft_delete_schema(std::move(sub), v, as);
+      ppsr::context_subject sub, ppsr::schema_version v) override {
+        return _inner->soft_delete_schema(std::move(sub), v);
     }
     ss::future<chunked_vector<ppsr::schema_version>> permanent_delete_schema(
       ppsr::context_subject sub,
-      std::optional<ppsr::schema_version> v,
-      ssx::sharded_abort_source* as) override {
-        return _inner->permanent_delete_schema(std::move(sub), v, as);
+      std::optional<ppsr::schema_version> v) override {
+        return _inner->permanent_delete_schema(std::move(sub), v);
     }
-    ss::future<bool> write_mode(
-      ppsr::context_subject sub,
-      ppsr::mode m,
-      ssx::sharded_abort_source* as) override {
-        return _inner->write_mode(std::move(sub), m, as);
+    ss::future<bool>
+    write_mode(ppsr::context_subject sub, ppsr::mode m) override {
+        return _inner->write_mode(std::move(sub), m);
     }
-    ss::future<bool> delete_mode(
-      ppsr::context_subject sub, ssx::sharded_abort_source* as) override {
-        return _inner->delete_mode(std::move(sub), as);
+    ss::future<bool> delete_mode(ppsr::context_subject sub) override {
+        return _inner->delete_mode(std::move(sub));
     }
     ss::future<bool> write_config(
-      ppsr::context_subject sub,
-      ppsr::compatibility_level c,
-      ssx::sharded_abort_source* as) override {
-        return _inner->write_config(std::move(sub), c, as);
+      ppsr::context_subject sub, ppsr::compatibility_level c) override {
+        return _inner->write_config(std::move(sub), c);
     }
-    ss::future<bool> delete_config(
-      ppsr::context_subject sub, ssx::sharded_abort_source* as) override {
-        return _inner->delete_config(std::move(sub), as);
+    ss::future<bool> delete_config(ppsr::context_subject sub) override {
+        return _inner->delete_config(std::move(sub));
     }
     ss::future<> delete_context(ppsr::context ctx) override {
         return _inner->delete_context(std::move(ctx));
@@ -531,10 +518,10 @@ public:
       : delegating_registry(inner)
       , _block_after(block_after) {}
 
-    ss::future<ppsr::context_schema_id> import_schema(
-      ppsr::stored_schema schema, ssx::sharded_abort_source* as) override {
+    ss::future<ppsr::context_schema_id>
+    import_schema(ppsr::stored_schema schema) override {
         if (_imports_seen++ < _block_after) {
-            co_return co_await _inner->import_schema(std::move(schema), as);
+            co_return co_await _inner->import_schema(std::move(schema));
         }
         if (!_entered_set) {
             _entered_set = true;
@@ -543,7 +530,7 @@ public:
         // Park until the test releases (clean completion) or aborts (the wait
         // resolves with abort_requested).
         co_await _release.get_future();
-        co_return co_await _inner->import_schema(std::move(schema), as);
+        co_return co_await _inner->import_schema(std::move(schema));
     }
 
     ss::future<> entered() { return _entered.get_future(); }
@@ -564,64 +551,6 @@ private:
     ss::promise<> _release;
 };
 
-// Wraps a destination registry, parking `import_schema` until the abort
-// handle the caller passed fires. Models a destination write stuck in broker
-// teardown: the wait resolves only through the threaded abort_source, so a
-// task that does not pass its run abort into destination operations wedges
-// here until the test's release() escape hatch.
-class abort_gated_import_registry final : public delegating_registry {
-public:
-    /// `block_after` imports are forwarded to the inner registry; the next
-    /// one parks until the caller-passed abort fires (or release()).
-    explicit abort_gated_import_registry(
-      schema::registry* inner, size_t block_after = 0)
-      : delegating_registry(inner)
-      , _block_after(block_after) {}
-
-    ss::future<ppsr::context_schema_id> import_schema(
-      ppsr::stored_schema schema, ssx::sharded_abort_source* as) override {
-        if (_imports_seen++ < _block_after) {
-            co_return co_await _inner->import_schema(std::move(schema), as);
-        }
-        if (!_entered_set) {
-            _entered_set = true;
-            _entered.set_value();
-        }
-        if (as != nullptr) {
-            try {
-                co_await ss::sleep_abortable(
-                  std::chrono::hours{1}, as->local());
-            } catch (const ss::sleep_aborted&) {
-                // Surface the abort itself, shutdown-classified, the way an
-                // abort-aware production destination would.
-                as->local().check();
-            }
-        } else {
-            // No abort handle threaded through: only the escape hatch ends
-            // the park (today's un-abortable hang, bounded for teardown).
-            co_await _release.get_future();
-        }
-        co_return co_await _inner->import_schema(std::move(schema), as);
-    }
-
-    ss::future<> entered() { return _entered.get_future(); }
-
-    void release() {
-        if (!_released) {
-            _released = true;
-            _release.set_value();
-        }
-    }
-
-private:
-    size_t _block_after;
-    size_t _imports_seen{0};
-    bool _entered_set{false};
-    bool _released{false};
-    ss::promise<> _entered;
-    ss::promise<> _release;
-};
-
 // Wraps a destination registry, throwing a configured schema-registry error for
 // specific (subject, version) imports and delegating everything else. Lets a
 // test inject a per-item import failure the in-memory fake would never produce
@@ -638,14 +567,14 @@ public:
         _failures.emplace(key, ppsr::error_info{code, std::move(message)});
     }
 
-    ss::future<ppsr::context_schema_id> import_schema(
-      ppsr::stored_schema schema, ssx::sharded_abort_source* as) override {
+    ss::future<ppsr::context_schema_id>
+    import_schema(ppsr::stored_schema schema) override {
         ppsr::subject_version key{schema.schema.sub(), schema.version};
         if (auto it = _failures.find(key); it != _failures.end()) {
             return ss::make_exception_future<ppsr::context_schema_id>(
               ppsr::as_exception(it->second));
         }
-        return _inner->import_schema(std::move(schema), as);
+        return _inner->import_schema(std::move(schema));
     }
 
 private:
@@ -667,14 +596,12 @@ public:
     }
 
     ss::future<bool> write_config(
-      ppsr::context_subject sub,
-      ppsr::compatibility_level c,
-      ssx::sharded_abort_source* as) override {
+      ppsr::context_subject sub, ppsr::compatibility_level c) override {
         if (auto it = _failures.find(sub); it != _failures.end()) {
             return ss::make_exception_future<bool>(
               ppsr::as_exception(it->second));
         }
-        return _inner->write_config(std::move(sub), c, as);
+        return _inner->write_config(std::move(sub), c);
     }
 
 private:
@@ -718,8 +645,7 @@ public:
 
     ss::future<chunked_vector<ppsr::schema_version>> permanent_delete_schema(
       ppsr::context_subject sub,
-      std::optional<ppsr::schema_version> v,
-      ssx::sharded_abort_source* as) override {
+      std::optional<ppsr::schema_version> v) override {
         ++_attempts[sub];
         if (auto f = _fail_with.find(sub); f != _fail_with.end()) {
             return ss::make_exception_future<
@@ -738,7 +664,7 @@ public:
                 "referenced by a live schema"}));
         }
         _purged.insert(sub);
-        return _inner->permanent_delete_schema(std::move(sub), v, as);
+        return _inner->permanent_delete_schema(std::move(sub), v);
     }
 
 private:

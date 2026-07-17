@@ -110,14 +110,12 @@ void adjust_units(
 reconciler::reconciler(
   source_reader* source,
   schema::registry* destination,
-  ssx::sharded_abort_source* dest_as,
   ss::noncopyable_function<bool(const ppsr::context_subject&)> in_scope,
   const context_mapper& mapper,
   limits lim,
   model::schema_registry_sync_config::unsupported_feature_policy feature_policy)
   : _source(source)
   , _destination(destination)
-  , _dest_as(dest_as)
   , _in_scope(std::move(in_scope))
   , _mapper(&mapper)
   , _limits(lim)
@@ -466,7 +464,7 @@ ss::future<bool> reconciler::import_body(
         co_return false;
     }
     auto fut = co_await ss::coroutine::as_future(
-      _destination->import_schema(std::move(*remapped), _dest_as));
+      _destination->import_schema(std::move(*remapped)));
     if (fut.failed()) {
         auto eptr = fut.get_exception();
         if (ssx::is_shutdown_exception(eptr)) {

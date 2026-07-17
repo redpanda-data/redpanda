@@ -107,16 +107,9 @@ struct batch_builder : public storage::record_batch_builder {
 /// Call this before reading from the store, if servicing
 /// a REST API endpoint that requires global knowledge of latest
 /// data (i.e. any listings)
-ss::future<> seq_writer::read_sync(ssx::sharded_abort_source* as) {
-    // Resolved on the calling shard: seq_writer is peering-sharded and each
-    // shard owns its own transport/client, so the local abort instance is
-    // the right one both for facade-shard calls and the shard-zero
-    // sequenced_write path.
-    auto ext = as != nullptr
-                 ? std::optional{std::ref(as->local())}
-                 : std::optional<std::reference_wrapper<ss::abort_source>>{};
-    auto max_offset = co_await _transport->get_high_watermark(ext);
-    co_await wait_for(max_offset - model::offset{1}, as);
+ss::future<> seq_writer::read_sync() {
+    auto max_offset = co_await _transport->get_high_watermark();
+    co_await wait_for(max_offset - model::offset{1});
     co_await _store.process_marked_schemas();
 }
 
@@ -134,40 +127,29 @@ ss::future<> seq_writer::check_mutable(
     co_return;
 }
 
-ss::future<>
-seq_writer::wait_for(model::offset offset, ssx::sharded_abort_source* as) {
+ss::future<> seq_writer::wait_for(model::offset offset) {
     return container().invoke_on(
-      reader_shard, _smp_opts, [offset, as](seq_writer& seq) {
-          return seq.wait_for_inner(offset, as);
+      reader_shard, _smp_opts, [offset](seq_writer& seq) {
+          if (auto waiters = seq._wait_for_sem.waiters(); waiters != 0) {
+              vlog(srlog.trace, "wait_for waiting for {} waiters", waiters);
+          }
+          return ss::with_semaphore(seq._wait_for_sem, 1, [&seq, offset]() {
+              if (offset > seq._loaded_offset) {
+                  vlog(
+                    srlog.debug,
+                    "wait_for dirty!  Reading {}..{}",
+                    seq._loaded_offset,
+                    offset);
+                  return seq._transport->consume_range(
+                    seq._loaded_offset + model::offset{1},
+                    offset + model::offset{1},
+                    consume_to_store{seq._store, seq});
+              } else {
+                  vlog(srlog.trace, "wait_for clean (offset  {})", offset);
+                  return ss::make_ready_future<>();
+              }
+          });
       });
-}
-
-ss::future<> seq_writer::wait_for_inner(
-  model::offset offset, ssx::sharded_abort_source* as) {
-    if (auto waiters = _wait_for_sem.waiters(); waiters != 0) {
-        vlog(srlog.trace, "wait_for waiting for {} waiters", waiters);
-    }
-    auto units = as != nullptr
-                   ? co_await ss::get_units(_wait_for_sem, 1, as->local())
-                   : co_await ss::get_units(_wait_for_sem, 1);
-    if (offset > _loaded_offset) {
-        vlog(
-          srlog.debug,
-          "wait_for dirty!  Reading {}..{}",
-          _loaded_offset,
-          offset);
-        auto ext
-          = as != nullptr
-              ? std::optional{std::ref(as->local())}
-              : std::optional<std::reference_wrapper<ss::abort_source>>{};
-        co_await _transport->consume_range(
-          _loaded_offset + model::offset{1},
-          offset + model::offset{1},
-          consume_to_store{_store, *this},
-          ext);
-    } else {
-        vlog(srlog.trace, "wait_for clean (offset  {})", offset);
-    }
 }
 
 /// Helper for write methods that need to check + retry if their
@@ -415,16 +397,14 @@ seq_writer::do_write_subject_version_imported(
 }
 
 ss::future<sharded_store::insert_result>
-seq_writer::write_subject_version_imported(
-  stored_schema schema, ssx::sharded_abort_source* as) {
+seq_writer::write_subject_version_imported(stored_schema schema) {
     co_return co_await sequenced_write(
       [&schema](model::offset write_at, seq_writer& seq) {
           return seq.do_write_subject_version_imported(
             schema.share(), write_at);
       },
       schema.schema.sub().ctx,
-      write_source::schema_registry_sync,
-      as);
+      write_source::schema_registry_sync);
 }
 
 ss::future<std::optional<bool>> seq_writer::do_write_config(
@@ -475,10 +455,7 @@ ss::future<std::optional<bool>> seq_writer::do_write_config(
 }
 
 ss::future<bool> seq_writer::write_config(
-  context_subject ctx_sub,
-  compatibility_level compat,
-  write_source src,
-  ssx::sharded_abort_source* as) {
+  context_subject ctx_sub, compatibility_level compat, write_source src) {
     auto ctx = ctx_sub.ctx;
     return sequenced_write(
       [ctx_sub{std::move(ctx_sub)}, compat, src](
@@ -486,8 +463,7 @@ ss::future<bool> seq_writer::write_config(
           return seq.do_write_config(ctx_sub, compat, write_at, src);
       },
       std::move(ctx),
-      src,
-      as);
+      src);
 }
 
 ss::future<std::optional<bool>>
@@ -523,16 +499,15 @@ seq_writer::do_delete_config(context_subject ctx_sub, write_source src) {
     }
 }
 
-ss::future<bool> seq_writer::delete_config(
-  context_subject ctx_sub, write_source src, ssx::sharded_abort_source* as) {
+ss::future<bool>
+seq_writer::delete_config(context_subject ctx_sub, write_source src) {
     auto ctx = ctx_sub.ctx;
     return sequenced_write(
       [ctx_sub{std::move(ctx_sub)}, src](model::offset, seq_writer& seq) {
           return seq.do_delete_config(ctx_sub, src);
       },
       std::move(ctx),
-      src,
-      as);
+      src);
 }
 
 ss::future<std::optional<bool>> seq_writer::do_write_mode(
@@ -616,11 +591,7 @@ ss::future<std::optional<bool>> seq_writer::do_write_mode(
 }
 
 ss::future<bool> seq_writer::write_mode(
-  context_subject ctx_sub,
-  mode mode,
-  force f,
-  write_source src,
-  ssx::sharded_abort_source* as) {
+  context_subject ctx_sub, mode mode, force f, write_source src) {
     auto ctx = ctx_sub.ctx;
     return sequenced_write(
       [ctx_sub{std::move(ctx_sub)}, mode, f, src](
@@ -628,8 +599,7 @@ ss::future<bool> seq_writer::write_mode(
           return seq.do_write_mode(ctx_sub, mode, f, write_at, src);
       },
       std::move(ctx),
-      src,
-      as);
+      src);
 }
 
 ss::future<std::optional<bool>> seq_writer::do_delete_mode(
@@ -661,8 +631,8 @@ ss::future<std::optional<bool>> seq_writer::do_delete_mode(
     }
 }
 
-ss::future<bool> seq_writer::delete_mode(
-  context_subject ctx_sub, write_source src, ssx::sharded_abort_source* as) {
+ss::future<bool>
+seq_writer::delete_mode(context_subject ctx_sub, write_source src) {
     auto ctx = ctx_sub.ctx;
     return sequenced_write(
       [ctx_sub{std::move(ctx_sub)},
@@ -670,8 +640,7 @@ ss::future<bool> seq_writer::delete_mode(
           return seq.do_delete_mode(ctx_sub, write_at, src);
       },
       std::move(ctx),
-      src,
-      as);
+      src);
 }
 
 ss::future<std::optional<bool>>
@@ -762,10 +731,7 @@ ss::future<std::optional<bool>> seq_writer::do_delete_subject_version(
 }
 
 ss::future<bool> seq_writer::delete_subject_version(
-  context_subject sub,
-  schema_version version,
-  write_source src,
-  ssx::sharded_abort_source* as) {
+  context_subject sub, schema_version version, write_source src) {
     auto ctx = sub.ctx;
     return sequenced_write(
       [sub{std::move(sub)}, version, src](
@@ -773,8 +739,7 @@ ss::future<bool> seq_writer::delete_subject_version(
           return seq.do_delete_subject_version(sub, version, write_at, src);
       },
       std::move(ctx),
-      src,
-      as);
+      src);
 }
 
 ss::future<std::optional<chunked_vector<schema_version>>>
@@ -846,16 +811,14 @@ seq_writer::delete_subject_impermanent(context_subject sub, write_source src) {
 ss::future<chunked_vector<schema_version>> seq_writer::delete_subject_permanent(
   context_subject sub,
   std::optional<schema_version> version,
-  write_source src,
-  ssx::sharded_abort_source* as) {
+  write_source src) {
     auto ctx = sub.ctx;
     return sequenced_write(
       [sub{std::move(sub)}, version, src](model::offset, seq_writer& seq) {
           return seq.delete_subject_permanent_inner(sub, version, src);
       },
       std::move(ctx),
-      src,
-      as);
+      src);
 }
 
 ss::future<std::optional<chunked_vector<schema_version>>>

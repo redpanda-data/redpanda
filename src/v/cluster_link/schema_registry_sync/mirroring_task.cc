@@ -86,8 +86,7 @@ ss::future<inventory> scan_destination_inventory(
   schema::registry& destination,
   ss::noncopyable_function<bool(const ppsr::context_subject&)> in_scope,
   const context_mapper& mapper,
-  ss::abort_source& as,
-  ssx::sharded_abort_source* dest_as) {
+  ss::abort_source& as) {
     as.check();
     // A destination node is in scope iff its context reverse-maps to a source
     // context `in_scope` accepts (identity mapper: reduces to `in_scope`).
@@ -100,7 +99,7 @@ ss::future<inventory> scan_destination_inventory(
     };
     // list_subject_versions reads the store as-is; sync first so the scan
     // isn't stale (e.g. on a freshly-elected _schemas/0 leader).
-    co_await destination.sync({}, dest_as);
+    co_await destination.sync();
     auto versions = co_await destination.list_subject_versions(
       std::move(dest_in_scope), ppsr::include_deleted::yes);
     inventory inv;
@@ -302,8 +301,7 @@ ss::future<> mirroring_task::refresh_destination_inventory(
       *_destination,
       [&in_scope](const ppsr::context_subject& cs) { return in_scope(cs); },
       _mapper,
-      as,
-      &_run_sas);
+      as);
 
     chunked_hash_set<ppsr::context_subject> subjects;
     for (const auto& key : _destination_inventory.active) {
@@ -320,10 +318,9 @@ ss::future<> mirroring_task::hard_delete_target(
   ppsr::schema_version version,
   bool was_active) {
     if (was_active) {
-        co_await _destination->soft_delete_schema(dest_sub, version, &_run_sas);
+        co_await _destination->soft_delete_schema(dest_sub, version);
     }
-    co_await _destination->permanent_delete_schema(
-      dest_sub, version, &_run_sas);
+    co_await _destination->permanent_delete_schema(dest_sub, version);
 }
 
 ss::future<> mirroring_task::purge_one(
@@ -510,7 +507,6 @@ ss::future<> mirroring_task::sync_mode_and_config(
     if (unavailable.has_value()) {
         co_return;
     }
-    as.check();
     // Read the source in its own (source) namespace; write to the destination
     // under the remapped context. Identity leaves dest_target == target.
     auto dest_ctx = _mapper.forward(target.ctx);
@@ -538,8 +534,8 @@ ss::future<> mirroring_task::sync_mode_and_config(
         // override
         auto write = co_await ss::coroutine::as_future(
           mode.value().has_value()
-            ? _destination->write_mode(dest_target, *mode.value(), &_run_sas)
-            : _destination->delete_mode(dest_target, &_run_sas));
+            ? _destination->write_mode(dest_target, *mode.value())
+            : _destination->delete_mode(dest_target));
         if (write.failed()) {
             auto ex = write.get_exception();
             if (ssx::is_shutdown_exception(ex)) {
@@ -556,7 +552,6 @@ ss::future<> mirroring_task::sync_mode_and_config(
     if (unavailable.has_value()) {
         co_return;
     }
-    as.check();
     auto config = co_await _reader->read_config(target, as);
     if (!config.has_value()) {
         if (config.error().kind == source_error_kind::source_unavailable) {
@@ -578,8 +573,8 @@ ss::future<> mirroring_task::sync_mode_and_config(
 
     auto write = co_await ss::coroutine::as_future(
       cfg.compatibility.has_value()
-        ? _destination->write_config(dest_target, *cfg.compatibility, &_run_sas)
-        : _destination->delete_config(dest_target, &_run_sas));
+        ? _destination->write_config(dest_target, *cfg.compatibility)
+        : _destination->delete_config(dest_target));
     if (write.failed()) {
         auto ex = write.get_exception();
         if (ssx::is_shutdown_exception(ex)) {
@@ -711,7 +706,6 @@ ss::future<task::state_transition> mirroring_task::full_source_sync(
     // scopes discovery, keeping source and destination sides consistent.
     chunked_vector<ppsr::context_subject> subjects;
     for (const auto& ctx : contexts) {
-        as.check();
         auto subjects_res = co_await _reader->list_subjects(ctx, as);
         if (!subjects_res.has_value()) {
             if (
@@ -812,7 +806,6 @@ ss::future<task::state_transition> mirroring_task::full_source_sync(
     auto rec = reconciler{
       _reader.get(),
       _destination,
-      &_run_sas,
       [&in_scope](const ppsr::context_subject& cs) { return in_scope(cs); },
       _mapper,
       limits,
@@ -925,21 +918,6 @@ ss::future<task::state_transition> mirroring_task::full_source_sync(
 
 ss::future<task::state_transition>
 mirroring_task::run_impl(ss::abort_source& as) {
-    // Bracket the run with the sharded fan-out of the runner's abort: every
-    // destination write below hands &_run_sas down to seq_writer, whose
-    // waits resolve it per-shard. Stop on every exit path so the sharded
-    // instances never outlive the run.
-    co_await _run_sas.start(as);
-    auto res = co_await ss::coroutine::as_future(do_run_impl(as));
-    co_await _run_sas.stop();
-    if (res.failed()) {
-        std::rethrow_exception(res.get_exception());
-    }
-    co_return std::move(res).get();
-}
-
-ss::future<mirroring_task::state_transition>
-mirroring_task::do_run_impl(ss::abort_source& as) {
     // Stamp the cumulative summary's start time once per leadership acquisition
     // (the proto documents totals_since_task_start.start_time as the task
     // start). stop() clears the status on losing leadership, so the next leader

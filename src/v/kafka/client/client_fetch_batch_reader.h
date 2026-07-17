@@ -15,11 +15,6 @@
 #include "model/fundamental.h"
 #include "model/record_batch_reader.h"
 
-#include <seastar/core/abort_source.hh>
-
-#include <functional>
-#include <optional>
-
 namespace kafka::client {
 
 ///\brief Adapt a kafka::client to fetch from a tp as a
@@ -28,8 +23,6 @@ model::record_batch_reader make_client_fetch_batch_reader(
   kafka::client::client& client,
   model::topic_partition tp,
   model::offset first,
-  model::offset last,
-  std::optional<std::reference_wrapper<ss::abort_source>> ext_as
-  = std::nullopt);
+  model::offset last);
 
 } // namespace kafka::client

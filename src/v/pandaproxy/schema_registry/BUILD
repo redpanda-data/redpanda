@@ -315,7 +315,6 @@ redpanda_cc_library(
         "//src/v/pandaproxy:json",
         "//src/v/pandaproxy:parsing",
         "//src/v/random:time_jitter",
-        "//src/v/ssx:abort_source",
         "//src/v/ssx:semaphore",
         "//src/v/ssx:sformat",
         "//src/v/strings:string_switch",

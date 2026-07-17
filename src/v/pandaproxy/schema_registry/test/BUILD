@@ -221,7 +221,6 @@ redpanda_test_cc_library(
         "//src/v/pandaproxy/schema_registry:seq_writer",
         "//src/v/pandaproxy/schema_registry:transport",
         "//src/v/pandaproxy/schema_registry:types",
-        "@seastar",
     ],
 )
 
@@ -240,28 +239,6 @@ redpanda_cc_btest(
         "//src/v/pandaproxy/schema_registry:seq_writer",
         "//src/v/pandaproxy/schema_registry:store",
         "//src/v/pandaproxy/schema_registry:types",
-        "//src/v/test_utils:seastar_boost",
-        "@boost//:test",
-        "@seastar",
-        "@seastar//:testing",
-    ],
-)
-
-redpanda_cc_btest(
-    name = "seq_writer_abort",
-    timeout = "short",
-    srcs = [
-        "seq_writer_abort.cc",
-    ],
-    cpu = 1,
-    deps = [
-        ":utils",
-        "//src/v/model",
-        "//src/v/pandaproxy/schema_registry:seq_writer",
-        "//src/v/pandaproxy/schema_registry:store",
-        "//src/v/pandaproxy/schema_registry:types",
-        "//src/v/ssx:abort_source",
-        "//src/v/ssx:future_util",
         "//src/v/test_utils:seastar_boost",
         "@boost//:test",
         "@seastar",
