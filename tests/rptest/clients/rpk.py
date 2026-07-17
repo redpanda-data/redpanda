@@ -366,6 +366,16 @@ class AclList:
         )
 
 
+class RpkUpgradeFinalizationState:
+    """State strings reported by `rpk cluster upgrade status`: the admin v2
+    FinalizationState enum names, lowercased with underscores as spaces (see
+    src/go/rpk/pkg/cli/cluster/upgrade/status.go)."""
+
+    FINALIZED = "finalized"
+    READY_TO_FINALIZE = "ready to finalize"
+    UPGRADE_IN_PROGRESS = "upgrade in progress"
+
+
 class RpkTool:
     """
     Wrapper around rpk.
@@ -1696,6 +1706,44 @@ class RpkTool:
 
         output = self._execute(cmd)
         return list(filter(None, map(parse, output.splitlines())))
+
+    def cluster_upgrade_status(self) -> dict[str, Any]:
+        """
+        Run `rpk cluster upgrade status` and return the parsed JSON response:
+        state (an RpkUpgradeFinalizationState string), active_version,
+        version_after_finalization, auto_finalization_enabled, and members
+        (per-broker node_id, release_version, logical_version, version_known,
+        alive).
+        """
+        cmd = [
+            self._rpk_binary(),
+            "-X",
+            "admin.hosts=" + self._admin_host(),
+            "cluster",
+            "upgrade",
+            "status",
+            "--format",
+            "json",
+        ]
+        return json.loads(self._execute(cmd))
+
+    def cluster_upgrade_finalize(self, no_confirm: bool = True) -> str:
+        """
+        Run `rpk cluster upgrade finalize` and return its output. The command
+        validates upfront (via the upgrade status) and only sends the finalize
+        request when the cluster is ready to finalize.
+        """
+        cmd = [
+            self._rpk_binary(),
+            "-X",
+            "admin.hosts=" + self._admin_host(),
+            "cluster",
+            "upgrade",
+            "finalize",
+        ]
+        if no_confirm:
+            cmd.append("--no-confirm")
+        return self._execute(cmd)
 
     def cluster_connections_list(
         self, limit: int, filter_raw: str | None = None, order_by: str | None = None
