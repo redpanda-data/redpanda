@@ -103,6 +103,12 @@ public:
         // The floor may only cover placeholder-backed data that this commit
         // makes readable from L1: clamp the reader's observation to the
         // committed LRO (the metadata pass may have scanned ahead of it).
+        // Both the observation and the LRO are inclusive offsets while the
+        // floor is the exclusive lower bound for local reads (reads below it
+        // go to L1), so convert with next_offset: the last placeholder-backed
+        // offset itself must be readable from L1 once its L0 object is
+        // garbage-collected. A scan that saw no placeholders resolves the
+        // observation with offset::min(), which must not advance the floor.
         // The feature gate is checked at the propagation point as well as
         // at observation time: the set_min_allowed_local_threshold stm
         // command cannot be applied by pre-v26.2 replicas, so it must never
@@ -110,10 +116,11 @@ public:
         std::optional<kafka::offset> min_allowed_local_threshold;
         if (
           auto hwm = harvest_placeholder_observation();
-          hwm.has_value()
+          hwm.has_value() && *hwm >= kafka::offset{0}
           && _partition->feature_table().local().is_active(
             features::feature::tiered_cloud_topics)) {
-            min_allowed_local_threshold = std::min(offset, *hwm);
+            min_allowed_local_threshold = std::min(
+              kafka::next_offset(offset), kafka::next_offset(*hwm));
         }
         ctp_stm_api api(_partition->raft()->stm_manager()->get<ctp_stm>());
         auto res = co_await api.advance_reconciled_offset(
