@@ -56,7 +56,7 @@ class SchemaRegistrySyncStopHangReproTest(ShadowLinkTestBase, SchemaRegistrySync
         self._create_sr_link()
 
         def import_underway() -> bool:
-            resp = dest.get_subjects()
+            resp = dest.get_subjects()  # pyright: ignore[reportUnknownMemberType]
             if resp.status_code != 200:
                 return False
             n = len(resp.json())
