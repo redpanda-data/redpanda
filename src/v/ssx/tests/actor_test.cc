@@ -159,8 +159,11 @@ TEST(Actor, ConcurrentTellsWithFullMailbox) {
     tell_fut2.get();
     tell_fut3.get();
 
-    // All messages should be processed
-    EXPECT_THAT(actor.processed, ElementsAre(1, 2, 3, 4, 5));
+    // All messages should be processed. Senders blocked on a full mailbox
+    // race for freed space when woken, so their relative order is
+    // unspecified.
+    EXPECT_THAT(
+      actor.processed, ::testing::UnorderedElementsAre(1, 2, 3, 4, 5));
     actor.stop().get();
 }
 
