@@ -345,6 +345,9 @@ log_info_collector::build_leveling_specs(log_list_t& logs_list) const {
 
     chunked_vector<metastore::leveling_info_spec> specs;
     for (auto& log : logs_list) {
+        if (log.compaction.inflight_shard.has_value()) {
+            continue;
+        }
         specs.emplace_back(
           metastore::leveling_info_spec{log.tidp, min_acceptable});
     }
@@ -390,6 +393,9 @@ void log_info_collector::populate_logs_with_leveling_info(
             continue;
         }
         auto& log = *log_it;
+        if (log->compaction.inflight_shard.has_value()) {
+            continue;
+        }
         if (!leveling_info.has_value()) {
             // Minimize logging on benign `missing_ntp` errors in case
             // the `metastore` does not yet have any reconciled data for the log

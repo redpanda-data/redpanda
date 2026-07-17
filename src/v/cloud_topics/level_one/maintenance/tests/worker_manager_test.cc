@@ -269,6 +269,129 @@ TEST_F(WorkerManagerTestFixture, AcquireLevelingWorkSkipsStaleEntries) {
     ASSERT_TRUE(lq.empty());
 }
 
+// Leveling should not run concurrently with compaction of the same CTP:
+// `try_acquire_leveling_work` must drop a job whose CTP has an inflight
+// compaction (without marking its range inflight) and return the next live
+// job behind it.
+TEST_F(WorkerManagerTestFixture, AcquireLevelingWorkSkipsCompactingCTP) {
+    auto cmp_func =
+      [](const l1::compaction_job_ptr& a, const l1::compaction_job_ptr& b) {
+          return a->meta->ntp < b->meta->ntp;
+      };
+
+    l1::compaction_scheduler_probe probe;
+    l1::compaction_queue pq(std::move(cmp_func));
+    l1::leveling_extent_reclamation_policy lq_policy{
+      config::mock_binding<size_t>(size_t{1024} * 1024)};
+    l1::leveling_queue lq(lq_policy.get_comparator());
+    l1::log_list_t list;
+    l1::worker_manager manager(
+      pq, lq, nullptr, nullptr, nullptr, probe, nullptr);
+    auto stop_manager = ss::defer([&manager] { manager.stop().get(); });
+
+    auto make_meta = [](std::string_view topic) {
+        auto ntp = model::ntp(
+          model::ns("kafka"),
+          model::topic(ss::sstring{topic}),
+          model::partition_id(0));
+        auto tidp = model::topic_id_partition(
+          model::topic_id(uuid_t::create()), ntp.tp.partition);
+        return ss::make_lw_shared<l1::log_compaction_meta>(tidp, ntp);
+    };
+    // Higher extent_count => higher expected reclaim => sorts first.
+    auto make_job =
+      [](const l1::log_compaction_meta_ptr& meta, size_t extent_count) {
+          return ss::make_lw_shared<l1::leveling_job>(
+            meta,
+            l1::levelable_range{
+              .base_offset = kafka::offset{0},
+              .last_offset = kafka::offset{99},
+              .size_bytes = 1,
+              .extent_count = extent_count},
+            l1::metastore::compaction_epoch{0});
+      };
+
+    // A managed CTP with an inflight compaction at the head of the queue.
+    auto compacting = make_meta("compacting");
+    list.push_back(*compacting);
+    compacting->compaction.inflight_shard = ss::this_shard_id();
+    lq.push(make_job(compacting, 100));
+
+    // A live CTP with no inflight compaction sitting behind it.
+    auto live = make_meta("live");
+    list.push_back(*live);
+    lq.push(make_job(live, 10));
+
+    auto work_opt = manager.try_acquire_leveling_work(ss::this_shard_id());
+    ASSERT_TRUE(work_opt.has_value());
+    ASSERT_EQ(work_opt.value()->meta->ntp, live->ntp);
+    ASSERT_TRUE(lq.empty());
+    // The dropped job's range was never marked inflight, so the collector is
+    // free to re-queue it once the compaction completes.
+    ASSERT_TRUE(compacting->leveling.inflight_ranges.empty());
+}
+
+// Dequeuing a compaction job must preempt leveling of the same CTP: its queued
+// leveling jobs are dropped and its inflight leveling jobs are hard-stopped.
+TEST_F(WorkerManagerTestFixture, AcquireCompactionWorkPreemptsLeveling) {
+    auto cmp_func =
+      [](const l1::compaction_job_ptr& a, const l1::compaction_job_ptr& b) {
+          return a->meta->ntp < b->meta->ntp;
+      };
+
+    l1::compaction_scheduler_probe probe;
+    l1::compaction_queue pq(std::move(cmp_func));
+    l1::leveling_extent_reclamation_policy lq_policy{
+      config::mock_binding<size_t>(size_t{1024} * 1024)};
+    l1::leveling_queue lq(lq_policy.get_comparator());
+    l1::log_list_t list;
+    l1::worker_manager manager(
+      pq, lq, nullptr, nullptr, nullptr, probe, nullptr);
+    start_workers(manager).get();
+    auto stop_manager = ss::defer([&manager] { manager.stop().get(); });
+
+    const auto shard = ss::this_shard_id();
+    const auto ntp = model::ntp(
+      model::ns("kafka"), model::topic("tapioca"), model::partition_id(0));
+    const auto tidp = model::topic_id_partition(
+      model::topic_id(uuid_t::create()), ntp.tp.partition);
+    const auto base = kafka::offset{0};
+    auto meta = ss::make_lw_shared<l1::log_compaction_meta>(tidp, ntp);
+    list.push_back(*meta);
+
+    pq.push(
+      ss::make_lw_shared<l1::compaction_job>(
+        meta, l1::compaction_info_and_timestamp{}));
+
+    // A queued leveling job for the CTP, plus an inflight one on this shard.
+    lq.push(
+      ss::make_lw_shared<l1::leveling_job>(
+        meta,
+        l1::levelable_range{
+          .base_offset = kafka::offset{100},
+          .last_offset = kafka::offset{199},
+          .size_bytes = 1,
+          .extent_count = 2},
+        l1::metastore::compaction_epoch{0}));
+    meta->leveling.inflight_shards[shard] = 1;
+    add_inflight_leveling_job(manager, shard, tidp, base).get();
+
+    auto work_opt = manager.try_acquire_compaction_work(shard);
+    ASSERT_TRUE(work_opt.has_value());
+    ASSERT_TRUE(work_opt.value()->meta->compaction.inflight_shard.has_value());
+
+    // The CTP's queued leveling job was dropped on compaction dequeue.
+    ASSERT_TRUE(lq.empty());
+
+    // The preemption is dispatched asynchronously onto the manager's gate;
+    // drain the task queue so it runs, then confirm the inflight leveling job
+    // was hard-stopped.
+    tests::drain_task_queue().get();
+    ASSERT_EQ(
+      inflight_leveling_state(manager, shard, tidp, base).get(),
+      l1::compaction_job_state::hard_stop);
+}
+
 // `complete_leveling_work` decrements the CTP's inflight-shard count and stamps
 // the just-completed range with a commit timestamp, replacing the `nullopt`
 // recorded at acquire so the collector applies a post-commit cooldown before

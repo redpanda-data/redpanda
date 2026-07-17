@@ -89,6 +89,14 @@ worker_manager::try_acquire_compaction_work(ss::shard_id shard) {
     // Marking the CTP inflight (and skipping inflight CTPs during sampling)
     // is how a CTP is kept out of the queue while being compacted.
     job->meta->compaction.inflight_shard = shard;
+
+    // Ideally, leveling should not run concurrently with compaction of the same
+    // CTP. Stop any inflight leveling jobs and clear the queue of any others
+    // queued for the same CTP.
+    _leveling_queue.clear(job->meta->tidp);
+    _probe.set_leveling_queue_length(_leveling_queue.size());
+    request_stop_leveling(job->meta);
+
     return ss::make_foreign(job);
 }
 
@@ -123,6 +131,11 @@ worker_manager::try_acquire_leveling_work(ss::shard_id shard) {
 
         if (!job || !job->meta || !job->meta->link.is_linked()) {
             // The CTP was unmanaged after this job was queued; drop it.
+            continue;
+        }
+
+        if (job->meta->compaction.inflight_shard.has_value()) {
+            // The CTP has an inflight compaction on-going; drop it.
             continue;
         }
 
