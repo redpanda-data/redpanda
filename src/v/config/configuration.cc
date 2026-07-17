@@ -3036,6 +3036,18 @@ configuration::configuration()
        .visibility = visibility::tunable},
       10,
       {.min = 1})
+  , log_eviction_exempt_topics(
+      *this,
+      "log_eviction_exempt_topics",
+      "A list of topics in the kafka namespace whose local log is exempt "
+      "from any form of data deletion: retention settings, local retention "
+      "for topics with Tiered Storage enabled, and disk space management "
+      "never remove their data from local disk, and partition moves always "
+      "deliver the full log to the new replica. Does not affect topic "
+      "deletion via the Kafka API (see kafka_nodelete_topics).",
+      {.needs_restart = needs_restart::yes, .visibility = visibility::user},
+      {model::schema_registry_internal_tp.topic()},
+      &validate_non_empty_string_vec)
   , initial_retention_local_target_bytes_default(
       *this,
       "initial_retention_local_target_bytes_default",
