@@ -961,7 +961,7 @@ class ConsumerGroupTest(RedpandaTest):
                     "enable.auto.commit": False,
                     "max.partition.fetch.bytes": batch_size,
                     "log_level": 7,
-                    "debug": "cgrp",
+                    "debug": "cgrp,fetch,broker",
                 },
                 logger=self.logger,
             )
