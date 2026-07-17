@@ -21,15 +21,17 @@ import "proto/redpanda/core/pbgen/rpc.proto";
 
 option (pbgen.cpp_namespace) = "proto::admin";
 
-// IcebergService is the public, read-only surface over the Datalake subsystem.
-// Here, we allow for basic health reporting for monitoring of the datalake
-// system. e.g., Iceberg catalog connectivity, per-partition translation and
-// catalog commit lag, etc.
+// IcebergService is the public, read-only surface over the Datalake subsystem
+// for basic health reporting, such as Iceberg catalog connectivity and
+// per-partition translation and catalog commit lag.
 service IcebergService {
+    // GetIcebergStatus
+    //
     // Reports Iceberg catalog reachability and, for every Iceberg topic, the
-    // per-partition translated/committed offsets and commit lag. Translation
-    // lag (live-log high watermark minus the translated offset) is a
-    // client-side join with the Kafka API and is not returned here.
+    // per-partition translated/committed offsets and commit lag. This endpoint
+    // does not return translation lag. To calculate translation lag, subtract
+    // the translated offset from the live-log high watermark, which you
+    // retrieve through the Kafka API.
     rpc GetIcebergStatus(GetIcebergStatusRequest)
         returns (GetIcebergStatusResponse) {
         option (pbgen.rpc) = {
@@ -49,18 +51,22 @@ message GetIcebergStatusResponse {
     repeated TopicIcebergStatus topics = 2;
 }
 
-// CatalogHealth reports whether the Iceberg catalog is reachable. On failure,
-// error_code is the iceberg::catalog_errc enum name (e.g. "io_error",
-// "timedout") and error_message is a human-readable diagnostic.
+// CatalogHealth reports whether the Iceberg catalog is reachable. When the
+// catalog is unreachable, error_code contains a short error identifier (for
+// example, "io_error" or "timedout"), and error_message contains a
+// human-readable diagnostic.
 message CatalogHealth {
     bool reachable = 1;
     string error_code = 2;
     string error_message = 3;
 }
 
-// IcebergLifecycleState mirrors the coordinator's per-topic lifecycle. Named
-// distinctly from the internal DatalakeService's LifecycleState because both
-// generate into the proto::admin C++ namespace.
+// Named distinctly from the internal DatalakeService's LifecycleState because
+// both generate into the proto::admin C++ namespace. This block is detached
+// (note the blank line below) so it is not published to the API reference.
+
+// IcebergLifecycleState is the lifecycle state of an Iceberg topic as tracked
+// by the Iceberg coordinator.
 enum IcebergLifecycleState {
     ICEBERG_LIFECYCLE_STATE_UNSPECIFIED = 0;
     ICEBERG_LIFECYCLE_STATE_LIVE = 1;
