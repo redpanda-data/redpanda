@@ -2086,7 +2086,7 @@ ss::future<chunked_vector<deletable_group_result>> group_manager::delete_groups(
         // - batch tombstones same backing partition
         error = co_await group->remove();
         if (error == error_code::none) {
-            group->pre_shutdown();
+            co_await group->shutdown();
             _groups.erase(group_info.second);
         }
         results.push_back(
