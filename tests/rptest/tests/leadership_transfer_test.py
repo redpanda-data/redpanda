@@ -27,6 +27,7 @@ from rptest.services.cluster import cluster
 from rptest.services.redpanda import RESTART_LOG_ALLOW_LIST, ResourceSettings
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.util import wait_until_result
+from rptest.utils.mode_checks import skip_file_in_cdt
 
 
 class ReplicaMetadata(TypedDict):
@@ -1103,3 +1104,9 @@ class LeadershipPinningTest(RedpandaTest):
         assert t2r == expected, (
             f"Expected topic-to-rack leaders {expected}. Got {t2r} instead"
         )
+
+
+# No-cloud suite: opt out of CDT (dockerized CI already covers it).
+skip_file_in_cdt(
+    reason="leadership-transfer suite: no cloud-infra signal in CDT; dockerized CI covers it"
+)

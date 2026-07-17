@@ -84,7 +84,7 @@ from rptest.tests.schema_registry_test import (
     schema2_def,
 )
 from rptest.util import expect_exception, wait_until, wait_until_result
-from rptest.utils.mode_checks import skip_fips_mode
+from rptest.utils.mode_checks import skip_fips_mode, skip_file_in_cdt
 from rptest.utils.rpk_config import read_redpanda_cfg
 from rptest.utils.schema_registry_utils import Mode, get_subjects, put_mode
 
@@ -4405,3 +4405,9 @@ class AuditLogUpgradeTest(AuditLogTestBase):
         )
 
         self._test_audit_on_all_nodes("post_upgrade_restart")
+
+
+# No-cloud suite: opt out of CDT (dockerized CI already covers it).
+skip_file_in_cdt(
+    reason="audit-logging suite: no cloud-infra signal in CDT; dockerized CI covers it"
+)

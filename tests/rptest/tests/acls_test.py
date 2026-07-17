@@ -28,6 +28,7 @@ from rptest.services.cluster import cluster
 from rptest.services.redpanda import LoggingConfig, SecurityConfig, TLSProvider
 from rptest.services.redpanda_installer import RedpandaInstaller, wait_for_num_versions
 from rptest.tests.redpanda_test import RedpandaTest
+from rptest.utils.mode_checks import skip_file_in_cdt
 
 
 class MTLSProvider(TLSProvider):
@@ -853,3 +854,9 @@ class AccessControlListAuthzTest(AccessControlListTestBase):
         assert resp["ErrorCode"] != KError.CLUSTER_AUTHORIZATION_FAILED.value, (
             f"Response: {resp}"
         )
+
+
+# No-cloud suite: opt out of CDT (dockerized CI already covers it).
+skip_file_in_cdt(
+    reason="ACL/authz suite: no cloud-infra signal in CDT; dockerized CI covers it"
+)

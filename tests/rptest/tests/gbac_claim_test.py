@@ -26,6 +26,7 @@ from rptest.services.redpanda import (
     make_redpanda_service,
 )
 from rptest.services.stub_oidc_provider import StubOIDCProvider
+from rptest.utils.mode_checks import skip_file_in_cdt
 
 
 class StubOIDCTestBase(Test):
@@ -1184,3 +1185,9 @@ class GbacConfigEdgeCaseTest(StubOIDCTestBase):
 
         producer = self.make_producer(client_id)
         self.assert_produce_denied(producer, topic)
+
+
+# No-cloud suite: opt out of CDT (dockerized CI already covers it).
+skip_file_in_cdt(
+    reason="group-based access-control suite: no cloud-infra signal in CDT; dockerized CI covers it"
+)

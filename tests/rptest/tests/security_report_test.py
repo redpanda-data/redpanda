@@ -30,7 +30,7 @@ from rptest.tests.audit_log_test import (
     AuditLogTestBase,
     AuditLogTestSecurityConfig,
 )
-from rptest.utils.mode_checks import skip_fips_mode
+from rptest.utils.mode_checks import skip_fips_mode, skip_file_in_cdt
 
 
 def make_from_dict(class_name, values):
@@ -1088,3 +1088,9 @@ class AuditlogClientSecurityReportTest(AuditLogTestBase):
             },
             audit_log_expected=audit_log_expected,
         )
+
+
+# No-cloud suite: opt out of CDT (dockerized CI already covers it).
+skip_file_in_cdt(
+    reason="security-report suite: no cloud-infra signal in CDT; dockerized CI covers it"
+)

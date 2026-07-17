@@ -53,7 +53,7 @@ from rptest.tests.sasl_reauth_test import (
 from rptest.tests.tls_metrics_test import FaketimeTLSProvider
 from rptest.util import expect_exception, wait_until_result
 from rptest.utils.log_utils import wait_until_nag_is_set
-from rptest.utils.mode_checks import skip_fips_mode
+from rptest.utils.mode_checks import skip_fips_mode, skip_file_in_cdt
 
 CLIENT_ID = "myapp"
 TOKEN_AUDIENCE = "account"
@@ -2331,3 +2331,9 @@ class OIDCLicenseTest(RedpandaOIDCTestBase):
             timeout_sec=self.LICENSE_CHECK_INTERVAL_SEC * 2,
             err_msg="License nag failed to appear",
         )
+
+
+# No-cloud suite: opt out of CDT (dockerized CI already covers it).
+skip_file_in_cdt(
+    reason="OAuth/OIDC auth suite: no cloud-infra signal in CDT; dockerized CI covers it"
+)
