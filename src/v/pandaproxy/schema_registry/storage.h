@@ -1697,9 +1697,13 @@ model::record_batch as_record_batch(Key key, Value val) {
 }
 
 struct consume_to_store {
-    explicit consume_to_store(sharded_store& s, seq_writer& seq)
+    explicit consume_to_store(
+      sharded_store& s,
+      seq_writer& seq,
+      defer_processing defer = defer_processing::no)
       : _store{s}
-      , _sequencer(seq) {}
+      , _sequencer(seq)
+      , _defer(defer) {}
 
     ss::future<ss::stop_iteration> operator()(model::record_batch b) {
         if (!b.header().attrs.is_control()) {
@@ -1861,7 +1865,8 @@ struct consume_to_store {
                   std::move(val->schema),
                   val->id,
                   val->version,
-                  val->deleted);
+                  val->deleted,
+                  _defer);
             }
         } catch (const exception& e) {
             vlog(srlog.debug, "Error replaying: {}: {}", key, e.what());
@@ -2068,6 +2073,7 @@ struct consume_to_store {
     void end_of_stream() {}
     sharded_store& _store;
     seq_writer& _sequencer;
+    defer_processing _defer{defer_processing::no};
 };
 
 } // namespace pandaproxy::schema_registry

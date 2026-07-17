@@ -730,12 +730,11 @@ ss::future<> service::fetch_internal_topic() {
     auto max_offset = co_await _transport->get_high_watermark();
     vlog(srlog.debug, "Schema registry: _schemas max_offset: {}", max_offset);
 
+    const auto defer = defer_processing{
+      config::shard_local_cfg().schema_registry_deferred_recovery()};
     co_await _transport->consume_range(
-      model::offset{0}, max_offset, consume_to_store{_store, writer()});
+      model::offset{0}, max_offset, consume_to_store{_store, writer(), defer});
 
-    // If a schema failed to be compiled, it will be marked. We attempt to
-    // reprocess them once now that the whole topic has been read, in case
-    // they have a reference to a schema declared later in the topic.
     co_await _store.process_marked_schemas();
 }
 

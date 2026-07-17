@@ -684,6 +684,7 @@ struct configuration final : public config_store {
 
     enterprise<property<bool>> schema_registry_enable_authorization;
     property<bool> schema_registry_always_normalize;
+    property<bool> schema_registry_deferred_recovery;
     deprecated_property schema_registry_avro_use_named_references;
     property<bool> schema_registry_enable_qualified_subjects;
     bounded_property<size_t> schema_registry_sync_memory_bytes;

@@ -40,6 +40,9 @@ using is_deleted = ss::bool_class<struct is_deleted_tag>;
 using default_to_global = ss::bool_class<struct default_to_global_tag>;
 using force = ss::bool_class<struct force_tag>;
 using normalize = ss::bool_class<struct normalize_tag>;
+/// Defer canonicalisation of an upserted schema: mark it for a later
+/// process_marked_schemas() pass instead of canonicalising inline.
+using defer_processing = ss::bool_class<struct defer_processing_tag>;
 using verbose = ss::bool_class<struct verbose_tag>;
 using is_qualified = ss::bool_class<struct is_qualified_tag>;
 using qualified_subjects_enabled
