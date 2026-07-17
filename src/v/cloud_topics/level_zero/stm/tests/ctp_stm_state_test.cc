@@ -294,6 +294,52 @@ TEST(ctp_stm_state_test, sliding_window_issue) {
     EXPECT_EQ(estimate_inactive_epoch(), 9_epoch);
 }
 
+TEST(ctp_stm_state_test, below_max_fence_requires_applied_evidence) {
+    // A fenced epoch bump whose batch never lands leaves a phantom lower
+    // bound in the seen window. Admitting a below-max epoch is only sound if
+    // some epoch batch is known to precede the max-seen epoch's first batch
+    // in the log; otherwise the log's epoch window collapses to [max, max]
+    // when the max applies and the below-max batch violates it.
+    ct::ctp_stm_state state;
+    model::term_id term(1);
+
+    // Two fence-time bumps, no batch lands for either.
+    state.advance_max_seen_epoch(term, 132_epoch);
+    state.advance_max_seen_epoch(term, 141_epoch);
+
+    // At-max admission is always sound.
+    EXPECT_TRUE(state.epoch_in_window(term, 141_epoch));
+    // Below-max admission has no applied evidence: reject.
+    EXPECT_FALSE(state.epoch_in_window(term, 132_epoch));
+
+    // The max epoch lands as the first batch in the log: the log window is
+    // [141, 141], so 132 must still be rejected.
+    state.advance_epoch(141_epoch, model::offset{0});
+    EXPECT_FALSE(state.epoch_in_window(term, 132_epoch));
+    EXPECT_TRUE(state.epoch_in_window(term, 141_epoch));
+}
+
+TEST(ctp_stm_state_test, below_max_fence_allowed_with_applied_evidence) {
+    // The legitimate in-flight case: the previous epoch's batch landed and
+    // applied before the bump, so a straggler at that epoch stays admissible
+    // both before and after the max epoch's batch applies.
+    ct::ctp_stm_state state;
+    model::term_id term(1);
+
+    state.advance_max_seen_epoch(term, 132_epoch);
+    state.advance_epoch(132_epoch, model::offset{0});
+
+    state.advance_max_seen_epoch(term, 141_epoch);
+    // An applied 132 batch precedes any (future) 141 batch in the log.
+    EXPECT_TRUE(state.epoch_in_window(term, 132_epoch));
+
+    state.advance_epoch(141_epoch, model::offset{1});
+    // The log window is [132, 141]: 132 remains admissible.
+    EXPECT_TRUE(state.epoch_in_window(term, 132_epoch));
+    EXPECT_TRUE(state.epoch_in_window(term, 141_epoch));
+    EXPECT_FALSE(state.epoch_in_window(term, 131_epoch));
+}
+
 TEST(ctp_stm_state_test, l0_simulation) {
     struct uploaded_l0_file_batch {
         ct::cluster_epoch epoch;
@@ -409,10 +455,20 @@ TEST(ctp_stm_state_test, l0_simulation) {
             possible_operations.emplace_back([&universe, &oplog, term] {
                 auto batch = universe.uploaded_batches.front();
                 universe.uploaded_batches.pop_front();
-                if (!universe.stm.epoch_in_window(term, batch.epoch)) {
+                // Mirror the fence_epoch branches: bump the window for an
+                // above-window epoch, replicate an in-window epoch, reject
+                // everything else. A below-max epoch is rejected while no
+                // applied batch proves that something precedes the max
+                // epoch's first batch in the log (the producer would retry
+                // with a fresh epoch).
+                if (universe.stm.epoch_above_window(term, batch.epoch)) {
                     universe.stm.advance_max_seen_epoch(term, batch.epoch);
                     ASSERT_TRUE(
                       universe.stm.epoch_in_window(term, batch.epoch));
+                } else if (!universe.stm.epoch_in_window(term, batch.epoch)) {
+                    oplog.push_back(
+                      fmt::format("rejected batch with epoch {}", batch.epoch));
+                    return;
                 }
                 placeholder_batch placeholder{
                   .epoch = batch.epoch, .offset = universe.hwm++};
