@@ -134,7 +134,9 @@ public:
         co_await _gate.close();
     }
 
-    // Send a message. It waits until space is available.
+    // Send a message. It waits until space is available. If multiple senders
+    // are blocked waiting for space, the order in which their messages are
+    // enqueued is unspecified.
     ss::future<> tell(T msg)
     requires(OverflowPolicy == overflow_policy::block)
     {
