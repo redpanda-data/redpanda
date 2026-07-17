@@ -861,7 +861,10 @@ TEST_F(CoordinatorChunkedLoopTest, TestDrainsBacklogWithoutSleeping) {
     // we can stage the full backlog before a pass begins.
     opt_ref leader_opt;
     ASSERT_NO_FATAL_FAILURE(wait_for_leader(leader_opt).get());
+    // Step down and notify -- this causes the background loop to stop sleeping
+    // in the now-defunct term and wait for further notification.
     leader_opt->get().stm.raft()->step_down("test").get();
+    leader_opt->get().crd.notify_leadership(std::nullopt);
     ASSERT_NO_FATAL_FAILURE(wait_for_leader(leader_opt).get());
     auto& leader = leader_opt->get();
 
