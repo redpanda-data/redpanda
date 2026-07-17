@@ -923,7 +923,11 @@ class ConsumerGroupTest(RedpandaTest):
         )
         topic_count = 1
         partition_count = 20
-        consumer_count = 4
+        # One consumer per partition: each consumer then owns exactly one
+        # partition, so its consume() queue holds only that partition and any
+        # non-empty poll covers it -- avoiding the cross-partition delivery-order
+        # starvation that made this test flaky (CORE-13976). See the consume loop.
+        consumer_count = partition_count
         group = "test-lag-metrics-group"
         # Use a small batch size to ensure that fetches are distributed across all partitions
         batch_size = 1
