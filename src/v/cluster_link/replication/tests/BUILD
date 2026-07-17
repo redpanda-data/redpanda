@@ -57,6 +57,7 @@ redpanda_cc_gtest(
         "//src/v/cluster_link/replication:types",
         "//src/v/model/tests:random",
         "//src/v/random:generators",
+        "//src/v/test_utils:async",
         "//src/v/test_utils:gtest",
         "//src/v/test_utils:random",
         "@seastar",
