@@ -401,6 +401,7 @@ class FeaturesSingleNodeTest(FeaturesTestBase):
 
     @cluster(num_nodes=1)
     def test_get_features(self):
+        assert 1 == 3
         self._assert_default_features()
 
 
