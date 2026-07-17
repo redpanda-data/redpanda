@@ -81,6 +81,13 @@ class ConfluentSchemaRegistryService(Service):
         return node.account.java_pids("SchemaRegistryMain")
 
     def start_node(self, node, **kwargs):
+        if not node.account.exists(SR_BIN):
+            raise RuntimeError(
+                f"Confluent SR binary not found at {SR_BIN} on "
+                f"{node.account.hostname}. The Confluent Platform install "
+                f"({CP_DIR}) is missing or incomplete on this node's image"
+            )
+
         props = self._properties()
         self.logger.info(f"Starting Confluent SR on {node.account.hostname}\n{props}")
         with tempfile.NamedTemporaryFile(mode="w") as f:
