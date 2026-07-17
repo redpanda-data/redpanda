@@ -367,6 +367,32 @@ TEST(ctp_stm_state_test, seen_window_resets_on_term_change_despite_stale_max) {
     EXPECT_FALSE(state.epoch_in_window(term2, 8_epoch));
 }
 
+TEST(ctp_stm_state_test, stale_epoch_rejected_after_seen_applied_divergence) {
+    // A fence-time bump whose batch never lands (failed replicate) diverges
+    // the seen window from the log content. Interior epochs that land
+    // afterwards ratchet the log's epoch window upwards ([10, 12], then
+    // [12, 13]); an epoch below it must not be admitted: replicated, it
+    // would land above the batches that moved the log window past it and
+    // trip the epoch_window_checker vassert in do_apply on every replica
+    // (and break the GC epoch lower bound).
+    ct::ctp_stm_state state;
+    model::term_id term(1);
+
+    state.advance_max_seen_epoch(term, 10_epoch);
+    state.advance_epoch(10_epoch, model::offset{0});
+    // Bump to 14; the bump batch is discarded.
+    state.advance_max_seen_epoch(term, 14_epoch);
+    // Interior epochs 12 and 13 land.
+    state.advance_epoch(12_epoch, model::offset{1});
+    state.advance_epoch(13_epoch, model::offset{2});
+
+    // The log window is [12, 13]: epochs below it are not admissible.
+    EXPECT_FALSE(state.epoch_in_window(term, 11_epoch));
+    EXPECT_FALSE(state.epoch_in_window(term, 12_epoch));
+    // The pending max-seen epoch remains admissible.
+    EXPECT_TRUE(state.epoch_in_window(term, 14_epoch));
+}
+
 TEST(ctp_stm_state_test, l0_simulation) {
     struct uploaded_l0_file_batch {
         ct::cluster_epoch epoch;

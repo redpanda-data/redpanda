@@ -1174,6 +1174,81 @@ TEST_F_CORO(ctp_stm_fixture, test_below_max_fence_allowed_after_epoch_landed) {
     ASSERT_TRUE_CORO(ok);
 }
 
+TEST_F_CORO(ctp_stm_fixture, test_interior_epoch_fence_after_failed_bump) {
+    // Regression: a fenced epoch bump whose batch never lands, followed by
+    // interior (out-of-order) epochs that do land, must not admit an epoch
+    // below the batches already in the log.
+    //
+    // Scenario, all within one term:
+    // 1. Fence + replicate epoch 10 (seen window [10, 10]).
+    // 2. Fence epoch 14, drop the guard without replicating (seen window
+    //    [10, 14], nothing at epoch 14 in the log).
+    // 3. Fence + replicate epoch 12: fence_epoch raises the window min to 12
+    //    under the write lock. The log window becomes [10, 12].
+    // 4. Fence + replicate epoch 13: the window min moves to 13, the log
+    //    window ratchets to [12, 13].
+    // 5. Fence epoch 11: must be rejected. The old admission check
+    //    (_max_applied_epoch < max_seen) granted the fence and the
+    //    replicated batch tripped the epoch_window_checker vassert in
+    //    do_apply on every replica ("epoch 11 at N is outside of sliding
+    //    window [12, 13]").
+    co_await start();
+    co_await wait_for_leader(raft::default_timeout());
+
+    auto& leader = node(*get_leader());
+    auto leader_api = api(leader);
+
+    bool ok = co_await replicate_with_epoch(
+      leader, ct::cluster_epoch{10}, model::offset{0}, 0);
+    ASSERT_TRUE_CORO(ok);
+
+    {
+        auto fence = co_await leader_api.fence_epoch(ct::cluster_epoch{14});
+        ASSERT_TRUE_CORO(fence.has_value());
+        // Guard dropped without replicating: the bump batch never lands.
+    }
+
+    // Interior epochs are admitted one by one, each moving the window min.
+    ok = co_await replicate_with_epoch(
+      leader, ct::cluster_epoch{12}, model::offset{1}, 1);
+    ASSERT_TRUE_CORO(ok);
+
+    // 11 is already below the window min.
+    {
+        auto stale = co_await leader_api.fence_epoch(ct::cluster_epoch{11});
+        EXPECT_FALSE(stale.has_value())
+          << "fence_epoch admitted epoch 11 although the window min moved "
+             "past it";
+    }
+
+    ok = co_await replicate_with_epoch(
+      leader, ct::cluster_epoch{13}, model::offset{2}, 2);
+    ASSERT_TRUE_CORO(ok);
+
+    auto stale_fence = co_await leader_api.fence_epoch(ct::cluster_epoch{11});
+    EXPECT_FALSE(stale_fence.has_value())
+      << "fence_epoch admitted epoch 11 although the log window is [12, 13]";
+    if (stale_fence.has_value()) {
+        // Under the bug, replicating with the granted fence reproduces the
+        // crash: apply trips the epoch_window_checker vassert on every
+        // replica.
+        auto guard = std::move(stale_fence.value());
+        auto batch = make_record_batch(
+          ct::cluster_epoch{11}, model::offset{3}, 3);
+        auto res = co_await replicate_record_batch(leader, std::move(batch));
+        ASSERT_TRUE_CORO(res.has_value());
+    }
+
+    // The window boundaries stay usable: a straggler at the window min and
+    // a batch at the pending max are both admissible.
+    ok = co_await replicate_with_epoch(
+      leader, ct::cluster_epoch{13}, model::offset{3}, 3);
+    ASSERT_TRUE_CORO(ok);
+    ok = co_await replicate_with_epoch(
+      leader, ct::cluster_epoch{14}, model::offset{4}, 4);
+    ASSERT_TRUE_CORO(ok);
+}
+
 // Test for the combined advance_epoch + sync_to_next_placeholder functionality.
 // This is the primary use case: enabling GC progress on idle partitions by
 // recording the current epoch and advancing LRLO past the advance_epoch batch.
