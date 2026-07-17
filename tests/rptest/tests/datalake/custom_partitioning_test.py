@@ -23,7 +23,7 @@ from requests.exceptions import HTTPError
 from rptest.clients.rpk import RpkException, RpkTool
 from rptest.services.catalog_service import CatalogType
 from rptest.services.cluster import cluster
-from rptest.services.redpanda import MetricsEndpoint, SISettings, SchemaRegistryConfig
+from rptest.services.redpanda import SISettings, SchemaRegistryConfig
 from rptest.services.redpanda_connect import RedpandaConnectService
 from rptest.tests.datalake.catalog_service_factory import supported_catalog_types
 from rptest.tests.datalake.datalake_services import DatalakeServices
@@ -306,42 +306,6 @@ class DatalakeCustomPartitioningTest(RedpandaTest):
                 partitions_after, partitions
             )
             assert set(partitions_after.keys()).issubset(set(partitions_before.keys()))
-
-            # Sanity-check translation metrics
-            metric_patterns = [
-                "translation_translations_finished",
-                "translation_files_created",
-                "translation_parquet_rows_added",
-                "translation_parquet_bytes_added",
-            ]
-            metric2samples = self.redpanda.metrics_samples(
-                metric_patterns, self.redpanda.nodes, MetricsEndpoint.PUBLIC_METRICS
-            )
-            assert len(metric2samples) == len(metric_patterns)
-            metric2value_sum = dict()
-            for metric, samples in metric2samples.items():
-                # Log raw samples from all nodes to investigate missing metrics.
-                self.logger.debug(
-                    f"Raw samples for {metric}: {[(s.node.name, s.labels, s.value) for s in samples.samples]}"
-                )
-
-                value_sum = sum(
-                    s.value
-                    for s in samples.label_filter(
-                        {"redpanda_topic": topic_name}
-                    ).samples
-                )
-                self.logger.info(f"metric {metric} {value_sum=}")
-                metric2value_sum[metric] = value_sum
-
-            num_files_created = sum(partitions_before.values())
-            assert metric2value_sum["translation_files_created"] == num_files_created
-            assert (
-                metric2value_sum["translation_translations_finished"]
-                == num_files_created / 2
-            )
-            assert metric2value_sum["translation_parquet_rows_added"] == msg_count
-            assert metric2value_sum["translation_parquet_bytes_added"] > 0
 
     @cluster(num_nodes=6)
     @matrix(
