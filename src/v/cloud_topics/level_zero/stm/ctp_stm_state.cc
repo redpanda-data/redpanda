@@ -10,6 +10,7 @@
 
 #include "cloud_topics/level_zero/stm/ctp_stm_state.h"
 
+#include "base/vassert.h"
 #include "model/fundamental.h"
 #include "utils/to_string.h"
 
@@ -68,6 +69,25 @@ void ctp_stm_state::applied_epochs::on_lro_advanced(
     }
 }
 
+ctp_stm_state::resolved_window
+ctp_stm_state::resolve_window(model::term_id term) const noexcept {
+    if (!_seen.has_value() || term > _seen->term) {
+        // The seen window is invisible to queries at newer terms: any epoch
+        // it admitted is either already applied or died with the old
+        // leadership (fence_epoch syncs before querying).
+        return {
+          .state = window_state::applied_only,
+          .window = _applied.window(),
+        };
+    }
+    if (_applied.max == _seen->window.max) {
+        // The batch carrying the seen max has been applied: the log's epoch
+        // window is frozen at the applied window until the next bump.
+        return {.state = window_state::frozen, .window = _applied.window()};
+    }
+    return {.state = window_state::pending, .window = _seen->window};
+}
+
 std::optional<kafka::offset>
 ctp_stm_state::get_last_reconciled_offset() const noexcept {
     return _last_reconciled_offset;
@@ -103,52 +123,67 @@ ctp_stm_state::get_previous_seen_epoch(model::term_id term) const noexcept {
 
 bool ctp_stm_state::epoch_in_window(
   model::term_id term, cluster_epoch epoch) const noexcept {
-    if (!_seen.has_value() || term > _seen->term) {
-        // The seen window is invisible to queries at newer terms: the
-        // applied window is the only evidence.
-        auto applied = _applied.window();
-        return applied.has_value() && applied->contains(epoch);
+    auto resolved = resolve_window(term);
+    switch (resolved.state) {
+    case window_state::applied_only:
+    case window_state::frozen:
+        // Everything in the log's own window is admissible: no in-flight
+        // epoch can ratchet the window above an admitted epoch (frozen: the
+        // pending max has already applied; applied_only: there is no
+        // pending max).
+        return resolved.window.has_value() && resolved.window->contains(epoch);
+    case window_state::pending:
+        // Only the window boundaries can be replicated concurrently in any
+        // log order: the max is the largest epoch that can reach the log in
+        // this term and can never end up below the log's epoch window; the
+        // min also requires a non-empty applied state, otherwise the
+        // max-seen batch may land into an empty log first and collapse the
+        // log window to [max, max] above it (see
+        // epoch_window_checker::check_epoch). Interior epochs have to move
+        // the window min first (see epoch_moves_window).
+        return epoch == resolved.window->max
+               || (epoch == resolved.window->min && _applied.max.has_value());
     }
-    const auto& seen = _seen->window;
-    if (!seen.contains(epoch)) {
-        return false;
-    }
-    if (epoch == seen.max) {
-        return true;
-    }
-    // A below-max epoch is only admissible if some epoch batch is known to
-    // precede the max-seen epoch's first batch in the log. The seen window
-    // alone can't prove this: a fence-time bump whose batch never lands (a
-    // failed replicate) leaves a lower bound with no counterpart in the log.
-    // If nothing precedes the max epoch's first batch, the log epoch window
-    // collapses to [max, max] when that batch applies, and a below-max batch
-    // landing after it violates the log invariant enforced by
-    // epoch_window_checker and may reference L0 objects the GC already
-    // considers inactive.
-    //
-    // Applied state gives positional evidence, since apply follows log order:
-    // - applied max < seen max: an applied batch sits at a lower log
-    //   position than any batch at the max-seen epoch (applied or not).
-    // - applied max == seen max: the max epoch applied; a batch preceded it
-    //   iff the applied window did not collapse to [max, max].
-    if (!_applied.max.has_value()) {
-        return false;
-    }
-    if (*_applied.max < seen.max) {
-        return true;
-    }
-    return *_applied.max == seen.max
-           && _applied.previous.value_or(seen.max) < seen.max;
+    vunreachable("invalid window_state");
 }
 
 bool ctp_stm_state::epoch_above_window(
   model::term_id term, cluster_epoch epoch) const noexcept {
-    if (!_seen.has_value() || term > _seen->term) {
-        // The seen window is invisible to queries at newer terms.
-        auto applied = _applied.window();
-        return !applied.has_value() || epoch > applied->max;
+    auto resolved = resolve_window(term);
+    // An empty window (nothing applied, nothing seen) is below any epoch.
+    return !resolved.window.has_value() || epoch > resolved.window->max;
+}
+
+bool ctp_stm_state::epoch_moves_window(
+  model::term_id term, cluster_epoch epoch) const noexcept {
+    if (epoch_above_window(term, epoch)) {
+        // Admitted by bumping the window max.
+        return true;
     }
-    return epoch > _seen->window.max;
+    if (!_seen.has_value() || term != _seen->term) {
+        return false;
+    }
+    const auto& seen = _seen->window;
+    // An interior epoch is admitted by becoming the new window min. This is
+    // only sound while the max-seen batch hasn't applied (a frozen window is
+    // admissible via epoch_in_window and must not move) and while nothing
+    // above the epoch, other than the pending max-seen epoch, has reached
+    // the non-empty log.
+    return seen.interior(epoch) && _applied.max.has_value()
+           && *_applied.max < seen.max && epoch >= *_applied.max;
+}
+
+void ctp_stm_state::move_seen_window(
+  model::term_id term, cluster_epoch epoch) noexcept {
+    if (epoch_above_window(term, epoch)) {
+        advance_max_seen_epoch(term, epoch);
+    } else if (epoch_moves_window(term, epoch)) {
+        // The interior epoch becomes the new window min: admissions below it
+        // are fenced off, so its batch can't be overtaken in the log by two
+        // distinct higher epochs (which would ratchet the log's epoch window
+        // above it).
+        _seen->window.min = epoch;
+    }
 }
 
 std::optional<cluster_epoch>

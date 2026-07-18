@@ -238,10 +238,13 @@ TEST(ctp_stm_state_test, sliding_window_issue) {
     EXPECT_TRUE(state.epoch_in_window(term, 5_epoch));
     // Our previous epoch is good still
     EXPECT_TRUE(state.epoch_in_window(term, 2_epoch));
-    // And so is something in between (unlikely in real life, but just to show)
-    EXPECT_TRUE(state.epoch_in_window(term, 3_epoch));
+    // Something in between is not a window boundary: it can only be admitted
+    // by moving the window min (write lock in fence_epoch).
+    EXPECT_FALSE(state.epoch_in_window(term, 3_epoch));
+    EXPECT_TRUE(state.epoch_moves_window(term, 3_epoch));
     // Something below is still bad
     EXPECT_FALSE(state.epoch_in_window(term, 1_epoch));
+    EXPECT_FALSE(state.epoch_moves_window(term, 1_epoch));
 
     // Still not safe to GC, we accept stuff at epoch 0
     EXPECT_EQ(estimate_inactive_epoch(), 1_epoch);
@@ -260,7 +263,9 @@ TEST(ctp_stm_state_test, sliding_window_issue) {
     state.advance_max_seen_epoch(term, 10_epoch);
     EXPECT_TRUE(state.epoch_in_window(term, 10_epoch));
     EXPECT_TRUE(state.epoch_in_window(term, 5_epoch));
-    EXPECT_TRUE(state.epoch_in_window(term, 8_epoch));
+    // Interior epochs need a window move.
+    EXPECT_FALSE(state.epoch_in_window(term, 8_epoch));
+    EXPECT_TRUE(state.epoch_moves_window(term, 8_epoch));
     EXPECT_FALSE(state.epoch_in_window(term, 0_epoch));
     EXPECT_FALSE(state.epoch_in_window(term, 4_epoch));
 
@@ -278,7 +283,8 @@ TEST(ctp_stm_state_test, sliding_window_issue) {
     state.advance_max_seen_epoch(term, 15_epoch);
     EXPECT_TRUE(state.epoch_in_window(term, 10_epoch));
     EXPECT_TRUE(state.epoch_in_window(term, 15_epoch));
-    EXPECT_TRUE(state.epoch_in_window(term, 12_epoch));
+    EXPECT_FALSE(state.epoch_in_window(term, 12_epoch));
+    EXPECT_TRUE(state.epoch_moves_window(term, 12_epoch));
     EXPECT_FALSE(state.epoch_in_window(term, 9_epoch));
 
     EXPECT_EQ(estimate_inactive_epoch(), 4_epoch);
@@ -393,6 +399,91 @@ TEST(ctp_stm_state_test, stale_epoch_rejected_after_seen_applied_divergence) {
     EXPECT_TRUE(state.epoch_in_window(term, 14_epoch));
 }
 
+TEST(ctp_stm_state_test, interior_epoch_moves_window_min) {
+    ct::ctp_stm_state state;
+    model::term_id term(1);
+
+    // Epoch 10 lands and applies, then a bump to 14 whose batch is still in
+    // flight.
+    state.advance_max_seen_epoch(term, 10_epoch);
+    state.advance_epoch(10_epoch, model::offset{0});
+    state.advance_max_seen_epoch(term, 14_epoch);
+
+    // Window boundaries are admissible under a read fence.
+    EXPECT_TRUE(state.epoch_in_window(term, 10_epoch));
+    EXPECT_TRUE(state.epoch_in_window(term, 14_epoch));
+    // Interior epochs are not: they require a window move.
+    EXPECT_FALSE(state.epoch_in_window(term, 12_epoch));
+    EXPECT_TRUE(state.epoch_moves_window(term, 12_epoch));
+
+    state.move_seen_window(term, 12_epoch);
+    // 12 became the window min...
+    EXPECT_TRUE(state.epoch_in_window(term, 12_epoch));
+    // ...and fenced off everything below it.
+    EXPECT_FALSE(state.epoch_in_window(term, 10_epoch));
+    EXPECT_FALSE(state.epoch_in_window(term, 11_epoch));
+    EXPECT_FALSE(state.epoch_moves_window(term, 11_epoch));
+}
+
+TEST(ctp_stm_state_test, stale_epoch_rejected_after_interior_window_moves) {
+    // Regression: a bump whose batch never lands, followed by interior
+    // epochs that land one after another, ratchets the log's epoch window
+    // upwards ([10, 12], then [12, 13]). An epoch below the last interior
+    // admission must be rejected: replicated, it would land above the
+    // batches that moved the log window past it, tripping the
+    // epoch_window_checker vassert in do_apply on every replica and breaking
+    // the GC epoch lower bound.
+    ct::ctp_stm_state state;
+    model::term_id term(1);
+
+    state.advance_max_seen_epoch(term, 10_epoch);
+    state.advance_epoch(10_epoch, model::offset{0});
+    // Bump to 14; the bump batch is discarded (replicate failed).
+    state.advance_max_seen_epoch(term, 14_epoch);
+
+    // Interior epochs 12 and 13 are admitted by moving the window min and
+    // their batches land: the log window becomes [12, 13].
+    ASSERT_TRUE(state.epoch_moves_window(term, 12_epoch));
+    state.move_seen_window(term, 12_epoch);
+    state.advance_epoch(12_epoch, model::offset{1});
+    ASSERT_TRUE(state.epoch_moves_window(term, 13_epoch));
+    state.move_seen_window(term, 13_epoch);
+    state.advance_epoch(13_epoch, model::offset{2});
+
+    // Epoch 11 is below the log window: neither admissible nor able to move
+    // the window.
+    EXPECT_FALSE(state.epoch_in_window(term, 11_epoch));
+    EXPECT_FALSE(state.epoch_moves_window(term, 11_epoch));
+    // Epoch 12 is below the log window max as well: only the window
+    // boundaries remain admissible.
+    EXPECT_FALSE(state.epoch_in_window(term, 12_epoch));
+    EXPECT_TRUE(state.epoch_in_window(term, 13_epoch));
+    EXPECT_TRUE(state.epoch_in_window(term, 14_epoch));
+}
+
+TEST(ctp_stm_state_test, frozen_window_admits_applied_range) {
+    // Once the max-seen epoch's batch has applied, nothing can move the
+    // log's epoch window until the next bump, so everything within the
+    // applied window is admissible without moving the seen window.
+    ct::ctp_stm_state state;
+    model::term_id term(1);
+
+    state.advance_max_seen_epoch(term, 10_epoch);
+    state.advance_epoch(10_epoch, model::offset{0});
+    state.advance_max_seen_epoch(term, 14_epoch);
+    state.advance_epoch(14_epoch, model::offset{1});
+
+    // The log window is frozen at [10, 14].
+    for (int64_t e = 10; e <= 14; ++e) {
+        EXPECT_TRUE(state.epoch_in_window(term, ct::cluster_epoch{e})) << e;
+        // No window move is needed (or allowed).
+        EXPECT_FALSE(state.epoch_moves_window(term, ct::cluster_epoch{e})) << e;
+    }
+    EXPECT_FALSE(state.epoch_in_window(term, 9_epoch));
+    EXPECT_FALSE(state.epoch_moves_window(term, 9_epoch));
+    EXPECT_TRUE(state.epoch_moves_window(term, 15_epoch));
+}
+
 TEST(ctp_stm_state_test, l0_simulation) {
     struct uploaded_l0_file_batch {
         ct::cluster_epoch epoch;
@@ -409,6 +500,12 @@ TEST(ctp_stm_state_test, l0_simulation) {
         // be applied to the log. The epochs may not be in order because they
         // may come from different shards/brokers.
         ss::chunked_fifo<uploaded_l0_file_batch> uploaded_batches;
+        // Batches that are fenced (admitted for replication) but have not
+        // reached the log yet. The real system replicates them concurrently,
+        // so they may land in any order; a seen-window move waits for all of
+        // them to land first (the fence write lock drains in-flight
+        // replications).
+        std::vector<ct::cluster_epoch> fenced_batches;
         // Placeholders that are replicated, but not yet applied to the
         // to the STM.
         ss::chunked_fifo<placeholder_batch> unapplied_placeholders;
@@ -416,6 +513,11 @@ TEST(ctp_stm_state_test, l0_simulation) {
         ss::chunked_fifo<placeholder_batch> log_placeholders;
         // hwm for the partition
         kafka::offset hwm = 0_offset;
+        // Mirrors epoch_window_checker: the sliding epoch window of the log
+        // content that every appended batch has to satisfy (or every replica
+        // dies applying it).
+        ct::cluster_epoch checker_min = ct::cluster_epoch::min();
+        ct::cluster_epoch checker_max = ct::cluster_epoch::min();
 
         testing::AssertionResult validate() {
             // The main thing we want to validate is that there are no batches
@@ -434,20 +536,23 @@ TEST(ctp_stm_state_test, l0_simulation) {
             // What do we say we can GC?
             auto inactive_epoch = stm.estimate_inactive_epoch();
             if (min_active_epoch == non_reconciled_batches.end()) {
-                // There is nothing in the log unreconcilded, we should not yet
-                // have an inactive epoch above what is yet to be replicated.
-                if (!uploaded_batches.empty()) {
-                    auto it = std::ranges::min_element(
-                      uploaded_batches, std::less<>(), [](const auto& batch) {
-                          return batch.epoch;
-                      });
-                    if (inactive_epoch > it->epoch) {
-                        return testing::AssertionFailure() << fmt::format(
-                                 "expected inactive epoch ({}) to not be above "
-                                 "active epochs {}",
-                                 inactive_epoch.value(),
-                                 it->epoch);
-                    }
+                // There is nothing in the log unreconciled, we should not yet
+                // have an inactive epoch above what is yet to be replicated
+                // (uploaded or fenced and in flight).
+                std::optional<ct::cluster_epoch> min_pending;
+                for (const auto& batch : uploaded_batches) {
+                    min_pending = std::min(
+                      min_pending.value_or(batch.epoch), batch.epoch);
+                }
+                for (auto epoch : fenced_batches) {
+                    min_pending = std::min(min_pending.value_or(epoch), epoch);
+                }
+                if (min_pending.has_value() && inactive_epoch > *min_pending) {
+                    return testing::AssertionFailure() << fmt::format(
+                             "expected inactive epoch ({}) to not be above "
+                             "active epochs {}",
+                             inactive_epoch.value(),
+                             *min_pending);
                 }
             } else if (inactive_epoch >= min_active_epoch->epoch) {
                 return testing::AssertionFailure() << fmt::format(
@@ -503,28 +608,69 @@ TEST(ctp_stm_state_test, l0_simulation) {
           << fmt::format("operations:\n{}", fmt::join(oplog, "\n"));
         // Possible operations we can perform in the universe.
         std::vector<std::function<void()>> possible_operations;
-        // If there are batches to upload, let's do it.
+        // If there are batches to upload, fence the next one. Mirror the
+        // fence_epoch branches: epochs admissible under the current window
+        // take a read fence; epochs that require moving a window boundary
+        // (bumping the max or raising the min) take the write lock, which
+        // drains in-flight replications first - so such an admission is only
+        // possible while nothing is in flight; everything else is rejected
+        // (the producer would retry with a fresh epoch).
         if (!universe.uploaded_batches.empty()) {
-            possible_operations.emplace_back([&universe, &oplog, term] {
-                auto batch = universe.uploaded_batches.front();
-                universe.uploaded_batches.pop_front();
-                // Mirror the fence_epoch branches: bump the window for an
-                // above-window epoch, replicate an in-window epoch, reject
-                // everything else. A below-max epoch is rejected while no
-                // applied batch proves that something precedes the max
-                // epoch's first batch in the log (the producer would retry
-                // with a fresh epoch).
-                if (universe.stm.epoch_above_window(term, batch.epoch)) {
-                    universe.stm.advance_max_seen_epoch(term, batch.epoch);
-                    ASSERT_TRUE(
-                      universe.stm.epoch_in_window(term, batch.epoch));
-                } else if (!universe.stm.epoch_in_window(term, batch.epoch)) {
+            auto epoch = universe.uploaded_batches.front().epoch;
+            bool in_window = universe.stm.epoch_in_window(term, epoch);
+            bool moves = universe.stm.epoch_moves_window(term, epoch);
+            if (in_window || (moves && universe.fenced_batches.empty())) {
+                possible_operations.emplace_back(
+                  [&universe, &oplog, term, epoch, in_window] {
+                      universe.uploaded_batches.pop_front();
+                      if (!in_window) {
+                          universe.stm.move_seen_window(term, epoch);
+                          ASSERT_TRUE(
+                            universe.stm.epoch_in_window(term, epoch));
+                      }
+                      universe.fenced_batches.push_back(epoch);
+                      oplog.push_back(
+                        fmt::format("fenced batch with epoch {}", epoch));
+                  });
+            } else if (!moves) {
+                possible_operations.emplace_back([&universe, &oplog, epoch] {
+                    universe.uploaded_batches.pop_front();
                     oplog.push_back(
-                      fmt::format("rejected batch with epoch {}", batch.epoch));
-                    return;
-                }
+                      fmt::format("rejected batch with epoch {}", epoch));
+                });
+            }
+            // Otherwise the admission is waiting for the write lock: the
+            // replicate operations below drain the in-flight batches first.
+        }
+        // Replicate a fenced batch. In-flight batches can reach the log in
+        // any order, so pick a random one.
+        if (!universe.fenced_batches.empty()) {
+            possible_operations.emplace_back([&universe, &oplog] {
+                auto idx = random_generators::get_int<size_t>(
+                  universe.fenced_batches.size() - 1);
+                auto epoch = universe.fenced_batches[idx];
+                universe.fenced_batches.erase(
+                  universe.fenced_batches.begin()
+                  + static_cast<std::ptrdiff_t>(idx));
                 placeholder_batch placeholder{
-                  .epoch = batch.epoch, .offset = universe.hwm++};
+                  .epoch = epoch, .offset = universe.hwm++};
+                // Mirror epoch_window_checker::check_epoch: every batch
+                // reaching the log must be within the log's sliding epoch
+                // window.
+                if (epoch > universe.checker_max) {
+                    universe.checker_min = universe.checker_max
+                                               == ct::cluster_epoch::min()
+                                             ? epoch
+                                             : universe.checker_max;
+                    universe.checker_max = epoch;
+                }
+                ASSERT_GE(epoch, universe.checker_min) << fmt::format(
+                  "epoch {} landed below the log window [{}, {}], "
+                  "operations:\n{}",
+                  epoch,
+                  universe.checker_min,
+                  universe.checker_max,
+                  fmt::join(oplog, "\n"));
                 universe.unapplied_placeholders.push_back(placeholder);
                 universe.log_placeholders.push_back(placeholder);
                 oplog.push_back(

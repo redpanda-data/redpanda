@@ -122,6 +122,16 @@ public:
     /// Return true if the epoch is above the current window
     bool
     epoch_above_window(model::term_id term, cluster_epoch epoch) const noexcept;
+    /// Return true if the epoch can be admitted by moving a seen-window
+    /// boundary: bumping the max above the window or raising the min to an
+    /// interior epoch. The caller has to hold the write lock across
+    /// move_seen_window so no fenced replication is in flight while the
+    /// window moves.
+    bool
+    epoch_moves_window(model::term_id term, cluster_epoch epoch) const noexcept;
+    /// Move a seen-window boundary to admit the epoch. No-op for epochs
+    /// that don't satisfy epoch_moves_window.
+    void move_seen_window(model::term_id term, cluster_epoch epoch) noexcept;
 
     /// Estimate inactive epoch
     std::optional<cluster_epoch> estimate_inactive_epoch() const noexcept;
@@ -245,6 +255,34 @@ private:
         /// the window transitioned to the current max.
         void on_lro_advanced(model::offset lro_log_offset) noexcept;
     };
+
+    /// How the seen and the applied windows combine into the effective
+    /// admission window for a query at a given term.
+    enum class window_state {
+        /// No seen window is visible at the term (never built, or built in
+        /// an older term): the applied window is the only evidence.
+        applied_only,
+        /// The batch carrying the seen max hasn't been applied yet: the
+        /// effective window is the seen window and only its boundaries are
+        /// safe to replicate concurrently.
+        pending,
+        /// The batch carrying the seen max has been applied: the log's
+        /// epoch window is frozen at the applied window until the next
+        /// bump.
+        frozen,
+    };
+
+    struct resolved_window {
+        window_state state;
+        /// The effective admission window; nullopt only in the applied_only
+        /// state when nothing has been applied yet.
+        std::optional<epoch_window> window;
+    };
+
+    /// Combine the seen and the applied windows for a query at the given
+    /// term. This is the only place where the seen-window term visibility
+    /// rule and the seen/applied fallbacks live.
+    resolved_window resolve_window(model::term_id term) const noexcept;
 
     /// In-flight (seen) epoch window.
     ///
