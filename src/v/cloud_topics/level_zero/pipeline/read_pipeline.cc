@@ -160,6 +160,7 @@ read_pipeline<Clock>::make_reader(
 
     auto fut = request.response.get_future();
     this->get_pending().push_back(request);
+    this->arm_expiry_timer();
 
     // Notify all active event_filter instances that new item is enqueued
     this->signal(stage);
@@ -282,6 +283,7 @@ void read_pipeline<Clock>::reenqueue(read_request<Clock>& r, bool signal) {
         // and notify the corresponding event filter.
         r.stage = next;
         this->get_pending().push_back(r);
+        this->arm_expiry_timer();
         if (signal) {
             this->signal(r.stage);
         }

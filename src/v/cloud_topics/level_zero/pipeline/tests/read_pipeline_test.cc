@@ -41,6 +41,9 @@ struct read_pipeline_accessor {
         return pipeline->get_fetch_requests(max_bytes, stage);
     }
 
+    // Arm the periodic expiry sweep (normally armed on enqueue).
+    void arm_expiry_timer() { pipeline->arm_expiry_timer(); }
+
     read_pipeline<ss::manual_clock>* pipeline;
 };
 } // namespace cloud_topics::l0
@@ -257,4 +260,40 @@ TEST_CORO(read_pipeline_test, multiple_requests_within_limit) {
       cloud_topics::l0::dataplane_query_result{});
 
     ASSERT_EQ_CORO(accessor.read_requests_pending(0), true);
+}
+
+TEST_CORO(read_pipeline_test, expired_request_reaped_without_pull) {
+    // A read that blows its deadline must be resolved with errc::timeout even
+    // when no downstream stage ever pulls it: the periodic sweep reaps it.
+    // Without the sweep the request lingers until a pull happens to occur (or
+    // the client gives up) -- the fetch-stall this guards against.
+    cloud_topics::l0::read_pipeline<ss::manual_clock> pipeline;
+    cloud_topics::l0::read_pipeline_accessor accessor{
+      .pipeline = &pipeline,
+    };
+    auto stage = pipeline.register_read_pipeline_stage();
+
+    const auto timeout = ss::manual_clock::now() + 10s;
+    cloud_topics::l0::dataplane_query query{cloud_io::group_id::default_group};
+    query.output_size_estimate = 1000;
+    auto req
+      = std::make_unique<cloud_topics::l0::read_request<ss::manual_clock>>(
+        model::controller_ntp,
+        std::move(query),
+        timeout,
+        &pipeline.get_root_rtc());
+    auto fut = req->response.get_future();
+
+    accessor.add_request_with_stage(*req, stage.id());
+    accessor.arm_expiry_timer();
+    ASSERT_EQ_CORO(accessor.read_requests_pending(1), true);
+
+    // Advance past the deadline. Crucially, never call get_fetch_requests --
+    // only the timer can resolve the request here.
+    co_await sleep_until(
+      11s, [&] { return accessor.read_requests_pending(0); });
+
+    auto res = co_await std::move(fut);
+    ASSERT_TRUE_CORO(!res.has_value());
+    ASSERT_EQ_CORO(res.error(), cloud_topics::errc::timeout);
 }
