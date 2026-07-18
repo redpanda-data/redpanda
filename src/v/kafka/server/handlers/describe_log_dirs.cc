@@ -13,10 +13,12 @@
 #include "cluster/partition_manager.h"
 #include "config/node_config.h"
 #include "container/chunked_vector.h"
+#include "kafka/data/partition_proxy.h"
 #include "kafka/protocol/errors.h"
 #include "kafka/server/request_context.h"
 #include "kafka/server/response.h"
 #include "model/fundamental.h"
+#include "model/ktp.h"
 
 #include <seastar/core/coroutine.hh>
 #include <seastar/core/smp.hh>
@@ -32,7 +34,7 @@ using partition_dir_set
   = chunked_hash_map<model::topic, chunked_vector<log_partition_data>>;
 
 static ss::future<log_partition_data>
-describe_partition(kafka::partition_proxy& p) {
+describe_partition(const kafka::partition_proxy& p) {
     auto result = log_partition_data{
       .local = describe_log_dirs_partition{
         .partition_index = p.ntp().tp.partition(),
@@ -60,35 +62,29 @@ describe_partition(kafka::partition_proxy& p) {
 static ss::future<partition_dir_set> collect_mapper(
   cluster::partition_manager& pm,
   const std::optional<std::vector<describable_log_dir_topic>>& topics) {
-    partition_dir_set ret;
-
-    /*
-     * return all partitions
-     */
+    chunked_vector<model::ktp> ktps;
     if (!topics) {
+        // return all partitions
+        ktps.reserve(pm.partitions().size());
         for (const auto& partition : pm.partitions()) {
-            auto ktp = model::ktp(
+            ktps.emplace_back(
               partition.second->ntp().tp.topic,
               partition.second->ntp().tp.partition);
-            auto proxy = make_partition_proxy(ktp, pm);
-            if (proxy) {
-                ret[partition.first.tp.topic].push_back(
-                  co_await describe_partition(*proxy));
+        }
+    } else {
+        // return only partition matching request
+        for (const auto& topic : *topics) {
+            for (auto p_id : topic.partition_index) {
+                ktps.emplace_back(topic.topic, p_id);
             }
         }
-        co_return ret;
     }
 
-    /*
-     * return only partition matching request
-     */
-    for (const auto& topic : *topics) {
-        for (auto p_id : topic.partition_index) {
-            auto ktp = model::ktp(topic.topic, p_id);
-            auto proxy = make_partition_proxy(ktp, pm);
-            if (proxy) {
-                ret[topic.topic].push_back(co_await describe_partition(*proxy));
-            }
+    partition_dir_set ret;
+    for (const auto& ktp : ktps) {
+        auto proxy = make_partition_proxy(ktp, pm);
+        if (proxy) {
+            ret[ktp.get_topic()].push_back(co_await describe_partition(*proxy));
         }
     }
     co_return ret;
