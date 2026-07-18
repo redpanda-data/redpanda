@@ -944,6 +944,20 @@ class RpkTool:
                 pass
         return res
 
+    def describe_storage(self, topic: str, timeout: int | None = None) -> str:
+        """Run `rpk topic describe-storage <topic>` and return the raw output.
+
+        The command talks to both the Kafka API (topic metadata) and the admin
+        API (cloud storage status), so the admin endpoints are passed too.
+        """
+        cmd = [
+            "describe-storage",
+            topic,
+            "--api-urls",
+            self._redpanda.admin_endpoints(),
+        ]
+        return self._run_topic(cmd, timeout=timeout)
+
     def alter_topic_config(self, topic: str, set_key: str, set_value: Any) -> None:
         cmd = ["alter-config", topic, "--set", f"{set_key}={set_value}", "--no-confirm"]
         out = self._run_topic(cmd)

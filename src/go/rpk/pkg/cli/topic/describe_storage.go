@@ -169,21 +169,36 @@ func newDescribeStorageCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 
 			sections.Add(secSize, func() {
 				mode := report[0].CloudStatus.CloudStorageMode
-				isCloudTopic := mode == "cloud_topic" || mode == "cloud_topic_read_replica"
+				isCloudTopic := mode == "cloud_topic" || mode == "cloud_topic_read_replica" || mode == "tiered_cloud_topic"
 				if isCloudTopic {
-					tw := out.NewTable("PARTITION", "LOCAL-BYTES", "L0-BYTES", "L1-BYTES", "TOTAL-BYTES", "L1-EXTENTS")
+					// Only a tiered_cloud_topic has a local log worth
+					// reporting segments for; cloud_topic and read replicas
+					// do not.
+					isTiered := mode == "tiered_cloud_topic"
+					headers := []string{"PARTITION", "LOCAL-BYTES"}
+					if isTiered {
+						headers = append(headers, "LOCAL-SEGMENTS")
+					}
+					headers = append(headers, "L0-BYTES", "L1-BYTES", "TOTAL-BYTES", "L1-EXTENTS")
+					tw := out.NewTable(headers...)
 					defer tw.Flush()
 					for _, r := range report {
 						l1 := r.CloudStatus.CloudLogBytes
 						l0 := r.CloudStatus.TotalLogBytes - l1
-						tw.Print(
+						row := []any{
 							r.Partition,
 							humanReadable(r.CloudStatus.LocalLogBytes, human, humanSize),
+						}
+						if isTiered {
+							row = append(row, r.CloudStatus.LocalLogSegmentCount)
+						}
+						row = append(row,
 							humanReadable(l0, human, humanSize),
 							humanReadable(l1, human, humanSize),
 							humanReadable(r.CloudStatus.TotalLogBytes, human, humanSize),
 							r.CloudStatus.CloudLogSegmentCount,
 						)
+						tw.Print(row...)
 					}
 				} else {
 					tw := out.NewTable("PARTITION", "CLOUD-BYTES", "LOCAL-BYTES", "TOTAL-BYTES", "CLOUD-SEGMENTS", "LOCAL-SEGMENTS")
@@ -293,8 +308,9 @@ partition (excluding cloud and local overlap), and the number of segments in
 the cloud and on local disk. The cloud segment count does not include segments
 queued for deletion.
 
-For cloud topics, the size section shows the L0 (level zero) and L1 (level
-one) byte breakdown, the total bytes, and the number of L1 extents.
+For cloud topics, the size section shows the local log size, the L0 (level
+zero) and L1 (level one) byte breakdown, the total bytes, and the number of L1
+extents. For tiered_cloud_topic, the local segment count is also shown.
 
 SYNC
 
