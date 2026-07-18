@@ -10,6 +10,7 @@
 
 import asyncio
 from contextlib import closing
+import json
 import random
 import threading
 import time
@@ -922,7 +923,11 @@ class ConsumerGroupTest(RedpandaTest):
         )
         topic_count = 1
         partition_count = 20
-        consumer_count = 4
+        # One consumer per partition: each consumer then owns exactly one
+        # partition, so its consume() queue holds only that partition and any
+        # non-empty poll covers it -- avoiding the cross-partition delivery-order
+        # starvation that made this test flaky (CORE-13976). See the consume loop.
+        consumer_count = partition_count
         group = "test-lag-metrics-group"
         # Use a small batch size to ensure that fetches are distributed across all partitions
         batch_size = 1
@@ -949,6 +954,12 @@ class ConsumerGroupTest(RedpandaTest):
             ]
         )
 
+        # Per-consumer librdkafka statistics, refreshed via stats_cb. Cheap to
+        # collect; only dumped on failure (see not_ready_diagnostic) to show the
+        # per-broker connection state and per-partition fetch state when a
+        # consumer stalls reading from a broker. See CORE-13976.
+        consumer_stats: dict[int, dict] = {}
+
         def create_consumer(instance_id: int) -> Consumer:
             return Consumer(
                 {
@@ -960,6 +971,10 @@ class ConsumerGroupTest(RedpandaTest):
                     "enable.auto.offset.store": True,
                     "enable.auto.commit": False,
                     "max.partition.fetch.bytes": batch_size,
+                    "statistics.interval.ms": 2000,
+                    "stats_cb": lambda s, i=instance_id: consumer_stats.__setitem__(
+                        i, json.loads(s)
+                    ),
                     "log_level": 7,
                     "debug": "cgrp",
                 },
@@ -1069,11 +1084,51 @@ class ConsumerGroupTest(RedpandaTest):
                     consumed_from[i].add((msg.topic(), msg.partition()))
             return all_consumers_ready()
 
+        def not_ready_diagnostic() -> str:
+            """On timeout, dump each stalled consumer's assigned-but-unconsumed
+            partitions together with the librdkafka broker/partition state, so a
+            failure is self-diagnosing (which broker's fetch path stalled, and
+            whether it looks like a dead connection vs a stuck fetch)."""
+            lines = ["Timed out waiting for all partitions to be consumed"]
+            for i in range(len(consumers)):
+                missing = assigned[i] - consumed_from[i]
+                if assigned[i] and not missing:
+                    continue
+                stats = consumer_stats.get(i, {})
+                brokers = {
+                    b.get("nodeid"): {
+                        "state": b.get("state"),
+                        "rxidle_us": b.get("rxidle"),
+                    }
+                    for b in stats.get("brokers", {}).values()
+                    if b.get("nodeid", -1) >= 0
+                }
+                lines.append(
+                    f"consumer {i}: missing {sorted(missing)} of assigned "
+                    f"{sorted(assigned[i])}; brokers={brokers}"
+                )
+                for topic in stats.get("topics", {}).values():
+                    tname = topic.get("topic")
+                    for pid, p in topic.get("partitions", {}).items():
+                        try:
+                            key = (tname, int(pid))
+                        except ValueError:
+                            continue
+                        if key not in missing:
+                            continue
+                        lines.append(
+                            f"  {tname}/{pid}: leader={p.get('leader')} "
+                            f"fetch_state={p.get('fetch_state')} "
+                            f"next_offset={p.get('next_offset')} "
+                            f"rxbytes={p.get('rxbytes')} lag={p.get('consumer_lag')}"
+                        )
+            return "\n".join(lines)
+
         wait_until(
             consume_and_check_ready,
             30,
             1,
-            err_msg="Timed out waiting for all partitions to be consumed",
+            err_msg=not_ready_diagnostic,
         )
 
         self.logger.info("Waiting for lag_metrics")
