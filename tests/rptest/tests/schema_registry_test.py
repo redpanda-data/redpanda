@@ -13,6 +13,7 @@ import json
 import random
 import re
 import socket
+import threading
 import time
 import urllib.parse
 import uuid
@@ -11942,3 +11943,299 @@ class SchemaRegistryTransportCompatTest(RedpandaTest):
 
         self._flip_transport(use_rpc=False)
         self._verify_phase(after_rpc2, "kafka2", "Kafka2Rec", n)
+
+
+# The SR briefly returns HTTP 500 (std::exception) to requests that arrive
+# while restart_service is tearing down and rebuilding it. This test sends load
+# during the restart window on purpose, so those transient errors are expected
+# and unrelated to the startup race under test.
+_SR_STARTUP_RECOVERY_LOG_ALLOW_LIST = DEFAULT_LOG_ALLOW_LIST + [
+    r"schemaregistry - reply.h.*HTTP 500 Internal Server Error",
+]
+
+
+class SchemaRegistryStartupRecoveryTest(RedpandaTest):
+    """
+    Schema Registry recovery of the `_schemas` topic on startup must run
+    exactly one replay per broker, even when many first requests land on
+    different shards at once.
+
+    Regression test for the multi-shard `do_start()` startup race.
+    `service` is a per-shard peering_sharded_service, so each shard owns its
+    own `_ensure_started` one_shot, and `do_start()` only stamps `_is_started`
+    (its re-entry guard) from inside its `invoke_on_all`, after
+    `create_internal_topic()`. That leaves a window in which first requests
+    arriving on several shards concurrently each run `do_start()` and launch
+    their own independent, redundant full replay on the reader shard, slowing
+    recovery by up to a factor of the shard count.
+
+    `do_start()` logs "Schema registry successfully initialized" exactly once
+    per invocation (before its fetch-retry loop, only on success), so the
+    increase in that marker across a single SR restart is precisely the number
+    of replays that ran. The fix funnels every shard through a single reader-
+    shard one_shot, so the count is deterministically 1.
+
+    Reproducing the race on unfixed code is timing-dependent (the window is a
+    single cold `create_internal_topic()` call), so we restart repeatedly under
+    heavy concurrent load to raise the odds; the assertion is exact on the
+    fixed code regardless. Multiple shards are required, so this runs the
+    brokers with >1 CPU (num_cpus=1 has a single shard and cannot race).
+    """
+
+    INIT_MARKER = "Schema registry successfully initialized"
+    # A second consumer re-applying already-loaded offsets: the fingerprint of
+    # a concurrent redundant replay. Absent when a single replay runs.
+    RACE_MARKER = "advance_offset ignoring"
+
+    N_SUBJECTS = 200
+    RESTARTS = 5
+    HAMMER_THREADS = 32
+
+    def __init__(self, test_context: TestContext):
+        super().__init__(
+            test_context=test_context,
+            num_brokers=3,
+            extra_rp_conf={
+                "auto_create_topics_enabled": False,
+                "schema_registry_use_rpc": False,
+            },
+            # Multiple shards per broker are required to exercise the
+            # cross-shard startup race; num_cpus=1 has a single shard and the
+            # race cannot occur. More shards increase reproduction odds.
+            resource_settings=ResourceSettings(num_cpus=2),
+            log_config=log_config,  # schemaregistry: trace
+            pandaproxy_config=PandaproxyConfig(),
+            schema_registry_config=SchemaRegistryConfig(),
+        )
+        self.sr_client = SchemaRegistryRedpandaClient(redpanda=self.redpanda)
+
+    @staticmethod
+    def _schema(i: int) -> str:
+        return json.dumps(
+            {
+                "schema": json.dumps(
+                    {
+                        "type": "record",
+                        "name": f"rec{i}",
+                        "fields": [{"name": "f", "type": "string"}],
+                    }
+                )
+            }
+        )
+
+    def _register_schemas(self, hostname: str) -> None:
+        for i in range(self.N_SUBJECTS):
+            r = self.sr_client.request(
+                "POST",
+                f"subjects/test-{i}-value/versions",
+                headers=HTTP_POST_HEADERS,
+                data=self._schema(i),
+                hostname=hostname,
+            )
+            assert r.status_code == requests.codes.ok, (
+                f"register subject {i} failed: {r.status_code} {r.text}"
+            )
+
+    def _all_subjects_served(self, hostname: str) -> bool:
+        r = self.sr_client.request(
+            "GET", "subjects", headers=HTTP_GET_HEADERS, hostname=hostname
+        )
+        return r.status_code == requests.codes.ok and len(r.json()) >= self.N_SUBJECTS
+
+    @cluster(num_nodes=3, log_allow_list=_SR_STARTUP_RECOVERY_LOG_ALLOW_LIST)
+    def test_single_replay_per_startup(self):
+        node = self.redpanda.nodes[0]
+        host = node.account.hostname
+        base = f"http://{host}:8081"
+
+        # Populate _schemas so recovery has real work and the subject list is
+        # non-trivial to serve.
+        self._register_schemas(host)
+        wait_until(
+            lambda: self._all_subjects_served(host),
+            timeout_sec=30,
+            backoff_sec=1,
+            err_msg="subjects not visible after registration",
+        )
+
+        for iteration in range(self.RESTARTS):
+            init_before = self.redpanda.count_log_node(node, self.INIT_MARKER)
+            race_before = self.redpanda.count_log_node(node, self.RACE_MARKER)
+
+            # Pile concurrent read load on the target broker so that, right
+            # after the restart resets SR, first requests fan out across its
+            # shards and (on unfixed code) trigger the race. Raw requests bypass
+            # the SR client's retry/sleep so the load stays tight; responses are
+            # irrelevant, we only care about driving startup.
+            stop = threading.Event()
+
+            def hammer():
+                while not stop.is_set():
+                    for path in (
+                        "subjects",
+                        f"schemas/ids/{random.randint(1, self.N_SUBJECTS)}",
+                    ):
+                        try:
+                            requests.get(
+                                f"{base}/{path}",
+                                headers=HTTP_GET_HEADERS,
+                                timeout=2,
+                            )
+                        except Exception:
+                            pass
+
+            threads = [
+                threading.Thread(target=hammer, daemon=True)
+                for _ in range(self.HAMMER_THREADS)
+            ]
+            for t in threads:
+                t.start()
+
+            try:
+                admin = Admin(self.redpanda)
+                result = admin.restart_service(rp_service="schema-registry", node=node)
+                assert result.status_code == requests.codes.ok, (
+                    f"restart_service failed: {result.status_code} {result.text}"
+                )
+
+                # Recovery: the store rehydrates and subjects are served again.
+                wait_until(
+                    lambda: self._all_subjects_served(host),
+                    timeout_sec=60,
+                    backoff_sec=1,
+                    err_msg=f"SR did not recover after restart {iteration}",
+                )
+            finally:
+                stop.set()
+                for t in threads:
+                    t.join(timeout=10)
+
+            init_after = self.redpanda.count_log_node(node, self.INIT_MARKER)
+            race_after = self.redpanda.count_log_node(node, self.RACE_MARKER)
+
+            replays = init_after - init_before
+            assert replays == 1, (
+                f"iteration {iteration}: expected exactly one _schemas replay "
+                f"per SR restart, saw {replays} "
+                f"('{self.INIT_MARKER}' {init_before}->{init_after}). "
+                f">1 means the multi-shard do_start() startup race launched "
+                f"redundant concurrent replays."
+            )
+            assert race_after == race_before, (
+                f"iteration {iteration}: saw {race_after - race_before} "
+                f"'{self.RACE_MARKER}' lines during recovery -- a second "
+                f"consumer re-applied already-loaded offsets, i.e. a concurrent "
+                f"redundant replay ran."
+            )
+
+        # Everything is still served correctly after the restart cycles.
+        r = self.sr_client.request(
+            "GET", "subjects", headers=HTTP_GET_HEADERS, hostname=host
+        )
+        assert r.status_code == requests.codes.ok, r.text
+        assert len(r.json()) >= self.N_SUBJECTS
+
+    @cluster(num_nodes=3, log_allow_list=_SR_STARTUP_RECOVERY_LOG_ALLOW_LIST)
+    def test_replay_on_startup_without_request(self):
+        """
+        With schema_registry_replay_on_startup enabled, the store must hydrate
+        proactively at startup without any client request driving it.
+
+        admin restart_service re-runs service::start() (via api::restart ->
+        start -> service::start), which is where the eager trigger lives, and
+        does not restart the broker process, so the log persists and we can
+        watch for the replay without touching the SR API.
+        """
+        node = self.redpanda.nodes[0]
+        host = node.account.hostname
+
+        # Populate _schemas so a restart has a topic to replay.
+        self._register_schemas(host)
+        wait_until(
+            lambda: self._all_subjects_served(host),
+            timeout_sec=30,
+            backoff_sec=1,
+            err_msg="subjects not visible after registration",
+        )
+
+        self.redpanda.set_cluster_config({"schema_registry_replay_on_startup": True})
+
+        init_before = self.redpanda.count_log_node(node, self.INIT_MARKER)
+
+        admin = Admin(self.redpanda)
+        result = admin.restart_service(rp_service="schema-registry", node=node)
+        assert result.status_code == requests.codes.ok, (
+            f"restart_service failed: {result.status_code} {result.text}"
+        )
+
+        # Deliberately issue NO SR request. The eager startup trigger must drive
+        # the replay on its own. count_log_node greps the broker log over ssh,
+        # so polling here does not hit the SR API and cannot trigger the lazy
+        # path.
+        wait_until(
+            lambda: self.redpanda.count_log_node(node, self.INIT_MARKER) > init_before,
+            timeout_sec=60,
+            backoff_sec=1,
+            err_msg="eager startup replay did not run without any request",
+        )
+
+        replays = self.redpanda.count_log_node(node, self.INIT_MARKER) - init_before
+        assert replays == 1, (
+            f"expected exactly one eager replay, saw {replays} "
+            f"('{self.INIT_MARKER}' delta)."
+        )
+
+        # The store hydrated without a request; a request now succeeds
+        # immediately rather than blocking on a cold replay.
+        assert self._all_subjects_served(host)
+
+    @cluster(num_nodes=3, log_allow_list=_SR_STARTUP_RECOVERY_LOG_ALLOW_LIST)
+    def test_no_replay_on_startup_by_default(self):
+        """
+        With schema_registry_replay_on_startup unset (the default), recovery
+        stays lazy: a restart does not replay _schemas until a request (or an
+        internal access) arrives. The complement of
+        test_replay_on_startup_without_request, and a guard that the config
+        actually gates the eager path.
+        """
+        node = self.redpanda.nodes[0]
+        host = node.account.hostname
+
+        self._register_schemas(host)
+        wait_until(
+            lambda: self._all_subjects_served(host),
+            timeout_sec=30,
+            backoff_sec=1,
+            err_msg="subjects not visible after registration",
+        )
+
+        # Deliberately leave schema_registry_replay_on_startup at its default
+        # (off). do_start() logs INIT_MARKER once per run, so a flat count after
+        # a restart with no request means recovery did not run.
+        init_before = self.redpanda.count_log_node(node, self.INIT_MARKER)
+
+        admin = Admin(self.redpanda)
+        result = admin.restart_service(rp_service="schema-registry", node=node)
+        assert result.status_code == requests.codes.ok, (
+            f"restart_service failed: {result.status_code} {result.text}"
+        )
+
+        # No SR request is issued. Give recovery ample time to (not) happen;
+        # a real replay of this topic completes in well under a second.
+        time.sleep(15)
+        assert self.redpanda.count_log_node(node, self.INIT_MARKER) == init_before, (
+            "recovery ran at startup without the config set and without a "
+            "request; it should be lazy by default"
+        )
+
+        # The first request now lazily triggers exactly one replay and serves.
+        wait_until(
+            lambda: self._all_subjects_served(host),
+            timeout_sec=30,
+            backoff_sec=1,
+            err_msg="lazy recovery did not serve after the first request",
+        )
+        replays = self.redpanda.count_log_node(node, self.INIT_MARKER) - init_before
+        assert replays == 1, (
+            f"expected exactly one lazy replay after the first request, saw {replays}."
+        )

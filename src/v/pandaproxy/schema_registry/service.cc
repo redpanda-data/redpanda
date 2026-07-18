@@ -36,6 +36,7 @@
 #include "security/audit/audit_log_manager.h"
 #include "security/authorizer.h"
 #include "security/request_auth.h"
+#include "ssx/future-util.h"
 #include "ssx/semaphore.h"
 
 #include <seastar/core/coroutine.hh>
@@ -586,10 +587,31 @@ server::routes_t get_schema_registry_routes(ss::gate& gate, one_shot& es) {
     return routes;
 }
 
+ss::future<> service::ensure_topic_loaded() {
+    // `service` is a peering_sharded_service, so each shard has its own
+    // `_ensure_started` one_shot. If the first requests after start-up land on
+    // several shards at once, each shard's one_shot would independently run
+    // do_start() and launch its own full `_schemas` replay on the reader
+    // shard. Redundant replays each pay the full recovery cost, so N racing
+    // shards make recovery up to N times slower.
+    //
+    // Funnel all shards through a single one_shot on the reader shard, so the
+    // topic is loaded exactly once. The per-shard `_ensure_started` one_shot
+    // still caches completion, so once started this costs nothing on later
+    // requests; only the first request on each shard pays the cross-shard hop.
+    return container().invoke_on(
+      seq_writer::reader_shard, _ctx.smp_sg, [](service& s) {
+          return s._load_once();
+      });
+}
+
 ss::future<> service::do_start() {
-    if (_is_started) {
-        co_return;
-    }
+    // Invoked only on the reader shard, via _load_once, so it runs exactly
+    // once and can drive the reader-shard-only fetch directly.
+    vassert(
+      ss::this_shard_id() == seq_writer::reader_shard,
+      "do_start must run on the reader shard, not {}",
+      ss::this_shard_id());
     auto guard = _gate.hold();
     try {
         co_await create_internal_topic();
@@ -604,60 +626,51 @@ ss::future<> service::do_start() {
           std::current_exception());
         throw;
     }
-    co_await container().invoke_on_all(
-      _ctx.smp_sg, [](this auto, service& s) -> ss::future<> {
-          s._is_started = true;
-          if (ss::this_shard_id() != seq_writer::reader_shard) {
-              co_return;
-          }
+    using namespace std::chrono_literals;
 
-          using namespace std::chrono_literals;
-
-          // create_internal_topic returns once the controller commits
-          // the topic, but the metadata cache and partition leadership
-          // are established asynchronously. Retry transient errors in
-          // that window with exponential backoff (100ms..5s, ~26s total).
-          constexpr int max_attempts = 10;
-          constexpr auto max_backoff = 5000ms;
-          auto backoff = 100ms;
-          for (int attempts = 0;; ++attempts) {
-              auto fut = co_await ss::coroutine::as_future(
-                s.fetch_internal_topic());
-              if (!fut.failed()) {
-                  co_return;
-              }
-              auto eptr = fut.get_exception();
-              if (attempts >= max_attempts) {
-                  std::rethrow_exception(eptr);
-              }
-              try {
-                  std::rethrow_exception(eptr);
-              } catch (const kafka::exception_base& e) {
-                  if (!kafka::is_retriable(e.error)) {
-                      throw;
-                  }
-              } catch (const exception& e) {
-                  // kafka_client_transport wraps "topic missing" as
-                  // unknown_server_error via schema_registry::exception.
-                  // treat this as retriable and rethrow anything else.
-                  if (e.code() != kafka::error_code::unknown_server_error) {
-                      throw;
-                  }
-              }
-              vlog(
-                srlog.info,
-                "Retriable error encountered while initializing the schemas "
-                "topic: {}. Retrying in {}ms",
-                eptr,
-                backoff.count());
-              try {
-                  co_await ss::sleep_abortable(backoff, s._as);
-              } catch (const ss::sleep_aborted&) {
-                  std::rethrow_exception(eptr);
-              }
-              backoff = std::min(backoff * 2, max_backoff);
-          }
-      });
+    // create_internal_topic returns once the controller commits the topic,
+    // but the metadata cache and partition leadership are established
+    // asynchronously. Retry transient errors in that window with exponential
+    // backoff (100ms..5s, ~26s total).
+    constexpr int max_attempts = 10;
+    constexpr auto max_backoff = 5000ms;
+    auto backoff = 100ms;
+    for (int attempts = 0;; ++attempts) {
+        auto fut = co_await ss::coroutine::as_future(fetch_internal_topic());
+        if (!fut.failed()) {
+            co_return;
+        }
+        auto eptr = fut.get_exception();
+        if (attempts >= max_attempts) {
+            std::rethrow_exception(eptr);
+        }
+        try {
+            std::rethrow_exception(eptr);
+        } catch (const kafka::exception_base& e) {
+            if (!kafka::is_retriable(e.error)) {
+                throw;
+            }
+        } catch (const exception& e) {
+            // kafka_client_transport wraps "topic missing" as
+            // unknown_server_error via schema_registry::exception.
+            // treat this as retriable and rethrow anything else.
+            if (e.code() != kafka::error_code::unknown_server_error) {
+                throw;
+            }
+        }
+        vlog(
+          srlog.info,
+          "Retriable error encountered while initializing the schemas "
+          "topic: {}. Retrying in {}ms",
+          eptr,
+          backoff.count());
+        try {
+            co_await ss::sleep_abortable(backoff, _as);
+        } catch (const ss::sleep_aborted&) {
+            std::rethrow_exception(eptr);
+        }
+        backoff = std::min(backoff * 2, max_backoff);
+    }
 }
 
 ss::future<> service::ensure_internal_topic() {
@@ -773,7 +786,8 @@ service::service(
   , _topic_metadata_cache(std::move(topic_metadata_cache))
   , _controller(controller)
   , _audit_mgr(audit_mgr)
-  , _ensure_started{[this]() { return do_start(); }}
+  , _ensure_started{[this]() { return ensure_topic_loaded(); }}
+  , _load_once{[this]() { return do_start(); }}
   , _auth{
       config::always_true(),
       config::shard_local_cfg().superusers.bind(),
@@ -788,10 +802,30 @@ service::service(
 ss::future<> service::start() {
     static std::vector<model::broker_endpoint> not_advertised{};
     _server.routes(get_schema_registry_routes(_gate, _ensure_started));
-    co_return co_await _server.start(
+    co_await _server.start(
       _config.schema_registry_api(),
       _config.schema_registry_api_tls(),
       not_advertised);
+
+    if (
+      ss::this_shard_id() == seq_writer::reader_shard
+      && config::shard_local_cfg().schema_registry_replay_on_startup()) {
+        // Proactively hydrate the store rather than wait for the first request.
+        // Fire-and-forget under the gate: a large topic can take a while to
+        // replay and must not block broker start-up. This goes through the
+        // single-flight ensure_started(), so a request that races it still
+        // triggers exactly one replay.
+        ssx::spawn_with_gate(_gate, [this] {
+            return ensure_started().handle_exception(
+              [](const std::exception_ptr& e) {
+                  vlog(
+                    srlog.warn,
+                    "eager _schemas replay failed at start-up; will retry on "
+                    "the first request: {}",
+                    e);
+              });
+        });
+    }
 }
 
 ss::future<> service::stop() {

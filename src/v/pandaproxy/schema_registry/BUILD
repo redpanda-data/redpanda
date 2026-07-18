@@ -477,6 +477,7 @@ redpanda_cc_library(
         "//src/v/security:request_auth",
         "//src/v/security/audit",
         "//src/v/security/audit:types",
+        "//src/v/ssx:future_util",
         "//src/v/ssx:semaphore",
         "//src/v/ssx:sformat",
         "//src/v/strings:string_switch",
