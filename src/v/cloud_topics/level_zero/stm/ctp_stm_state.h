@@ -18,6 +18,21 @@
 
 namespace cloud_topics {
 
+/// A closed interval of cluster epochs, [min, max].
+struct epoch_window {
+    cluster_epoch min;
+    cluster_epoch max;
+
+    /// True if the epoch lies within the window boundaries (inclusive).
+    bool contains(cluster_epoch epoch) const noexcept {
+        return epoch >= min && epoch <= max;
+    }
+    /// True if the epoch lies strictly between the window boundaries.
+    bool interior(cluster_epoch epoch) const noexcept {
+        return epoch > min && epoch < max;
+    }
+};
+
 /// In-memory state of the cloud-topics state machine (ctp_stm).
 ///
 class ctp_stm_state
@@ -147,14 +162,16 @@ public:
     /// when the floor is unset.
     kafka::offset get_min_allowed_local_threshold() const noexcept;
 
+    // The wire format predates the applied_epochs grouping: the fields are
+    // serialized individually at their historical positions.
     auto serde_fields() {
         return std::tie(
-          _max_applied_epoch,
+          _applied.max,
           _last_reconciled_offset,
           _last_reconciled_log_offset,
-          _current_epoch_window_offset,
-          _min_epoch_lower_bound,
-          _previous_applied_epoch,
+          _applied.window_offset,
+          _applied.min_lower_bound,
+          _applied.previous,
           _start_offset,
           _size_estimator,
           _min_allowed_local_threshold);
@@ -176,46 +193,68 @@ public:
     fmt::iterator format_to(fmt::iterator) const;
 
 private:
-    /// The term at which the *_seen_epochs are for, due to the sliding window
-    /// having the ability to diverge, we only track it within a single term,
-    /// then reset the window to avoid nasty edge cases when leadership changes.
-    model::term_id _seen_window_term;
-    /// The max epoch after the current in flight requests are applied.
+    /// The seen window: the range of epochs admitted for replication within
+    /// a single term. The max is the largest epoch expected to reach the log
+    /// in the term (its batch may still be replicating); epochs below the
+    /// min are fenced off. Due to the sliding window having the ability to
+    /// diverge from the log, the window is only meaningful within the term
+    /// it was built in and is invisible to queries at newer terms (see
+    /// resolve_window).
     ///
-    /// This is required because of the pipelining of requests in the STM.
-    /// If present, we don't allow any replicated requests to have an epoch
-    /// that is lower than this value.
-    std::optional<cluster_epoch> _max_seen_epoch;
+    /// Invariant: window.min <= window.max. Every move preserves it: a
+    /// term reset collapses the window to one epoch, a bump makes the old
+    /// max the new min, an interior admission raises the min below the max.
+    struct seen_epochs {
+        model::term_id term;
+        epoch_window window;
+    };
 
-    /// The previous epoch after the current in flight requests are applied.
-    /// Requests with epochs below this value are fenced and not allowed to be
-    /// applied to the STM.
+    /// The applied side of the epoch tracking: the epoch window of the log
+    /// (the last two distinct epochs applied to the STM) together with the
+    /// offset bookkeeping that ties the window to the log position and to
+    /// the LRO-driven GC lower bound.
+    struct applied_epochs {
+        /// The maximum epoch of applied batches to the STM.
+        ///
+        /// We enforce no epochs applied or replicated are less than this
+        /// value.
+        std::optional<cluster_epoch> max;
+
+        /// The epoch that preceded max in the log.
+        /// Invariant: previous <= max; engaged whenever max is engaged.
+        std::optional<cluster_epoch> previous;
+
+        /// The offset at which the window transitioned to the current max.
+        std::optional<model::offset> window_offset;
+
+        /// The epoch which is less or equal to the current epoch window
+        /// referenced by the first record batch after the last reconciled
+        /// offset. This epoch is not guaranteed to be "active" (from the
+        /// point of view of the partition) but it's guaranteed that all
+        /// epochs before this epoch are "inactive".
+        std::optional<cluster_epoch> min_lower_bound;
+
+        /// The applied window [previous, max]; nullopt when nothing has
+        /// been applied yet.
+        std::optional<epoch_window> window() const noexcept;
+
+        /// Idempotently advance the window (see advance_epoch).
+        void advance(cluster_epoch epoch, model::offset offset) noexcept;
+
+        /// Advance min_lower_bound once the LRO passes the offset at which
+        /// the window transitioned to the current max.
+        void on_lro_advanced(model::offset lro_log_offset) noexcept;
+    };
+
+    /// In-flight (seen) epoch window.
     ///
     /// Not persisted with the snapshot because it reflects the state of
     /// in-flight requests.
-    std::optional<cluster_epoch> _previous_seen_epoch;
+    std::optional<seen_epochs> _seen;
 
-    /// The maximum epoch of applied batches to the STM.
-    ///
-    /// We enforce no epochs applied or replicated are less than this value.
-    std::optional<cluster_epoch> _max_applied_epoch;
-
-    /// The previous max epoch applied to the STM state.
-    /// Invariant:
-    /// - _previous_epoch < _max_applied_epoch
-    /// - _previous_epoch <= _previous_seen_epoch
-    std::optional<cluster_epoch> _previous_applied_epoch;
-
-    /// The offset at which the current applied epoch window was transitioned
-    /// to.
-    std::optional<model::offset> _current_epoch_window_offset;
-
-    /// The epoch which is less or equal to the current epoch window referenced
-    /// by the first record batch after the last reconciled offset.
-    /// This epoch is not guaranteed to be "active" (from the point of
-    /// view of the partition) but it's guaranteed that all epochs before
-    /// this epoch are "inactive".
-    std::optional<cluster_epoch> _min_epoch_lower_bound;
+    /// Applied epoch window and its offset bookkeeping. The members are
+    /// persisted with the snapshot individually (see serde_fields).
+    applied_epochs _applied;
 
     /// The last offset that was uploaded to L1. This value may lag behind
     /// the value stored in the L1 metastore, but should never be ahead of

@@ -17,20 +17,54 @@ namespace cloud_topics {
 
 void ctp_stm_state::advance_max_seen_epoch(
   model::term_id term, cluster_epoch epoch) noexcept {
-    if (term > _seen_window_term) {
+    if (!_seen.has_value() || term > _seen->term) {
         // A new term always resets the window. The old window may carry a
-        // stale _max_seen_epoch above the new epoch (a fenced bump whose
-        // batch never landed before the leadership change); it must not
-        // survive into the new term or it blocks the reset and lets the
-        // stale window admit epochs the log no longer allows.
-        _seen_window_term = term;
-        _previous_seen_epoch = epoch;
-        _max_seen_epoch = epoch;
+        // stale max above the new epoch (a fenced bump whose batch never
+        // landed before the leadership change); it must not survive into
+        // the new term or it blocks the reset and leaves the new term's
+        // in-flight epochs invisible to concurrent fences.
+        _seen = seen_epochs{
+          .term = term,
+          .window = {.min = epoch, .max = epoch},
+        };
         return;
     }
-    if (term == _seen_window_term && epoch > _max_seen_epoch) {
-        _previous_seen_epoch = _max_seen_epoch.value_or(epoch);
-        _max_seen_epoch = epoch;
+    if (term == _seen->term && epoch > _seen->window.max) {
+        // The previous max becomes the window min.
+        _seen->window = {.min = _seen->window.max, .max = epoch};
+    }
+}
+
+std::optional<epoch_window>
+ctp_stm_state::applied_epochs::window() const noexcept {
+    if (!max.has_value()) {
+        return std::nullopt;
+    }
+    return epoch_window{.min = previous.value_or(*max), .max = *max};
+}
+
+void ctp_stm_state::applied_epochs::advance(
+  cluster_epoch epoch, model::offset offset) noexcept {
+    if (epoch <= max.value_or(cluster_epoch::min())) {
+        return;
+    }
+    if (!min_lower_bound.has_value()) {
+        // First epoch applied to the STM
+        min_lower_bound = epoch;
+    }
+    // Move the sliding window: the old max becomes the window min.
+    previous = max.value_or(epoch);
+    max = epoch;
+    window_offset = offset;
+}
+
+void ctp_stm_state::applied_epochs::on_lro_advanced(
+  model::offset lro_log_offset) noexcept {
+    if (window_offset.value_or(model::offset{}) <= lro_log_offset) {
+        // The LRO advanced past the offset at which the window transitioned
+        // to the current max, so everything below the previous epoch is
+        // inactive.
+        min_lower_bound = previous;
     }
 }
 
@@ -46,48 +80,40 @@ ctp_stm_state::get_last_reconciled_log_offset() const noexcept {
 
 std::optional<cluster_epoch>
 ctp_stm_state::estimate_min_epoch() const noexcept {
-    return _min_epoch_lower_bound;
+    return _applied.min_lower_bound;
 }
 
 std::optional<model::offset>
 ctp_stm_state::current_epoch_window_offset() const noexcept {
-    return _current_epoch_window_offset;
+    return _applied.window_offset;
 }
 
 std::optional<cluster_epoch>
 ctp_stm_state::get_previous_applied_epoch() const noexcept {
-    return _previous_applied_epoch;
+    return _applied.previous;
 }
 
 std::optional<cluster_epoch>
 ctp_stm_state::get_previous_seen_epoch(model::term_id term) const noexcept {
-    if (term > _seen_window_term) {
+    if (!_seen.has_value() || term > _seen->term) {
         return std::nullopt;
     }
-    return _previous_seen_epoch;
+    return _seen->window.min;
 }
 
 bool ctp_stm_state::epoch_in_window(
   model::term_id term, cluster_epoch epoch) const noexcept {
-    // If the term is newer then treat the window as unset.
-    if (term > _seen_window_term) {
-        auto end = _max_applied_epoch.value_or(cluster_epoch::min());
-        auto begin = _previous_applied_epoch.value_or(end);
-        return epoch >= begin && epoch <= end;
+    if (!_seen.has_value() || term > _seen->term) {
+        // The seen window is invisible to queries at newer terms: the
+        // applied window is the only evidence.
+        auto applied = _applied.window();
+        return applied.has_value() && applied->contains(epoch);
     }
-    // NOTE: the window should move forward with _max_seen_epoch.
-    // If _max_seen_epoch is greater than _max_applied_epoch then
-    // the window should be [_previous_seen_epoch, _max_seen_epoch].
-    // The window reflects in-flight requests. Write fence is required
-    // to move it forward.
-    auto end = _max_seen_epoch.value_or(
-      _max_applied_epoch.value_or(cluster_epoch::min()));
-    auto begin = _previous_seen_epoch.value_or(
-      _previous_applied_epoch.value_or(end));
-    if (epoch < begin || epoch > end) {
+    const auto& seen = _seen->window;
+    if (!seen.contains(epoch)) {
         return false;
     }
-    if (epoch == end) {
+    if (epoch == seen.max) {
         return true;
     }
     // A below-max epoch is only admissible if some epoch batch is known to
@@ -101,30 +127,28 @@ bool ctp_stm_state::epoch_in_window(
     // considers inactive.
     //
     // Applied state gives positional evidence, since apply follows log order:
-    // - _max_applied_epoch < end: an applied batch sits at a lower log
+    // - applied max < seen max: an applied batch sits at a lower log
     //   position than any batch at the max-seen epoch (applied or not).
-    // - _max_applied_epoch == end: the max epoch applied; a batch preceded it
-    //   iff the applied window did not collapse to [end, end].
-    if (!_max_applied_epoch.has_value()) {
+    // - applied max == seen max: the max epoch applied; a batch preceded it
+    //   iff the applied window did not collapse to [max, max].
+    if (!_applied.max.has_value()) {
         return false;
     }
-    if (*_max_applied_epoch < end) {
+    if (*_applied.max < seen.max) {
         return true;
     }
-    return *_max_applied_epoch == end
-           && _previous_applied_epoch.value_or(end) < end;
+    return *_applied.max == seen.max
+           && _applied.previous.value_or(seen.max) < seen.max;
 }
 
 bool ctp_stm_state::epoch_above_window(
   model::term_id term, cluster_epoch epoch) const noexcept {
-    // If the term changed, treat it as unset.
-    if (term > _seen_window_term) {
-        auto end = _max_applied_epoch.value_or(cluster_epoch::min());
-        return epoch > end;
+    if (!_seen.has_value() || term > _seen->term) {
+        // The seen window is invisible to queries at newer terms.
+        auto applied = _applied.window();
+        return !applied.has_value() || epoch > applied->max;
     }
-    auto end = _max_seen_epoch.value_or(
-      _max_applied_epoch.value_or(cluster_epoch::min()));
-    return epoch > end;
+    return epoch > _seen->window.max;
 }
 
 std::optional<cluster_epoch>
@@ -133,32 +157,13 @@ ctp_stm_state::estimate_inactive_epoch() const noexcept {
 }
 
 void ctp_stm_state::advance_epoch(cluster_epoch epoch, model::offset offset) {
-    // Register new epoch
-    if (epoch > _max_applied_epoch.value_or(cluster_epoch::min())) {
-        // A new max epoch requires the sliding window of epoch values in flight
-        // to be moved.
-        if (!_min_epoch_lower_bound.has_value()) {
-            // First epoch applied to the STM
-            _min_epoch_lower_bound = epoch;
-        }
-        // Move the sliding window
-        _previous_applied_epoch = _max_applied_epoch.value_or(epoch);
-        _max_applied_epoch = epoch;
-        _current_epoch_window_offset = offset;
-    }
+    _applied.advance(epoch, offset);
 }
 
 void ctp_stm_state::advance_last_reconciled_offset(
   kafka::offset new_last_reconciled_offset,
   model::offset new_last_reconciled_log_offset) noexcept {
-    if (
-      _current_epoch_window_offset.value_or(model::offset{})
-      <= new_last_reconciled_log_offset) {
-        // We advanced LRO past the offset at which we saw the current
-        // epoch window value so we can use previous epoch as
-        // the new min_applied_epoch
-        _min_epoch_lower_bound = _previous_applied_epoch;
-    }
+    _applied.on_lro_advanced(new_last_reconciled_log_offset);
     _last_reconciled_offset = std::max(
       _last_reconciled_offset.value_or(kafka::offset{}),
       new_last_reconciled_offset);
@@ -169,15 +174,15 @@ void ctp_stm_state::advance_last_reconciled_offset(
 
 std::optional<cluster_epoch>
 ctp_stm_state::get_max_applied_epoch() const noexcept {
-    return _max_applied_epoch;
+    return _applied.max;
 }
 
 std::optional<cluster_epoch>
 ctp_stm_state::get_max_seen_epoch(model::term_id term) const noexcept {
-    if (term > _seen_window_term) {
+    if (!_seen.has_value() || term > _seen->term) {
         return std::nullopt;
     }
-    return _max_seen_epoch;
+    return _seen->window.max;
 }
 
 model::offset ctp_stm_state::get_max_collectible_offset() const noexcept {
@@ -227,17 +232,23 @@ kafka::offset ctp_stm_state::get_min_allowed_local_threshold() const noexcept {
 }
 
 fmt::iterator ctp_stm_state::format_to(fmt::iterator it) const {
+    std::optional<cluster_epoch> seen_min;
+    std::optional<cluster_epoch> seen_max;
+    if (_seen.has_value()) {
+        seen_min = _seen->window.min;
+        seen_max = _seen->window.max;
+    }
     return fmt::format_to(
       it,
       "{{seen_window=[{}, {}], applied_window=[{}, {}], "
       "epoch_window_offset={}, min_epoch_lower_bound={}, lro={}, lrlo={}, "
       "start_offset={}}}",
-      _previous_seen_epoch,
-      _max_seen_epoch,
-      _previous_applied_epoch,
-      _max_applied_epoch,
-      _current_epoch_window_offset,
-      _min_epoch_lower_bound,
+      seen_min,
+      seen_max,
+      _applied.previous,
+      _applied.max,
+      _applied.window_offset,
+      _applied.min_lower_bound,
       _last_reconciled_offset,
       _last_reconciled_log_offset,
       _start_offset);
