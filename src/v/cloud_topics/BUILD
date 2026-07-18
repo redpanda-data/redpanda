@@ -97,6 +97,8 @@ redpanda_cc_library(
         ":logger",
         ":topic_manifest_upload_manager",
         "//src/v/cloud_io:admission_control_types",
+        "//src/v/cloud_io:remote",
+        "//src/v/cloud_storage_clients",
         "//src/v/cloud_topics/housekeeper:manager",
         "//src/v/cloud_topics/level_one/metastore:flush_loop",
         "//src/v/cloud_topics/level_one/metastore:topic_purger",

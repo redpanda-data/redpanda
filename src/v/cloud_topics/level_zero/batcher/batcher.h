@@ -44,6 +44,9 @@ class remote;
 
 namespace cloud_topics::l0 {
 
+template<class Clock>
+class secondary_fanout;
+
 struct batcher_result {
     uuid_t uuid;
     // Reader that contains placeholder batches. Batches
@@ -71,7 +74,8 @@ public:
       write_pipeline<Clock>::stage stage,
       cloud_storage_clients::bucket_name bucket,
       cloud_io::remote_api<Clock>& remote_api,
-      cloud_topics::cluster_services* cluster_services);
+      cloud_topics::cluster_services* cluster_services,
+      secondary_fanout<Clock>* fanout = nullptr);
 
     ss::future<> start();
     ss::future<> stop();
@@ -107,6 +111,9 @@ private:
     cloud_topics::cluster_services* _cluster_services;
     cloud_io::remote_api<Clock>& _remote;
     cloud_storage_clients::bucket_name _bucket;
+    // optional cross-cloud secondary replication of L0 objects (never in the
+    // ack path)
+    secondary_fanout<Clock>* _fanout;
     config::binding<std::chrono::milliseconds> _upload_timeout;
     config::binding<std::chrono::milliseconds> _upload_backoff_interval;
 

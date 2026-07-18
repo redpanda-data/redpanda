@@ -57,6 +57,7 @@ public:
       , _feature_table(feature_table)
       , _snapshot_max_age(std::move(snapshot_max_age))
       , _snapshot_debounce_timer([this] { snapshot_timer_callback(); })
+      , _snapshot_poll_timer([this] { snapshot_poll_timer_callback(); })
       , _scheduling_group(scheduling_group) {}
 
     controller_stm(controller_stm&&) = delete;
@@ -123,6 +124,8 @@ public:
 private:
     ss::future<> on_batch_applied() final;
     void snapshot_timer_callback();
+    void snapshot_poll_timer_callback();
+    void maybe_arm_snapshot_timer();
 
     ss::future<std::optional<iobuf>>
     maybe_make_snapshot(ssx::semaphore_units apply_mtx_holder) final;
@@ -136,6 +139,9 @@ private:
     metrics_reporter_cluster_info _metrics_reporter_cluster_info;
 
     ss::timer<ss::lowres_clock> _snapshot_debounce_timer;
+    // Periodic re-check so a stale snapshot is refreshed even when no new
+    // controller batches arrive to drive on_batch_applied.
+    ss::timer<ss::lowres_clock> _snapshot_poll_timer;
     ss::scheduling_group _scheduling_group;
 };
 

@@ -418,6 +418,7 @@ private:
     ss::sharded<archival::upload_controller> _archival_upload_controller;
     std::unique_ptr<monitor_unsafe> _monitor_unsafe;
     ss::sharded<archival::purger> _archival_purger;
+    ss::sharded<archival::staging_uploader> _staging_uploader;
 
     std::unique_ptr<wasm::caching_runtime> _wasm_runtime;
     ss::sharded<transform::service> _transform_service;

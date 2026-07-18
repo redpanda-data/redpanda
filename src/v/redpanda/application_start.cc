@@ -15,6 +15,7 @@
 #include "cloud_topics/read_replica/stm.h"
 #include "cluster/archival/archival_metadata_stm.h"
 #include "cluster/archival/archiver_manager.h"
+#include "cluster/archival/staging_uploader.h"
 #include "cluster/archival/upload_controller.h"
 #include "cluster/cloud_metadata/offsets_recovery_manager.h"
 #include "cluster/cloud_metadata/offsets_upload_router.h"
@@ -166,6 +167,11 @@ void application::start_runtime_services(
 
     if (archiver_manager.local_is_initialized()) {
         archiver_manager.invoke_on_all(&archival::archiver_manager::start)
+          .get();
+    }
+
+    if (_staging_uploader.local_is_initialized()) {
+        _staging_uploader.invoke_on_all(&archival::staging_uploader::start)
           .get();
     }
 

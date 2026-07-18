@@ -17,18 +17,24 @@
 #include "cluster/data_migration_table.h"
 #include "cluster/logger.h"
 #include "cluster/members_manager.h"
+#include "config/configuration.h"
 
 #include <seastar/core/abort_source.hh>
 
 namespace cluster {
 
 ss::future<> controller_stm::on_batch_applied() {
+    maybe_arm_snapshot_timer();
+    co_return;
+}
+
+void controller_stm::maybe_arm_snapshot_timer() {
     if (!_feature_table.local().is_active(
           features::feature::controller_snapshots)) {
-        co_return;
+        return;
     }
     if (_gate.is_closed()) {
-        co_return;
+        return;
     }
 
     auto current_offset = model::next_offset(last_applied_offset());
@@ -37,15 +43,36 @@ ss::future<> controller_stm::on_batch_applied() {
       && !_snapshot_debounce_timer.armed()) {
         _snapshot_debounce_timer.arm(_snapshot_max_age());
     };
+    // The periodic poll below keeps the uploaded controller snapshot fresh
+    // enough for whole-cluster restore -- which only matters when cloud
+    // storage is enabled. A pure-local cluster keeps exact upstream behavior
+    // (snapshots driven solely by on_batch_applied).
+    if (!config::shard_local_cfg().cloud_storage_enabled()) {
+        return;
+    }
+    // Re-arm the poll so a snapshot that becomes stale between controller
+    // batches (e.g. a topic created shortly before the controller goes
+    // idle, while only produce traffic continues) is still refreshed
+    // within max_age. Without this the debounce timer only fires off the
+    // next controller batch, which on an idle controller may never come —
+    // and whole-cluster restore would miss that topic's metadata.
+    if (!_snapshot_poll_timer.armed() && !_gate.is_closed()) {
+        _snapshot_poll_timer.arm(_snapshot_max_age());
+    }
 }
 void controller_stm::shutdown_apply_loop() { _as.request_abort(); }
 
 ss::future<> controller_stm::shutdown() {
     _snapshot_debounce_timer.cancel();
+    _snapshot_poll_timer.cancel();
     return base_t::stop();
 }
 
 ss::future<> controller_stm::stop() { co_return; }
+
+void controller_stm::snapshot_poll_timer_callback() {
+    maybe_arm_snapshot_timer();
+}
 
 void controller_stm::snapshot_timer_callback() {
     ssx::background

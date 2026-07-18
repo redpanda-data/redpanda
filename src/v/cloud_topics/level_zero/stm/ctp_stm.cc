@@ -22,6 +22,7 @@
 #include "ssx/future-util.h"
 #include "ssx/watchdog.h"
 #include "storage/snapshot.h"
+#include "storage/staging_floor.h"
 
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/sleep.hh>
@@ -532,11 +533,21 @@ ctp_stm::fence_epoch(cluster_epoch e, model::timeout_clock::duration timeout) {
 }
 
 model::offset ctp_stm::max_removable_local_log_offset() {
+    // The staging uploader holds back local eviction exactly like an
+    // active reader: trimming past its cursor would orphan not-yet-staged
+    // bytes and punch permanent holes in staged-tail restore coverage.
+    auto held = [this](model::offset o) {
+        auto floor = storage::staging_floor::instance().get(_raft->ntp());
+        if (floor.has_value()) {
+            return std::min(o, *floor);
+        }
+        return o;
+    };
     // If there is an active reader, it holds back prefix truncation.
     if (!_active_readers.empty()) {
-        return _active_readers.front().lrlo;
+        return held(_active_readers.front().lrlo);
     }
-    return _state.get_max_collectible_offset();
+    return held(_state.get_max_collectible_offset());
 }
 
 ss::future<model::offset> ctp_stm::compute_local_retention_offset() {
@@ -588,6 +599,19 @@ ss::future<model::offset> ctp_stm::compute_local_retention_offset() {
 
     auto floor = std::max(retention_target, min_allowed_local_threshold_log);
     auto cap = max_removable_local_log_offset();
+    if (
+      config::shard_local_cfg().tiered_storage_trim_to_staged_enabled()
+      && config::shard_local_cfg().tiered_storage_staging_enabled()
+      && storage::staging_floor::instance().get(_raft->ntp()).has_value()) {
+        // Trim-to-staged: evict everything up to the staged/reader-safe cap
+        // (cap is already bounded by the staging floor and active readers),
+        // ignoring the larger retention target -- local disk shrinks to the
+        // un-staged buffer + hot cache. Gated on a KNOWN staging floor on this
+        // shard: without one (e.g. leadership just moved, no staged cursor
+        // yet) cap is not floor-bounded, so we stay conservative to avoid
+        // evicting not-yet-staged data.
+        co_return cap;
+    }
     co_return std::min(cap, floor);
 }
 

@@ -299,6 +299,7 @@ redpanda_cc_library(
         "offset_to_filepos.h",
         "offset_translator.h",
         "offset_translator_state.h",
+        "staging_floor.h",
         "parser.h",
         "parser_errc.h",
         "probe.h",

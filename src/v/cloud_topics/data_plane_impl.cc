@@ -16,6 +16,7 @@
 #include "cloud_topics/batch_cache/batch_cache.h"
 #include "cloud_topics/data_plane_api.h"
 #include "cloud_topics/level_zero/batcher/batcher.h"
+#include "cloud_topics/level_zero/batcher/secondary_fanout.h"
 #include "cloud_topics/level_zero/cluster_services_impl/cluster_services.h"
 #include "cloud_topics/level_zero/pipeline/read_pipeline.h"
 #include "cloud_topics/level_zero/pipeline/write_pipeline.h"
@@ -53,7 +54,9 @@ public:
       cloud_storage_clients::bucket_name bucket,
       seastar::sharded<storage::api>* storage_api,
       seastar::sharded<cluster::cluster_epoch_service<ss::lowres_clock>>*
-        cluster_services) {
+        cluster_services,
+      seastar::sharded<cloud_io::remote>* secondary_io,
+      std::optional<cloud_storage_clients::bucket_name> secondary_bucket) {
         co_await construct_service(
           _cluster_services, std::ref(*cluster_services));
 
@@ -64,6 +67,14 @@ public:
               return _write_pipeline.local().register_write_pipeline_stage();
           }));
 
+        if (secondary_io != nullptr && secondary_bucket.has_value()) {
+            co_await construct_service(
+              _secondary_fanout,
+              ss::sharded_parameter(
+                [secondary_io] { return std::ref(secondary_io->local()); }),
+              ss::sharded_parameter([b = *secondary_bucket] { return b; }));
+        }
+
         co_await construct_service(
           _batcher,
           ss::sharded_parameter([this] {
@@ -71,7 +82,12 @@ public:
           }),
           ss::sharded_parameter([bucket] { return bucket; }),
           ss::sharded_parameter([io] { return std::ref(io->local()); }),
-          ss::sharded_parameter([this] { return &_cluster_services.local(); }));
+          ss::sharded_parameter([this] { return &_cluster_services.local(); }),
+          ss::sharded_parameter([this]() -> l0::secondary_fanout<>* {
+              return _secondary_fanout.local_is_initialized()
+                       ? &_secondary_fanout.local()
+                       : nullptr;
+          }));
 
         co_await construct_service(_read_pipeline);
 
@@ -109,6 +125,10 @@ public:
     }
 
     seastar::future<> start() override {
+        if (_secondary_fanout.local_is_initialized()) {
+            co_await _secondary_fanout.invoke_on_all(
+              [](auto& s) { return s.start(); });
+        }
         co_await _write_req_scheduler.invoke_on_all(
           [](auto& s) { return s.start(); });
         co_await _batcher.invoke_on_all([](auto& s) { return s.start(); });
@@ -247,6 +267,7 @@ private:
     ss::sharded<l0::write_pipeline<>> _write_pipeline;
     ss::sharded<l0::write_request_scheduler<>> _write_req_scheduler;
     ss::sharded<l0::batcher<>> _batcher;
+    ss::sharded<l0::secondary_fanout<>> _secondary_fanout;
     // Read path
     ss::sharded<l0::read_pipeline<>> _read_pipeline;
     ss::sharded<l0::read_fanout> _read_fanout;
@@ -264,14 +285,18 @@ ss::future<std::unique_ptr<data_plane_api>> make_data_plane(
   ss::sharded<cloud_io::cache>* cache,
   cloud_storage_clients::bucket_name bucket,
   ss::sharded<storage::api>* log_manager,
-  seastar::sharded<cluster::cluster_epoch_service<>>* cluster_services) {
+  seastar::sharded<cluster::cluster_epoch_service<>>* cluster_services,
+  ss::sharded<cloud_io::remote>* secondary_remote,
+  std::optional<cloud_storage_clients::bucket_name> secondary_bucket) {
     auto p = std::make_unique<impl>(std::move(logger_name));
     co_await p->construct(
       remote,
       cache,
       std::move(bucket),
       log_manager,
-      std::ref(cluster_services));
+      std::ref(cluster_services),
+      secondary_remote,
+      std::move(secondary_bucket));
     co_return std::move(p);
 }
 

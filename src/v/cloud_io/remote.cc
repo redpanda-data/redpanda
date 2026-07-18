@@ -20,7 +20,9 @@
 #include "cloud_storage_clients/configuration.h"
 #include "cloud_storage_clients/types.h"
 #include "cloud_storage_clients/util.h"
+#include "config/configuration.h"
 #include "container/chunked_vector.h"
+#include "metrics/prometheus_sanitize.h"
 #include "model/metadata.h"
 #include "ssx/future-util.h"
 #include "utils/retry_chain_node.h"
@@ -36,6 +38,7 @@
 
 #include <exception>
 #include <iterator>
+#include <unordered_map>
 #include <utility>
 
 namespace {
@@ -174,6 +177,206 @@ int remote::delete_objects_max_keys() const {
     }
 }
 
+void remote::setup_tiered_storage_mirror_metrics() {
+    namespace sm = ss::metrics;
+    if (config::shard_local_cfg().disable_metrics()) {
+        return;
+    }
+    _tiered_storage_mirror_metrics.add_group(
+      prometheus_sanitize::metrics_name("cloud_io:tiered_storage_mirror"),
+      {
+        sm::make_counter(
+          "objects_total",
+          [this] { return _tiered_storage_mirror_ok; },
+          sm::description(
+            "DR-mirror objects successfully copied to the "
+            "cross-cloud secondary")),
+        sm::make_counter(
+          "errors_total",
+          [this] { return _tiered_storage_mirror_errors; },
+          sm::description(
+            "DR-mirror objects dropped on failure; non-zero "
+            "means the secondary is not a complete restorable "
+            "copy")),
+        sm::make_counter(
+          "backfilled_total",
+          [this] { return _tiered_storage_mirror_backfilled; },
+          sm::description(
+            "Objects re-mirrored to the cross-cloud secondary by "
+            "the full-mirror back-fill sweep")),
+        sm::make_counter(
+          "bytes_total",
+          [this] { return _tiered_storage_mirror_bytes; },
+          sm::description(
+            "Bytes successfully mirrored to the cross-cloud "
+            "secondary (inline mirror + back-fill sweep)")),
+      });
+}
+
+void remote::start_tiered_storage_mirror_backfill() {
+    // One sweeper per node is sufficient (the sweep covers the whole bucket);
+    // run it on shard 0 only. Best-effort and gate-tracked so stop() drains it.
+    if (ss::this_shard_id() != 0) {
+        return;
+    }
+    ssx::spawn_with_gate(
+      _gate, [this] { return tiered_storage_mirror_backfill_loop(); });
+}
+
+ss::future<> remote::tiered_storage_mirror_backfill_loop() {
+    while (!_as.abort_requested()) {
+        auto interval
+          = config::shard_local_cfg()
+              .cloud_topics_secondary_full_mirror_backfill_interval_ms();
+        // Disabled (0): idle and re-check periodically so a runtime enable
+        // (needs_restart=no) is picked up without a broker restart.
+        auto sleep_for = interval > std::chrono::milliseconds::zero()
+                           ? interval
+                           : std::chrono::milliseconds{60000};
+        try {
+            co_await ss::sleep_abortable(sleep_for, _as);
+        } catch (const ss::sleep_aborted&) {
+            co_return;
+        }
+        if (_as.abort_requested()) {
+            co_return;
+        }
+        if (interval <= std::chrono::milliseconds::zero()) {
+            continue;
+        }
+        try {
+            co_await backfill_tiered_storage_mirror();
+        } catch (...) {
+            vlog(
+              log.warn,
+              "cross-cloud DR mirror back-fill sweep failed (best-effort): {}",
+              std::current_exception());
+        }
+    }
+}
+
+ss::future<> remote::backfill_tiered_storage_mirror() {
+    if (
+      _tiered_storage_mirror_remote == nullptr
+      || !_tiered_storage_mirror_bucket.has_value()) {
+        co_return;
+    }
+    auto configured = config::shard_local_cfg().cloud_storage_bucket();
+    if (!configured.has_value()) {
+        co_return;
+    }
+    auto primary_bucket = cloud_storage_clients::bucket_name{*configured};
+
+    // List every object under a bucket into a key->size map (paginated).
+    auto list_all =
+      [this](remote& r, const cloud_storage_clients::bucket_name& bucket)
+      -> ss::future<std::optional<std::unordered_map<ss::sstring, size_t>>> {
+        std::unordered_map<ss::sstring, size_t> keys;
+        std::optional<ss::sstring> continuation;
+        while (!_as.abort_requested()) {
+            retry_chain_node fib(_as, 30s, 100ms);
+            auto res = co_await r.list_objects(
+              bucket,
+              fib,
+              std::nullopt,
+              std::nullopt,
+              std::nullopt,
+              std::nullopt,
+              continuation);
+            if (res.has_error()) {
+                co_return std::nullopt;
+            }
+            for (const auto& item : res.value().contents) {
+                keys.emplace(item.key, item.size_bytes);
+            }
+            if (!res.value().is_truncated) {
+                break;
+            }
+            continuation = res.value().next_continuation_token;
+        }
+        co_return keys;
+    };
+
+    auto primary_keys = co_await list_all(*this, primary_bucket);
+    if (!primary_keys.has_value()) {
+        co_return;
+    }
+    auto secondary_keys = co_await list_all(
+      *_tiered_storage_mirror_remote, *_tiered_storage_mirror_bucket);
+    if (!secondary_keys.has_value()) {
+        co_return;
+    }
+
+    for (const auto& [key, size] : *primary_keys) {
+        if (_as.abort_requested()) {
+            co_return;
+        }
+        auto it = secondary_keys->find(key);
+        if (it != secondary_keys->end() && it->second == size) {
+            continue;
+        }
+        iobuf payload;
+        retry_chain_node dfib(_as, 30s, 100ms);
+        auto dl = co_await download_object(download_request{
+          .transfer_details = transfer_details{
+            .bucket = primary_bucket,
+            .key = cloud_storage_clients::object_key(key),
+            .parent_rtc = dfib,
+          },
+          .display_str = "dr-mirror-backfill",
+          .payload = payload,
+        });
+        if (dl != download_result::success) {
+            note_tiered_storage_mirror_result(false);
+            continue;
+        }
+        retry_chain_node ufib(_as, 30s, 100ms);
+        auto bf_bytes = payload.size_bytes();
+        auto up = co_await ss::coroutine::as_future(
+          _tiered_storage_mirror_remote->upload_object(upload_request{
+            .transfer_details = transfer_details{
+              .bucket = *_tiered_storage_mirror_bucket,
+              .key = cloud_storage_clients::object_key(key),
+              .parent_rtc = ufib,
+            },
+            .display_str = "dr-mirror-backfill",
+            .payload = std::move(payload),
+          }));
+        bool ok = !up.failed() && up.get() == upload_result::success;
+        note_tiered_storage_mirror_result(ok, bf_bytes);
+        if (ok) {
+            ++_tiered_storage_mirror_backfilled;
+            vlog(
+              log.info,
+              "cross-cloud DR mirror back-fill: re-mirrored {} to {}",
+              key,
+              *_tiered_storage_mirror_bucket);
+        }
+    }
+}
+
+std::optional<cloud_storage_clients::bucket_name>
+remote::cloud_storage_secondary_for(
+  const cloud_storage_clients::bucket_name& primary) const {
+    auto sec = config::shard_local_cfg().cloud_storage_secondary_bucket();
+    if (!sec.has_value()) {
+        return std::nullopt;
+    }
+    auto configured = config::shard_local_cfg().cloud_storage_bucket();
+    // Only mirror writes aimed at the configured primary bucket — never
+    // reads, other buckets, or the mirror's own target.
+    if (!configured.has_value() || primary() != *configured) {
+        return std::nullopt;
+    }
+    return cloud_storage_clients::bucket_name{*sec};
+}
+
+bool remote::is_primary_bucket(
+  const cloud_storage_clients::bucket_name& bucket) const {
+    auto configured = config::shard_local_cfg().cloud_storage_bucket();
+    return configured.has_value() && bucket() == *configured;
+}
+
 ss::future<upload_result> remote::upload_stream(
   transfer_details transfer_details,
   uint64_t content_length,
@@ -251,6 +454,60 @@ ss::future<upload_result> remote::upload_stream(
 
         if (res) {
             transfer_details.on_success_size(content_length);
+            if (tiered_storage_mirror_active()) {
+                if (
+                  _tiered_storage_mirror_remote != nullptr
+                  && is_primary_bucket(bucket)) {
+                    basic_transfer_details<ss::lowres_clock> mirror_td{
+                      .bucket = *_tiered_storage_mirror_bucket,
+                      .key = transfer_details.key,
+                      .parent_rtc = transfer_details.parent_rtc,
+                    };
+                    auto mres = co_await ss::coroutine::as_future(
+                      _tiered_storage_mirror_remote->upload_stream(
+                        std::move(mirror_td),
+                        content_length,
+                        reset_str,
+                        lazy_abort_source,
+                        stream_label,
+                        /*max_retries=*/3,
+                        gid));
+                    bool mok = !mres.failed()
+                               && mres.get() == upload_result::success;
+                    note_tiered_storage_mirror_result(mok, content_length);
+                    if (!mok) {
+                        vlog(
+                          ctxlog.warn,
+                          "cross-cloud DR mirror of {} to {} did not succeed "
+                          "(best-effort); secondary now incomplete",
+                          path,
+                          *_tiered_storage_mirror_bucket);
+                    }
+                } else if (
+                  auto dr = cloud_storage_secondary_for(bucket);
+                  dr.has_value()) {
+                    basic_transfer_details<ss::lowres_clock> mirror_td{
+                      .bucket = *dr,
+                      .key = transfer_details.key,
+                      .parent_rtc = transfer_details.parent_rtc,
+                    };
+                    auto mres = co_await ss::coroutine::as_future(upload_stream(
+                      std::move(mirror_td),
+                      content_length,
+                      reset_str,
+                      lazy_abort_source,
+                      stream_label,
+                      /*max_retries=*/3,
+                      gid));
+                    if (mres.failed() || mres.get() != upload_result::success) {
+                        vlog(
+                          ctxlog.warn,
+                          "DR mirror of {} to {} did not succeed (best-effort)",
+                          path,
+                          *dr);
+                    }
+                }
+            }
             co_return upload_result::success;
         }
 
@@ -1266,6 +1523,43 @@ remote::upload_object(upload_request upload_request, group_id gid) {
 
         if (res) {
             transfer_details.on_success();
+            if (tiered_storage_mirror_active()) {
+                auto* mirror_via = (_tiered_storage_mirror_remote != nullptr
+                                    && is_primary_bucket(bucket))
+                                     ? _tiered_storage_mirror_remote
+                                     : this;
+                auto mirror_to = (mirror_via == _tiered_storage_mirror_remote)
+                                   ? _tiered_storage_mirror_bucket
+                                   : cloud_storage_secondary_for(bucket);
+                if (mirror_to.has_value()) {
+                    auto mirror_req = basic_upload_request<ss::lowres_clock>{
+                  .transfer_details = basic_transfer_details<ss::lowres_clock>{
+                    .bucket = *mirror_to,
+                    .key = upload_request.transfer_details.key,
+                    .parent_rtc = upload_request.transfer_details.parent_rtc,
+                  },
+                  .display_str = upload_request.display_str,
+                  .payload = upload_request.payload.copy(),
+                  .accept_no_content_response
+                  = upload_request.accept_no_content_response,
+                };
+                    auto mres = co_await ss::coroutine::as_future(
+                      mirror_via->upload_object(std::move(mirror_req), gid));
+                    bool mok = !mres.failed()
+                               && mres.get() == upload_result::success;
+                    if (mirror_via == _tiered_storage_mirror_remote) {
+                        note_tiered_storage_mirror_result(mok, content_length);
+                    }
+                    if (!mok) {
+                        vlog(
+                          ctxlog.warn,
+                          "DR mirror of object {} to {} did not succeed "
+                          "(best-effort)",
+                          path,
+                          *mirror_to);
+                    }
+                }
+            }
             co_return upload_result::success;
         }
 

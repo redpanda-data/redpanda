@@ -29,6 +29,10 @@
 namespace cloud_io {
 class remote;
 } // namespace cloud_io
+namespace cloud_storage_clients {
+class client_pool;
+class upstream_registry;
+} // namespace cloud_storage_clients
 namespace cloud_storage {
 class cache;
 } // namespace cloud_storage
@@ -103,6 +107,12 @@ private:
     ss::future<> cleanup_tmp_files();
 
     ss::sstring _logger_name;
+    // Optional cross-cloud secondary dual-write target for L0 objects: a
+    // dedicated upstream registry, client pool, and remote carrying their
+    // own provider, endpoint, and static credentials.
+    ss::sharded<cloud_storage_clients::upstream_registry> _secondary_upstreams;
+    ss::sharded<cloud_storage_clients::client_pool> _secondary_clients;
+    ss::sharded<cloud_io::remote> _secondary_remote;
     ss::sharded<level_one_reader_probe> _l1_reader_probe;
     ss::sharded<l1::file_io_probe> _l1_file_io_probe;
     ss::sharded<l1_reader_cache> _l1_reader_cache;
