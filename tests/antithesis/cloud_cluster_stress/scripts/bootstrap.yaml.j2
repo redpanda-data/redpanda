@@ -37,3 +37,9 @@ cloud_topics_compaction_interval_ms: 10000
 # reads as the low metastore load permits.
 cloud_topics_metastore_write_buffer_size: 1048576     # 1 MiB (min; default 16 MiB)
 cloud_topics_metastore_sst_chunk_size: 1048576        # 1 MiB (min; default 24 MiB)
+
+# Cap per-shard compaction key-offset map memory. The defaults (128 MiB each)
+# were the top allocators under the memory-constrained Antithesis environment
+# and pushed the cluster into OOM.
+storage_compaction_key_map_memory: 33554432          # 32 MiB (default 128 MiB)
+cloud_topics_compaction_key_map_memory: 33554432     # 32 MiB (default 128 MiB)
