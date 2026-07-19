@@ -524,30 +524,24 @@ ss::future<> group_manager::cleanup_removed_topic_partitions(
         groups.push_back(group.second);
     }
 
-    return ss::do_with(
-      std::move(groups), [this, &tps](chunked_vector<group_ptr>& groups) {
-          return ss::do_for_each(groups, [this, &tps](group_ptr& group) {
-              return group->remove_topic_partitions(tps).then(
-                [this, g = group] {
-                    if (!g->in_state(group_state::dead)) {
-                        return ss::now();
-                    }
-                    auto it = _groups.find(g->id());
-                    if (it == _groups.end()) {
-                        return ss::now();
-                    }
-                    // ensure the group didn't change
-                    if (it->second != g) {
-                        return ss::now();
-                    }
-                    vlog(cg_klog.trace, "Removed group {}", g);
-                    it->second->pre_shutdown();
-                    _groups.erase(it);
-                    _groups.rehash(0);
-                    return ss::now();
-                });
-          });
-      });
+    for (auto& group : groups) {
+        co_await group->remove_topic_partitions(tps);
+        if (!group->in_state(group_state::dead)) {
+            continue;
+        }
+        auto it = _groups.find(group->id());
+        if (it == _groups.end()) {
+            continue;
+        }
+        // ensure the group didn't change
+        if (it->second != group) {
+            continue;
+        }
+        vlog(cg_klog.trace, "Removed group {}", group);
+        co_await group->shutdown();
+        _groups.erase(it);
+        _groups.rehash(0);
+    }
 }
 
 void group_manager::handle_topic_delta(
