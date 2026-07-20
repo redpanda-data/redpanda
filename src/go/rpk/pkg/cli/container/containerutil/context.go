@@ -15,7 +15,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/docker/docker/client"
+	"github.com/moby/moby/client"
 	"github.com/opencontainers/go-digest"
 )
 
@@ -30,7 +30,7 @@ func clientFromDockerContext() (*client.Client, error) {
 	if err != nil {
 		return nil, err
 	}
-	return client.NewClientWithOpts(client.WithHost(host))
+	return client.New(client.WithHost(host))
 }
 
 type dockerConfig struct {

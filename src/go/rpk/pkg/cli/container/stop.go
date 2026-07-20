@@ -14,7 +14,6 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/docker/docker/api/types/container"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/container/containerutil"
 	"github.com/spf13/cobra"
 )
@@ -70,7 +69,7 @@ func stopCluster(ctx context.Context, c containerutil.Client) error {
 			timeout := 20 // seconds
 
 			printf("Stopping %s", name)
-			err := c.ContainerStop(ctx, name, container.StopOptions{Timeout: &timeout})
+			err := c.ContainerStop(ctx, name, containerutil.ContainerStopOptions{Timeout: &timeout})
 			if err != nil {
 				printf("Unable to stop node %d: %v", state.ID, err)
 				return

@@ -15,16 +15,13 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"net/netip"
 	"strconv"
-	"strings"
 	"time"
 
-	"github.com/docker/docker/api/types/container"
-	"github.com/docker/docker/api/types/filters"
-	"github.com/docker/docker/api/types/image"
-	"github.com/docker/docker/api/types/network"
-	"github.com/docker/docker/client"
-	"github.com/docker/go-connections/nat"
+	"github.com/moby/moby/api/types/container"
+	"github.com/moby/moby/api/types/network"
+	"github.com/moby/moby/client"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
 	"github.com/spf13/afero"
 	"go.uber.org/zap"
@@ -97,11 +94,10 @@ func DefaultCtx() (context.Context, context.CancelFunc) {
 
 func GetExistingNodes(ctx context.Context, c Client) ([]*NodeState, error) {
 	regExp := `^/rp-((node-[\d])|console)+`
-	filters := filters.NewArgs()
-	filters.Add("name", regExp)
+	filters := make(client.Filters).Add("name", regExp)
 	containers, err := c.ContainerList(
 		ctx,
-		container.ListOptions{
+		ContainerListOptions{
 			All:     true,
 			Filters: filters,
 		},
@@ -148,16 +144,16 @@ func GetState(ctx context.Context, c Client, nodeID uint, isConsole bool) (*Node
 	if err != nil {
 		return nil, err
 	}
-	if containerJSON.NetworkSettings == nil || containerJSON.ContainerJSONBase == nil {
+	if containerJSON.NetworkSettings == nil || containerJSON.State == nil {
 		return nil, fmt.Errorf("unable to inspect the container %v, please make sure you have Docker installed and running", RedpandaName(nodeID))
 	}
 	var ipAddress string
 	network, exists := containerJSON.NetworkSettings.Networks[redpandaNetwork]
 	if exists {
-		if network.IPAMConfig != nil {
-			ipAddress = network.IPAMConfig.IPv4Address
-		} else {
-			ipAddress = network.IPAddress
+		if network.IPAMConfig != nil && network.IPAMConfig.IPv4Address.IsValid() {
+			ipAddress = network.IPAMConfig.IPv4Address.String()
+		} else if network.IPAddress.IsValid() {
+			ipAddress = network.IPAddress.String()
 		}
 	}
 
@@ -205,7 +201,7 @@ func GetState(ctx context.Context, c Client, nodeID uint, isConsole bool) (*Node
 	}
 	return &NodeState{
 		Running:         containerJSON.State.Running,
-		Status:          containerJSON.State.Status,
+		Status:          string(containerJSON.State.Status),
 		Console:         isConsole,
 		ContainerID:     containerJSON.ID,
 		ContainerIP:     ipAddress,
@@ -222,11 +218,19 @@ func GetState(ctx context.Context, c Client, nodeID uint, isConsole bool) (*Node
 // CreateNetwork Creates a network for the cluster's containers and returns its
 // ID. If it exists already, it returns the existing network's ID.
 func CreateNetwork(ctx context.Context, c Client, subnet, gateway string) (string, error) {
-	args := filters.NewArgs()
-	args.Add("name", redpandaNetwork)
+	subnetPrefix, err := netip.ParsePrefix(subnet)
+	if err != nil {
+		return "", fmt.Errorf("invalid Docker network subnet %q: %w", subnet, err)
+	}
+	gatewayAddress, err := netip.ParseAddr(gateway)
+	if err != nil {
+		return "", fmt.Errorf("invalid Docker network gateway %q: %w", gateway, err)
+	}
+
+	args := make(client.Filters).Add("name", redpandaNetwork)
 	networks, err := c.NetworkList(
 		ctx,
-		network.ListOptions{Filters: args},
+		NetworkListOptions{Filters: args},
 	)
 	if err != nil {
 		return "", err
@@ -240,14 +244,14 @@ func CreateNetwork(ctx context.Context, c Client, subnet, gateway string) (strin
 
 	fmt.Printf("Creating network %q\n", redpandaNetwork)
 	resp, err := c.NetworkCreate(
-		ctx, redpandaNetwork, network.CreateOptions{
+		ctx, redpandaNetwork, NetworkCreateOptions{
 			Driver: "bridge",
 			IPAM: &network.IPAM{
 				Driver: "default",
 				Config: []network.IPAMConfig{
 					{
-						Subnet:  subnet,
-						Gateway: gateway,
+						Subnet:  subnetPrefix,
+						Gateway: gatewayAddress,
 					},
 				},
 			},
@@ -278,42 +282,31 @@ func CreateNode(
 	netID, image string,
 	args ...string,
 ) (*NodeState, error) {
-	rPort, err := nat.NewPort(
-		"tcp",
-		strconv.Itoa(config.DevDefault().Redpanda.RPCServer.Port),
-	)
+	rPort, err := network.ParsePort(strconv.Itoa(config.DevDefault().Redpanda.RPCServer.Port) + "/tcp")
 	if err != nil {
 		return nil, err
 	}
-	kPort, err := nat.NewPort(
-		"tcp",
-		strconv.Itoa(externalKafkaPort),
-	)
+	kPort, err := network.ParsePort(strconv.Itoa(externalKafkaPort) + "/tcp")
 	if err != nil {
 		return nil, err
 	}
-	pPort, err := nat.NewPort(
-		"tcp",
-		strconv.Itoa(config.DefaultProxyPort),
-	)
+	pPort, err := network.ParsePort(strconv.Itoa(config.DefaultProxyPort) + "/tcp")
 	if err != nil {
 		return nil, err
 	}
-	sPort, err := nat.NewPort(
-		"tcp",
-		strconv.Itoa(config.DefaultSchemaRegPort),
-	)
+	sPort, err := network.ParsePort(strconv.Itoa(config.DefaultSchemaRegPort) + "/tcp")
 	if err != nil {
 		return nil, err
 	}
-	admPort, err := nat.NewPort(
-		"tcp",
-		strconv.Itoa(config.DefaultAdminPort),
-	)
+	admPort, err := network.ParsePort(strconv.Itoa(config.DefaultAdminPort) + "/tcp")
 	if err != nil {
 		return nil, err
 	}
 	ip, err := nodeIP(ctx, c, netID, nodeID)
+	if err != nil {
+		return nil, err
+	}
+	ipAddress, err := netip.ParseAddr(ip)
 	if err != nil {
 		return nil, err
 	}
@@ -335,7 +328,7 @@ func CreateNode(
 		Image:    image,
 		Hostname: hostname,
 		Cmd:      append(cmd, args...),
-		ExposedPorts: nat.PortSet{
+		ExposedPorts: network.PortSet{
 			rPort: {},
 			pPort: {},
 			sPort: {},
@@ -347,20 +340,20 @@ func CreateNode(
 		},
 	}
 	hostConfig := container.HostConfig{
-		PortBindings: nat.PortMap{
-			rPort: []nat.PortBinding{{
+		PortBindings: network.PortMap{
+			rPort: []network.PortBinding{{
 				HostPort: fmt.Sprint(rpcPort),
 			}},
-			kPort: []nat.PortBinding{{
+			kPort: []network.PortBinding{{
 				HostPort: fmt.Sprint(kafkaPort),
 			}},
-			pPort: []nat.PortBinding{{
+			pPort: []network.PortBinding{{
 				HostPort: fmt.Sprint(proxyPort),
 			}},
-			sPort: []nat.PortBinding{{
+			sPort: []network.PortBinding{{
 				HostPort: fmt.Sprint(schemaRegPort),
 			}},
-			admPort: []nat.PortBinding{{
+			admPort: []network.PortBinding{{
 				HostPort: fmt.Sprint(adminPort),
 			}},
 		},
@@ -369,7 +362,7 @@ func CreateNode(
 		EndpointsConfig: map[string]*network.EndpointSettings{
 			redpandaNetwork: {
 				IPAMConfig: &network.EndpointIPAMConfig{
-					IPv4Address: ip,
+					IPv4Address: ipAddress,
 				},
 				Aliases: []string{hostname},
 			},
@@ -399,7 +392,7 @@ func PullImage(ctx context.Context, c Client, img string) error {
 	fmt.Printf("Pulling image: %s\n", img)
 	pullCtx, cancel := context.WithTimeout(ctx, 5*time.Minute)
 	defer cancel()
-	res, err := c.ImagePull(pullCtx, img, image.PullOptions{})
+	res, err := c.ImagePull(pullCtx, img, ImagePullOptions{})
 	if res != nil {
 		defer res.Close()
 		buf := bytes.Buffer{}
@@ -420,10 +413,7 @@ func CreateConsoleNode(
 	consolePort uint,
 	kafkaAddr, srAddr, adminAddr []string,
 ) (*NodeState, error) {
-	cPort, err := nat.NewPort(
-		"tcp",
-		strconv.Itoa(config.DefaultConsolePort),
-	)
+	cPort, err := network.ParsePort(strconv.Itoa(config.DefaultConsolePort) + "/tcp")
 	if err != nil {
 		return nil, err
 	}
@@ -436,7 +426,7 @@ func CreateConsoleNode(
 		Hostname:   ConsoleContainerName,
 		Entrypoint: []string{"/bin/sh", "-c", fmt.Sprintf("echo \"%v\" > /tmp/redpanda-console-config.yaml; /app/console", cfgStr)},
 		Env:        []string{"CONFIG_FILEPATH=/tmp/redpanda-console-config.yaml"},
-		ExposedPorts: nat.PortSet{
+		ExposedPorts: network.PortSet{
 			cPort: {},
 		},
 		Labels: map[string]string{
@@ -445,8 +435,8 @@ func CreateConsoleNode(
 		},
 	}
 	hostConfig := container.HostConfig{
-		PortBindings: nat.PortMap{
-			cPort: []nat.PortBinding{{
+		PortBindings: network.PortMap{
+			cPort: []network.PortBinding{{
 				HostPort: fmt.Sprint(consolePort),
 			}},
 		},
@@ -455,11 +445,15 @@ func CreateConsoleNode(
 	if err != nil {
 		return nil, err
 	}
+	ipAddress, err := netip.ParseAddr(ip)
+	if err != nil {
+		return nil, err
+	}
 	networkConfig := network.NetworkingConfig{
 		EndpointsConfig: map[string]*network.EndpointSettings{
 			redpandaNetwork: {
 				IPAMConfig: &network.EndpointIPAMConfig{
-					IPv4Address: ip,
+					IPv4Address: ipAddress,
 				},
 				Aliases: []string{ConsoleContainerName},
 			},
@@ -486,10 +480,8 @@ func CreateConsoleNode(
 }
 
 func CheckIfImgPresent(ctx context.Context, c Client, img string) (bool, error) {
-	imgFilters := filters.NewArgs(
-		filters.Arg("reference", img),
-	)
-	listedImages, err := c.ImageList(ctx, image.ListOptions{
+	imgFilters := make(client.Filters).Add("reference", img)
+	listedImages, err := c.ImageList(ctx, ImageListOptions{
 		Filters: imgFilters,
 	})
 	if err != nil {
@@ -501,11 +493,11 @@ func CheckIfImgPresent(ctx context.Context, c Client, img string) (bool, error) 
 func getHostPort(
 	containerPort int, containerJSON container.InspectResponse,
 ) (uint, error) {
-	natContianerPort, err := nat.NewPort("tcp", fmt.Sprint(containerPort))
+	containerPortKey, err := network.ParsePort(fmt.Sprintf("%d/tcp", containerPort))
 	if err != nil {
 		return uint(0), err
 	}
-	bindings, exists := containerJSON.NetworkSettings.Ports[natContianerPort]
+	bindings, exists := containerJSON.NetworkSettings.Ports[containerPortKey]
 	if exists {
 		if len(bindings) > 0 {
 			hostPort, err := strconv.Atoi(bindings[0].HostPort)
@@ -519,7 +511,7 @@ func getHostPort(
 }
 
 func nodeIP(ctx context.Context, c Client, netID string, id uint) (string, error) {
-	networkResource, err := c.NetworkInspect(ctx, netID, network.InspectOptions{})
+	networkResource, err := c.NetworkInspect(ctx, netID, NetworkInspectOptions{})
 	if err != nil {
 		return "", err
 	}
@@ -531,19 +523,20 @@ func nodeIP(ctx context.Context, c Client, netID string, id uint) (string, error
 		)
 	}
 	gatewayAddress := networkResource.IPAM.Config[0].Gateway
-	octets := strings.Split(gatewayAddress, ".")
-	if len(octets) != 4 {
+	if !gatewayAddress.Is4() {
 		return "", fmt.Errorf(
 			"invalid container IP addr: %s",
 			gatewayAddress,
 		)
 	}
-	lastOctet, err := strconv.ParseUint(octets[3], 10, 64)
-	if err != nil {
-		return "", err
+	ipAddress := gatewayAddress
+	for range id + 1 {
+		ipAddress = ipAddress.Next()
+		if !ipAddress.IsValid() {
+			return "", fmt.Errorf("unable to allocate container IP after %s", gatewayAddress)
+		}
 	}
-	octets[3] = fmt.Sprintf("%d", lastOctet+uint64(id)+1)
-	return strings.Join(octets, "."), nil
+	return ipAddress.String(), nil
 }
 
 func WrapIfConnErr(err error) error {

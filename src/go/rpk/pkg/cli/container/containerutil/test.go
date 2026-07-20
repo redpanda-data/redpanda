@@ -12,11 +12,11 @@ package containerutil
 import (
 	"context"
 	"io"
+	"net/netip"
 
-	"github.com/docker/docker/api/types/container"
-	"github.com/docker/docker/api/types/image"
-	"github.com/docker/docker/api/types/network"
-	"github.com/docker/go-connections/nat"
+	"github.com/moby/moby/api/types/container"
+	"github.com/moby/moby/api/types/image"
+	"github.com/moby/moby/api/types/network"
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
 )
 
@@ -26,12 +26,12 @@ type MockClient struct {
 	MockImagePull func(
 		ctx context.Context,
 		ref string,
-		options image.PullOptions,
+		options ImagePullOptions,
 	) (io.ReadCloser, error)
 
 	MockImageList func(
 		ctx context.Context,
-		options image.ListOptions,
+		options ImageListOptions,
 	) ([]image.Summary, error)
 
 	MockContainerCreate func(
@@ -46,18 +46,18 @@ type MockClient struct {
 	MockContainerStart func(
 		ctx context.Context,
 		containerID string,
-		options container.StartOptions,
+		options ContainerStartOptions,
 	) error
 
 	MockContainerStop func(
 		ctx context.Context,
 		containerID string,
-		options container.StopOptions,
+		options ContainerStopOptions,
 	) error
 
 	MockContainerList func(
 		ctx context.Context,
-		options container.ListOptions,
+		options ContainerListOptions,
 	) ([]container.Summary, error)
 
 	MockContainerInspect func(
@@ -68,13 +68,13 @@ type MockClient struct {
 	MockContainerRemove func(
 		ctx context.Context,
 		containerID string,
-		options container.RemoveOptions,
+		options ContainerRemoveOptions,
 	) error
 
 	MockNetworkCreate func(
 		ctx context.Context,
 		name string,
-		options network.CreateOptions,
+		options NetworkCreateOptions,
 	) (network.CreateResponse, error)
 
 	MockNetworkRemove func(
@@ -84,13 +84,13 @@ type MockClient struct {
 
 	MockNetworkList func(
 		ctx context.Context,
-		options network.ListOptions,
-	) ([]network.Inspect, error)
+		options NetworkListOptions,
+	) ([]network.Summary, error)
 
 	MockNetworkInspect func(
 		ctx context.Context,
 		networkID string,
-		options network.InspectOptions,
+		options NetworkInspectOptions,
 	) (network.Inspect, error)
 
 	MockIsErrNotFound func(err error) bool
@@ -127,7 +127,7 @@ func (c *MockClient) ContainerCreate(
 }
 
 func (c *MockClient) ImagePull(
-	ctx context.Context, ref string, options image.PullOptions,
+	ctx context.Context, ref string, options ImagePullOptions,
 ) (io.ReadCloser, error) {
 	if c.MockImagePull != nil {
 		return c.MockImagePull(ctx, ref, options)
@@ -136,7 +136,7 @@ func (c *MockClient) ImagePull(
 }
 
 func (c *MockClient) ImageList(
-	ctx context.Context, options image.ListOptions,
+	ctx context.Context, options ImageListOptions,
 ) ([]image.Summary, error) {
 	if c.MockImageList != nil {
 		return c.MockImageList(ctx, options)
@@ -145,7 +145,7 @@ func (c *MockClient) ImageList(
 }
 
 func (c *MockClient) ContainerStart(
-	ctx context.Context, containerID string, options container.StartOptions,
+	ctx context.Context, containerID string, options ContainerStartOptions,
 ) error {
 	if c.MockContainerStart != nil {
 		return c.MockContainerStart(
@@ -156,7 +156,7 @@ func (c *MockClient) ContainerStart(
 }
 
 func (c *MockClient) ContainerStop(
-	ctx context.Context, containerID string, options container.StopOptions,
+	ctx context.Context, containerID string, options ContainerStopOptions,
 ) error {
 	if c.MockContainerStop != nil {
 		return c.MockContainerStop(ctx, containerID, options)
@@ -165,7 +165,7 @@ func (c *MockClient) ContainerStop(
 }
 
 func (c *MockClient) ContainerList(
-	ctx context.Context, options container.ListOptions,
+	ctx context.Context, options ContainerListOptions,
 ) ([]container.Summary, error) {
 	if c.MockContainerList != nil {
 		return c.MockContainerList(ctx, options)
@@ -183,7 +183,7 @@ func (c *MockClient) ContainerInspect(
 }
 
 func (c *MockClient) ContainerRemove(
-	ctx context.Context, containerID string, options container.RemoveOptions,
+	ctx context.Context, containerID string, options ContainerRemoveOptions,
 ) error {
 	if c.MockContainerRemove != nil {
 		return c.MockContainerRemove(ctx, containerID, options)
@@ -192,7 +192,7 @@ func (c *MockClient) ContainerRemove(
 }
 
 func (c *MockClient) NetworkCreate(
-	ctx context.Context, name string, options network.CreateOptions,
+	ctx context.Context, name string, options NetworkCreateOptions,
 ) (network.CreateResponse, error) {
 	if c.MockNetworkCreate != nil {
 		return c.MockNetworkCreate(ctx, name, options)
@@ -208,16 +208,16 @@ func (c *MockClient) NetworkRemove(ctx context.Context, name string) error {
 }
 
 func (c *MockClient) NetworkList(
-	ctx context.Context, options network.ListOptions,
-) ([]network.Inspect, error) {
+	ctx context.Context, options NetworkListOptions,
+) ([]network.Summary, error) {
 	if c.MockNetworkList != nil {
 		return c.MockNetworkList(ctx, options)
 	}
-	return []network.Inspect{}, nil
+	return []network.Summary{}, nil
 }
 
 func (c *MockClient) NetworkInspect(
-	ctx context.Context, networkID string, options network.InspectOptions,
+	ctx context.Context, networkID string, options NetworkInspectOptions,
 ) (network.Inspect, error) {
 	if c.MockNetworkInspect != nil {
 		return c.MockNetworkInspect(ctx, networkID, options)
@@ -242,30 +242,26 @@ func (c *MockClient) IsErrConnectionFailed(err error) bool {
 func MockContainerInspect(
 	_ context.Context, _ string,
 ) (container.InspectResponse, error) {
-	kafkaNatPort := nat.Port("9093/tcp")
-	rpcNatPort := nat.Port("33145/tcp")
+	kafkaPort := network.MustParsePort("9093/tcp")
+	rpcPort := network.MustParsePort("33145/tcp")
 	return container.InspectResponse{
-		ContainerJSONBase: &container.ContainerJSONBase{
-			State: &container.State{
-				Running: true,
-				Status:  "Up, I guess?",
-			},
+		State: &container.State{
+			Running: true,
+			Status:  "Up, I guess?",
 		},
 		NetworkSettings: &container.NetworkSettings{
-			NetworkSettingsBase: container.NetworkSettingsBase{ //nolint:staticcheck // NetworkSettingsBase is deprecated but still the only way to set Ports until v29.0
-				Ports: map[nat.Port][]nat.PortBinding{
-					kafkaNatPort: {{
-						HostIP: "192.168.78.9", HostPort: "89080",
-					}},
-					rpcNatPort: {{
-						HostIP: "192.168.78.9", HostPort: "89081",
-					}},
-				},
+			Ports: network.PortMap{
+				kafkaPort: {{
+					HostIP: netip.MustParseAddr("192.168.78.9"), HostPort: "89080",
+				}},
+				rpcPort: {{
+					HostIP: netip.MustParseAddr("192.168.78.9"), HostPort: "89081",
+				}},
 			},
 			Networks: map[string]*network.EndpointSettings{
 				"redpanda": {
 					IPAMConfig: &network.EndpointIPAMConfig{
-						IPv4Address: "172.24.1.2",
+						IPv4Address: netip.MustParseAddr("172.24.1.2"),
 					},
 				},
 			},
