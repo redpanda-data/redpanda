@@ -236,6 +236,42 @@ SEASTAR_THREAD_TEST_CASE(test_read_pod) {
     BOOST_CHECK_THROW(in.consume_type<pod>(), std::out_of_range);
 }
 
+SEASTAR_THREAD_TEST_CASE(test_read_pod_across_fragments) {
+    constexpr uint64_t expected = 0x0123456789abcdef;
+    const auto encoded = std::string_view(
+      reinterpret_cast<const char*>(&expected), sizeof(expected));
+
+    for (size_t split = 1; split < encoded.size(); ++split) {
+        iobuf b;
+        b.append_fragments(iobuf::from(encoded.substr(0, split)));
+        b.append_fragments(iobuf::from(encoded.substr(split)));
+
+        auto in = iobuf::iterator_consumer(b.cbegin(), b.cend());
+        BOOST_CHECK_EQUAL(in.consume_type<uint64_t>(), expected);
+        BOOST_CHECK_EQUAL(in.bytes_consumed(), sizeof(expected));
+    }
+}
+
+SEASTAR_THREAD_TEST_CASE(test_read_pod_advances_to_next_fragment) {
+    constexpr uint64_t first = 0x0123456789abcdef;
+    constexpr uint64_t second = 0xfedcba9876543210;
+
+    iobuf b;
+    b.append_fragments(
+      iobuf::from(
+        std::string_view(
+          reinterpret_cast<const char*>(&first), sizeof(first))));
+    b.append_fragments(
+      iobuf::from(
+        std::string_view(
+          reinterpret_cast<const char*>(&second), sizeof(second))));
+
+    auto in = iobuf::iterator_consumer(b.cbegin(), b.cend());
+    BOOST_CHECK_EQUAL(in.consume_type<uint64_t>(), first);
+    BOOST_CHECK_EQUAL(in.consume_type<uint64_t>(), second);
+    BOOST_CHECK_EQUAL(in.bytes_consumed(), sizeof(first) + sizeof(second));
+}
+
 SEASTAR_THREAD_TEST_CASE(test_consume_to) {
     // read 75 bytes * i number of times
     // cumulative
