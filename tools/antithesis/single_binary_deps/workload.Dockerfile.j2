@@ -1,4 +1,4 @@
-FROM debian:12-slim
+FROM public.ecr.aws/docker/library/ubuntu:jammy
 RUN apt-get update && apt-get install -y --no-install-recommends \
     gdb strace ltrace binutils procps \
     && rm -rf /var/lib/apt/lists/*
