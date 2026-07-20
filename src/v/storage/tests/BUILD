@@ -407,6 +407,7 @@ redpanda_cc_gtest(
         "//src/v/test_utils:gtest",
         "//src/v/test_utils:random_bytes",
         "@googletest//:gtest",
+        "@seastar",
         "@seastar//:testing",
     ],
 )
