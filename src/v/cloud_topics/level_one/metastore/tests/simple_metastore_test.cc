@@ -2902,14 +2902,23 @@ INSTANTIATE_TEST_SUITE_P(
       .min_acceptable = 50,
       .expected_ranges = {},
     },
-    // All extents undersized. Rewrites cleanly into a single 6-byte
-    // object, 3 extents become 1, saving 2.
+    // All extents undersized, but the run is the partition's tail and its
+    // total (6) can't fill a healthy output extent yet. Held back so its
+    // rewrite doesn't just produce another undersized extent.
     leveling_case{
-      .name = "AllSmall",
+      .name = "AllSmallTailHeldBack",
       .object_sizes = {2, 2, 2},
       .min_acceptable = 50,
+      .expected_ranges = {},
+    },
+    // All extents undersized and the tail run's total (60) reaches
+    // min_acceptable, so the range commits.
+    leveling_case{
+      .name = "AllSmallTailCommits",
+      .object_sizes = {20, 20, 20},
+      .min_acceptable = 50,
       .expected_ranges
-      = {{.base_offset = 0_o, .last_offset = 29_o, .size_bytes = 6, .extent_count = 3}},
+      = {{.base_offset = 0_o, .last_offset = 29_o, .size_bytes = 60, .extent_count = 3}},
     },
     // Leading healthies are no-ops (no active range to close). Range
     // opens at obj 2, extends to obj 3, and closes on the trailing

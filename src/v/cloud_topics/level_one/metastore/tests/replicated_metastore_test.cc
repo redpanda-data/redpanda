@@ -1310,11 +1310,18 @@ TEST_P(ReplicatedMetastoreTest, TestGetLevelingInfo) {
        .object_sizes = {100, 2, 100, 100, 2, 100},
        .min_acceptable = 50,
        .expected_ranges = {}},
-      {.name = "AllSmall",
+      {// The all-undersized run is the partition's tail and its total (6)
+       // can't fill a healthy output extent yet, so it is held back.
+       .name = "AllSmallTailHeldBack",
        .object_sizes = {2, 2, 2},
        .min_acceptable = 50,
+       .expected_ranges = {}},
+      {// The tail run's total (60) reaches min_acceptable, so it commits.
+       .name = "AllSmallTailCommits",
+       .object_sizes = {20, 20, 20},
+       .min_acceptable = 50,
        .expected_ranges
-       = {{.base_offset = o{0}, .last_offset = o{29}, .size_bytes = 6, .extent_count = 3}}},
+       = {{.base_offset = o{0}, .last_offset = o{29}, .size_bytes = 60, .extent_count = 3}}},
       {.name = "LeadingHealthyExtentsUntouched",
        .object_sizes = {100, 100, 2, 2, 100},
        .min_acceptable = 50,

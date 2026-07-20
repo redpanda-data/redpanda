@@ -135,13 +135,12 @@ protected:
         return count;
     }
 
-    // Returns leveling info for `tidp`, treating all objects as undersized.
-    l1::metastore::leveling_info_response
-    get_all_leveling_info(const model::topic_id_partition& tidp) {
+    // Returns leveling info for `tidp`.
+    l1::metastore::leveling_info_response get_all_leveling_info(
+      const model::topic_id_partition& tidp, size_t min_acceptable_bytes) {
         chunked_vector<l1::metastore::leveling_info_spec> specs;
         specs.push_back(
-          {.tidp = tidp,
-           .min_acceptable_extent_bytes = std::numeric_limits<size_t>::max()});
+          {.tidp = tidp, .min_acceptable_extent_bytes = min_acceptable_bytes});
         auto result = _metastore.get_leveling_infos(specs).get();
         EXPECT_TRUE(result.has_value()) << "get_leveling_infos failed";
         auto it = result->find(tidp);
@@ -150,21 +149,26 @@ protected:
         return std::move(it->second.value());
     }
 
-    // Produces `num_batches` random batches and uploads them as a single L1
-    // object for `tidp`, starting at `base_offset`.
+    // Produces `num_batches` batches of `records_per_batch` fixed-size
+    // (1 KiB) records and uploads them as a single L1 object for `tidp`,
+    // starting at `base_offset`.
     void upload_batches(
       const model::topic_id_partition& tidp,
       model::offset base_offset,
       int num_batches,
-      int records_per_batch = 10,
-      bool allow_compression = false) {
-        auto batches = model::test::make_random_batches(
-                         base_offset,
-                         num_batches,
-                         allow_compression,
-                         std::nullopt,
-                         records_per_batch)
-                         .get();
+      int records_per_batch = 10) {
+        chunked_circular_buffer<model::record_batch> batches;
+        auto offset = base_offset;
+        for (int i = 0; i < num_batches; ++i) {
+            model::test::record_batch_spec spec;
+            spec.offset = offset;
+            spec.allow_compression = false;
+            spec.count = records_per_batch;
+            spec.record_sizes = std::vector<size_t>(records_per_batch, 1024);
+            auto b = model::test::make_random_batch(spec);
+            offset = model::next_offset(b.last_offset());
+            batches.push_back(std::move(b));
+        }
         std::vector<tidp_batches_t> tidp_batches;
         tidp_batches.emplace_back(tidp, std::move(batches));
         make_l1_objects(std::move(tidp_batches)).get();
@@ -195,7 +199,9 @@ TEST_F(LevelingReducerTest, RewritesLevelableRange) {
     auto extents_before = count_extents(tidp);
     ASSERT_EQ(extents_before, static_cast<size_t>(num_extents));
 
-    auto leveling_info = get_all_leveling_info(tidp);
+    // Each extent is ~55 KiB (50 framed 1 KiB records), ~220 KiB in total:
+    // all four are undersized and the run's total clears the threshold.
+    auto leveling_info = get_all_leveling_info(tidp, 100_KiB);
     ASSERT_FALSE(leveling_info.ranges.empty());
 
     do_level(
@@ -236,7 +242,9 @@ TEST_F(LevelingReducerTest, PreservesBatchData) {
     auto orig_batches = read_all(std::move(orig_reader));
     ASSERT_GT(orig_batches.size(), 0);
 
-    auto leveling_info = get_all_leveling_info(tidp);
+    // Each extent is ~56 KiB (50 framed 1 KiB records), ~170 KiB in total:
+    // all three are undersized and the run's total clears the threshold.
+    auto leveling_info = get_all_leveling_info(tidp, 100_KiB);
     ASSERT_FALSE(leveling_info.ranges.empty());
 
     do_level(
@@ -280,7 +288,9 @@ TEST_F(LevelingReducerTest, HardStopPreempts) {
     auto extents_before = count_extents(tidp);
     ASSERT_EQ(extents_before, 2);
 
-    auto leveling_info = get_all_leveling_info(tidp);
+    // Each extent is ~55 KiB (50 framed 1 KiB records), ~110 KiB in total:
+    // both are undersized and the run's total clears the threshold.
+    auto leveling_info = get_all_leveling_info(tidp, 80_KiB);
     ASSERT_FALSE(leveling_info.ranges.empty());
 
     // Run leveling with state set to hard_stop from the start.
@@ -562,13 +572,23 @@ INSTANTIATE_TEST_SUITE_P(
       .target_bytes = 100_KiB,
       .expected_shape_bytes = {100_KiB, 100_KiB, 100_KiB},
     },
-    // All small: consolidated into one tiny object.
+    // All small, but the run is the partition's tail and its total (~6 KiB)
+    // can't fill a healthy output object yet: held back, layout unchanged.
     test_case{
-      .name = "AllSmall",
+      .name = "AllSmallTailHeldBack",
       .object_sizes_bytes = {2_KiB, 2_KiB, 2_KiB},
       .min_acceptable_bytes = 50_KiB,
       .target_bytes = 100_KiB,
-      .expected_shape_bytes = {6_KiB},
+      .expected_shape_bytes = {2_KiB, 2_KiB, 2_KiB},
+    },
+    // All small and the tail run's total (~60 KiB) reaches min_acceptable:
+    // consolidated into one healthy object.
+    test_case{
+      .name = "AllSmallTailCommits",
+      .object_sizes_bytes = {20_KiB, 20_KiB, 20_KiB},
+      .min_acceptable_bytes = 50_KiB,
+      .target_bytes = 100_KiB,
+      .expected_shape_bytes = {60_KiB},
     },
     // Isolated small with no rewrite savings: range discarded, partition
     // unchanged.
@@ -635,17 +655,18 @@ INSTANTIATE_TEST_SUITE_P(
       .target_bytes = 100_KiB,
       .expected_shape_bytes = {100_KiB, 100_KiB, 2_KiB},
     },
-    // Long run of small extents (30 of them, 1 KiB each). Each upload
+    // Long run of small extents (60 of them, 1 KiB each). Each upload
     // becomes one 1-batch L1 object. After consolidation, the new object
-    // holds 30 batches — per-batch framing overhead accumulates to about
-    // 250 B * 30 ~= 7 KiB on top of the ~30 KiB of record data. Verifies
-    // the sink correctly consolidates a high batch-count range.
+    // holds 60 batches — per-batch framing overhead accumulates to about
+    // 250 B * 60 ~= 15 KiB on top of the ~60 KiB of record data (also
+    // pushing the tail run's total past min_acceptable so it commits).
+    // Verifies the sink correctly consolidates a high batch-count range.
     test_case{
       .name = "LongRunOfSmalls",
-      .object_sizes_bytes = std::vector<size_t>(30, 1_KiB),
+      .object_sizes_bytes = std::vector<size_t>(60, 1_KiB),
       .min_acceptable_bytes = 50_KiB,
       .target_bytes = 100_KiB,
-      .expected_shape_bytes = {37_KiB},
+      .expected_shape_bytes = {75_KiB},
     },
     // Three consecutive smalls of varying sizes (2K, 15K, 30K — all under
     // 50K min_acceptable) form a K=3 run, closed by the trailing healthy

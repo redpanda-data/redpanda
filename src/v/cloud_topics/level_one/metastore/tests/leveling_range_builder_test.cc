@@ -140,15 +140,55 @@ INSTANTIATE_TEST_SUITE_P(
       .min_acceptable = 50,
       .expected_ranges = {},
     },
-    // All extents undersized: one range covers everything, rewritten as
-    // one tiny object.
+    // All extents undersized, but the run is the partition's tail and its
+    // total (6) can't fill a healthy output extent yet. Held back: leveling
+    // it now would produce another undersized extent that snowballs.
     test_case{
-      .name = "AllSmall",
+      .name = "AllSmallTailHeldBack",
       .extents = {{0_o, 9_o, 2},
                   {10_o, 19_o, 2},
                   {20_o, 29_o, 2}},
       .min_acceptable = 50,
-      .expected_ranges = {{.base_offset = 0_o, .last_offset = 29_o, .size_bytes = 6, .extent_count = 3}},
+      .expected_ranges = {},
+    },
+    // All extents undersized and the tail run's total (60) reaches
+    // min_acceptable: leveling can produce a healthy output extent, so the
+    // range commits.
+    test_case{
+      .name = "AllSmallTailCommits",
+      .extents = {{0_o, 9_o, 20},
+                  {10_o, 19_o, 20},
+                  {20_o, 29_o, 20}},
+      .min_acceptable = 50,
+      .expected_ranges = {{.base_offset = 0_o, .last_offset = 29_o, .size_bytes = 60, .extent_count = 3}},
+    },
+    // Boundary: tail run total exactly at min_acceptable commits (the
+    // check is `>=`).
+    test_case{
+      .name = "TailExactlyAtMinAcceptableCommits",
+      .extents = {{0_o, 9_o, 25},
+                  {10_o, 19_o, 25}},
+      .min_acceptable = 50,
+      .expected_ranges = {{.base_offset = 0_o, .last_offset = 19_o, .size_bytes = 50, .extent_count = 2}},
+    },
+    // Boundary: tail run total one byte below min_acceptable is held back.
+    test_case{
+      .name = "TailJustBelowMinAcceptableHeldBack",
+      .extents = {{0_o, 9_o, 25},
+                  {10_o, 19_o, 24}},
+      .min_acceptable = 50,
+      .expected_ranges = {},
+    },
+    // An enclosed run (closed by a healthy extent) commits regardless of
+    // its total: it can never grow, so holding it back would strand it
+    // fragmented forever, while one rewrite collapses it for good.
+    test_case{
+      .name = "EnclosedRunBelowMinAcceptableCommits",
+      .extents = {{0_o, 9_o, 2},
+                  {10_o, 19_o, 2},
+                  {20_o, 29_o, 100}},
+      .min_acceptable = 50,
+      .expected_ranges = {{.base_offset = 0_o, .last_offset = 19_o, .size_bytes = 4, .extent_count = 2}},
     },
     // Leading healthies are no-ops (no active range to close). Range
     // opens at obj 2, extends to obj 3, and closes on the trailing

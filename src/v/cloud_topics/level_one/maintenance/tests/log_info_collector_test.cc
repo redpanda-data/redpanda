@@ -18,6 +18,7 @@
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "model/tests/random_batch.h"
+#include "test_utils/scoped_config.h"
 
 #include <gtest/gtest.h>
 
@@ -54,19 +55,42 @@ void drain_and_mark_inflight(l1::leveling_queue& queue) {
 
 class LogInfoCollectorTestFixture : public l1::l1_reader_fixture {
 protected:
+    LogInfoCollectorTestFixture() {
+        // Pin the leveling threshold: min_acceptable = 40 KiB * 0.5 (the
+        // default min-extent-size ratio) = 20 KiB, so each ~13 KiB object
+        // seeded below is undersized, while a run of two or more totals past
+        // the threshold a tail run must reach to be committed as a range.
+        _cfg.get("cloud_topics_reconciliation_max_object_size")
+          .set_value(size_t{40_KiB});
+    }
+
     // Builds `n` separate small (undersized) L1 objects for `tidp`, each from
     // its own batch run, so they form a run of consecutive undersized extents
-    // that the leveling range builder will coalesce into a range.
+    // that the leveling range builder will coalesce into a range. Each object
+    // holds ten single-record ~1 KiB batches; the fixed record size keeps
+    // extent sizes deterministic (~13 KiB) relative to the threshold pinned
+    // in the constructor.
     void seed_undersized_objects(const model::topic_id_partition& tidp, int n) {
         model::offset o{0};
         for (int i = 0; i < n; ++i) {
-            auto batches = model::test::make_random_batches(o, 10).get();
-            o = model::next_offset(batches.back().last_offset());
+            chunked_circular_buffer<model::record_batch> batches;
+            for (int b = 0; b < 10; ++b) {
+                model::test::record_batch_spec spec;
+                spec.offset = o;
+                spec.allow_compression = false;
+                spec.count = 1;
+                spec.record_sizes = std::vector<size_t>{1024};
+                auto batch = model::test::make_random_batch(spec);
+                o = model::next_offset(batch.last_offset());
+                batches.push_back(std::move(batch));
+            }
             std::vector<tidp_batches_t> bs;
             bs.emplace_back(tidp, std::move(batches));
             make_l1_objects(std::move(bs)).get();
         }
     }
+
+    scoped_config _cfg;
 };
 
 // A fake topic config provider which always returns a value. The config is
@@ -146,27 +170,13 @@ TEST_F(LogInfoCollectorTestFixture, TestSampleLevelingInfo) {
     auto [ntp, tidp] = make_ntidp("leveling_topic");
     auto log_ptr = ss::make_lw_shared<l1::log_compaction_meta>(tidp, ntp);
 
-    // Seed the metastore with two small objects for this partition. With the
-    // default config (max_object_size=80MiB, threshold=0.5 =>
-    // min_acceptable=40MiB), each object is undersized. The leveling range
-    // builder only emits a range when it sees a run of *two or more*
-    // consecutive undersized extents (singletons can't reduce extent count),
-    // so we need at least two objects to produce a non-empty range.
-    model::offset o{0};
-    {
-        auto batches = model::test::make_random_batches(o, 10).get();
-        o = model::next_offset(batches.back().last_offset());
-        std::vector<tidp_batches_t> bs;
-        bs.emplace_back(tidp, std::move(batches));
-        make_l1_objects(std::move(bs)).get();
-    }
-
-    {
-        auto batches = model::test::make_random_batches(o, 10).get();
-        std::vector<tidp_batches_t> bs;
-        bs.emplace_back(tidp, std::move(batches));
-        make_l1_objects(std::move(bs)).get();
-    }
+    // Seed the metastore with two small objects for this partition; each is
+    // undersized relative to the threshold pinned in the fixture. The
+    // leveling range builder only emits a range when it sees a run of *two
+    // or more* consecutive undersized extents (singletons can't reduce
+    // extent count) whose total clears the tail-run threshold, so we need at
+    // least two objects to produce a non-empty range.
+    seed_undersized_objects(tidp, 2);
 
     l1::log_set_t logs_set;
     auto [it, inserted] = logs_set.insert(log_ptr);
