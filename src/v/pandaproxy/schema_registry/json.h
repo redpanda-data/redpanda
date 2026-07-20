@@ -21,7 +21,7 @@ ss::future<json_schema_definition>
 make_json_schema_definition(schema_getter& store, subject_schema schema);
 
 ss::future<subject_schema> make_canonical_json_schema(
-  sharded_store& store, subject_schema def, normalize norm = normalize::no);
+  schema_getter& store, subject_schema def, normalize norm = normalize::no);
 
 compatibility_result check_compatible(
   const json_schema_definition& reader,

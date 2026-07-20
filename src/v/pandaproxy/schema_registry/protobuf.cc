@@ -20,7 +20,7 @@
 #include "pandaproxy/logger.h"
 #include "pandaproxy/schema_registry/compatibility.h"
 #include "pandaproxy/schema_registry/errors.h"
-#include "pandaproxy/schema_registry/sharded_store.h"
+#include "pandaproxy/schema_registry/schema_getter.h"
 #include "pandaproxy/schema_registry/types.h"
 #include "ssx/sformat.h"
 #include "utils/base64.h"
@@ -656,7 +656,7 @@ ss::future<protobuf_schema_definition> make_protobuf_schema_definition(
 }
 
 ss::future<schema_definition> validate_protobuf_schema(
-  sharded_store& store,
+  schema_getter& store,
   subject_schema schema,
   normalize norm,
   output_format format) {
@@ -667,7 +667,7 @@ ss::future<schema_definition> validate_protobuf_schema(
 }
 
 ss::future<subject_schema> make_canonical_protobuf_schema(
-  sharded_store& store,
+  schema_getter& store,
   subject_schema schema,
   normalize norm,
   output_format format) {
@@ -679,7 +679,7 @@ ss::future<subject_schema> make_canonical_protobuf_schema(
 }
 
 ss::future<schema_definition> format_protobuf_schema_definition(
-  sharded_store& store, schema_definition schema, output_format format) {
+  schema_getter& store, schema_definition schema, output_format format) {
     switch (format) {
     case output_format::ignore_extensions:
         throw as_exception(format_not_supported(format));
