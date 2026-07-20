@@ -28,12 +28,14 @@ concept DirectReadable = requires(iobuf_parser& in, const header& h) {
 };
 
 template<typename T>
-void read_nested(iobuf_parser& in, T& t, const std::size_t bytes_left_limit) {
+[[gnu::always_inline]] void
+read_nested(iobuf_parser& in, T& t, const std::size_t bytes_left_limit) {
     read_tag(in, t, bytes_left_limit);
 }
 
 template<typename T>
-T read_nested(iobuf_parser& in, const std::size_t bytes_left_limit) {
+[[gnu::always_inline]] T
+read_nested(iobuf_parser& in, const std::size_t bytes_left_limit) {
     using Type = std::decay_t<T>;
     static_assert(std::is_default_constructible_v<T> || DirectReadable<T>);
     if constexpr (DirectReadable<T>) {
