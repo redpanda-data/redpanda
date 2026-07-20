@@ -15,6 +15,7 @@
 #include "serde/envelope.h"
 #include "serde/envelope_for_each_field.h"
 #include "serde/read_header.h"
+#include "serde/rw/fixed.h"
 #include "serde/rw/rw.h"
 #include "serde/serde_size_t.h"
 
@@ -96,6 +97,11 @@ template<typename T>
 requires is_envelope<std::decay_t<T>>
 void tag_invoke(tag_t<write_tag>, iobuf& out, T&& t) {
     using Type = std::decay_t<T>;
+
+    if constexpr (detail::fixed_serde_v<Type>) {
+        detail::write_fixed(out, t);
+        return;
+    }
 
     write(out, Type::redpanda_serde_version);
     write(out, Type::redpanda_serde_compat_version);
