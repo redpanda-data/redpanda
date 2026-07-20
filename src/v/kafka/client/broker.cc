@@ -76,10 +76,20 @@ ss::future<> remote_broker::connect(model::timeout_clock::time_point deadline) {
 
 ss::future<> remote_broker::maybe_initialize_connection(
   std::optional<std::reference_wrapper<ss::abort_source>> as) {
-    if (_transport->is_valid() && !needs_authentication()) {
+    if (_transport->is_valid() && is_authentication_complete()) {
         co_return;
     }
-    co_await maybe_reconnect(as);
+    /**
+     * Hold the reconnect mutex across BOTH connection and authentication so a
+     * concurrent caller cannot dispatch an application request on a connection
+     * whose SASL handshake is still in flight. A caller that blocks on the
+     * mutex re-evaluates the connection state after acquiring it: a valid
+     * transport short-circuits the reconnect and a completed authentication
+     * short-circuits maybe_authenticate.
+     */
+    auto u = as.has_value() ? co_await _reconnect_mutex.get_units(as->get())
+                            : co_await _reconnect_mutex.get_units();
+    co_await connect_with_retries(as);
     co_await maybe_authenticate();
 }
 
@@ -150,7 +160,7 @@ ss::future<> remote_broker::connect_with_retries(
 }
 
 ss::future<> remote_broker::maybe_authenticate() {
-    if (!needs_authentication()) {
+    if (is_authentication_complete()) {
         co_return;
     }
     _authentication_state = auth_state::in_progress;
@@ -159,6 +169,13 @@ ss::future<> remote_broker::maybe_authenticate() {
         co_await do_authenticate();
         _authentication_state = auth_state::authenticated;
     } catch (...) {
+        // A connection whose authentication failed is not reusable: SASL
+        // authenticates a connection once, as part of establishing it, and the
+        // broker drops a failed connection. Discard the transport so the next
+        // attempt reconnects and re-authenticates from scratch instead of
+        // reusing a dead socket. connect_with_retries resets the auth state
+        // when it re-establishes the connection.
+        _transport->shutdown();
         vlog(
           _logger.warn, "Authentication error - {}", std::current_exception());
         throw;
