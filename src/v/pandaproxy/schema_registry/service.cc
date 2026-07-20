@@ -42,6 +42,7 @@
 #include "security/credential_store.h"
 #include "security/ephemeral_credential_store.h"
 #include "security/request_auth.h"
+#include "ssx/future-util.h"
 #include "ssx/semaphore.h"
 #include "utils/tristate.h"
 
@@ -609,10 +610,31 @@ server::routes_t get_schema_registry_routes(ss::gate& gate, one_shot& es) {
     return routes;
 }
 
+ss::future<> service::ensure_topic_loaded() {
+    // `service` is a peering_sharded_service, so each shard has its own
+    // `_ensure_started` one_shot. If the first requests after start-up land on
+    // several shards at once, each shard's one_shot would independently run
+    // do_start() and launch its own full `_schemas` replay on the reader
+    // shard. Redundant replays each pay the full recovery cost, so N racing
+    // shards make recovery up to N times slower.
+    //
+    // Funnel all shards through a single one_shot on the reader shard, so the
+    // topic is loaded exactly once. The per-shard `_ensure_started` one_shot
+    // still caches completion, so once started this costs nothing on later
+    // requests; only the first request on each shard pays the cross-shard hop.
+    return container().invoke_on(
+      seq_writer::reader_shard, _ctx.smp_sg, [](service& s) {
+          return s._load_once();
+      });
+}
+
 ss::future<> service::do_start() {
-    if (_is_started) {
-        co_return;
-    }
+    // Invoked only on the reader shard, via _load_once, so it runs exactly
+    // once and can drive the reader-shard-only fetch directly.
+    vassert(
+      ss::this_shard_id() == seq_writer::reader_shard,
+      "do_start must run on the reader shard, not {}",
+      ss::this_shard_id());
     auto guard = _gate.hold();
     try {
         co_await create_internal_topic();
@@ -627,12 +649,7 @@ ss::future<> service::do_start() {
           std::current_exception());
         throw;
     }
-    co_await container().invoke_on_all(_ctx.smp_sg, [](service& s) {
-        s._is_started = true;
-        return ss::this_shard_id() == seq_writer::reader_shard
-                 ? s.fetch_internal_topic()
-                 : ss::now();
-    });
+    co_await fetch_internal_topic();
 }
 
 ss::future<> create_acls(cluster::security_frontend& security_fe) {
@@ -989,7 +1006,8 @@ service::service(
   , _topic_creator(std::move(topic_creator))
   , _controller(controller)
   , _audit_mgr(audit_mgr)
-  , _ensure_started{[this]() { return do_start(); }}
+  , _ensure_started{[this]() { return ensure_topic_loaded(); }}
+  , _load_once{[this]() { return do_start(); }}
   , _auth{
       config::always_true(),
       config::shard_local_cfg().superusers.bind(),
@@ -1005,10 +1023,30 @@ ss::future<> service::start() {
     co_await configure();
     static std::vector<model::broker_endpoint> not_advertised{};
     _server.routes(get_schema_registry_routes(_gate, _ensure_started));
-    co_return co_await _server.start(
+    co_await _server.start(
       _config.schema_registry_api(),
       _config.schema_registry_api_tls(),
       not_advertised);
+
+    if (
+      ss::this_shard_id() == seq_writer::reader_shard
+      && config::shard_local_cfg().schema_registry_replay_on_startup()) {
+        // Proactively hydrate the store rather than wait for the first request.
+        // Fire-and-forget under the gate: a large topic can take a while to
+        // replay and must not block broker start-up. This goes through the
+        // single-flight ensure_started(), so a request that races it still
+        // triggers exactly one replay.
+        ssx::spawn_with_gate(_gate, [this] {
+            return ensure_started().handle_exception(
+              [](const std::exception_ptr& e) {
+                  vlog(
+                    srlog.warn,
+                    "eager _schemas replay failed at start-up; will retry on "
+                    "the first request: {}",
+                    e);
+              });
+        });
+    }
 }
 
 ss::future<> service::stop() {

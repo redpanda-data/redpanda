@@ -76,10 +76,16 @@ public:
     }
 
 private:
+    // Only ever invoked on the reader shard, via _load_once.
     ss::future<> do_start();
     ss::future<> configure();
     ss::future<> inform(model::node_id);
     ss::future<> do_inform(model::node_id);
+    /// Route every shard's start-up through a single one_shot on the reader
+    /// shard, so the `_schemas` topic is replayed exactly once regardless of
+    /// how many shards receive their first request concurrently. See the
+    /// definition for why the per-shard one_shots would otherwise race.
+    ss::future<> ensure_topic_loaded();
     ss::future<> create_internal_topic();
     ss::future<> fetch_internal_topic();
     ss::future<> validate_topic_creation_authorization();
@@ -102,10 +108,15 @@ private:
     std::unique_ptr<cluster::controller>& _controller;
     ss::sharded<security::audit::audit_log_manager>& _audit_mgr;
 
+    // Per-shard: caches that start-up has completed on this shard, giving a
+    // cheap fast path for subsequent requests. Its action delegates to
+    // `_load_once` on the reader shard.
     one_shot _ensure_started;
+    // Reader shard only: the single authority that runs `do_start()` exactly
+    // once, no matter how many shards enter start-up concurrently.
+    one_shot _load_once;
     request_authenticator _auth;
     bool _has_ephemeral_credentials{false};
-    bool _is_started{false};
 };
 
 } // namespace pandaproxy::schema_registry

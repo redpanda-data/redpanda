@@ -673,6 +673,7 @@ struct configuration final : public config_store {
     enterprise<property<bool>> schema_registry_enable_authorization;
     property<bool> schema_registry_always_normalize;
     property<bool> schema_registry_deferred_recovery;
+    property<bool> schema_registry_replay_on_startup;
     deprecated_property schema_registry_avro_use_named_references;
     property<bool> schema_registry_enable_qualified_subjects;
     property<std::optional<uint32_t>> pp_sr_smp_max_non_local_requests;
