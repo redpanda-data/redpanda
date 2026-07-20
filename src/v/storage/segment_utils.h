@@ -15,6 +15,7 @@
 #include "model/record.h"
 #include "model/record_batch_reader.h"
 #include "model/record_batch_types.h"
+#include "model/record_utils.h"
 #include "storage/compacted_index.h"
 #include "storage/compacted_index_reader.h"
 #include "storage/compacted_index_writer.h"
@@ -329,7 +330,7 @@ auto with_segment_reader_handle(segment_reader_handle handle, Func func) {
 // In all other cases, return `false`.
 inline bool can_discard(
   const model::record_batch& b,
-  const model::record& r,
+  const model::record_key_metadata& r,
   const model::ntp& ntp,
   bool past_tombstone_delete_horizon,
   bool past_tx_delete_horizon,
@@ -341,7 +342,7 @@ inline bool can_discard(
     }
 
     // Deal with tombstone record removal
-    if (r.is_tombstone() && past_tombstone_delete_horizon) {
+    if (r.is_tombstone && past_tombstone_delete_horizon) {
         return true;
     }
 
@@ -358,7 +359,7 @@ inline bool can_discard(
 template<typename Func>
 ss::future<bool> should_keep(
   const model::record_batch& b,
-  const model::record& r,
+  const model::record_key_metadata& r,
   const model::ntp& ntp,
   bool is_last_record_in_batch,
   Func&& is_latest_key,
@@ -380,7 +381,7 @@ ss::future<bool> should_keep(
          && b.header().attrs.is_transactional());
     const auto is_tx_fence_batch = b.header().type
                                    == model::record_batch_type::tx_fence;
-    const auto is_tombstone = r.is_tombstone();
+    const auto is_tombstone = r.is_tombstone;
     // once compaction placeholder feature is enabled, we are not
     // worried about empty batches as the reducer then installs a
     // placeholder batch if all the records are compacted away.
@@ -389,8 +390,10 @@ ss::future<bool> should_keep(
       && (is_last_batch && is_last_record_in_batch)) {
         vlog(
           gclog.trace,
-          "retaining last record: {} of segment from batch: {}",
-          r,
+          "retaining last record: offset_delta {} (tombstone={}) of segment "
+          "from batch: {}",
+          r.offset_delta,
+          is_tombstone,
           b.header());
         if (is_tombstone) {
             may_have_tombstone_records = true;

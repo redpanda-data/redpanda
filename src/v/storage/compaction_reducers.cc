@@ -118,11 +118,11 @@ compacted_offset_list_reducer::operator()(compacted_index::entry&& e) {
 
 ss::future<> copy_data_segment_reducer::maybe_keep_offset(
   const model::record_batch& batch,
-  const model::record& r,
+  model::record_key_metadata r,
   bool is_last_record_in_batch,
   chunked_vector<int32_t>& offset_deltas) {
     if (co_await _should_keep_fn(batch, r, is_last_record_in_batch)) {
-        offset_deltas.push_back(r.offset_delta());
+        offset_deltas.push_back(r.offset_delta);
         co_return;
     }
 }
@@ -171,11 +171,15 @@ copy_data_segment_reducer::filter(model::record_batch batch) {
     offset_deltas.reserve(batch.record_count());
 
     int32_t records_seen = 0;
-    co_await batch.for_each_record_async(
-      [this, &batch, &offset_deltas, &records_seen](const model::record& r) {
+    co_await batch.for_each_record_key_async(
+      [this, &batch, &offset_deltas, &records_seen](
+        model::record_key_metadata r) {
           ++records_seen;
           return maybe_keep_offset(
-            batch, r, batch.record_count() == records_seen, offset_deltas);
+            batch,
+            std::move(r),
+            batch.record_count() == records_seen,
+            offset_deltas);
       });
 
     if (offset_deltas.empty() && _compaction_placeholder_enabled) {
@@ -365,15 +369,15 @@ ss::future<ss::stop_iteration> copy_data_segment_reducer::filter_and_append(
         ++_stats.non_compactible_batches;
     }
     if (_compacted_idx && compactible_batch) {
-        co_await model::for_each_record(
-          batch, [&batch, this](const model::record& r) {
+        co_await batch.for_each_record_key_async(
+          [&batch, this](model::record_key_metadata r) {
               auto& hdr = batch.header();
               return _compacted_idx->index(
                 hdr.type,
                 hdr.attrs.is_control(),
-                r.key(),
+                std::move(r.key),
                 batch.base_offset(),
-                r.offset_delta());
+                r.offset_delta);
           });
     }
     using result = filtered_batch::result;
@@ -471,17 +475,14 @@ index_rebuilder_reducer::operator()(model::record_batch b) {
     co_return stop_t::no;
 }
 
-ss::future<> index_rebuilder_reducer::do_index(model::record_batch&& b) {
-    return ss::do_with(std::move(b), [this](model::record_batch& b) {
-        return model::for_each_record(
-          b,
-          [this,
-           bt = b.header().type,
-           ctrl = b.header().attrs.is_control(),
-           o = b.base_offset()](model::record& r) {
-              return _w->index(bt, ctrl, r.key(), o, r.offset_delta());
-          });
-    });
+ss::future<> index_rebuilder_reducer::do_index(model::record_batch b) {
+    co_await b.for_each_record_key_async(
+      [this,
+       bt = b.header().type,
+       ctrl = b.header().attrs.is_control(),
+       o = b.base_offset()](model::record_key_metadata r) {
+          return _w->index(bt, ctrl, std::move(r.key), o, r.offset_delta);
+      });
 }
 
 void tx_reducer::refresh_ongoing_aborted_txs(const model::record_batch& b) {
@@ -549,18 +550,17 @@ ss::future<ss::stop_iteration> tx_reducer::operator()(model::record_batch&& b) {
 }
 
 ss::future<ss::stop_iteration> map_building_reducer::maybe_index_record_in_map(
-  const model::record& r,
+  model::record_key_metadata record,
   model::offset base_offset,
   model::record_batch_type type,
   bool is_control,
   bool& fully_indexed_batch) {
-    auto offset = base_offset + model::offset_delta(r.offset_delta());
+    auto offset = base_offset + model::offset_delta(record.offset_delta);
     if (offset < _start_offset) {
         co_return ss::stop_iteration::no;
     }
 
-    auto key_view = iobuf_to_bytes(r.key());
-    auto key = enhance_key(type, is_control, key_view);
+    auto key = enhance_key(type, is_control, record.key);
     bool success = co_await _map->put(key, offset);
 
     if (success) {
@@ -585,15 +585,15 @@ map_building_reducer::operator()(model::record_batch batch) {
         batch = co_await model::decompress_batch(batch);
     }
     // is_control must be false below due to above `is_compactible()` check.
-    co_await batch.for_each_record_async(
+    co_await batch.for_each_record_key_async(
       [this,
        &fully_indexed_batch,
        base_offset = batch.base_offset(),
        type = header.type,
        is_control = false](
-        const model::record& r) -> ss::future<ss::stop_iteration> {
+        model::record_key_metadata r) -> ss::future<ss::stop_iteration> {
           return maybe_index_record_in_map(
-            r, base_offset, type, is_control, fully_indexed_batch);
+            std::move(r), base_offset, type, is_control, fully_indexed_batch);
       });
 
     if (fully_indexed_batch) {

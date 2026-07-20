@@ -81,12 +81,7 @@ model::record_batch make_placeholder_batch(model::record_batch_header& hdr) {
 }
 
 ss::future<bool> is_latest_record_for_key(
-  const key_offset_map& map,
-  const model::record_batch& b,
-  const model::record& r) {
-    const auto o = b.base_offset() + model::offset_delta(r.offset_delta());
-    auto key = compaction_key{iobuf_to_bytes(r.key())};
-
+  const key_offset_map& map, model::offset o, const compaction_key& key) {
     auto latest_offset_indexed = co_await map.get(key);
     // If the map hasn't indexed the given key, we should keep the
     // key.
@@ -96,6 +91,15 @@ ss::future<bool> is_latest_record_for_key(
     // We should only keep the record if its offset is equal or higher than
     // that indexed.
     co_return o >= latest_offset_indexed.value();
+}
+
+ss::future<bool> is_latest_record_for_key(
+  const key_offset_map& map,
+  const model::record_batch& b,
+  const model::record& r) {
+    const auto o = b.base_offset() + model::offset_delta(r.offset_delta());
+    co_return co_await is_latest_record_for_key(
+      map, o, compaction_key{iobuf_to_bytes(r.key())});
 }
 
 bool log_needs_compaction(

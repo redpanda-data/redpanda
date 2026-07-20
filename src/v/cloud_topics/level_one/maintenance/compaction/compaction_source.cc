@@ -10,6 +10,7 @@
 
 #include "cloud_topics/level_one/maintenance/compaction/compaction_source.h"
 
+#include "bytes/bytes.h"
 #include "cloud_io/admission_control_types.h"
 #include "cloud_topics/level_one/frontend_reader/level_one_reader.h"
 #include "cloud_topics/level_one/maintenance/compaction/compaction_filter.h"
@@ -23,6 +24,7 @@
 #include "model/batch_compression.h"
 #include "model/fundamental.h"
 #include "model/record_batch_reader.h"
+#include "model/record_utils.h"
 #include "model/timeout_clock.h"
 #include "utils/prefix_logger.h"
 
@@ -49,13 +51,14 @@ public:
             b = co_await model::decompress_batch(b);
         }
 
-        co_await b.for_each_record_async(
+        co_await b.for_each_record_key_async(
           [this, base_offset = b.base_offset()](
-            const model::record& r) -> ss::future<ss::stop_iteration> {
-              if (r.is_tombstone()) {
+            model::record_key_metadata rec) -> ss::future<ss::stop_iteration> {
+              if (rec.is_tombstone) {
                   _range_has_tombstones = true;
               }
-              return maybe_index_record_in_map(r, base_offset);
+              return maybe_index_record_in_map(
+                rec.offset_delta, std::move(rec.key), base_offset);
           });
 
         if (_map_is_full) {
@@ -71,14 +74,14 @@ public:
 
 private:
     ss::future<ss::stop_iteration> maybe_index_record_in_map(
-      const model::record& r, model::offset base_offset) {
-        auto offset = base_offset + model::offset_delta(r.offset_delta());
+      int32_t offset_delta, bytes key_bytes, model::offset base_offset) {
+        auto offset = base_offset + model::offset_delta(offset_delta);
 
         if (offset < _start_offset) {
             co_return ss::stop_iteration::no;
         }
 
-        auto key = compaction::compaction_key{iobuf_to_bytes(r.key())};
+        auto key = compaction::compaction_key{std::move(key_bytes)};
         bool inserted = co_await _map.put(key, offset);
 
         if (inserted) {

@@ -995,6 +995,45 @@ public:
     }
 
     /**
+     * Iterate over records parsing only their key, offset delta and
+     * tombstone flag, skipping the value and headers.
+     */
+    template<typename Func>
+    void for_each_record_key(Func f) const {
+        verify_iterable();
+        iobuf_const_parser parser(_records);
+        for (int32_t i = 0; i < _header.record_count; ++i) {
+            f(model::parse_record_key_from_buffer(parser));
+        }
+    }
+
+    /**
+     * Futurized `for_each_record_key`. Like for_each_record_async, the callback
+     * may return ss::stop_iteration to halt early.
+     */
+    template<typename Func>
+    ss::future<> for_each_record_key_async(Func f) const {
+        verify_iterable();
+        iobuf_const_parser parser(_records);
+        for (int32_t i = 0; i < _header.record_count; ++i) {
+            auto key_view = model::parse_record_key_from_buffer(parser);
+            if constexpr (
+              std::is_same_v<
+                ss::futurize_t<
+                  std::invoke_result_t<Func, model::record_key_metadata>>,
+                ss::future<ss::stop_iteration>>) {
+                ss::stop_iteration s = co_await ss::futurize_invoke(
+                  f, std::move(key_view));
+                if (s == ss::stop_iteration::yes) {
+                    co_return;
+                }
+            } else {
+                co_await ss::futurize_invoke(f, std::move(key_view));
+            }
+        }
+    }
+
+    /**
      * Materialize records.
      *
      * Prefer lazy record construction via `for_each_record(..)` when accessing
