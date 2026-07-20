@@ -36,6 +36,7 @@ import (
 	"errors"
 	"fmt"
 	"hash/crc32"
+	"math/rand"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -53,8 +54,15 @@ const (
 	ctcReplicas      = 3
 	ctcBuckets       = 32
 	ctcKeysPerBucket = 32
-	// ctcMaxStep caps how many new values one round appends per key.
-	ctcMaxStep = 16
+	// ctcZipfS is the Zipf exponent over a key's index within its bucket:
+	// a round draws indices with P(i) proportional to 1/(1+i)^ctcZipfS, so
+	// index 0 is the hottest and the tail stays cold. Must be > 1; ~1.3
+	// makes the hottest index take roughly a third of a round's writes.
+	ctcZipfS = 1.3
+	// ctcMaxWrites caps the total new values one round appends across all of
+	// a bucket's keys, drawn from the Zipf below (a hot key can take most of
+	// them).
+	ctcMaxWrites = 256
 	// ctcMaxPadChunks caps the record padding (16 hex chars per chunk) that
 	// varies record sizes.
 	ctcMaxPadChunks = 32
@@ -66,6 +74,15 @@ const (
 
 	ctcMagic = "CTC1"
 )
+
+// ctcZipf draws a key's index within its bucket, [0, ctcKeysPerBucket), with a
+// power-law bias toward index 0 (see ctcZipfS). Heat is tied to the index, not
+// re-rolled per round, so the hot set is stable: the same keys keep taking
+// writes and grow long version chains for compaction to reclaim, instead of
+// the load averaging back to uniform. Each draw consults rng (Antithesis
+// entropy) live; construction only precomputes constants, so an init-time
+// value is fine.
+var ctcZipf = rand.NewZipf(rng, ctcZipfS, 1, ctcKeysPerBucket-1)
 
 func ctcTrackerDir() string {
 	if d := os.Getenv("CTC_TRACKER_DIR"); d != "" {
@@ -352,20 +369,21 @@ func produceCtc() error {
 		return err
 	}
 
-	// Advance a random subset of the bucket's keys (at least one) by a
-	// random step each, so keys age unevenly and compaction sees a mix of
-	// hot and cold keys.
+	// Draw this round's writes from a Zipf distribution over the bucket's key
+	// indices, so a few hot keys take most of them and the tail stays cold —
+	// the skew real compacted workloads have, and what forces compaction to
+	// reclaim long version chains on the hot keys. Repeated draws on one key
+	// give it a run of consecutive new values; each key is advanced by the
+	// number of draws that landed on it (at least one write per round).
 	steps := make([]int64, ctcKeysPerBucket)
 	picked := 0
-	for i := range steps {
-		if randN(2) == 1 {
-			steps[i] = 1 + int64(randN(ctcMaxStep))
+	writes := 1 + randN(ctcMaxWrites)
+	for range writes {
+		i := int(ctcZipf.Uint64())
+		if steps[i] == 0 {
 			picked++
 		}
-	}
-	if picked == 0 {
-		steps[randN(ctcKeysPerBucket)] = 1 + int64(randN(ctcMaxStep))
-		picked = 1
+		steps[i]++
 	}
 
 	// The round's records are emitted in ascending (key id, value) order,
