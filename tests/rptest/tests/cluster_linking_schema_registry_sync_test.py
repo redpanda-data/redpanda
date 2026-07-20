@@ -13,17 +13,21 @@
 # while a sync is in flight and schemas added after a sync (picked up by the
 # next full sync). The layered diamond DAG mirrors the reconciler
 # `concurrent_stress` unit test at a larger scale, so the concurrent fetch/import
-# path is exercised against a real registry. Plaintext, default context, no auth
-# (auth/TLS coverage is tracked separately).
+# path is exercised against a real registry. That suite runs plaintext, default
+# context, no auth; source-SR authentication and TLS coverage lives in the
+# SchemaRegistrySyncAuthMixin leaves below (HTTP Basic, https, mTLS).
 
 import json
+import socket
 from typing import Any
 
 import google.protobuf.duration_pb2
 import google.protobuf.field_mask_pb2
+from connectrpc.errors import ConnectError, ConnectErrorCode
 from ducktape.utils.util import wait_until
 
 from rptest.clients.admin.proto.redpanda.core.admin.v2 import shadow_link_pb2
+from rptest.clients.admin.proto.redpanda.core.common.v1 import tls_pb2
 from rptest.clients.rpk import RpkTool
 from rptest.services.admin import Admin
 from rptest.services.cluster import TestContext, cluster
@@ -33,10 +37,19 @@ from rptest.services.multi_cluster_services import (
     SecondaryClusterSpec,
     ServiceType,
 )
-from rptest.services.redpanda import MetricsEndpoint, SchemaRegistryConfig
-from rptest.tests.cluster_linking_test_base import ShadowLinkTestBase
+from rptest.services.redpanda import (
+    MetricsEndpoint,
+    RedpandaService,
+    SchemaRegistryConfig,
+    SecurityConfig,
+)
+from rptest.services.tls import Certificate, TLSCertManager
+from rptest.tests.cluster_linking_test_base import (
+    ClusterLinkingTLSProvider,
+    ShadowLinkTestBase,
+)
 from rptest.tests.schema_registry_test import SchemaRegistryRedpandaClient
-from rptest.util import firewall_blocked
+from rptest.util import expect_exception, firewall_blocked
 
 NS = "com.acme"
 LINK_NAME = "sr-sync"
@@ -56,6 +69,7 @@ class SchemaRegistrySyncMixin:
 
     # Members supplied by ShadowLinkTestBase once mixed into a leaf.
     logger: Any
+    source_cluster_service: Any
     target_cluster_service: Any
     create_default_link_request: Any
     create_link_with_request: Any
@@ -257,11 +271,33 @@ class SchemaRegistrySyncMixin:
                 api.destination.exact.mappings.add(
                     source=source, destination=destination
                 )
+        self._maybe_apply_source_sr_credentials(api)
         req.shadow_link.configurations.schema_registry_sync_options.shadow_schema_registry_api.CopyFrom(
             api
         )
+        self._maybe_apply_source_kafka_credentials(
+            req.shadow_link.configurations.client_options
+        )
         self.create_link_with_request(req=req)
         return source_url
+
+    def _maybe_apply_source_sr_credentials(
+        self,
+        api: "shadow_link_pb2.SchemaRegistrySyncOptions.ShadowSchemaRegistryApi",
+    ) -> None:
+        # Hook for auth/TLS leaves to attach source-SR credentials to the link
+        # request. The plaintext no-auth suite leaves this a no-op; the auth
+        # leaves (see SchemaRegistrySyncAuthMixin) override it to set
+        # `auth_options.basic` and/or `tls_settings`.
+        pass
+
+    def _maybe_apply_source_kafka_credentials(
+        self, client_options: "shadow_link_pb2.ShadowLinkClientOptions"
+    ) -> None:
+        # Hook for auth/TLS leaves to add the Kafka-level source credentials the
+        # link needs when the source cluster runs SASL/TLS. No-op for the
+        # plaintext no-auth suite.
+        pass
 
     # --- verification ------------------------------------------------------
 
@@ -1652,3 +1688,361 @@ class ConfluentSchemaRegistrySyncE2ETest(ShadowLinkTestBase, SchemaRegistrySyncM
     @cluster(num_nodes=5)
     def test_schema_registry_api_sync_unsupported_config_fail(self):
         self._test_schema_registry_api_sync_unsupported_config_fail()
+
+
+class _CredentialedSRClient(SchemaRegistryRedpandaClient):
+    """A SchemaRegistryRedpandaClient that bakes the source-SR credentials into
+    every request, so the sync mixin's seeding/verification helpers reach an
+    authenticated source over TLS without threading kwargs through each call.
+
+    SchemaRegistryRedpandaClient.request() already forwards tls_enabled/auth/
+    cert/verify to `requests`; this subclass only supplies them as per-request
+    defaults (a caller can still override any of them per call)."""
+
+    def __init__(
+        self,
+        redpanda: RedpandaService,
+        *,
+        tls: bool = False,
+        ca: str | None = None,
+        cert: tuple[str, str] | None = None,
+        auth: tuple[str, str] | None = None,
+    ):
+        super().__init__(redpanda)
+        self._defaults: dict[str, Any] = {}
+        if tls:
+            self._defaults["tls_enabled"] = True
+        if ca is not None:
+            self._defaults["verify"] = ca  # CA bundle path, for https verify
+        if cert is not None:
+            self._defaults["cert"] = cert  # (crt, key) paths, for mTLS
+        if auth is not None:
+            self._defaults["auth"] = auth  # (username, password), for HTTP Basic
+
+    def request(self, verb: str, path: str, **kwargs: Any):  # type: ignore[override]
+        for k, v in self._defaults.items():
+            kwargs.setdefault(k, v)
+        return super().request(verb, path, **kwargs)
+
+    def base_uri(self) -> str:
+        scheme = "https" if self._defaults.get("tls_enabled") else "http"
+        return f"{scheme}://{self.redpanda.nodes[0].account.hostname}:8081"
+
+
+class SchemaRegistrySyncAuthMixin(SchemaRegistrySyncMixin):
+    """Source-SR authentication / TLS coverage: exercises the real HTTP source
+    reader auth path -- HTTP Basic, https (server TLS), and mTLS -- against a
+    Redpanda source Schema Registry. (No-auth http is the control, covered by
+    SchemaRegistrySyncE2ETest.)
+
+    A plain mixin (like SchemaRegistrySyncMixin) providing the source-security
+    wiring and shared test bodies; each concrete leaf below inherits
+    (ShadowLinkTestBase, this) and sets USE_TLS / REQUIRE_CLIENT_AUTH /
+    USE_BASIC. A small DAG keeps each mode fast -- the reconciler ordering is
+    covered at scale by SchemaRegistrySyncE2ETest; the point here is transport.
+
+    Topology: 3 (destination Redpanda) + 1 (source Redpanda) = 4 nodes. A
+    single-broker source is fine -- the SR `_schemas` topic is RF=1, as the
+    Confluent leaf already relies on."""
+
+    # Small reference DAG (top -> mid -> leaf); just enough to prove references
+    # replicate over the authenticated connection. Overrides the E2E scale.
+    LEAVES = 4
+    MIDS = 2
+    TOPS = 1
+
+    # Selected by the concrete leaf to pick the source-SR security posture.
+    USE_TLS = False
+    REQUIRE_CLIENT_AUTH = False  # mTLS: source SR demands a client cert
+    USE_BASIC = False  # HTTP Basic auth (delegated to source-cluster SASL)
+
+    def _auth_secondary_args(self, test_context: TestContext) -> SecondaryClusterArgs:
+        # Build the source (secondary) cluster args from the leaf's flags. Called
+        # from the leaf __init__ before super().__init__, so the source cluster
+        # is constructed with the right SR security posture. Also seeds the
+        # per-test credential state consumed lazily on first use.
+        self.test_context = test_context
+        # TLSCertManager owns the source CA; created here (like the topic-syncing
+        # TLS tests) because the source cluster's tls_provider must be wired
+        # before the cluster is constructed.
+        self.tls: TLSCertManager | None = None
+        self._client_cert: Certificate | None = None
+        self._link_auth: tuple[str, str] | None = None
+        self._link_tls: tls_pb2.TLSSettings | None = None  # source SR connection
+        self._kafka_tls: tls_pb2.TLSSettings | None = None  # source Kafka connection
+        self._creds_loaded = False
+
+        source_security = SecurityConfig()
+        source_sr_config = SchemaRegistryConfig()
+        source_sr_config.mode_mutability = True
+
+        if self.USE_TLS:
+            self.tls = TLSCertManager(self.logger)
+            source_security.tls_provider = ClusterLinkingTLSProvider(self.tls)
+            # Setting a tls_provider enables TLS on ALL source listeners, so the
+            # link's Kafka connection to the source uses TLS too. Keep that Kafka
+            # listener server-TLS-only; mTLS (require_client_auth) is scoped to
+            # the SR listener alone, so the negative test exercises SR client-cert
+            # enforcement rather than the Kafka handshake. SR server cert/
+            # truststore are staged automatically (RedpandaService.write_tls_certs).
+            source_security.require_client_auth = False
+            source_sr_config.require_client_auth = self.REQUIRE_CLIENT_AUTH
+
+        if self.USE_BASIC:
+            source_security.enable_sasl = True
+            source_security.endpoint_authn_method = "sasl"
+            source_sr_config.authn_method = "http_basic"
+
+        return SecondaryClusterArgs(
+            num_brokers=1,
+            schema_registry_config=source_sr_config,
+            security=source_security,
+        )
+
+    def _ca_pem(self) -> str:
+        assert self.tls is not None
+        with open(self.tls.ca.crt, encoding="utf-8") as f:
+            return f.read()
+
+    def _ensure_source_credentials(self) -> None:
+        # Materialize the source CA/client cert and Basic creds once the source
+        # cluster is up. Lazy so leaves need no setUp override.
+        if self._creds_loaded:
+            return
+        if self.tls is not None:
+            ca = self._ca_pem()
+            # Kafka connection: server TLS only (CA to validate the source).
+            self._kafka_tls = tls_pb2.TLSSettings(
+                enabled=True, tls_pem_settings=tls_pb2.TLSPEMSettings(ca=ca)
+            )
+            # SR connection: same CA, plus a client cert/key for mTLS.
+            sr_pem = tls_pb2.TLSPEMSettings(ca=ca)
+            if self.REQUIRE_CLIENT_AUTH:
+                # A client cert signed by the source CA, presented by the reader
+                # (and the seeding client) for mutual TLS to the SR listener.
+                self._client_cert = self.tls.create_cert(
+                    socket.gethostname(),
+                    name="sr-source-reader-client",
+                    common_name="sr-source-reader-client",
+                )
+                with open(self._client_cert.crt, encoding="utf-8") as f:
+                    sr_pem.cert = f.read()
+                with open(self._client_cert.key, encoding="utf-8") as f:
+                    sr_pem.key = f.read()
+            self._link_tls = tls_pb2.TLSSettings(enabled=True, tls_pem_settings=sr_pem)
+        if self.USE_BASIC:
+            # HTTP Basic against the source SR authenticates as a source-cluster
+            # SASL principal; the bootstrapped superuser exists and can write.
+            creds = self.source_cluster_service.SUPERUSER_CREDENTIALS
+            self._link_auth = (creds.username, creds.password)
+        self._creds_loaded = True
+
+    # --- hooks consumed by SchemaRegistrySyncMixin --------------------------
+
+    def _make_source_client(self) -> SchemaRegistryRedpandaClient:
+        self._ensure_source_credentials()
+        cert = None
+        if self._client_cert is not None:
+            cert = (self._client_cert.crt, self._client_cert.key)
+        ca = self.tls.ca.crt if (self._link_tls is not None and self.tls) else None
+        return _CredentialedSRClient(
+            self.source_cluster_service,
+            tls=self._link_tls is not None,
+            ca=ca,
+            cert=cert,
+            auth=self._link_auth,
+        )
+
+    def _maybe_apply_source_sr_credentials(
+        self,
+        api: "shadow_link_pb2.SchemaRegistrySyncOptions.ShadowSchemaRegistryApi",
+    ) -> None:
+        if self._link_auth is not None:
+            api.auth_options.basic.username = self._link_auth[0]
+            api.auth_options.basic.password = self._link_auth[1]
+        if self._link_tls is not None:
+            api.tls_settings.CopyFrom(self._link_tls)
+
+    def _maybe_apply_source_kafka_credentials(
+        self, client_options: "shadow_link_pb2.ShadowLinkClientOptions"
+    ) -> None:
+        # Enabling TLS/SASL on the source also affects the link's Kafka connection
+        # to the source (used by the create preflight); without matching Kafka
+        # credentials the preflight fails with broker_not_available. Supply them
+        # here so the preflight reaches the SR check. These are the Kafka-level
+        # credentials, kept independent of the source-SR credentials
+        # (_link_auth/_link_tls): the negative test sabotages the SR credentials
+        # to prove the *SR* layer rejects the reader, so the Kafka connection must
+        # stay valid.
+        if self._kafka_tls is not None:
+            client_options.tls_settings.CopyFrom(self._kafka_tls)
+        if self.USE_BASIC:
+            creds = self.source_cluster_service.SUPERUSER_CREDENTIALS
+            client_options.authentication_configuration.scram_configuration.CopyFrom(
+                shadow_link_pb2.ScramConfig(
+                    username=creds.username,
+                    password=creds.password,
+                    scram_mechanism=shadow_link_pb2.SCRAM_MECHANISM_SCRAM_SHA_256,
+                )
+            )
+
+    # --- shared test bodies -------------------------------------------------
+
+    def _run_auth_sync_smoke(self) -> None:
+        # Seed a small reference DAG on the authenticated source SR, create the
+        # link with matching credentials, and confirm the DAG replicates to the
+        # destination with no reported errors -- i.e. the real source-reader
+        # auth/TLS path works end to end.
+        src = self._make_source_client()
+        dest = SchemaRegistryRedpandaClient(self.target_cluster_service)
+
+        initial = self._seed_initial_dag(src)
+        source_sr_url = self._create_sr_link()
+        self.logger.info(f"source SR: {source_sr_url}; seeded {len(initial)} subjects")
+
+        self._wait_synced(src, dest, initial)
+
+        # Assert the most recently completed full sync was error-free. Using the
+        # per-sync counter rather than the monotonic lifetime total tolerates a
+        # transient error during startup (e.g. the reader racing a not-yet-ready
+        # source SR) while still catching errors in the sync that did the work.
+        def clean_full_sync() -> bool:
+            sr = self._admin_sr_status()
+            return sr.HasField("last_full_sync") and sr.last_full_sync.errors == 0
+
+        wait_until(
+            clean_full_sync,
+            timeout_sec=60,
+            backoff_sec=1,
+            err_msg="no error-free full sync completed after the DAG replicated",
+        )
+        self._log_counters("admin API", self._admin_sr_status())
+
+    def _run_auth_sync_rejects_bad_credentials(self) -> None:
+        # Negative control proving the source SR actually enforces credentials
+        # (and that the matching positive test is not a false positive): write
+        # one schema with valid credentials (which also confirms the source SR is
+        # up and the good-cred client is accepted), then attempt to create the
+        # link with the mode's credential sabotaged. The link-creation preflight
+        # queries the source SR and must reject -- Basic: a wrong password -> 401;
+        # mTLS: no client cert -> the server's require_client_auth fails the TLS
+        # handshake -- so create_shadow_link raises FAILED_PRECONDITION and no
+        # link is created.
+        src = self._make_source_client()  # valid creds, baked at construction
+        self._add_leaf(src, 0)  # asserts a 200 on register, i.e. good creds work
+
+        if self.USE_BASIC:
+            assert self._link_auth is not None
+            self._link_auth = (self._link_auth[0], "definitely-not-the-password")
+        elif self.REQUIRE_CLIENT_AUTH:
+            # Keep only the CA: the reader can validate the server but has no
+            # client cert to satisfy the source's require_client_auth.
+            self._link_tls = tls_pb2.TLSSettings(
+                enabled=True, tls_pem_settings=tls_pb2.TLSPEMSettings(ca=self._ca_pem())
+            )
+        else:
+            raise AssertionError("no credential to sabotage for this mode")
+
+        def rejected_at_sr(e: ConnectError) -> bool:
+            # The create preflight probes both the source Kafka and the source
+            # SR, and a Kafka-level failure ALSO surfaces as FAILED_PRECONDITION
+            # (broker_not_available). Require that the rejection is the SR check,
+            # not the Kafka one -- otherwise a regression in the link's Kafka
+            # credentials would make this negative pass for the wrong reason.
+            return (
+                e.code == ConnectErrorCode.FAILED_PRECONDITION
+                and "broker_not_available" not in str(e).lower()
+                and "schema registry" in str(e).lower()
+            )
+
+        with expect_exception(ConnectError, rejected_at_sr):
+            self._create_sr_link()
+
+
+class SchemaRegistrySyncBasicAuthTest(ShadowLinkTestBase, SchemaRegistrySyncAuthMixin):
+    """HTTP Basic auth over plaintext http to the source Schema Registry."""
+
+    USE_BASIC = True
+
+    def __init__(self, test_context: TestContext, *args: Any, **kwargs: Any):
+        super().__init__(
+            test_context,
+            secondary_cluster_args=self._auth_secondary_args(test_context),
+            schema_registry_config=SchemaRegistryConfig(),
+            *args,
+            **kwargs,
+        )
+
+    @cluster(num_nodes=4)
+    def test_basic_auth_sync(self):
+        self._run_auth_sync_smoke()
+
+    @cluster(num_nodes=4)
+    def test_basic_auth_rejects_bad_credentials(self):
+        self._run_auth_sync_rejects_bad_credentials()
+
+
+class SchemaRegistrySyncTlsTest(ShadowLinkTestBase, SchemaRegistrySyncAuthMixin):
+    """https (server-side TLS, no client cert, no auth) to the source SR."""
+
+    USE_TLS = True
+
+    def __init__(self, test_context: TestContext, *args: Any, **kwargs: Any):
+        super().__init__(
+            test_context,
+            secondary_cluster_args=self._auth_secondary_args(test_context),
+            schema_registry_config=SchemaRegistryConfig(),
+            *args,
+            **kwargs,
+        )
+
+    @cluster(num_nodes=4)
+    def test_tls_sync(self):
+        self._run_auth_sync_smoke()
+
+
+class SchemaRegistrySyncMtlsTest(ShadowLinkTestBase, SchemaRegistrySyncAuthMixin):
+    """https with mutual TLS: the source SR requires a client certificate."""
+
+    USE_TLS = True
+    REQUIRE_CLIENT_AUTH = True
+
+    def __init__(self, test_context: TestContext, *args: Any, **kwargs: Any):
+        super().__init__(
+            test_context,
+            secondary_cluster_args=self._auth_secondary_args(test_context),
+            schema_registry_config=SchemaRegistryConfig(),
+            *args,
+            **kwargs,
+        )
+
+    @cluster(num_nodes=4)
+    def test_mtls_sync(self):
+        self._run_auth_sync_smoke()
+
+    @cluster(num_nodes=4)
+    def test_mtls_rejects_missing_client_cert(self):
+        self._run_auth_sync_rejects_bad_credentials()
+
+
+class SchemaRegistrySyncTlsBasicAuthTest(
+    ShadowLinkTestBase, SchemaRegistrySyncAuthMixin
+):
+    """https server TLS plus HTTP Basic auth -- the common Confluent Cloud
+    posture (an API key/secret sent over TLS)."""
+
+    USE_TLS = True
+    USE_BASIC = True
+
+    def __init__(self, test_context: TestContext, *args: Any, **kwargs: Any):
+        super().__init__(
+            test_context,
+            secondary_cluster_args=self._auth_secondary_args(test_context),
+            schema_registry_config=SchemaRegistryConfig(),
+            *args,
+            **kwargs,
+        )
+
+    @cluster(num_nodes=4)
+    def test_tls_basic_auth_sync(self):
+        self._run_auth_sync_smoke()
