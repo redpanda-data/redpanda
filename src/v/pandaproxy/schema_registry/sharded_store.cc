@@ -13,6 +13,7 @@
 
 #include "base/vlog.h"
 #include "config/configuration.h"
+#include "container/chunked_hash_map.h"
 #include "container/chunked_vector.h"
 #include "hashing/jump_consistent_hash.h"
 #include "hashing/xx.h"
@@ -28,6 +29,7 @@
 #include "pandaproxy/schema_registry/util.h"
 
 #include <seastar/core/future.hh>
+#include <seastar/core/loop.hh>
 #include <seastar/core/smp.hh>
 #include <seastar/coroutine/as_future.hh>
 
@@ -58,6 +60,92 @@ ss::shard_id shard_for(const context_schema_id& id) {
 ss::shard_id shard_for(const context& ctx) {
     auto hash = xxhash_64(ctx().data(), ctx().length());
     return jump_consistent_hash(hash, ss::this_smp_shard_count());
+}
+
+/// Memoizes reference lookups for the duration of one
+/// process_marked_schemas() pass.
+///
+/// A (subject, version)'s definition is immutable once written, so
+/// serving repeats from a local cache is safe. Marked schemas commonly
+/// share their reference closure (layered proto packages), and without
+/// the cache every compile re-resolves the whole closure with chained
+/// cross-shard lookups.
+class caching_schema_getter final : public schema_getter {
+    // Cached entries share the store-owned definition buffers rather than
+    // copying them, so the cache pins memory (relevant if a definition is
+    // replaced mid-pass) rather than duplicating it, and schemas can be
+    // megabytes - so bound the pinned bytes rather than the entry count,
+    // generously. Reference closures are heavily shared; reset rather
+    // than evict if an unusual corpus overflows the cache.
+    static constexpr size_t max_bytes = 32 * 1024 * 1024;
+
+public:
+    explicit caching_schema_getter(sharded_store& store)
+      : _store{store} {}
+
+    ss::future<stored_schema> get_subject_schema(
+      context_subject sub,
+      std::optional<schema_version> version,
+      include_deleted inc_del) override {
+        if (!version.has_value()) {
+            // "latest" is not a stable key; don't cache it.
+            co_return co_await _store.get_subject_schema(
+              std::move(sub), version, inc_del);
+        }
+        auto key = subject_version{sub, *version};
+        if (auto it = _cache.find(key); it != _cache.end()) {
+            if (inc_del == include_deleted::no && it->second.deleted) {
+                // A cached soft-deleted entry can't answer an
+                // inc_del::no lookup; let the store produce its
+                // canonical error.
+                co_return co_await _store.get_subject_schema(
+                  std::move(sub), version, inc_del);
+            }
+            co_return it->second.share();
+        }
+        auto schema = co_await _store.get_subject_schema(
+          std::move(sub), version, inc_del);
+        auto size = schema.schema.def().raw()().size_bytes();
+        if (_cached_bytes + size >= max_bytes) {
+            _cache.clear();
+            _cached_bytes = 0;
+        }
+        if (_cache.emplace(std::move(key), schema.share()).second) {
+            _cached_bytes += size;
+        }
+        co_return schema;
+    }
+
+    ss::future<schema_definition>
+    get_schema_definition(context_schema_id id) override {
+        return _store.get_schema_definition(id);
+    }
+
+    ss::future<std::optional<schema_definition>>
+    maybe_get_schema_definition(context_schema_id id) override {
+        return _store.maybe_get_schema_definition(id);
+    }
+
+private:
+    sharded_store& _store;
+    chunked_hash_map<subject_version, stored_schema> _cache;
+    size_t _cached_bytes{0};
+};
+
+ss::future<subject_schema>
+make_canonical_with(schema_getter& getter, subject_schema schema) {
+    switch (schema.type()) {
+    case schema_type::avro:
+        co_return co_await make_canonical_avro_schema(
+          getter, std::move(schema));
+    case schema_type::protobuf:
+        co_return co_await make_canonical_protobuf_schema(
+          getter, std::move(schema));
+    case schema_type::json:
+        co_return co_await make_canonical_json_schema(
+          getter, std::move(schema));
+    }
+    __builtin_unreachable();
 }
 
 compatibility_result check_compatible(
@@ -230,38 +318,46 @@ ss::future<bool> sharded_store::upsert(
 }
 
 ss::future<> sharded_store::process_marked_schemas() {
+    // Bound the number of in-flight canonicalisations per shard: enough to
+    // hide the latency of cross-shard reference lookups without holding
+    // many partially-built descriptor sets in memory at once.
+    constexpr size_t max_concurrency = 8;
     return _store.invoke_on_all([this](store& store) {
         return ss::do_with(
-          store.extract_marked_schemas(), [this, &store](auto& marked) {
-              return ss::do_for_each(marked, [this, &store](auto id) {
-                  auto schema = store.get_schema_definition(id);
-                  if (schema.has_failure()) {
-                      // schema not found, ignore
-                      return ss::now();
-                  }
-                  return make_canonical_schema(
-                           {context_subject{id.ctx, subject{}},
-                            std::move(schema).assume_value()},
-                           normalize::no,
-                           false)
-                    .then([id, &store](auto canonical) {
-                        // Update the stored form of this schema to its
-                        // canonical form
-                        auto [sub, schema] = std::move(canonical).destructure();
-                        store.upsert_schema(id, std::move(schema), false);
-                    })
-                    .handle_exception([id](const std::exception_ptr& ep) {
-                        // processing attempt failed on marked schema. This is
-                        // not an issue of forward references. Ignore error and
-                        // keep schema in the store as-is
-                        vlog(
-                          srlog.debug,
-                          "process_marked_schemas failed for ctx={} id={}: {}",
-                          id.ctx,
-                          id.id,
-                          ep);
-                    });
-              });
+          store.extract_marked_schemas(),
+          caching_schema_getter{*this},
+          [&store](auto& marked, auto& getter) {
+              return ss::max_concurrent_for_each(
+                marked, max_concurrency, [&store, &getter](auto id) {
+                    auto schema = store.get_schema_definition(id);
+                    if (schema.has_failure()) {
+                        // schema not found, ignore
+                        return ss::now();
+                    }
+                    return make_canonical_with(
+                             getter,
+                             {context_subject{id.ctx, subject{}},
+                              std::move(schema).assume_value()})
+                      .then([id, &store](auto canonical) {
+                          // Update the stored form of this schema to its
+                          // canonical form
+                          auto [sub, schema]
+                            = std::move(canonical).destructure();
+                          store.upsert_schema(id, std::move(schema), false);
+                      })
+                      .handle_exception([id](const std::exception_ptr& ep) {
+                          // processing attempt failed on marked schema. This
+                          // is not an issue of forward references. Ignore
+                          // error and keep schema in the store as-is
+                          vlog(
+                            srlog.debug,
+                            "process_marked_schemas failed for ctx={} id={}: "
+                            "{}",
+                            id.ctx,
+                            id.id,
+                            ep);
+                      });
+                });
           });
     });
 }
