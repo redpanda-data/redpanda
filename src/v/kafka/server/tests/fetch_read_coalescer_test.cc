@@ -45,7 +45,7 @@ read_result make_result(
     iobuf data;
     data.append(ss::temporary_buffer<char>(bytes));
     return read_result(
-      std::make_unique<iobuf>(std::move(data)),
+      std::move(data),
       model::offset{5},
       model::offset{5},
       model::offset{5},

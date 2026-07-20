@@ -53,6 +53,7 @@
 
 #include <chrono>
 #include <exception>
+#include <memory>
 #include <ranges>
 
 namespace {
@@ -131,7 +132,7 @@ static ss::future<read_result> read_from_partition(
 
     auto rdr = co_await part.make_reader(reader_config);
     std::exception_ptr e;
-    std::unique_ptr<iobuf> data;
+    std::optional<iobuf> data;
     std::vector<cluster::tx::tx_range> aborted_transactions;
     std::optional<std::chrono::milliseconds> delta_from_tip_ms;
     model::offset data_base_offset, data_last_offset;
@@ -140,7 +141,7 @@ static ss::future<read_result> read_from_partition(
     try {
         auto result = co_await rdr.reader.consume(
           kafka_batch_serializer(), deadline ? *deadline : model::no_timeout);
-        data = std::make_unique<iobuf>(std::move(result.data));
+        data = std::move(result.data);
         data_base_offset = result.base_offset;
         data_last_offset = result.last_offset;
         batch_count = result.batch_count;
@@ -218,7 +219,7 @@ static read_result clone_read_result(const read_result& src) {
           src.last_stable_offset);
     }
     return read_result(
-      src.has_data() ? std::make_unique<iobuf>(src.data->share()) : nullptr,
+      src.share_data(),
       src.start_offset,
       src.data_base_offset,
       src.data_last_offset,
