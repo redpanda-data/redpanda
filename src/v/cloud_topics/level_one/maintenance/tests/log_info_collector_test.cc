@@ -260,6 +260,37 @@ TEST_F(LogInfoCollectorTestFixture, TestLevelingSkipsOverlappingRange) {
     ASSERT_EQ(log_ptr->leveling.inflight_ranges.size(), 1u);
 }
 
+// Leveling and compaction of the same CTP shouldn't be scheduled concurrently:
+// while a CTP has an inflight compaction, leveling collection should not queue
+// jobs for it. Once the compaction completes (clearing `inflight_shard`),
+// collection queues its ranges again.
+TEST_F(LogInfoCollectorTestFixture, TestLevelingSkipsCompactingLog) {
+    auto [ntp, tidp] = make_ntidp("leveling_topic");
+    auto log_ptr = ss::make_lw_shared<l1::log_compaction_meta>(tidp, ntp);
+    seed_undersized_objects(tidp, 2);
+
+    l1::log_set_t logs_set;
+    logs_set.insert(log_ptr);
+    l1::log_list_t logs_list;
+    logs_list.push_back(*log_ptr);
+
+    l1::log_info_collector collector(
+      &_metastore,
+      std::make_unique<fake_cfg_provider>(),
+      std::make_unique<fake_offset_provider>());
+    l1::leveling_extent_reclamation_policy policy{
+      config::mock_binding<size_t>(size_t{1024} * 1024)};
+    l1::leveling_queue queue(policy.get_comparator());
+
+    log_ptr->compaction.inflight_shard = ss::this_shard_id();
+    collector.collect_leveling_info(logs_set, logs_list, queue).get();
+    ASSERT_TRUE(queue.empty());
+
+    log_ptr->compaction.inflight_shard.reset();
+    collector.collect_leveling_info(logs_set, logs_list, queue).get();
+    ASSERT_GT(queue.size(), 0u);
+}
+
 // A range whose completion timestamp is not strictly before the collection's
 // snapshot must be retained: the collector cannot yet assume the metastore
 // reflects the commit, so the overlapping range must not be re-queued.
