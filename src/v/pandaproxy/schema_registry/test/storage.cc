@@ -642,4 +642,54 @@ TEST_F(StorageTest, ContextValueTenantValidation) {
       ppj::parse_error);
 }
 
+// Records that the reader delivered the schema string through the chunked
+// sink protocol rather than the contiguous String() path.
+struct probe_schema_value_handler : public schema_value_handler<> {
+    explicit probe_schema_value_handler(bool* chunked_string_used)
+      : chunked_string_used{chunked_string_used} {}
+
+    bool ChunkedString(::json::SizeType len) {
+        *chunked_string_used = true;
+        return schema_value_handler<>::ChunkedString(len);
+    }
+
+    bool* chunked_string_used;
+};
+
+// A large schema is decoded by the reader directly into an iobuf-backed sink
+// (avoiding a large contiguous allocation); verify escape sequences
+// round-trip through that path.
+TEST_F(StorageTest, SchemaValueLargeSchema) {
+    constexpr size_t num_reps = 100000;
+    // built via std::string, whose amortized append avoids the quadratic
+    // copying of repeated ss::sstring::operator+=
+    std::string escaped_schema_def{R"({\"doc\":\")"};
+    escaped_schema_def.reserve(32 * num_reps);
+    std::string expected_schema_def{R"({"doc":")"};
+    expected_schema_def.reserve(16 * num_reps);
+    for (size_t i = 0; i < num_reps; ++i) {
+        escaped_schema_def += R"(x\n\u00e9\ud83d\ude00)";
+        expected_schema_def += "x\n\xc3\xa9\xf0\x9f\x98\x80";
+    }
+    escaped_schema_def += R"(\"})";
+    expected_schema_def += R"("})";
+
+    const std::string payload = fmt::format(
+      R"({{
+  "subject": "my-kafka-value",
+  "version": 1,
+  "id": 1,
+  "schema": "{}",
+  "deleted": false
+}})",
+      escaped_schema_def);
+
+    bool chunked_string_used = false;
+    auto val = ppj::impl::rjson_parse(
+      payload.data(), probe_schema_value_handler{&chunked_string_used});
+    EXPECT_TRUE(chunked_string_used);
+    EXPECT_TRUE(
+      val.schema.def().raw()() == std::string_view{expected_schema_def});
+}
+
 } // namespace pandaproxy::schema_registry
