@@ -48,11 +48,12 @@ public:
     ss::future<> stop();
 
 private:
-    ss::future<bool> ensure_topic_replication(model::topic_namespace_view);
+    ss::future<bool>
+    ensure_topic_replication(model::topic_namespace_view, ss::abort_source&);
     // Submits a fresh reconcile run, interrupting any run in flight.
     void submit_reconcile();
     ss::future<> reconcile_loop(ss::abort_source&);
-    ss::future<> do_reconcile();
+    ss::future<> do_reconcile(ss::abort_source&);
     // Returns true if interrupted via the abort source.
     ss::future<bool>
     sleep_or_aborted(std::chrono::milliseconds, ss::abort_source&);

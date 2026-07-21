@@ -58,8 +58,11 @@ ss::future<> health_manager::stop() {
     co_await _reconciliation_executor.drain();
 }
 
-ss::future<bool>
-health_manager::ensure_topic_replication(model::topic_namespace_view topic) {
+ss::future<bool> health_manager::ensure_topic_replication(
+  model::topic_namespace_view topic, ss::abort_source& as) {
+    if (as.abort_requested()) {
+        co_return false;
+    }
     auto tp_metadata = _topics.local().get_topic_metadata_ref(topic);
     if (!tp_metadata.has_value()) {
         vlog(clusterlog.debug, "Health manager: topic {} not found", topic);
@@ -132,7 +135,7 @@ ss::future<> health_manager::reconcile_loop(ss::abort_source& executor_as) {
         }
 
         try {
-            co_await do_reconcile();
+            co_await do_reconcile(executor_as);
         } catch (...) {
             auto e = std::current_exception();
             vlog(clusterlog.info, "Health manager caught error {}", e);
@@ -144,7 +147,7 @@ ss::future<> health_manager::reconcile_loop(ss::abort_source& executor_as) {
     }
 }
 
-ss::future<> health_manager::do_reconcile() {
+ss::future<> health_manager::do_reconcile(ss::abort_source& as) {
     // Only ensure replication if we have a big enough cluster, to avoid
     // spamming log with replication complaints on single node cluster
     if (_members.local().node_count() < 3) {
@@ -157,35 +160,36 @@ ss::future<> health_manager::do_reconcile() {
      * other internal topics.
      */
     auto ok = co_await ensure_topic_replication(
-      model::kafka_consumer_offsets_nt);
+      model::kafka_consumer_offsets_nt, as);
 
     if (ok) {
-        ok = co_await ensure_topic_replication(model::id_allocator_nt);
+        ok = co_await ensure_topic_replication(model::id_allocator_nt, as);
     }
 
     if (ok) {
-        ok = co_await ensure_topic_replication(model::tx_manager_nt);
+        ok = co_await ensure_topic_replication(model::tx_manager_nt, as);
     }
 
     if (ok) {
-        ok = co_await ensure_topic_replication(model::schema_registry_nt);
+        ok = co_await ensure_topic_replication(model::schema_registry_nt, as);
     }
 
     if (ok) {
-        ok = co_await ensure_topic_replication(model::wasm_binaries_nt);
+        ok = co_await ensure_topic_replication(model::wasm_binaries_nt, as);
     }
 
     if (ok) {
-        ok = co_await ensure_topic_replication(model::transform_offsets_nt);
-    }
-
-    if (ok) {
-        ok = co_await ensure_topic_replication(model::kafka_audit_logging_nt);
+        ok = co_await ensure_topic_replication(model::transform_offsets_nt, as);
     }
 
     if (ok) {
         ok = co_await ensure_topic_replication(
-          model::transform_log_internal_nt);
+          model::kafka_audit_logging_nt, as);
+    }
+
+    if (ok) {
+        ok = co_await ensure_topic_replication(
+          model::transform_log_internal_nt, as);
     }
 }
 
