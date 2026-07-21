@@ -49,7 +49,7 @@ public:
     ss::future<> stop();
 
 private:
-    ss::future<bool>
+    ss::future<>
     ensure_topic_replication(model::topic_namespace_view, ss::abort_source&);
     // Submits a fresh reconcile run, interrupting any run in flight.
     void submit_reconcile();

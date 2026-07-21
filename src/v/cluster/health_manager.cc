@@ -73,18 +73,20 @@ ss::future<> health_manager::stop() {
       _members_notification_id);
     _leaders.local().unregister_leadership_change_notification(
       model::controller_ntp, _leadership_notification_id);
+    // drain() aborts the in-flight task, aborts any enqueued task, blocks new
+    // submits, and waits for both to resolve.
     co_await _reconciliation_executor.drain();
 }
 
-ss::future<bool> health_manager::ensure_topic_replication(
+ss::future<> health_manager::ensure_topic_replication(
   model::topic_namespace_view topic, ss::abort_source& as) {
     if (as.abort_requested()) {
-        co_return false;
+        co_return;
     }
     auto tp_metadata = _topics.local().get_topic_metadata_ref(topic);
     if (!tp_metadata.has_value()) {
         vlog(clusterlog.debug, "Health manager: topic {} not found", topic);
-        co_return true;
+        co_return;
     }
 
     auto current_replication_factor
@@ -97,7 +99,7 @@ ss::future<bool> health_manager::ensure_topic_replication(
           topic,
           current_replication_factor,
           _target_replication_factor);
-        co_return true;
+        co_return;
     }
 
     if (
@@ -105,7 +107,7 @@ ss::future<bool> health_manager::ensure_topic_replication(
         vlog(
           clusterlog.info,
           "Health manager: max number of reconfigurations reached");
-        co_return false;
+        co_return;
     }
 
     topic_properties_update properties_update(model::topic_namespace{topic});
@@ -122,11 +124,10 @@ ss::future<bool> health_manager::ensure_topic_replication(
           "Health manager: error updating properties for {}: {}",
           topic,
           res.ec);
-        co_return false;
+        co_return;
     }
 
     vlog(clusterlog.info, "Increased replication factor for {}", topic);
-    co_return true;
 }
 
 void health_manager::submit_reconcile() {
@@ -181,7 +182,7 @@ ss::future<> health_manager::do_reconcile(ss::abort_source& as) {
       model::l1_metastore_nt,
     };
 
-    std::vector<ss::future<bool>> reconciles;
+    std::vector<ss::future<>> reconciles;
     reconciles.reserve(internal_topics.size());
     for (auto topic : internal_topics) {
         reconciles.push_back(ensure_topic_replication(topic, as));
