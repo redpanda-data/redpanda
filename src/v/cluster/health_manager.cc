@@ -128,47 +128,46 @@ ss::future<> health_manager::do_tick() {
 
     // Only ensure replication if we have a big enough cluster, to avoid
     // spamming log with replication complaints on single node cluster
-    if (_members.local().node_count() >= 3) {
-        /*
-         * we try to be conservative here. if something goes wrong we'll
-         * back off and wait before trying to fix replication for any
-         * other internal topics.
-         */
-        auto ok = co_await ensure_topic_replication(
-          model::kafka_consumer_offsets_nt);
+    if (_members.local().node_count() < 3) {
+        _timer.arm(_tick_interval);
+        co_return;
+    }
 
-        if (ok) {
-            ok = co_await ensure_topic_replication(model::id_allocator_nt);
-        }
+    /*
+     * we try to be conservative here. if something goes wrong we'll
+     * back off and wait before trying to fix replication for any
+     * other internal topics.
+     */
+    auto ok = co_await ensure_topic_replication(
+      model::kafka_consumer_offsets_nt);
 
-        if (ok) {
-            ok = co_await ensure_topic_replication(model::tx_manager_nt);
-        }
+    if (ok) {
+        ok = co_await ensure_topic_replication(model::id_allocator_nt);
+    }
 
-        if (ok) {
-            const model::topic_namespace schema_registry_nt{
-              model::kafka_namespace, model::schema_registry_internal_tp.topic};
-            ok = co_await ensure_topic_replication(schema_registry_nt);
-        }
+    if (ok) {
+        ok = co_await ensure_topic_replication(model::tx_manager_nt);
+    }
 
-        if (ok) {
-            ok = co_await ensure_topic_replication(
-              model::topic_namespace_view(model::wasm_binaries_internal_ntp));
-        }
+    if (ok) {
+        ok = co_await ensure_topic_replication(model::schema_registry_nt);
+    }
 
-        if (ok) {
-            ok = co_await ensure_topic_replication(model::transform_offsets_nt);
-        }
+    if (ok) {
+        ok = co_await ensure_topic_replication(model::wasm_binaries_nt);
+    }
 
-        if (ok) {
-            ok = co_await ensure_topic_replication(
-              model::kafka_audit_logging_nt);
-        }
+    if (ok) {
+        ok = co_await ensure_topic_replication(model::transform_offsets_nt);
+    }
 
-        if (ok) {
-            ok = co_await ensure_topic_replication(
-              model::transform_log_internal_nt);
-        }
+    if (ok) {
+        ok = co_await ensure_topic_replication(model::kafka_audit_logging_nt);
+    }
+
+    if (ok) {
+        ok = co_await ensure_topic_replication(
+          model::transform_log_internal_nt);
     }
 
     _timer.arm(_tick_interval);
