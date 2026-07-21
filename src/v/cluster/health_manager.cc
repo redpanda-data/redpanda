@@ -47,6 +47,8 @@ health_manager::health_manager(
   , _as(as) {}
 
 ss::future<> health_manager::start() {
+    _as_sub = _as.local().subscribe(
+      [this]() noexcept { _reconciliation_executor.request_abort(); });
     submit_reconcile();
     co_return;
 }
@@ -109,6 +111,9 @@ health_manager::ensure_topic_replication(model::topic_namespace_view topic) {
 }
 
 void health_manager::submit_reconcile() {
+    if (_as.local().abort_requested()) {
+        return;
+    }
     ssx::background = _reconciliation_executor.submit(
       [this](ss::abort_source& executor_as) {
           return reconcile_loop(executor_as);

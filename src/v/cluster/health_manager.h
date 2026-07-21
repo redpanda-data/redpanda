@@ -71,6 +71,8 @@ private:
     ssx::single_fiber_executor<
       ss::noncopyable_function<ss::future<>(ss::abort_source&)>>
       _reconciliation_executor;
+    // Declared last: unsubscribed before the executor its callback references.
+    ss::optimized_optional<ss::abort_source::subscription> _as_sub;
 };
 
 } // namespace cluster
