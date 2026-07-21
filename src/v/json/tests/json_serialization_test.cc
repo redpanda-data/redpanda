@@ -202,3 +202,38 @@ SEASTAR_THREAD_TEST_CASE(json_iobuf_writer_test) {
         BOOST_CHECK_EQUAL(to_string(out_buf), to_string(expected));
     }
 }
+
+// The quote fixup between input fragments trims the closing quote and the
+// final character of the just-written fragment; when that character is the
+// only byte in the output's last fragment, the trim drops the fragment with
+// it. Scan sizes across the allocator's fragment boundaries so that some
+// iteration lands the final character and quote alone in a fresh fragment,
+// and validate the round-trip either way.
+SEASTAR_THREAD_TEST_CASE(json_iobuf_writer_fragment_drop_test) {
+    constexpr auto to_string = [](const iobuf& buf) {
+        iobuf_const_parser p{buf};
+        auto b = p.read_bytes(p.bytes_left());
+        return std::string{b.begin(), b.end()};
+    };
+
+    for (size_t first_size = 1; first_size <= 1200; ++first_size) {
+        const auto first = std::string(first_size, 'a');
+        iobuf in;
+        in.append_fragments(iobuf::from(first));
+        in.append_fragments(iobuf::from("bc"));
+
+        json::chunked_buffer out;
+        json::iobuf_writer<json::chunked_buffer> os{out};
+        BOOST_REQUIRE(os.String(in));
+        auto out_buf = std::move(out).as_iobuf();
+
+        const auto encoded = to_string(out_buf);
+        json::Document doc;
+        doc.Parse(encoded.data(), encoded.size());
+        BOOST_REQUIRE(!doc.HasParseError());
+        BOOST_REQUIRE(doc.IsString());
+        BOOST_REQUIRE(
+          std::string_view(doc.GetString(), doc.GetStringLength())
+          == first + "bc");
+    }
+}
