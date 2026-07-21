@@ -158,6 +158,8 @@ private:
     co_return GTEST_MESSAGE_(message, ::testing::TestPartResult::kFatalFailure)
 #define GTEST_SKIP_CORO_(message)                                              \
     co_return GTEST_MESSAGE_(message, ::testing::TestPartResult::kSkip)
+#define ASSERT_PRED_FORMAT1_CORO(pred_format, v1)                              \
+    GTEST_PRED_FORMAT1_(pred_format, v1, GTEST_FATAL_FAILURE_CORO_)
 #define ASSERT_PRED_FORMAT2_CORO(pred_format, v1, v2)                          \
     GTEST_PRED_FORMAT2_(pred_format, v1, v2, GTEST_FATAL_FAILURE_CORO_)
 #define GTEST_ASSERT_EQ_CORO(val1, val2)                                       \
@@ -204,6 +206,10 @@ private:
 
 #define ASSERT_STREQ_CORO(val1, val2) GTEST_ASSERT_STREQ_CORO(val1, val2)
 #define ASSERT_STRNE_CORO(val1, val2) GTEST_ASSERT_NE_CORO(val1, val2)
+
+#define ASSERT_THAT_CORO(value, matcher)                                       \
+    ASSERT_PRED_FORMAT1_CORO(                                                  \
+      ::testing::internal::MakePredicateFormatterFromMatcher(matcher), value)
 
 #define ASSERT_RESULT_EQ_CORO(result_val, exp_naked_value)                     \
     /* NOLINTNEXTLINE(cppcoreguidelines-avoid-do-while) */                     \

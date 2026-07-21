@@ -17,9 +17,11 @@
 #include <seastar/util/defer.hh>
 #include <seastar/util/file.hh>
 
+#include <gmock/gmock.h>
 #include <gtest/gtest.h>
 
 #include <chrono>
+#include <vector>
 
 using namespace std::chrono_literals;
 
@@ -59,6 +61,13 @@ TEST_CORO(SeastarTest, assert_eventually_coro) {
 TEST_CORO(SeastarTest, SkippingWorks) {
     GTEST_SKIP_CORO() << "Skipping should not trip the following assertion";
     ASSERT_FALSE_CORO(true);
+}
+
+TEST_CORO(SeastarTest, AssertThatCoro) {
+    co_await seastar::sleep(std::chrono::milliseconds(100));
+    auto values = std::vector<int>{1, 2, 3};
+    ASSERT_THAT_CORO(values, ::testing::ElementsAre(1, 2, 3));
+    ASSERT_THAT_CORO(values, ::testing::Contains(2));
 }
 
 /*
