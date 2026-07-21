@@ -84,6 +84,159 @@ struct test_msg0
     auto serde_fields() { return std::tie(_i, _j); }
 };
 
+using fixed_write_flag = ss::bool_class<struct fixed_write_flag_tag>;
+enum class fixed_write_wide_enum : uint32_t { value = 7 };
+
+using custom_write_flag = ss::bool_class<struct custom_write_flag_tag>;
+void write_nested(iobuf&, custom_write_flag) {}
+
+enum class custom_write_enum : int8_t { value };
+void tag_invoke(serde::tag_t<serde::write_tag>, iobuf&, custom_write_enum) {}
+template<>
+inline constexpr bool serde::disable_fixed_serde_v<custom_write_enum> = true;
+
+struct fixed_write_msg
+  : serde::
+      envelope<fixed_write_msg, serde::version<3>, serde::compat_version<2>> {
+    int8_t i8;
+    int16_t i16;
+    int32_t i32;
+    int64_t i64;
+    float f32;
+    double f64;
+    model::offset offset;
+    my_enum value;
+    fixed_write_wide_enum wide_value;
+    bool flag;
+    fixed_write_flag bool_class;
+    test_msg0 nested;
+
+    auto serde_fields() {
+        return std::tie(
+          i8,
+          i16,
+          i32,
+          i64,
+          f32,
+          f64,
+          offset,
+          value,
+          wide_value,
+          flag,
+          bool_class,
+          nested);
+    }
+};
+
+struct fieldwise_test_msg0
+  : serde::envelope<
+      fieldwise_test_msg0,
+      serde::version<1>,
+      serde::compat_version<0>> {
+    char i;
+    char j;
+
+    void serde_write(iobuf& out) const {
+        serde::write(out, i);
+        serde::write(out, j);
+    }
+};
+
+struct fieldwise_write_msg
+  : serde::envelope<
+      fieldwise_write_msg,
+      serde::version<3>,
+      serde::compat_version<2>> {
+    int8_t i8;
+    int16_t i16;
+    int32_t i32;
+    int64_t i64;
+    float f32;
+    double f64;
+    model::offset offset;
+    my_enum value;
+    fixed_write_wide_enum wide_value;
+    bool flag;
+    fixed_write_flag bool_class;
+    fieldwise_test_msg0 nested;
+
+    void serde_write(iobuf& out) const {
+        serde::write(out, i8);
+        serde::write(out, i16);
+        serde::write(out, i32);
+        serde::write(out, i64);
+        serde::write(out, f32);
+        serde::write(out, f64);
+        serde::write(out, offset);
+        serde::write(out, value);
+        serde::write(out, wide_value);
+        serde::write(out, flag);
+        serde::write(out, bool_class);
+        serde::write(out, nested);
+    }
+};
+
+struct fixed_checksummed_msg
+  : serde::checksum_envelope<
+      fixed_checksummed_msg,
+      serde::version<3>,
+      serde::compat_version<2>> {
+    int32_t value;
+    test_msg0 nested;
+
+    auto serde_fields() { return std::tie(value, nested); }
+    bool operator==(const fixed_checksummed_msg&) const = default;
+};
+
+struct fieldwise_checksummed_msg
+  : serde::checksum_envelope<
+      fieldwise_checksummed_msg,
+      serde::version<3>,
+      serde::compat_version<2>> {
+    int32_t value;
+    test_msg0 nested;
+
+    void serde_write(iobuf& out) const {
+        serde::write(out, value);
+        serde::write(out, nested);
+    }
+};
+
+template<size_t Depth>
+struct fixed_write_tree
+  : serde::envelope<
+      fixed_write_tree<Depth>,
+      serde::version<1>,
+      serde::compat_version<0>> {
+    fixed_write_tree<Depth - 1> left;
+    fixed_write_tree<Depth - 1> right;
+
+    auto serde_fields() { return std::tie(left, right); }
+};
+
+template<>
+struct fixed_write_tree<0>
+  : serde::envelope<
+      fixed_write_tree<0>,
+      serde::version<1>,
+      serde::compat_version<0>> {
+    int64_t value;
+
+    auto serde_fields() { return std::tie(value); }
+};
+
+static_assert(serde::detail::fixed_serde_v<float>);
+static_assert(serde::detail::fixed_serde_v<double>);
+static_assert(serde::detail::fixed_serde_v<fixed_write_wide_enum>);
+static_assert(!serde::detail::fixed_serde_v<custom_write_flag>);
+static_assert(!serde::detail::fixed_serde_v<custom_write_enum>);
+static_assert(serde::detail::fixed_serde_v<fixed_write_msg>);
+static_assert(serde::detail::fixed_serde_v<fixed_checksummed_msg>);
+static_assert(!serde::detail::fixed_serde_v<fieldwise_checksummed_msg>);
+static_assert(serde::detail::fixed_serde_v<fixed_write_tree<10>>);
+static_assert(!serde::detail::fixed_serde_v<fixed_write_tree<11>>);
+static_assert(!serde::detail::fixed_serde_v<fieldwise_write_msg>);
+
 struct test_msg1
   : serde::envelope<test_msg1, serde::version<4>, serde::compat_version<0>> {
     bool operator==(const test_msg1&) const = default;
@@ -200,6 +353,76 @@ SEASTAR_THREAD_TEST_CASE(envelope_test) {
     BOOST_CHECK(m._c == 44);
     BOOST_CHECK(m._m._i == 'i');
     BOOST_CHECK(m._m._j == 'j');
+}
+
+SEASTAR_THREAD_TEST_CASE(fixed_envelope_matches_fieldwise_encoding) {
+    const auto fixed = serde::to_iobuf(
+      fixed_write_msg{
+        .i8 = 1,
+        .i16 = -2,
+        .i32 = -3,
+        .i64 = -4,
+        .f32 = 1.25F,
+        .f64 = -2.5,
+        .offset = model::offset{-5},
+        .value = my_enum::z,
+        .wide_value = fixed_write_wide_enum::value,
+        .flag = false,
+        .bool_class = fixed_write_flag::no,
+        .nested = test_msg0{._i = 'i', ._j = 'j'},
+      });
+    const auto fieldwise = serde::to_iobuf(
+      fieldwise_write_msg{
+        .i8 = 1,
+        .i16 = -2,
+        .i32 = -3,
+        .i64 = -4,
+        .f32 = 1.25F,
+        .f64 = -2.5,
+        .offset = model::offset{-5},
+        .value = my_enum::z,
+        .wide_value = fixed_write_wide_enum::value,
+        .flag = false,
+        .bool_class = fixed_write_flag::no,
+        .nested = fieldwise_test_msg0{.i = 'i', .j = 'j'},
+      });
+
+    BOOST_REQUIRE(fixed == fieldwise);
+}
+
+SEASTAR_THREAD_TEST_CASE(fixed_checksum_matches_fieldwise_encoding) {
+    const auto value = fixed_checksummed_msg{
+      .value = 42,
+      .nested = test_msg0{._i = 'i', ._j = 'j'},
+    };
+    const auto fixed = serde::to_iobuf(value);
+    const auto fieldwise = serde::to_iobuf(
+      fieldwise_checksummed_msg{
+        .value = value.value,
+        .nested = value.nested,
+      });
+
+    BOOST_REQUIRE(fixed == fieldwise);
+    BOOST_REQUIRE(
+      serde::from_iobuf<fixed_checksummed_msg>(fixed.copy()) == value);
+
+    auto corrupted = fixed.copy();
+    auto& last_fragment = *corrupted.rbegin();
+    last_fragment.get_write()[last_fragment.size() - 1] += 1;
+    BOOST_REQUIRE_THROW(
+      serde::from_iobuf<fixed_checksummed_msg>(corrupted.copy()),
+      serde::serde_exception);
+}
+
+SEASTAR_THREAD_TEST_CASE(fixed_envelope_validates_before_reserving) {
+    auto out = iobuf::from("prefix");
+    const auto invalid = fixed_write_msg{
+      .wide_value = static_cast<fixed_write_wide_enum>(
+        std::numeric_limits<uint32_t>::max()),
+    };
+
+    BOOST_REQUIRE_THROW(serde::write(out, invalid), serde::serde_exception);
+    BOOST_REQUIRE(out == "prefix");
 }
 
 SEASTAR_THREAD_TEST_CASE(envelope_test_version_older_than_compat_version) {

@@ -60,30 +60,34 @@ std::decay_t<T> read(iobuf_parser& in) {
     return ret;
 }
 
-template<typename T>
-concept has_nonmember_write_nested_lv = requires(const T& t, iobuf& out) {
+template<typename Output, typename T>
+concept has_nonmember_write_nested_lv_for = requires(const T& t, Output& out) {
     { write_nested(out, t) } -> std::same_as<void>;
 };
 
-template<typename T>
-concept has_nonmember_write_nested_rv = requires(T&& t, iobuf& out) {
+template<typename Output, typename T>
+concept has_nonmember_write_nested_rv_for = requires(T&& t, Output& out) {
     { write_nested(out, std::move(t)) } -> std::same_as<void>;
 };
 
-template<typename T>
-concept has_nonmember_write_nested = []() consteval {
+template<typename Output, typename T>
+concept has_nonmember_write_nested_for = []() consteval {
     // `write_nested` must be defined either for both lvalue and rvalue T or for
     // neither.
     static_assert(
-      has_nonmember_write_nested_lv<T> == has_nonmember_write_nested_rv<T>);
-    return has_nonmember_write_nested_lv<T>;
+      has_nonmember_write_nested_lv_for<Output, T>
+      == has_nonmember_write_nested_rv_for<Output, T>);
+    return has_nonmember_write_nested_lv_for<Output, T>;
 }();
 
+template<typename T>
+concept has_nonmember_write_nested = has_nonmember_write_nested_for<iobuf, T>;
+
 // Two functions just to be able to specify T explicitly when calling.
-template<typename T, bool IsRvalue = true>
+template<typename T, bool IsRvalue = true, typename Output>
 requires(!std::is_reference_v<T>)
-void write(iobuf& b, T&& x) {
-    if constexpr (has_nonmember_write_nested<T>) {
+void write(Output& b, T&& x) {
+    if constexpr (has_nonmember_write_nested_for<Output, T>) {
         // NOLINTNEXTLINE(bugprone-move-forwarding-reference)
         write_nested(b, std::move(x));
     } else {
@@ -92,10 +96,10 @@ void write(iobuf& b, T&& x) {
     }
 }
 
-template<typename T, bool IsRvalue = false>
+template<typename T, bool IsRvalue = false, typename Output>
 requires(!std::is_reference_v<T>)
-void write(iobuf& b, const T& x) {
-    if constexpr (has_nonmember_write_nested<T>) {
+void write(Output& b, const T& x) {
+    if constexpr (has_nonmember_write_nested_for<Output, T>) {
         write_nested(b, x);
     } else {
         write_tag(b, x);

@@ -10,6 +10,7 @@
 #pragma once
 
 #include "base/vlog.h"
+#include "serde/rw/fixed.h"
 #include "serde/rw/rw.h"
 #include "serde/serde_exception.h"
 #include "serde/serde_is_enum.h"
@@ -21,22 +22,13 @@
 
 namespace serde {
 
-template<typename T>
+template<SerdeWriteOutput Output, typename T>
 requires(serde_is_enum_v<std::decay_t<T>>)
-void tag_invoke(tag_t<write_tag>, iobuf& out, T t) {
-#if defined(__cpp_lib_is_scoped_enum) && __cpp_lib_is_scoped_enum >= 202011L
+void tag_invoke(tag_t<write_tag>, Output& out, T t) {
     static_assert(std::is_scoped_enum_v<std::decay_t<T>>);
-#endif
     using Type = std::decay_t<T>;
+    detail::validate_serde_enum(t);
     const auto val = static_cast<std::underlying_type_t<Type>>(t);
-    if (unlikely(!std::in_range<serde_enum_serialized_t>(val))) {
-        throw serde_exception{fmt_with_ctx(
-          ssx::sformat,
-          "serde: enum of type {} has value {} which is out of bounds for "
-          "serde_enum_serialized_t",
-          type_str<T>(),
-          val)};
-    }
     write(out, static_cast<serde_enum_serialized_t>(val));
 }
 

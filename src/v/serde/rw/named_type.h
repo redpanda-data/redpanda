@@ -9,10 +9,36 @@
 
 #pragma once
 
+#include "serde/rw/fixed.h"
 #include "serde/rw/rw.h"
 #include "utils/named_type.h"
 
 namespace serde {
+
+namespace detail {
+
+template<typename T, typename Tag, typename IsConstexpr>
+requires(
+  fixed_serde_v<T>
+  && !disable_fixed_serde_v<::detail::base_named_type<T, Tag, IsConstexpr>>
+  && !has_nonmember_write_nested<
+     ::detail::base_named_type<T, Tag, IsConstexpr>>)
+struct fixed_serde_traits<::detail::base_named_type<T, Tag, IsConstexpr>> {
+    using type = ::detail::base_named_type<T, Tag, IsConstexpr>;
+
+    static constexpr bool supported = true;
+    static constexpr size_t size = fixed_serde_size_v<T>;
+    static constexpr bool requires_validation
+      = fixed_serde_traits<T>::requires_validation;
+
+    static void validate(const type& value)
+    requires requires_validation
+    {
+        fixed_serde_traits<T>::validate(value());
+    }
+};
+
+} // namespace detail
 
 template<typename T, typename Tag, typename IsConstexpr>
 void tag_invoke(
@@ -24,10 +50,14 @@ void tag_invoke(
     t = Type{read_nested<typename Type::type>(in, bytes_left_limit)};
 }
 
-template<typename T, typename Tag, typename IsConstexpr>
+template<
+  SerdeWriteOutput Output,
+  typename T,
+  typename Tag,
+  typename IsConstexpr>
 void tag_invoke(
   tag_t<write_tag>,
-  iobuf& out,
+  Output& out,
   ::detail::base_named_type<T, Tag, IsConstexpr> t) {
     return write(out, static_cast<T>(t));
 }

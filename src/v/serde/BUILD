@@ -11,6 +11,7 @@ redpanda_cc_library(
         "peek.h",
         "read_header.h",
         "rw/envelope.h",
+        "rw/fixed.h",
         "rw/reservable.h",
         "rw/rw.h",
         "rw/scalar.h",

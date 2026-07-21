@@ -199,6 +199,20 @@ SEASTAR_THREAD_TEST_CASE(test_writing_placeholders_at_end) {
     BOOST_REQUIRE_EQUAL(buf.size_bytes(), 15);
 }
 
+SEASTAR_THREAD_TEST_CASE(test_repeated_reservations_grow_fragments) {
+    constexpr size_t reservation_size = 513;
+    constexpr size_t reservation_count = 1000;
+
+    iobuf buf;
+    for (size_t i = 0; i < reservation_count; ++i) {
+        [[maybe_unused]] auto placeholder = buf.reserve(reservation_size);
+    }
+
+    BOOST_REQUIRE_EQUAL(buf.size_bytes(), reservation_size * reservation_count);
+    BOOST_REQUIRE_LT(
+      std::distance(buf.cbegin(), buf.cend()), reservation_count / 10);
+}
+
 SEASTAR_THREAD_TEST_CASE(test_temporary_buffs) {
     iobuf buf;
     ss::temporary_buffer<char> x(55);

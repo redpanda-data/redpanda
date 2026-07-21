@@ -50,9 +50,9 @@ void tag_invoke(
     }
 }
 
-template<typename T>
+template<SerdeWriteOutput Output, typename T>
 requires(std::is_scalar_v<std::decay_t<T>> && !serde_is_enum_v<std::decay_t<T>>)
-void tag_invoke(tag_t<write_tag>, iobuf& out, T t) {
+void tag_invoke(tag_t<write_tag>, Output& out, T t) {
     using Type = std::decay_t<T>;
     if constexpr (sizeof(Type) == 1) {
         out.append(reinterpret_cast<const char*>(&t), sizeof(t));
@@ -71,7 +71,8 @@ void tag_invoke(tag_t<write_tag>, iobuf& out, T t) {
     }
 }
 
-inline void tag_invoke(tag_t<write_tag>, iobuf& out, bool t) {
+template<SerdeWriteOutput Output>
+inline void tag_invoke(tag_t<write_tag>, Output& out, bool t) {
     write_tag(out, static_cast<int8_t>(t));
 }
 

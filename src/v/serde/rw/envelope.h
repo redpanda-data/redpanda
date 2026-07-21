@@ -15,6 +15,7 @@
 #include "serde/envelope.h"
 #include "serde/envelope_for_each_field.h"
 #include "serde/read_header.h"
+#include "serde/rw/fixed.h"
 #include "serde/rw/rw.h"
 #include "serde/serde_size_t.h"
 
@@ -92,53 +93,125 @@ void tag_invoke(
     }
 }
 
-template<typename T>
-requires is_envelope<std::decay_t<T>>
-void tag_invoke(tag_t<write_tag>, iobuf& out, T&& t) {
-    using Type = std::decay_t<T>;
+namespace detail {
 
-    write(out, Type::redpanda_serde_version);
-    write(out, Type::redpanda_serde_compat_version);
+[[gnu::always_inline]] inline crc::crc32c
+envelope_body_crc(iobuf& out, size_t body_offset) {
+    auto crc = crc::crc32c{};
+    auto in = iobuf_const_parser{out};
+    in.skip(body_offset);
+    in.consume(in.bytes_left(), [&crc](const char* src, const std::size_t n) {
+        crc.extend(src, n);
+        return ss::stop_iteration::no;
+    });
+    return crc;
+}
 
-    auto size_placeholder = out.reserve(sizeof(serde_size_t));
+[[gnu::always_inline]] inline crc::crc32c
+envelope_body_crc(contiguous_output& out, size_t body_offset) {
+    const auto body = out.written_from(body_offset);
+    auto crc = crc::crc32c{};
+    crc.extend(body.data(), body.size());
+    return crc;
+}
 
-    auto checksum_placeholder = iobuf::placeholder{};
+template<typename Type, SerdeWriteOutput Output, typename Func>
+[[gnu::always_inline]] inline void
+write_sized_envelope(Output& out, Func&& write_body) {
+    auto size_placeholder = [&out] {
+        if constexpr (fixed_serde_v<Type>) {
+            write(
+              out,
+              static_cast<serde_size_t>(fixed_serde_traits<Type>::body_size));
+            return typename Output::placeholder{};
+        } else {
+            static_assert(std::same_as<Output, iobuf>);
+            return out.reserve(sizeof(serde_size_t));
+        }
+    }();
+
+    auto checksum_placeholder = [&] {
+        if constexpr (is_checksum_envelope<Type>) {
+            return out.reserve(sizeof(checksum_t));
+        } else {
+            return typename Output::placeholder{};
+        }
+    }();
+
+    const auto body_offset = out.size_bytes();
+    std::forward<Func>(write_body)();
+
+    if constexpr (!fixed_serde_v<Type>) {
+        const auto written_size = out.size_bytes() - body_offset;
+        if (unlikely(written_size > std::numeric_limits<serde_size_t>::max())) {
+            throw serde_exception("envelope too big");
+        }
+        const auto size = ss::cpu_to_le(
+          static_cast<serde_size_t>(written_size));
+        size_placeholder.write(
+          reinterpret_cast<const char*>(&size), sizeof(serde_size_t));
+    }
+
     if constexpr (is_checksum_envelope<Type>) {
-        checksum_placeholder = out.reserve(sizeof(checksum_t));
-    }
-
-    const auto size_before = out.size_bytes();
-    if constexpr (has_serde_write<Type>) {
-        static_assert(!has_serde_fields<Type>);
-        t.serde_write(out);
-    } else {
-        envelope_for_each_field(
-          t, [&out](auto& f) { write(out, std::forward_like<T>(f)); });
-    }
-
-    const auto written_size = out.size_bytes() - size_before;
-    if (unlikely(written_size > std::numeric_limits<serde_size_t>::max())) {
-        throw serde_exception("envelope too big");
-    }
-    const auto size = ss::cpu_to_le(static_cast<serde_size_t>(written_size));
-    size_placeholder.write(
-      reinterpret_cast<const char*>(&size), sizeof(serde_size_t));
-
-    if constexpr (is_checksum_envelope<Type>) {
-        auto crc = crc::crc32c{};
-        auto in = iobuf_const_parser{out};
-        in.skip(size_before);
-        in.consume(
-          in.bytes_left(), [&crc](const char* src, const std::size_t n) {
-              crc.extend(src, n);
-              return ss::stop_iteration::no;
-          });
+        const auto crc = envelope_body_crc(out, body_offset);
         const auto checksum = ss::cpu_to_le(crc.value());
         static_assert(
           std::is_same_v<std::decay_t<decltype(checksum)>, checksum_t>);
         checksum_placeholder.write(
           reinterpret_cast<const char*>(&checksum), sizeof(checksum_t));
     }
+}
+
+template<typename Type, SerdeWriteOutput Output, typename T>
+[[gnu::always_inline]] inline void write_envelope(Output& out, T&& value) {
+    write(out, Type::redpanda_serde_version);
+    write(out, Type::redpanda_serde_compat_version);
+    write_sized_envelope<Type>(out, [&out, &value] {
+        if constexpr (has_serde_write<Type>) {
+            static_assert(!has_serde_fields<Type>);
+            value.serde_write(out);
+        } else {
+            envelope_for_each_field(value, [&out](auto& field) {
+                write(out, std::forward_like<T>(field));
+            });
+        }
+    });
+}
+
+template<typename Type, typename T>
+[[gnu::always_inline]] inline void
+with_serialization_output(iobuf& out, T&& value) {
+    // Reserve fixed envelopes once at the iobuf boundary. Nested serialization
+    // then uses the contiguous cursor and avoids per-field fragment checks.
+    if constexpr (fixed_serde_v<Type>) {
+        if constexpr (fixed_serde_traits<Type>::requires_validation) {
+            fixed_serde_traits<Type>::validate(value);
+        }
+        auto storage = out.reserve(fixed_serde_size_v<Type>);
+        contiguous_output writer(storage.mutable_index());
+        write_envelope<Type>(writer, std::forward<T>(value));
+    } else {
+        write_envelope<Type>(out, std::forward<T>(value));
+    }
+}
+
+template<typename Type, typename T>
+[[gnu::always_inline]] inline void
+with_serialization_output(contiguous_output& out, T&& value) {
+    write_envelope<Type>(out, std::forward<T>(value));
+}
+
+} // namespace detail
+
+template<SerdeWriteOutput Output, typename T>
+requires(
+  is_envelope<std::decay_t<T>>
+  && (std::same_as<Output, iobuf> || detail::fixed_serde_v<std::decay_t<T>>))
+[[gnu::always_inline]] inline void
+tag_invoke(tag_t<write_tag>, Output& out, T&& t) {
+    using Type = std::decay_t<T>;
+
+    detail::with_serialization_output<Type>(out, std::forward<T>(t));
 }
 
 } // namespace serde

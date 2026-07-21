@@ -9,6 +9,8 @@
 
 #pragma once
 
+#include <concepts>
+#include <cstddef>
 #include <type_traits>
 
 class iobuf;
@@ -16,10 +18,18 @@ class iobuf_parser;
 
 namespace serde {
 
+template<typename Output>
+concept SerdeWriteOutput = requires(
+  Output& out, const char* src, std::size_t size) {
+    out.append(src, size);
+    out.reserve(size);
+    { out.size_bytes() } -> std::convertible_to<std::size_t>;
+};
+
 // How to use:
 //
 // template<typename T>
-// void tag_invoke(tag_t<write_tag>, iobuf& out, my_type<T> t) {
+// void tag_invoke(tag_t<write_tag>, SerdeWriteOutput auto& out, my_type<T> t) {
 //     // write `t` to `out`
 // }
 //
@@ -31,13 +41,16 @@ namespace serde {
 //   std::size_t const bytes_left_limit) {
 //     t = ...; // read from `in` to `t`
 // }
+//
+// Writers that change the canonical encoding of an otherwise fixed-width type
+// must specialize `disable_fixed_serde_v<T>` to true.
 
 template<auto& CPO>
 using tag_t = std::remove_cvref_t<decltype(CPO)>;
 
 inline constexpr struct write_fn {
-    template<typename T>
-    void operator()(iobuf& b, T&& x) const {
+    template<typename Output, typename T>
+    void operator()(Output& b, T&& x) const {
         return tag_invoke(*this, b, std::forward<T>(x));
     }
 } write_tag{};
