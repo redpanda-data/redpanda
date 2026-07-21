@@ -174,11 +174,21 @@ public:
         return _sink;
     }
 
-    bool ChunkedString(::json::SizeType) {
-        auto encoded = std::move(_sink).as_iobuf();
-        // drop the '\0' terminator appended by the reader
-        encoded.trim_back(sizeof(Ch));
-        auto [res, buf] = rjson_parse_impl<iobuf>(_fmt)(std::move(encoded));
+    bool ChunkedString(::json::SizeType len) {
+        auto decode = [this, len] {
+            // Small strings that never spilled out of the sink's inline
+            // stage are decoded from contiguous memory, skipping the iobuf
+            // round-trip.
+            if (auto v = _sink.contiguous_view(); v.has_value()) {
+                // drop the '\0' terminator appended by the reader
+                return rjson_parse_impl<iobuf>(_fmt)(v->substr(0, len));
+            }
+            auto encoded = std::move(_sink).as_iobuf();
+            // drop the '\0' terminator appended by the reader
+            encoded.trim_back(sizeof(Ch));
+            return rjson_parse_impl<iobuf>(_fmt)(std::move(encoded));
+        };
+        auto [res, buf] = decode();
         if (res) {
             if (state == state::key) {
                 result.back().key = std::move(buf);
