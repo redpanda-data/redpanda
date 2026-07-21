@@ -25,10 +25,13 @@
 #include "cluster/archival/tests/service_fixture.h"
 #include "config/configuration.h"
 #include "config/property.h"
+#include "kafka/data/replicated_partition.h"
+#include "kafka/protocol/types.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "model/record_batch_types.h"
 #include "net/types.h"
+#include "raft/consensus.h"
 #include "random/generators.h"
 #include "ssx/sformat.h"
 #include "storage/disk_log_impl.h"
@@ -2012,6 +2015,210 @@ FIXTURE_TEST(test_upload_with_gap, archiver_fixture) {
     BOOST_REQUIRE_EQUAL(
       std::next(part->archival_meta_stm()->manifest().begin())->base_offset,
       part->log()->offsets().start_offset);
+}
+
+// An OffsetForLeaderEpoch query for a leader epoch (raft term) that is newer
+// than everything present in cloud storage but older than the first term
+// retained locally (a gap that potentially arises when the local start offset
+// advances ahead of the cloud upload watermark during partition movement) must
+// not report the cloud start offset. Doing so reports an offset below the
+// consumer's position, which the consumer interprets as log truncation and
+// resets to the beginning of the log.
+FIXTURE_TEST(test_offset_for_leader_epoch_term_above_cloud, archiver_fixture) {
+    // Three segments in three distinct terms. Term 2's data is the "gap": it
+    // lives neither in cloud storage nor in the retained local log.
+    std::vector<segment_desc> segments = {
+      {
+        .ntp = manifest_ntp,
+        .base_offset = model::offset(0),
+        .term = model::term_id(1),
+        .num_records = 1000,
+        .records_per_batch = 1,
+      },
+      {
+        .ntp = manifest_ntp,
+        .base_offset = model::offset(1000),
+        .term = model::term_id(2),
+        .num_records = 1000,
+        .records_per_batch = 1,
+      },
+      {
+        .ntp = manifest_ntp,
+        .base_offset = model::offset(2000),
+        .term = model::term_id(3),
+        .num_records = 1000,
+        .records_per_batch = 1,
+      },
+    };
+
+    storage::ntp_config::default_overrides overrides;
+    overrides.shadow_indexing_mode = model::shadow_indexing_mode::full;
+    overrides.cleanup_policy_bitflags
+      = model::cleanup_policy_bitflags::deletion;
+
+    init_storage_api_local(segments, overrides);
+    wait_for_partition_leadership(manifest_ntp);
+
+    auto part = app.partition_manager.local().get(manifest_ntp);
+    tests::cooperative_spin_wait_with_timeout(10s, [&part]() {
+        return part->last_stable_offset() >= model::offset(3000);
+    }).get();
+
+    // Populate cloud storage with only the term 1 segment, so the newest cloud
+    // term (1) is below the queried term (2).
+    part->archival_meta_stm()
+      ->add_segments(
+        {
+          cloud_storage::segment_meta{
+            .is_compacted = false,
+            .size_bytes = 1, // doesn't matter
+            .base_offset = model::offset(0),
+            .committed_offset = model::offset(999),
+            .delta_offset = model::offset_delta{0},
+            .ntp_revision
+            = part->archival_meta_stm()->manifest().get_revision_id(),
+            .archiver_term = model::term_id(1),
+            .segment_term = model::term_id(1),
+            .delta_offset_end = model::offset_delta{0},
+          },
+        },
+        std::nullopt,
+        model::producer_id{},
+        ss::lowres_clock::now() + 1s,
+        never_abort,
+        cluster::segment_validated::yes)
+      .get();
+
+    tests::cooperative_spin_wait_with_timeout(10s, [&part]() {
+        return part->cloud_data_available();
+    }).get();
+    BOOST_REQUIRE(part->is_remote_fetch_enabled());
+
+    // Advance the local start offset to the beginning of term 3 via a raft
+    // snapshot, dropping term 1 and term 2 from the local log. Unlike a
+    // delete-records prefix truncate, a raft snapshot does not advance the
+    // cloud manifest start offset, so cloud data remains available for the
+    // query below.
+    const auto local_start = model::offset(2000);
+    part->raft()
+      ->write_snapshot(
+        raft::write_snapshot_cfg(model::prev_offset(local_start), iobuf{}))
+      .get();
+    tests::cooperative_spin_wait_with_timeout(10s, [&part, local_start]() {
+        return part->raft_start_offset() >= local_start;
+    }).get();
+    BOOST_REQUIRE_EQUAL(part->get_term(local_start), model::term_id(3));
+
+    kafka::replicated_partition rp(part);
+
+    // Query the leader epoch (term) that falls in the gap.
+    auto result = rp.get_leader_epoch_last_offset(kafka::leader_epoch(2)).get();
+
+    BOOST_REQUIRE(result.has_value());
+    // The next-highest term begins at the first local offset, not at the cloud
+    // start offset.
+    BOOST_REQUIRE_GT(result.value(), part->start_cloud_offset());
+    BOOST_REQUIRE_EQUAL(
+      result.value(),
+      model::offset(part->log()->from_log_offset(part->raft_start_offset())));
+}
+
+// Companion to the test above, covering the other way
+// `get_cloud_term_last_offset` can return no value: the queried term predates
+// the earliest segment in cloud storage. Here the next-highest term still lives
+// in cloud, so the query must return the cloud start offset rather than falling
+// back to the (higher) local start offset.
+FIXTURE_TEST(test_offset_for_leader_epoch_term_below_cloud, archiver_fixture) {
+    std::vector<segment_desc> segments = {
+      {
+        .ntp = manifest_ntp,
+        .base_offset = model::offset(0),
+        .term = model::term_id(1),
+        .num_records = 1000,
+        .records_per_batch = 1,
+      },
+      {
+        .ntp = manifest_ntp,
+        .base_offset = model::offset(1000),
+        .term = model::term_id(2),
+        .num_records = 1000,
+        .records_per_batch = 1,
+      },
+      {
+        .ntp = manifest_ntp,
+        .base_offset = model::offset(2000),
+        .term = model::term_id(3),
+        .num_records = 1000,
+        .records_per_batch = 1,
+      },
+    };
+
+    storage::ntp_config::default_overrides overrides;
+    overrides.shadow_indexing_mode = model::shadow_indexing_mode::full;
+    overrides.cleanup_policy_bitflags
+      = model::cleanup_policy_bitflags::deletion;
+
+    init_storage_api_local(segments, overrides);
+    wait_for_partition_leadership(manifest_ntp);
+
+    auto part = app.partition_manager.local().get(manifest_ntp);
+    tests::cooperative_spin_wait_with_timeout(10s, [&part]() {
+        return part->last_stable_offset() >= model::offset(3000);
+    }).get();
+
+    // Populate cloud storage starting at term 2, so the earliest cloud term (2)
+    // is above the queried term (1).
+    part->archival_meta_stm()
+      ->add_segments(
+        {
+          cloud_storage::segment_meta{
+            .is_compacted = false,
+            .size_bytes = 1, // doesn't matter
+            .base_offset = model::offset(1000),
+            .committed_offset = model::offset(1999),
+            .delta_offset = model::offset_delta{0},
+            .ntp_revision
+            = part->archival_meta_stm()->manifest().get_revision_id(),
+            .archiver_term = model::term_id(2),
+            .segment_term = model::term_id(2),
+            .delta_offset_end = model::offset_delta{0},
+          },
+        },
+        std::nullopt,
+        model::producer_id{},
+        ss::lowres_clock::now() + 1s,
+        never_abort,
+        cluster::segment_validated::yes)
+      .get();
+
+    tests::cooperative_spin_wait_with_timeout(10s, [&part]() {
+        return part->cloud_data_available();
+    }).get();
+    BOOST_REQUIRE(part->is_remote_fetch_enabled());
+
+    // Advance the local start offset to the beginning of term 3, so the local
+    // start sits above the cloud upload watermark.
+    const auto local_start = model::offset(2000);
+    part->raft()
+      ->write_snapshot(
+        raft::write_snapshot_cfg(model::prev_offset(local_start), iobuf{}))
+      .get();
+    tests::cooperative_spin_wait_with_timeout(10s, [&part, local_start]() {
+        return part->raft_start_offset() >= local_start;
+    }).get();
+
+    kafka::replicated_partition rp(part);
+
+    // Query a term below the earliest cloud term. The next-highest term (2)
+    // lives in cloud, so the answer is the cloud start offset, which is below
+    // the local start offset.
+    auto result = rp.get_leader_epoch_last_offset(kafka::leader_epoch(1)).get();
+
+    BOOST_REQUIRE(result.has_value());
+    BOOST_REQUIRE_EQUAL(result.value(), part->start_cloud_offset());
+    BOOST_REQUIRE_LT(
+      result.value(),
+      model::offset(part->log()->from_log_offset(part->raft_start_offset())));
 }
 
 FIXTURE_TEST(test_flush_not_leader, cloud_storage_manual_multinode_test_base) {

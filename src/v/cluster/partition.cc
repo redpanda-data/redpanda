@@ -976,6 +976,13 @@ partition::get_cloud_term_last_offset(model::term_id term) const {
     co_return model::next_offset(kafka::offset_cast(*o));
 }
 
+std::optional<model::term_id> partition::highest_cloud_term() const {
+    if (!_cloud_storage_partition) {
+        return std::nullopt;
+    }
+    return _cloud_storage_partition->highest_term();
+}
+
 ss::future<> partition::remove_persistent_state() {
     _cloud_storage_probe->clear_metrics();
     co_await _raft->stm_manager()->remove_local_state();
