@@ -111,6 +111,26 @@ void topic_id_api_version_limiter(api_versions_response& r) {
     }
 }
 
+// The KIP-848 consumer group protocol APIs are advertised only when the
+// development feature flag is on. The protocol also identifies topics by
+// topic id in assignments, so it additionally requires the topic_ids_api
+// feature to be active.
+void remove_unavailable_consumer_group_apis(
+  api_versions_response& r, const features::feature_table& ft) {
+    if (
+      config::shard_local_cfg().group_consumer_protocol_enabled()
+      && ft.is_active(features::feature::topic_ids_api)) {
+        return;
+    }
+
+    auto to_remove = std::ranges::remove_if(
+      r.data.api_keys, [](const api_versions_response_key& api) {
+          return api.api_key == consumer_group_heartbeat_api::key
+                 || api.api_key == consumer_group_describe_api::key;
+      });
+    r.data.api_keys.erase_to_end(to_remove.begin());
+}
+
 void remove_unavailable_reserved_apis(
   api_versions_response& r, const features::feature_table& ft) {
     if (ft.is_active(features::feature::shadow_link_role_sync)) {
@@ -168,6 +188,7 @@ api_versions_response api_versions_handler::handle_raw(request_context& ctx) {
             topic_id_api_version_limiter(r);
         }
 
+        remove_unavailable_consumer_group_apis(r, features);
         remove_unavailable_reserved_apis(r, features);
     }
 

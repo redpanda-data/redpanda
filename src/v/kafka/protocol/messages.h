@@ -18,6 +18,8 @@
 #include "kafka/protocol/schemata/alter_partition_reassignments_request.h"
 #include "kafka/protocol/schemata/alter_user_scram_credentials_request.h"
 #include "kafka/protocol/schemata/api_versions_request.h"
+#include "kafka/protocol/schemata/consumer_group_describe_request.h"
+#include "kafka/protocol/schemata/consumer_group_heartbeat_request.h"
 #include "kafka/protocol/schemata/create_acls_request.h"
 #include "kafka/protocol/schemata/create_partitions_request.h"
 #include "kafka/protocol/schemata/create_topics_request.h"
@@ -111,7 +113,9 @@ using request_types = make_request_types<
   describe_client_quotas_api,
   describe_cluster_api,
   describe_user_scram_credentials_api,
-  alter_user_scram_credentials_api>;
+  alter_user_scram_credentials_api,
+  consumer_group_heartbeat_api,
+  consumer_group_describe_api>;
 
 // Redpanda-specific APIs occupying the reserved key range (>= 15000). Kept
 // separate from request_types so the standard dispatch/flex/metering tables

@@ -20,6 +20,8 @@
 #include "kafka/protocol/schemata/alter_configs_request.h"
 #include "kafka/protocol/schemata/alter_partition_reassignments_request.h"
 #include "kafka/protocol/schemata/alter_user_scram_credentials_request.h"
+#include "kafka/protocol/schemata/consumer_group_describe_request.h"
+#include "kafka/protocol/schemata/consumer_group_heartbeat_request.h"
 #include "kafka/protocol/schemata/create_acls_request.h"
 #include "kafka/protocol/schemata/create_partitions_request.h"
 #include "kafka/protocol/schemata/create_topics_request.h"
@@ -384,6 +386,10 @@ event_type kafka_api_to_event_type(kafka::api_key key) {
         return event_type::describe;
     case kafka::heartbeat_api::key:
         return event_type::heartbeat;
+    case kafka::consumer_group_heartbeat_api::key:
+        return event_type::heartbeat;
+    case kafka::consumer_group_describe_api::key:
+        return event_type::describe;
     case kafka::describe_user_scram_credentials_api::key:
         return event_type::describe;
     case kafka::alter_user_scram_credentials_api::key:
