@@ -14,6 +14,8 @@
 #include "cluster/fwd.h"
 #include "cluster/shard_table.h"
 #include "container/chunked_vector.h"
+#include "kafka/protocol/consumer_group_describe.h"
+#include "kafka/protocol/consumer_group_heartbeat.h"
 #include "kafka/protocol/describe_groups.h"
 #include "kafka/protocol/heartbeat.h"
 #include "kafka/protocol/join_group.h"
@@ -63,6 +65,12 @@ public:
     group::sync_group_stages sync_group(sync_group_request&& request);
 
     ss::future<heartbeat_response> heartbeat(heartbeat_request&& request);
+
+    ss::future<consumer_group_heartbeat_response>
+    consumer_group_heartbeat(consumer_group_heartbeat_request&& request);
+
+    ss::future<consumer_group_described_group>
+    consumer_group_describe(kafka::group_id g);
 
     ss::future<leave_group_response> leave_group(leave_group_request&& request);
 

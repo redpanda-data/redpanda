@@ -1714,6 +1714,34 @@ ss::future<heartbeat_response> group::handle_heartbeat(heartbeat_request&& r) {
     __builtin_unreachable();
 }
 
+void group::enable_consumer_protocol() {
+    vassert(
+      !_consumer_state && _members.empty(),
+      "cannot enable the consumer protocol for group {} with classic members",
+      _id);
+    _protocol_type = consumer_group_protocol_type;
+    _consumer_state = std::make_unique<consumer_group>(_id);
+}
+
+consumer_group_heartbeat_response group::handle_consumer_group_heartbeat(
+  consumer_group_heartbeat_request&& r,
+  const consumer_group_topic_resolver& resolver,
+  const consumer_group_settings& settings) {
+    vlog(_ctxlog.trace, "Handling consumer group heartbeat request {}", r);
+    auto response = _consumer_state->handle_heartbeat(
+      std::move(r), resolver, settings);
+    // keep the classic group state roughly in sync so that the paths shared
+    // with the classic protocol (list groups, delete groups, offset
+    // retention) treat groups with active members as such.
+    _state = _consumer_state->has_members() ? group_state::stable
+                                            : group_state::empty;
+    return response;
+}
+
+consumer_group_described_group group::consumer_group_describe() const {
+    return _consumer_state->describe();
+}
+
 ss::future<leave_group_response>
 group::handle_leave_group(leave_group_request&& r) {
     vlog(_ctxlog.trace, "Handling leave group request {}", r);
@@ -2440,6 +2468,16 @@ group::handle_offset_commit(offset_commit_request&& r) {
     if (in_state(group_state::dead)) {
         return offset_commit_stages(
           offset_commit_response(r, error_code::coordinator_not_available));
+
+    } else if (uses_consumer_protocol()) {
+        // for groups using the KIP-848 consumer protocol the generation id
+        // carries the member epoch.
+        auto ec = _consumer_state->validate_offset_commit(
+          r.data.member_id, r.data.generation_id);
+        if (ec != error_code::none) {
+            return offset_commit_stages(offset_commit_response(r, ec));
+        }
+        return store_offsets(std::move(r));
 
     } else if (r.data.generation_id < 0 && in_state(group_state::empty)) {
         // <kafka>The group is only using Kafka to store offsets.</kafka>

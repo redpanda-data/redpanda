@@ -41,6 +41,7 @@
 #include "raft/fundamental.h"
 #include "ssx/async_algorithm.h"
 #include "ssx/future-util.h"
+#include "ssx/sformat.h"
 #include "storage/types.h"
 
 #include <seastar/core/abort_source.hh>
@@ -1468,6 +1469,15 @@ group::join_group_stages group_manager::join_group(join_group_request&& r) {
           cg_klog.trace, "Created new group {} while joining", r.data.group_id);
     }
 
+    if (group->uses_consumer_protocol()) {
+        vlog(
+          cg_klog.trace,
+          "Join group {} rejected: group uses the consumer protocol",
+          r.data.group_id);
+        return group::join_group_stages(make_join_error(
+          r.data.member_id, error_code::inconsistent_group_protocol));
+    }
+
     auto ret = group->handle_join_group(std::move(r), is_new_group);
     return group::join_group_stages(
       ret.dispatched.finally([group] {}), ret.result.finally([group] {}));
@@ -1530,6 +1540,108 @@ ss::future<heartbeat_response> group_manager::heartbeat(heartbeat_request&& r) {
       r.data.group_id);
 
     return make_heartbeat_error(error_code::unknown_member_id);
+}
+
+ss::future<consumer_group_heartbeat_response>
+group_manager::consumer_group_heartbeat(consumer_group_heartbeat_request&& r) {
+    auto error = validate_group_status(
+      r.ntp, r.data.group_id, consumer_group_heartbeat_api::key, false);
+    if (error != error_code::none) {
+        co_return consumer_group_heartbeat_response(error);
+    }
+
+    auto group = get_group(r.data.group_id);
+    if (!group) {
+        if (r.data.member_epoch != consumer_group::join_epoch) {
+            // consumer group membership is in memory only: after a
+            // coordinator failover members are fenced and rejoin with
+            // epoch 0.
+            co_return consumer_group_heartbeat_response(
+              error_code::unknown_member_id,
+              ssx::sformat("Group {} does not exist", r.data.group_id));
+        }
+        auto it = _partitions.find(r.ntp);
+        if (it == _partitions.end()) {
+            co_return consumer_group_heartbeat_response(
+              error_code::not_coordinator);
+        }
+        auto p = it->second->partition;
+        group = ss::make_lw_shared<kafka::group>(
+          r.data.group_id,
+          group_state::empty,
+          _conf,
+          it->second->catchup_lock,
+          p,
+          it->second->term,
+          _tx_frontend,
+          _feature_table);
+        group->enable_consumer_protocol();
+        _groups.emplace(r.data.group_id, group);
+        _groups.rehash(0);
+        vlog(
+          cg_klog.debug,
+          "Created new consumer protocol group {}",
+          r.data.group_id);
+    } else if (!group->uses_consumer_protocol()) {
+        if (group->in_state(group_state::empty) && !group->has_members()) {
+            // an empty classic group (e.g. one that only stores committed
+            // offsets, or a consumer protocol group recovered after a
+            // coordinator failover) can be switched to the consumer
+            // protocol.
+            group->enable_consumer_protocol();
+        } else {
+            co_return consumer_group_heartbeat_response(
+              error_code::group_id_not_found,
+              ssx::sformat(
+                "Group {} is not a consumer protocol group", r.data.group_id));
+        }
+    }
+
+    auto resolver = consumer_group_topic_resolver(
+      [this](const model::topic& topic)
+        -> std::optional<consumer_group_topic_metadata> {
+          auto cfg = _topic_table.local().get_topic_cfg(
+            model::topic_namespace_view(model::kafka_namespace, topic));
+          if (!cfg || !cfg->tp_id.has_value()) {
+              return std::nullopt;
+          }
+          return consumer_group_topic_metadata{
+            .id = *cfg->tp_id,
+            .partition_count = cfg->partition_count,
+          };
+      });
+    const consumer_group_settings settings{
+      .session_timeout = _conf.group_consumer_session_timeout_ms(),
+      .heartbeat_interval = _conf.group_consumer_heartbeat_interval_ms(),
+    };
+
+    co_return group->handle_consumer_group_heartbeat(
+      std::move(r), resolver, settings);
+}
+
+consumer_group_described_group group_manager::consumer_group_describe(
+  const model::ntp& ntp, const kafka::group_id& g) {
+    auto error = validate_group_status(
+      ntp, g, consumer_group_describe_api::key, true);
+    if (error != error_code::none) {
+        return make_described_group_error(g, error, "");
+    }
+
+    auto group = get_group(g);
+    if (!group) {
+        return make_described_group_error(
+          g,
+          error_code::group_id_not_found,
+          ssx::sformat("Group {} does not exist", g));
+    }
+    if (!group->uses_consumer_protocol()) {
+        return make_described_group_error(
+          g,
+          error_code::group_id_not_found,
+          ssx::sformat("Group {} is not a consumer protocol group", g));
+    }
+
+    return group->consumer_group_describe();
 }
 
 ss::future<leave_group_response>

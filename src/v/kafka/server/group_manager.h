@@ -17,6 +17,8 @@
 #include "cluster/offsets_snapshot.h"
 #include "cluster/topic_table.h"
 #include "container/chunked_vector.h"
+#include "kafka/protocol/consumer_group_describe.h"
+#include "kafka/protocol/consumer_group_heartbeat.h"
 #include "kafka/protocol/errors.h"
 #include "kafka/protocol/heartbeat.h"
 #include "kafka/protocol/join_group.h"
@@ -149,6 +151,14 @@ public:
 
     /// \brief Handle a Heartbeat request
     ss::future<heartbeat_response> heartbeat(heartbeat_request&& request);
+
+    /// \brief Handle a ConsumerGroupHeartbeat (KIP-848) request
+    ss::future<consumer_group_heartbeat_response>
+    consumer_group_heartbeat(consumer_group_heartbeat_request&& request);
+
+    /// \brief Handle a single group of a ConsumerGroupDescribe request
+    consumer_group_described_group
+    consumer_group_describe(const model::ntp&, const kafka::group_id&);
 
     /// \brief Handle a LeaveGroup request
     ss::future<leave_group_response> leave_group(leave_group_request&& request);

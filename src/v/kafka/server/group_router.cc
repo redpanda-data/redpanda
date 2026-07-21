@@ -254,6 +254,34 @@ group_router::heartbeat(heartbeat_request&& request) {
     return route(std::move(request), &group_manager::heartbeat);
 }
 
+ss::future<consumer_group_heartbeat_response>
+group_router::consumer_group_heartbeat(
+  consumer_group_heartbeat_request&& request) {
+    return route(std::move(request), &group_manager::consumer_group_heartbeat);
+}
+
+ss::future<consumer_group_described_group>
+group_router::consumer_group_describe(kafka::group_id g) {
+    auto m = shard_for(g);
+    if (!m) {
+        return ss::make_ready_future<consumer_group_described_group>(
+          make_described_group_error(
+            std::move(g),
+            error_code::not_coordinator,
+            "Not the coordinator for this group"));
+    }
+    return with_scheduling_group(
+      _sg, [this, g = std::move(g), m = std::move(m)]() mutable {
+          return get_group_manager().invoke_on(
+            m->second,
+            _ssg,
+            [g = std::move(g),
+             ntp = std::move(m->first)](group_manager& mgr) mutable {
+                return mgr.consumer_group_describe(ntp, g);
+            });
+      });
+}
+
 ss::future<leave_group_response>
 group_router::leave_group(leave_group_request&& request) {
     return route(std::move(request), &group_manager::leave_group);

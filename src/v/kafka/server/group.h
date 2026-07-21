@@ -27,6 +27,7 @@
 #include "kafka/protocol/fwd.h"
 #include "kafka/protocol/offset_commit.h"
 #include "kafka/protocol/offset_fetch.h"
+#include "kafka/server/consumer_group.h"
 #include "kafka/server/group_metadata.h"
 #include "kafka/server/group_probe.h"
 #include "kafka/server/member.h"
@@ -376,6 +377,24 @@ public:
     bool is_consumer_group() const {
         return _protocol_type == consumer_group_protocol_type;
     }
+
+    /// Check if the group uses the KIP-848 next generation consumer group
+    /// protocol (driven by ConsumerGroupHeartbeat) rather than the classic
+    /// join/sync protocol.
+    bool uses_consumer_protocol() const { return _consumer_state != nullptr; }
+
+    /// Switch this group to the KIP-848 consumer group protocol. Only valid
+    /// for groups without classic members.
+    void enable_consumer_protocol();
+
+    /// Handle a ConsumerGroupHeartbeat request routed to this group.
+    consumer_group_heartbeat_response handle_consumer_group_heartbeat(
+      consumer_group_heartbeat_request&&,
+      const consumer_group_topic_resolver&,
+      const consumer_group_settings&);
+
+    /// Build the ConsumerGroupDescribe entry for this group.
+    consumer_group_described_group consumer_group_describe() const;
 
     /// Get the group's configured protocol type (if any).
     const std::optional<kafka::protocol_type>& protocol_type() const {
@@ -968,6 +987,8 @@ private:
     std::optional<kafka::protocol_type> _protocol_type;
     std::optional<kafka::protocol_name> _protocol;
     std::optional<kafka::member_id> _leader;
+    /// non-null iff the group uses the KIP-848 consumer group protocol.
+    std::unique_ptr<consumer_group> _consumer_state;
     ss::timer<clock_type> _join_timer;
     bool _new_member_added;
     config::configuration& _conf;
