@@ -105,8 +105,6 @@ health_manager::ensure_topic_replication(model::topic_namespace_view topic) {
     }
 
     vlog(clusterlog.info, "Increased replication factor for {}", topic);
-    // short delay for things to stablize
-    co_await ss::sleep_abortable(stabilize_delay, _as.local());
     co_return true;
 }
 

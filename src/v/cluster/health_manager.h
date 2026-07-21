@@ -29,8 +29,6 @@ namespace cluster {
 class health_manager {
     using clock_type = ss::lowres_clock;
     static constexpr std::chrono::seconds set_replicas_timeout = 15s;
-    // after changing replica set introduce a short cooling off delay
-    static constexpr std::chrono::seconds stabilize_delay = 10s;
 
 public:
     static constexpr ss::shard_id shard = 0;
