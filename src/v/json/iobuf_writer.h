@@ -80,6 +80,9 @@ private:
             if (!Base::WriteString(i->get(), i->size())) {
                 return false;
             }
+            // The fixup below reads and writes fragment memory directly, so
+            // any bytes still staged in the buffer must be flushed to it.
+            this->os_->Flush();
             if (i != beg) {
                 // 4. Restore the stashed character over the prefix-quote
                 *stash_pos = stashed;
