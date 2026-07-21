@@ -448,6 +448,43 @@ path_type_map = {
     "AlterUserScramCredentialsResponseData": {
         "Results": {"User": ("kafka::scram_user_name", "string")},
     },
+    "ConsumerGroupHeartbeatRequestData": {
+        "MemberId": ("kafka::member_id", "string"),
+        "InstanceId": ("kafka::group_instance_id", "string"),
+        "TopicPartitions": {
+            "TopicId": ("model::topic_id", "uuid"),
+            "Partitions": ("model::partition_id", "int32"),
+        },
+    },
+    "ConsumerGroupHeartbeatResponseData": {
+        "MemberId": ("kafka::member_id", "string"),
+        "Assignment": {
+            "TopicPartitions": {
+                "TopicId": ("model::topic_id", "uuid"),
+                "Partitions": ("model::partition_id", "int32"),
+            },
+        },
+    },
+    "ConsumerGroupDescribeResponseData": {
+        "Groups": {
+            "Members": {
+                "MemberId": ("kafka::member_id", "string"),
+                "InstanceId": ("kafka::group_instance_id", "string"),
+                "Assignment": {
+                    "TopicPartitions": {
+                        "TopicId": ("model::topic_id", "uuid"),
+                        "Partitions": ("model::partition_id", "int32"),
+                    },
+                },
+                "TargetAssignment": {
+                    "TopicPartitions": {
+                        "TopicId": ("model::topic_id", "uuid"),
+                        "Partitions": ("model::partition_id", "int32"),
+                    },
+                },
+            },
+        },
+    },
 }
 
 # a few kafka field types specify an entity type
@@ -466,6 +503,7 @@ field_name_type_map = {
     ("int32", "ThrottleTimeMs"): ("std::chrono::milliseconds", 0),
     ("int32", "SessionTimeoutMs"): ("std::chrono::milliseconds", None),
     ("int32", "RebalanceTimeoutMs"): ("std::chrono::milliseconds", None),
+    ("int32", "HeartbeatIntervalMs"): ("std::chrono::milliseconds", None),
 }
 
 # primitive types
@@ -730,6 +768,12 @@ STRUCT_TYPES = [
     "RoleNameFilter",
     "RedpandaRole",
     "RedpandaRoleMember",
+    "ConsumerGroupHeartbeatRequestTopicPartitions",
+    "ConsumerGroupHeartbeatResponseTopicPartitions",
+    "ConsumerGroupDescribedGroup",
+    "ConsumerGroupDescribeMember",
+    "ConsumerGroupDescribeAssignedTopicPartitions",
+    "ConsumerGroupDescribeTargetTopicPartitions",
 ]
 
 # A list of StructTypes that are allowed to be not arrays in the schema.
@@ -756,11 +800,18 @@ WITHOUT_DEFAULT_EQUALITY_OPERATOR = {
 # as ArrayTypes
 TAGGED_WITH_FIELDS = []
 
-# The following is a list of tag types which contain fields where their
-# respective types are correctly not prefixed with [].
+# The following is a list of types (tagged or not) which contain fields where
+# their respective types are correctly not prefixed with [].
 # They must not be treated as ArrayTypes
 # This list is the names after struct_renames have been applied.
-SINGULAR_STRUCT_TYPES = ["DivergingEpochEndOffset", "LeaderIdAndEpoch", "SnapshotId"]
+SINGULAR_STRUCT_TYPES = [
+    "DivergingEpochEndOffset",
+    "LeaderIdAndEpoch",
+    "SnapshotId",
+    "ConsumerGroupHeartbeatResponseAssignment",
+    "ConsumerGroupDescribeAssignment",
+    "ConsumerGroupDescribeTargetAssignment",
+]
 
 SCALAR_TYPES = list(basic_type_map.keys())
 ENTITY_TYPES = list(entity_type_map.keys())
@@ -1499,6 +1550,26 @@ if ({{ cond }}) {
     {{ writer }}.write(v);
 {%- endif %}
 });
+{%- elif field.type().is_struct %}
+{%- if field.nullable() %}
+{%- if flex %}
+if ({{ fname }}) {
+    {{ writer }}.write_unsigned_varint(1);
+{{- struct_serde(field.type(), methods, "(*" ~ fname ~ ")", writer) | indent }}
+} else {
+    {{ writer }}.write_unsigned_varint(0);
+}
+{%- else %}
+if ({{ fname }}) {
+    {{ writer }}.write(int8_t(1));
+{{- struct_serde(field.type(), methods, "(*" ~ fname ~ ")", writer) | indent }}
+} else {
+    {{ writer }}.write(int8_t(-1));
+}
+{%- endif %}
+{%- else %}
+{{- struct_serde(field.type(), methods, fname, writer) }}
+{%- endif %}
 {%- elif flex and field.type().potentially_flexible_type %}
 {{ writer }}.write_flex({{ fname }});
 {%- else %}
@@ -1534,7 +1605,23 @@ if ({{ cond }}) {
 });
 {%- else %}
 {%- if field.type().is_struct -%}
-{{- struct_serde(field.type(), methods, "v." ~ field.name) -}}
+{%- if field.nullable() %}
+{%- if flex %}
+if (reader.read_unsigned_varint() > 0) {
+    {{ field.type().name }} tmp;
+{{- struct_serde(field.type(), methods, "tmp") | indent }}
+    {{ fname }} = std::move(tmp);
+}
+{%- else %}
+if (reader.read_int8() >= 0) {
+    {{ field.type().name }} tmp;
+{{- struct_serde(field.type(), methods, "tmp") | indent }}
+    {{ fname }} = std::move(tmp);
+}
+{%- endif %}
+{%- else -%}
+{{- struct_serde(field.type(), methods, fname) -}}
+{%- endif -%}
 {%- else -%}
 {%- set decoder, named_type = field.decoder(flex) %}
 {%- if named_type == None %}
