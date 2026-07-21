@@ -333,6 +333,11 @@ ss::future<result<append_entries_reply>> append_entries_queue::append_entries(
     auto holder = _gate.hold();
     return _dispatched.wait([this, sz] { return can_buffer_next_request(sz); })
       .then([this, r = std::move(r), opts = std::move(opts)]() mutable {
+          if (_as.abort_requested()) {
+              // stop() could have occurred during the yield, recheck abort
+              return ss::make_ready_future<result<append_entries_reply>>(
+                raft::errc::shutting_down);
+          }
           /// consensus is no longer responsible for tracking memory usage and
           /// dispatch ordering after this point
           opts.resource_units.reset();
@@ -346,6 +351,7 @@ ss::future<result<append_entries_reply>> append_entries_queue::append_entries(
 }
 ss::future<> append_entries_queue::stop() {
     vlog(_logger.debug, "stopping append entries queue");
+    _as.request_abort();
     _new_requests.broken();
     _dispatched.broken();
     _inflight_requests_sem.broken();
