@@ -2074,8 +2074,8 @@ configuration::configuration()
       *this,
       true,
       "cloud_storage_enabled",
-      "Enable object storage. Must be set to `true` to use Tiered Storage or "
-      "Remote Read Replicas.",
+      "Enable object storage. Must be set to `true` to use Tiered Storage, "
+      "Remote Read Replicas, or Cloud Topics.",
       meta{.needs_restart = needs_restart::yes, .visibility = visibility::user},
       false)
   , cloud_storage_enable_remote_read(
