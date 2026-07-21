@@ -12,6 +12,7 @@
 #include "cluster_link/replication/types.h"
 #include "model/tests/random_batch.h"
 #include "random/generators.h"
+#include "test_utils/async.h"
 #include "test_utils/randoms.h"
 #include "test_utils/test.h"
 
@@ -126,6 +127,24 @@ class test_data_sink_factory : public data_sink_factory {
     }
 };
 
+// Mimics local_partition_data_sink_factory when the partition is no longer
+// resident on this shard: make_sink throws while throw_on_make is set (e.g.
+// leadership moved away between the residency check at start_replicator() time
+// and reconcile_ntp_once() actually running), and succeeds once it is cleared.
+class toggle_data_sink_factory : public data_sink_factory {
+public:
+    std::unique_ptr<data_sink> make_sink(const model::ntp& ntp) override {
+        ++make_sink_calls;
+        if (throw_on_make) {
+            throw std::runtime_error(
+              fmt::format("Partition not found: {} on this shard", ntp));
+        }
+        return std::make_unique<test_data_sink>();
+    }
+    bool throw_on_make{true};
+    size_t make_sink_calls{0};
+};
+
 class LinkReplicationMgrFixture : public seastar_test {
     ss::future<> SetUpAsync() override {
         _mgr = std::make_unique<link_replication_manager>(
@@ -217,5 +236,44 @@ TEST_F_CORO(LinkReplicationMgrFixture, TestStartStopBackToBack) {
 
     co_await ss::when_all_succeed(std::move(start_f), std::move(stop_f));
 };
+
+// Reproduces CORE-16742: when the partition is no longer resident on this
+// shard by the time reconcile_ntp_once() runs, make_sink() throws. Previously
+// the throw escaped reconcile_ntp_once() (only replicator->start() was wrapped
+// in a try/catch, not the factory calls) and was dropped by spawn_with_gate,
+// leaking an exceptional future to the seastar reactor:
+//   "Exceptional future ignored: std::runtime_error (Partition not found ...)"
+// It also left the ntp stuck with in_progress set, so it could never be
+// reconciled again. Both are asserted below.
+TEST_F_CORO(seastar_test, PartitionNotResidentIsHandled) {
+    auto sink_factory = std::make_unique<toggle_data_sink_factory>();
+    auto* sink_factory_ptr = sink_factory.get();
+    auto mgr = std::make_unique<link_replication_manager>(
+      ss::default_scheduling_group(),
+      std::make_unique<test_config_provider>(),
+      std::make_unique<test_data_source_factory>(),
+      std::move(sink_factory));
+    co_await mgr->start();
+
+    model::ntp ntp{"kafka", "cloud-compacted-topic", model::partition_id{0}};
+
+    // make_sink() throws: no replicator starts, and no future is leaked
+    // (enforced by --fail-on-abandoned-failed-futures). Wait for the throwing
+    // path to actually run so the test still checks it if reconciliation is
+    // slow.
+    mgr->start_replicator(ntp, model::term_id{1});
+    co_await tests::cooperative_spin_wait_with_timeout(
+      5s, [&] { return sink_factory_ptr->make_sink_calls >= 1; });
+    ASSERT_TRUE_CORO(mgr->get_partition_offsets_report().empty());
+
+    // Leadership returns: the ntp must not be permanently stuck with
+    // in_progress set — a fresh start action must reconcile successfully.
+    sink_factory_ptr->throw_on_make = false;
+    mgr->start_replicator(ntp, model::term_id{2});
+    co_await tests::cooperative_spin_wait_with_timeout(
+      5s, [&] { return mgr->get_partition_offsets_report().size() == 1; });
+
+    co_await mgr->stop();
+}
 
 } // namespace cluster_link::replication
