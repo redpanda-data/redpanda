@@ -2316,6 +2316,253 @@ class PandaProxyConsumerGroupTest(PandaProxyEndpoints):
         self.logger.debug("Test offset commit: after second coordinator change")
         do_consumer_offset_commit(new_offset=1)
 
+    @cluster(num_nodes=3)
+    def test_consumer_group_fetch_after_prefix_trim(self):
+        """
+        CORE-16844: a fresh consumer group must recover once retention
+        moves the log start offset past 0, not fetch offset 0 forever.
+        """
+        num_records = 20
+        trim_offset = 10
+
+        self.logger.info(f"Producing {num_records} records to topic: {self.topic}")
+        # One produce call per record, so each lands in its own batch: real
+        # retention deletes whole segments, which are batch-aligned, so the
+        # new log start offset always lands on a batch boundary too. A
+        # single multi-record produce call would put everything in one
+        # batch, and trimming into the middle of it is not something
+        # retention does.
+        for i in range(num_records):
+            produce_result_raw = self._produce_topic(
+                self.topic,
+                json.dumps({"records": [{"value": {"i": i}, "partition": 0}]}),
+                headers=HTTP_PRODUCE_JSON_V2_TOPIC_HEADERS,
+            )
+            assert produce_result_raw.status_code == requests.codes.ok
+
+        self.logger.info(f"Trimming {self.topic}/0 prefix to offset {trim_offset}")
+        rpk = RpkTool(self.redpanda)
+        trim_result = rpk.trim_prefix(self.topic, offset=trim_offset, partitions=[0])
+        assert len(trim_result) == 1
+        assert trim_result[0].new_start_offset == trim_offset, trim_result[0]
+
+        self.logger.info("Create a consumer group with auto.offset.reset=earliest")
+        group_id = f"pandaproxy-group-{uuid.uuid4()}"
+        cc_res = self._create_consumer(group_id)
+        assert cc_res.status_code == requests.codes.ok
+        c0 = Consumer(cc_res.json(), self.logger)
+
+        sc_res = c0.subscribe([self.topic])
+        assert sc_res.status_code == requests.codes.no_content
+
+        self.logger.info(
+            "Fetch should recover from offset_out_of_range and return "
+            "records starting at the new log start offset"
+        )
+        # The out-of-range partition is reseeded to the new log start and the
+        # fetch recovers in-poll, so records arrive from the new log start
+        # offset. The initial group join may still yield an empty poll, so
+        # poll until they arrive.
+        fetch_result: list = []
+
+        def fetched_records():
+            cf_res = c0.fetch(headers=HTTP_CONSUMER_FETCH_JSON_V2_HEADERS)
+            assert cf_res.status_code == requests.codes.ok, (
+                f"Expected 200, got {cf_res.status_code}: {cf_res.text}"
+            )
+            fetch_result.extend(cf_res.json())
+            return len(fetch_result) > 0
+
+        wait_until(
+            fetched_records,
+            timeout_sec=30,
+            backoff_sec=0,
+            err_msg="consumer never recovered after prefix trim",
+        )
+        assert fetch_result[0]["offset"] == trim_offset, (
+            f"Expected first fetched record at offset {trim_offset}, "
+            f"got {fetch_result[0]['offset']}"
+        )
+
+    @cluster(num_nodes=3)
+    def test_consumer_group_fetch_no_data_loss_on_sibling_out_of_range(self):
+        """
+        CORE-16844: when one partition in a fetch round returns
+        offset_out_of_range, the whole round is discarded and retried so its
+        offset can be reseeded. A healthy sibling partition fetched in the
+        same round must NOT have its offset advanced by that discarded round:
+        its records were never delivered, and advancing past them would make
+        the retry skip them -- silent data loss. This exercises that decision
+        in consumer::fetch() end-to-end, across a partition that is trimmed
+        and one that is not.
+        """
+        topic = f"cg-sibling-{uuid.uuid4()}"
+        healthy_partition = 0
+        trimmed_partition = 1
+        num_records = 20
+        trim_offset = 10
+
+        self.logger.info(f"Creating 2-partition topic: {topic}")
+        rpk = RpkTool(self.redpanda)
+        rpk.create_topic(topic, partitions=2)
+
+        # One produce call per record, so each lands in its own batch and the
+        # trim offset falls on a batch boundary, matching what real retention
+        # (which only deletes whole, batch-aligned segments) produces.
+        self.logger.info(f"Producing {num_records} records to each partition")
+        for p in (healthy_partition, trimmed_partition):
+            for i in range(num_records):
+                produce_result_raw = self._produce_topic(
+                    topic,
+                    json.dumps({"records": [{"value": {"i": i}, "partition": p}]}),
+                    headers=HTTP_PRODUCE_JSON_V2_TOPIC_HEADERS,
+                )
+                assert produce_result_raw.status_code == requests.codes.ok
+
+        self.logger.info(
+            f"Trimming only {topic}/{trimmed_partition} to offset {trim_offset}"
+        )
+        trim_result = rpk.trim_prefix(
+            topic, offset=trim_offset, partitions=[trimmed_partition]
+        )
+        assert len(trim_result) == 1
+        assert trim_result[0].new_start_offset == trim_offset, trim_result[0]
+
+        self.logger.info("Create a consumer group with auto.offset.reset=earliest")
+        group_id = f"pandaproxy-group-{uuid.uuid4()}"
+        cc_res = self._create_consumer(group_id)
+        assert cc_res.status_code == requests.codes.ok
+        c0 = Consumer(cc_res.json(), self.logger)
+
+        sc_res = c0.subscribe([topic])
+        assert sc_res.status_code == requests.codes.no_content
+
+        # The healthy partition delivers offsets 0..num_records-1, the trimmed
+        # one delivers trim_offset..num_records-1.
+        expected = {
+            healthy_partition: set(range(num_records)),
+            trimmed_partition: set(range(trim_offset, num_records)),
+        }
+        expected_total = sum(len(v) for v in expected.values())
+
+        # Accumulate across fetches: a single fetch may not drain both
+        # partitions at once, and the first round is discarded and retried
+        # internally to recover from offset_out_of_range.
+        seen: dict[int, set[int]] = {
+            healthy_partition: set(),
+            trimmed_partition: set(),
+        }
+
+        def fetched_everything():
+            cf_res = c0.fetch(headers=HTTP_CONSUMER_FETCH_JSON_V2_HEADERS)
+            assert cf_res.status_code == requests.codes.ok, (
+                f"Expected 200, got {cf_res.status_code}: {cf_res.text}"
+            )
+            for r in cf_res.json():
+                seen[r["partition"]].add(r["offset"])
+            return sum(len(v) for v in seen.values()) >= expected_total
+
+        wait_until(
+            fetched_everything,
+            timeout_sec=30,
+            backoff_sec=0,
+            err_msg="Timed out before fetching all records from both partitions",
+        )
+
+        # The healthy sibling's records must all survive: if the discarded
+        # round had advanced its offset, offsets 0..trim_offset-1 would be
+        # missing here even though the fetch returned HTTP 200.
+        assert seen == expected, f"Expected {expected}, got {seen}"
+
+    @cluster(num_nodes=3)
+    def test_consumer_group_fetch_recovers_out_of_range_in_single_poll(self):
+        """
+        CORE-16844: once a consumer's fetch position is established, a fetch
+        that hits offset_out_of_range must recover and return the reseeded
+        records in the SAME poll, not return an empty poll and defer the data
+        to the next one. This matches the in-poll recovery of franz-go and the
+        Java (Confluent REST) consumer, both of which block the poll through
+        the internal reset+refetch. The consumer is drained first so the group
+        join -- which can itself yield an empty poll -- cannot be mistaken for
+        the out-of-range recovery under test.
+        """
+        num_records = 20
+        trim_offset = 30
+
+        # One produce call per record, so each lands in its own batch and the
+        # trim offset falls on a batch boundary (see the sibling test).
+        def produce(lo, hi):
+            for i in range(lo, hi):
+                produce_result_raw = self._produce_topic(
+                    self.topic,
+                    json.dumps({"records": [{"value": {"i": i}, "partition": 0}]}),
+                    headers=HTTP_PRODUCE_JSON_V2_TOPIC_HEADERS,
+                )
+                assert produce_result_raw.status_code == requests.codes.ok
+
+        self.logger.info(f"Producing {num_records} records to topic: {self.topic}")
+        produce(0, num_records)
+
+        self.logger.info("Create a consumer group with auto.offset.reset=earliest")
+        group_id = f"pandaproxy-group-{uuid.uuid4()}"
+        cc_res = self._create_consumer(group_id)
+        assert cc_res.status_code == requests.codes.ok
+        c0 = Consumer(cc_res.json(), self.logger)
+
+        sc_res = c0.subscribe([self.topic])
+        assert sc_res.status_code == requests.codes.no_content
+
+        # Drain the initial records: this completes the group join and advances
+        # the fetch position to num_records, so the only obstacle to the fetch
+        # below is the out-of-range condition we create next.
+        self.logger.info("Draining initial records to settle the group join")
+        drained: list = []
+
+        def drained_all():
+            cf_res = c0.fetch(headers=HTTP_CONSUMER_FETCH_JSON_V2_HEADERS)
+            assert cf_res.status_code == requests.codes.ok, (
+                f"Expected 200, got {cf_res.status_code}: {cf_res.text}"
+            )
+            drained.extend(cf_res.json())
+            return len(drained) >= num_records
+
+        wait_until(
+            drained_all,
+            timeout_sec=30,
+            backoff_sec=0,
+            err_msg="consumer never drained the initial records",
+        )
+
+        # Produce more, then trim past the settled fetch position so the next
+        # fetch asks for an offset below the new log start -> offset_out_of_range.
+        self.logger.info(f"Producing records {num_records}..{2 * num_records - 1}")
+        produce(num_records, 2 * num_records)
+
+        self.logger.info(f"Trimming {self.topic}/0 prefix to offset {trim_offset}")
+        rpk = RpkTool(self.redpanda)
+        trim_result = rpk.trim_prefix(self.topic, offset=trim_offset, partitions=[0])
+        assert len(trim_result) == 1
+        assert trim_result[0].new_start_offset == trim_offset, trim_result[0]
+
+        # A SINGLE fetch must recover and return records from the new log start
+        # offset. Before the in-poll fix this first fetch returned empty (the
+        # out-of-range partition was reseeded and stripped) and the data only
+        # arrived on a later poll.
+        self.logger.info("A single fetch must return the reseeded records")
+        cf_res = c0.fetch(headers=HTTP_CONSUMER_FETCH_JSON_V2_HEADERS)
+        assert cf_res.status_code == requests.codes.ok, (
+            f"Expected 200, got {cf_res.status_code}: {cf_res.text}"
+        )
+        recovered = cf_res.json()
+        assert len(recovered) > 0, (
+            "expected the out-of-range fetch to recover in a single poll, "
+            "got an empty response"
+        )
+        assert recovered[0]["offset"] == trim_offset, (
+            f"expected first recovered record at offset {trim_offset}, "
+            f"got {recovered[0]['offset']}"
+        )
+
 
 class PandaProxyCompressedBatchesTest(PandaProxyEndpoints):
     topics = [

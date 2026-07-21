@@ -9,6 +9,7 @@
 
 #include "kafka/client/consumer.h"
 
+#include "base/vassert.h"
 #include "kafka/client/assignment_plans.h"
 #include "kafka/client/broker.h"
 #include "kafka/client/configuration.h"
@@ -28,12 +29,19 @@
 #include "ssx/future-util.h"
 
 #include <seastar/core/gate.hh>
+#include <seastar/core/lowres_clock.hh>
 #include <seastar/core/sleep.hh>
+#include <seastar/core/when_all.hh>
+#include <seastar/coroutine/exception.hh>
 
+#include <algorithm>
 #include <chrono>
 #include <exception>
 #include <iterator>
+#include <optional>
+#include <ranges>
 #include <utility>
+#include <vector>
 
 namespace kafka::client {
 
@@ -77,6 +85,112 @@ reduce_fetch_response(fetch_response result, fetch_response val) {
       std::back_inserter(result.data.responses));
     return result;
 };
+
+/// \brief The outcome of dispatching a fetch to every assigned broker: the
+/// first dispatch-level failure (if any), and the response of every broker
+/// that did not fail.
+struct fetch_results {
+    std::exception_ptr dispatch_failure;
+    std::vector<std::pair<shared_broker_t, fetch_response>> responses;
+};
+
+fetch_results collect_fetch_results(
+  const std::vector<shared_broker_t>& req_brokers,
+  std::vector<ss::future<fetch_response>> results) {
+    fetch_results out;
+    out.responses.reserve(results.size());
+    for (auto&& [broker, fut] : std::views::zip(req_brokers, results)) {
+        if (fut.failed()) {
+            auto ex = fut.get_exception();
+            if (!out.dispatch_failure) {
+                out.dispatch_failure = std::move(ex);
+            }
+            continue;
+        }
+        out.responses.emplace_back(broker, fut.get());
+    }
+    return out;
+}
+
+/// \brief Reseed every offset_out_of_range partition across every broker's
+/// response to the log_start_offset the broker reported (pandaproxy only
+/// allows auto.offset.reset=earliest, which is exactly the log start).
+///
+/// \return true if at least one partition was reseeded.
+bool reseed_out_of_range(
+  absl::node_hash_map<shared_broker_t, fetch_session>& fetch_sessions,
+  std::vector<std::pair<shared_broker_t, fetch_response>>& responses) {
+    bool reseeded = false;
+    for (auto& [broker, res] : responses) {
+        for (auto& part : res) {
+            if (
+              part.partition_response->error_code
+              == error_code::offset_out_of_range) {
+                model::topic_partition tp{
+                  part.partition->topic,
+                  part.partition_response->partition_index};
+                const auto log_start
+                  = part.partition_response->log_start_offset;
+                // The broker sets log_start_offset alongside
+                // offset_out_of_range (see kafka::do_read_from_ntp), so a
+                // negative value here is a broker-contract violation: assert it
+                // in debug, and in release skip the reseed rather than set the
+                // fetch position to a negative offset and loop.
+                dassert(
+                  log_start >= model::offset{0},
+                  "offset_out_of_range with invalid log_start_offset {} for {}",
+                  log_start,
+                  tp);
+                if (log_start < model::offset{0}) {
+                    vlog(
+                      kclog.warn,
+                      "offset_out_of_range with invalid log_start_offset for "
+                      "{}; skipping reseed",
+                      tp);
+                    continue;
+                }
+                fetch_sessions[broker].reseed(tp, log_start);
+                reseeded = true;
+            }
+        }
+    }
+    return reseeded;
+}
+
+/// \brief Drop offset_out_of_range partitions from a fetch response.
+///
+/// They were reseeded (see reseed_out_of_range) and carry no records, so the
+/// caller delivers the remaining healthy partitions now and the reseeded ones
+/// resume from the corrected offset on the client's next fetch. Stripping them
+/// also keeps the pandaproxy serializer -- which rejects any partition error --
+/// from turning a recoverable round into an HTTP error.
+void strip_out_of_range(fetch_response& res) {
+    chunked_vector<fetch_response::partition> topics;
+    for (auto& topic : res.data.responses) {
+        chunked_vector<fetch_response::partition_response> partitions;
+        for (auto& part : topic.partitions) {
+            if (part.error_code != error_code::offset_out_of_range) {
+                partitions.push_back(std::move(part));
+            }
+        }
+        if (!partitions.empty()) {
+            topic.partitions = std::move(partitions);
+            topics.push_back(std::move(topic));
+        }
+    }
+    res.data.responses = std::move(topics);
+}
+
+/// \brief Whether a fetch response carries any records to deliver.
+///
+/// empty() is non-destructive, so this does not consume the batch reader the
+/// caller later serializes.
+bool has_records(fetch_response& res) {
+    return std::any_of(res.begin(), res.end(), [](const auto& part) {
+        const auto& record_set = part.partition_response->records;
+        return record_set && !record_set->empty();
+    });
+}
 
 } // namespace detail
 
@@ -425,14 +539,14 @@ consumer::dispatch_fetch(broker_reqs_t::value_type br) {
         throw broker_error(broker->id(), res.data.error_code);
     }
 
-    _fetch_sessions[broker].apply(res);
+    // Session state is deliberately not applied here: whether the tracked
+    // offsets may advance depends on the responses of ALL brokers, which
+    // only consumer::fetch() has in hand.
     co_return res;
 }
 
-ss::future<fetch_response> consumer::fetch(
+consumer::broker_reqs_t consumer::build_fetch_requests(
   std::chrono::milliseconds timeout, std::optional<int32_t> max_bytes) {
-    refresh_inactivity_timer();
-    // Split requests by broker
     broker_reqs_t broker_reqs;
     for (const auto& [t, ps] : _assignment) {
         for (const auto& p : ps) {
@@ -474,17 +588,105 @@ ss::future<fetch_response> consumer::fetch(
                   _config.fetch_max_bytes)});
         }
     }
+    return broker_reqs;
+}
 
-    co_return co_await ss::map_reduce(
-      std::make_move_iterator(broker_reqs.begin()),
-      std::make_move_iterator(broker_reqs.end()),
-      [this](broker_reqs_t::value_type br) {
-          return dispatch_fetch(std::move(br));
-      },
-      fetch_response{
-        .data
-        = {.throttle_time_ms{}, .error_code = error_code::none, .session_id = kafka::invalid_fetch_session_id}},
-      detail::reduce_fetch_response);
+ss::future<std::pair<fetch_response, bool>> consumer::fetch_round(
+  std::chrono::milliseconds timeout, std::optional<int32_t> max_bytes) {
+    auto broker_reqs = build_fetch_requests(timeout, max_bytes);
+
+    // Dispatch to all brokers concurrently, then wait for every result
+    // before touching any session state.
+    std::vector<shared_broker_t> req_brokers;
+    std::vector<ss::future<fetch_response>> dispatched;
+    req_brokers.reserve(broker_reqs.size());
+    dispatched.reserve(broker_reqs.size());
+    for (auto& br : broker_reqs) {
+        req_brokers.push_back(br.first);
+        dispatched.push_back(dispatch_fetch(std::move(br)));
+    }
+    auto results = co_await ss::when_all(dispatched.begin(), dispatched.end());
+
+    auto [dispatch_failure, responses] = detail::collect_fetch_results(
+      req_brokers, std::move(results));
+
+    // Out-of-range partitions are reseeded to the broker-reported
+    // log_start_offset (pandaproxy only allows auto.offset.reset=earliest,
+    // i.e. the log start). They carry no records and are stripped below.
+    const bool reseeded = detail::reseed_out_of_range(
+      _fetch_sessions, responses);
+
+    // A dispatch failure means a whole broker's response never arrived and the
+    // topology may be stale, so discard the round and throw: the retry in
+    // client::consumer_fetch() re-fetches and refreshes metadata. No offset
+    // may advance here -- those records were never delivered, and advancing
+    // would make the retry skip them (silent data loss). discard() still
+    // advances each session's epoch to stay in step with the broker.
+    if (dispatch_failure) {
+        for (auto& [broker, res] : responses) {
+            _fetch_sessions[broker].discard(res);
+        }
+        co_await ss::coroutine::return_exception_ptr(
+          std::move(dispatch_failure));
+    }
+
+    // Deliver the healthy partitions: apply() advances the offsets of
+    // partitions that returned records and skips the out-of-range ones, which
+    // were reseeded above and are stripped below.
+    for (auto& [broker, res] : responses) {
+        _fetch_sessions[broker].apply(res);
+    }
+
+    fetch_response result{
+      .data = {
+        .throttle_time_ms{},
+        .error_code = error_code::none,
+        .session_id = kafka::invalid_fetch_session_id}};
+    for (auto& [broker, res] : responses) {
+        result = detail::reduce_fetch_response(
+          std::move(result), std::move(res));
+    }
+    detail::strip_out_of_range(result);
+    co_return std::pair{std::move(result), reseeded};
+}
+
+ss::future<fetch_response> consumer::fetch(
+  std::chrono::milliseconds timeout, std::optional<int32_t> max_bytes) {
+    refresh_inactivity_timer();
+
+    // An out-of-range partition is reseeded to the log start and stripped from
+    // the response (the pandaproxy serializer rejects any partition error), so
+    // a round whose only outcome was the reseed carries no records. Rather than
+    // return that empty round -- forcing the client to poll again for data that
+    // already exists at the reseeded offset -- repeat the round within the
+    // caller's timeout budget, exactly what the client's next poll would do.
+    // This mirrors the timer-bounded do/while in the Java consumer's poll()
+    // (Confluent REST proxy): a round that delivered records returns at once,
+    // and if the budget is spent mid-recovery the empty round is returned and
+    // the reseeded partition resumes on the next poll.
+    // Always run at least one round: a zero or already-elapsed budget -- a
+    // non-blocking timeout=0 poll, or a retry after the budget was spent --
+    // must still issue one (non-blocking, max_wait_ms=0) fetch rather than give
+    // up with an empty response. The deadline is therefore checked after the
+    // round, not before.
+    const auto deadline = ss::lowres_clock::now() + timeout;
+    for (;;) {
+        const auto remaining = std::max(
+          deadline - ss::lowres_clock::now(),
+          ss::lowres_clock::duration::zero());
+        auto [result, reseeded] = co_await fetch_round(
+          std::chrono::duration_cast<std::chrono::milliseconds>(remaining),
+          max_bytes);
+
+        // Deliver as soon as there is data or when nothing was reseeded (a
+        // genuine empty long-poll). Otherwise repeat to resolve a round that
+        // reseeded but delivered nothing, until the timeout budget is spent.
+        if (
+          detail::has_records(result) || !reseeded
+          || ss::lowres_clock::now() >= deadline) {
+            co_return std::move(result);
+        }
+    }
 }
 
 template<typename request_factory>
