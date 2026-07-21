@@ -394,9 +394,6 @@ inline void iobuf::create_new_fragment(size_t sz) {
 /// as an empty details::io_fragment
 inline void iobuf::reserve_memory(size_t reservation) {
     if (auto b = available_bytes(); b < reservation) {
-        if (b > 0) {
-            _frags.back().trim();
-        }
         create_new_fragment(reservation); // make space if not enough
     }
 }

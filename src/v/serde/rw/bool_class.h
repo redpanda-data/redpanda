@@ -9,11 +9,30 @@
 
 #pragma once
 
+#include "serde/rw/fixed.h"
 #include "serde/rw/rw.h"
 
 #include <cinttypes>
 
 namespace serde {
+
+namespace detail {
+
+template<typename Tag>
+requires(
+  !has_nonmember_write_nested<ss::bool_class<Tag>>
+  && !disable_fixed_serde_v<ss::bool_class<Tag>>)
+struct fixed_serde_traits<ss::bool_class<Tag>> {
+    static constexpr bool supported = true;
+    static constexpr size_t size = sizeof(int8_t);
+    static constexpr bool requires_validation = false;
+
+    static void write(fixed_writer& out, ss::bool_class<Tag> value) {
+        out.write(static_cast<int8_t>(bool(value)));
+    }
+};
+
+} // namespace detail
 
 template<typename Tag>
 void tag_invoke(tag_t<write_tag>, iobuf& out, ss::bool_class<Tag> t) {

@@ -31,6 +31,9 @@ namespace serde {
 //   std::size_t const bytes_left_limit) {
 //     t = ...; // read from `in` to `t`
 // }
+//
+// Writers that change the canonical encoding of an otherwise fixed-width type
+// must specialize `disable_fixed_serde_v<T>` to true.
 
 template<auto& CPO>
 using tag_t = std::remove_cvref_t<decltype(CPO)>;
