@@ -359,6 +359,13 @@ class EndToEndCloudTopicsBase(EndToEndTest):
         extents that have no foldable neighbour — a lone small extent between
         two ~`max_target_size` extents cannot be merged without exceeding the
         cap. Those are an expected, irreducible outcome, not a leveling defect.
+
+        The partition's tail run — the trailing consecutive undersized
+        extents — is likewise exempt while its combined size is below the
+        undersized threshold: leveling deliberately holds it back until its
+        rewrite can produce a healthy extent, since folding it earlier would
+        just emit another undersized extent that snowballs as new data lands
+        behind it.
         """
         by_partition = ct_utils.get_l1_extent_lengths_by_partition(
             self.admin, topic=topic
@@ -383,7 +390,19 @@ class EndToEndCloudTopicsBase(EndToEndTest):
                 f"{max_target_size}B soft cap): {oversized}"
             )
 
+            # Locate the tail run (trailing consecutive undersized extents).
+            # If its combined size cannot yet fill a healthy extent, leveling
+            # holds it back on purpose; exempt pairs within it.
+            tail_start = len(lengths)
+            while tail_start > 0 and lengths[tail_start - 1] < min_healthy:
+                tail_start -= 1
+            if sum(lengths[tail_start:]) >= min_healthy:
+                # The tail run is big enough to level; no exemption.
+                tail_start = len(lengths)
+
             for i in range(len(lengths) - 1):
+                if i >= tail_start:
+                    continue
                 a, b = lengths[i], lengths[i + 1]
                 foldable = (
                     a < min_healthy and b < min_healthy and a + b <= max_target_size
