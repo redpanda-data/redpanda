@@ -201,6 +201,16 @@ std::string_view error_code_to_str(error_code error) {
         return "unknown_topic_id";
     case error_code::transactional_id_not_found:
         return "transactional_id_not_found";
+    case error_code::fenced_member_epoch:
+        return "fenced_member_epoch";
+    case error_code::unreleased_instance_id:
+        return "unreleased_instance_id";
+    case error_code::unsupported_assignor:
+        return "unsupported_assignor";
+    case error_code::stale_member_epoch:
+        return "stale_member_epoch";
+    case error_code::invalid_regular_expression:
+        return "invalid_regular_expression";
     default:
         return "unknown_error_code";
     }
@@ -319,6 +329,11 @@ bool is_retriable(error_code error) {
     case error_code::duplicate_resource:
     case error_code::unacceptable_credential:
     case error_code::transactional_id_not_found:
+    case error_code::fenced_member_epoch:
+    case error_code::unreleased_instance_id:
+    case error_code::unsupported_assignor:
+    case error_code::stale_member_epoch:
+    case error_code::invalid_regular_expression:
         break;
     }
     return false;

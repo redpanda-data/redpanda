@@ -113,6 +113,11 @@ inline bool is_retriable_error(kafka::error_code ec) {
     case error_code::duplicate_resource:
     case error_code::unacceptable_credential:
     case error_code::transactional_id_not_found:
+    case error_code::fenced_member_epoch:
+    case error_code::unreleased_instance_id:
+    case error_code::unsupported_assignor:
+    case error_code::stale_member_epoch:
+    case error_code::invalid_regular_expression:
         return false;
     }
 }
