@@ -38,7 +38,7 @@ health_manager::health_manager(
   ss::sharded<ss::abort_source>& as)
   : _self(self)
   , _target_replication_factor(target_replication_factor)
-  , _tick_interval(tick_interval)
+  , _tick_jitter(tick_interval)
   , _max_concurrent_moves(std::move(max_concurrent_moves))
   , _topics(topics)
   , _topics_frontend(topics_frontend)
@@ -117,11 +117,12 @@ void health_manager::submit_reconcile() {
 
 ss::future<> health_manager::reconcile_loop(ss::abort_source& executor_as) {
     while (!executor_as.abort_requested()) {
+        auto next_pass = _tick_jitter.next_duration();
         auto cluster_leader = _leaders.local().get_leader(
           model::controller_ntp);
         if (cluster_leader != _self) {
             vlog(clusterlog.trace, "Health: skipping reconcile as non-leader");
-            if (co_await sleep_or_aborted(_tick_interval, executor_as)) {
+            if (co_await sleep_or_aborted(next_pass, executor_as)) {
                 co_return;
             }
             continue;
@@ -134,7 +135,7 @@ ss::future<> health_manager::reconcile_loop(ss::abort_source& executor_as) {
             vlog(clusterlog.info, "Health manager caught error {}", e);
         }
 
-        if (co_await sleep_or_aborted(_tick_interval, executor_as)) {
+        if (co_await sleep_or_aborted(next_pass, executor_as)) {
             co_return;
         }
     }

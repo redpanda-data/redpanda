@@ -13,6 +13,7 @@
 #include "cluster/fwd.h"
 #include "config/property.h"
 #include "model/metadata.h"
+#include "random/simple_time_jitter.h"
 #include "ssx/single_fiber_executor.h"
 
 #include <seastar/core/abort_source.hh>
@@ -60,7 +61,7 @@ private:
 
     model::node_id _self;
     size_t _target_replication_factor;
-    std::chrono::milliseconds _tick_interval;
+    simple_time_jitter<clock_type, std::chrono::milliseconds> _tick_jitter;
     config::binding<size_t> _max_concurrent_moves;
     ss::sharded<topic_table>& _topics;
     ss::sharded<topics_frontend>& _topics_frontend;
