@@ -154,43 +154,23 @@ ss::future<> health_manager::do_reconcile(ss::abort_source& as) {
         co_return;
     }
 
-    /*
-     * we try to be conservative here. if something goes wrong we'll
-     * back off and wait before trying to fix replication for any
-     * other internal topics.
-     */
-    auto ok = co_await ensure_topic_replication(
-      model::kafka_consumer_offsets_nt, as);
+    const std::array<model::topic_namespace_view, 8> internal_topics{
+      model::kafka_consumer_offsets_nt,
+      model::id_allocator_nt,
+      model::tx_manager_nt,
+      model::schema_registry_nt,
+      model::wasm_binaries_nt,
+      model::transform_offsets_nt,
+      model::kafka_audit_logging_nt,
+      model::transform_log_internal_nt,
+    };
 
-    if (ok) {
-        ok = co_await ensure_topic_replication(model::id_allocator_nt, as);
+    std::vector<ss::future<bool>> reconciles;
+    reconciles.reserve(internal_topics.size());
+    for (auto topic : internal_topics) {
+        reconciles.push_back(ensure_topic_replication(topic, as));
     }
-
-    if (ok) {
-        ok = co_await ensure_topic_replication(model::tx_manager_nt, as);
-    }
-
-    if (ok) {
-        ok = co_await ensure_topic_replication(model::schema_registry_nt, as);
-    }
-
-    if (ok) {
-        ok = co_await ensure_topic_replication(model::wasm_binaries_nt, as);
-    }
-
-    if (ok) {
-        ok = co_await ensure_topic_replication(model::transform_offsets_nt, as);
-    }
-
-    if (ok) {
-        ok = co_await ensure_topic_replication(
-          model::kafka_audit_logging_nt, as);
-    }
-
-    if (ok) {
-        ok = co_await ensure_topic_replication(
-          model::transform_log_internal_nt, as);
-    }
+    co_await ss::when_all_succeed(reconciles.begin(), reconciles.end());
 }
 
 ss::future<bool> health_manager::sleep_or_aborted(
