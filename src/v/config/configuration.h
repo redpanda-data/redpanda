@@ -192,6 +192,9 @@ struct configuration final : public config_store {
     property<std::chrono::milliseconds> group_max_session_timeout_ms;
     property<std::chrono::milliseconds> group_initial_rebalance_delay;
     property<std::chrono::milliseconds> group_new_member_join_timeout;
+    development_feature_property<bool> group_consumer_protocol_enabled;
+    property<std::chrono::milliseconds> group_consumer_session_timeout_ms;
+    property<std::chrono::milliseconds> group_consumer_heartbeat_interval_ms;
     property<std::optional<std::chrono::seconds>> group_offset_retention_sec;
     property<std::chrono::milliseconds> group_offset_retention_check_ms;
     property<bool> legacy_group_offset_retention_enabled;

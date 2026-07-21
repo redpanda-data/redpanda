@@ -650,6 +650,35 @@ configuration::configuration()
       "Timeout for new member joins.",
       {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
       30'000ms)
+  , group_consumer_protocol_enabled(
+      *this,
+      "group_consumer_protocol_enabled",
+      "Enable the next generation consumer group rebalance protocol "
+      "(KIP-848). When enabled, the ConsumerGroupHeartbeat and "
+      "ConsumerGroupDescribe APIs are advertised and consumer clients "
+      "configured with group.protocol=consumer can form groups using "
+      "coordinator-side assignment. Gated as a development feature: group "
+      "membership is not yet persisted across coordinator failover and "
+      "migration between the classic and consumer protocols is not "
+      "supported.",
+      {.needs_restart = needs_restart::no, .visibility = visibility::user},
+      false)
+  , group_consumer_session_timeout_ms(
+      *this,
+      "group_consumer_session_timeout_ms",
+      "The timeout to detect client failures for consumers using the next "
+      "generation consumer group protocol (KIP-848). The session timeout is "
+      "controlled by the group coordinator rather than the client.",
+      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
+      45'000ms)
+  , group_consumer_heartbeat_interval_ms(
+      *this,
+      "group_consumer_heartbeat_interval_ms",
+      "The heartbeat interval given to members of consumer groups using the "
+      "next generation consumer group protocol (KIP-848). The interval is "
+      "controlled by the group coordinator rather than the client.",
+      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
+      5000ms)
   , group_offset_retention_sec(
       *this,
       "group_offset_retention_sec",
