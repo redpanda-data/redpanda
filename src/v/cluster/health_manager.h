@@ -13,11 +13,11 @@
 #include "cluster/fwd.h"
 #include "config/property.h"
 #include "model/metadata.h"
+#include "ssx/single_fiber_executor.h"
 
 #include <seastar/core/abort_source.hh>
-#include <seastar/core/gate.hh>
 #include <seastar/core/sharded.hh>
-#include <seastar/core/timer.hh>
+#include <seastar/util/noncopyable_function.hh>
 
 #include <chrono>
 
@@ -50,8 +50,13 @@ public:
 
 private:
     ss::future<bool> ensure_topic_replication(model::topic_namespace_view);
-    void tick();
-    ss::future<> do_tick();
+    // Submits a fresh reconcile run, interrupting any run in flight.
+    void submit_reconcile();
+    ss::future<> reconcile_loop(ss::abort_source&);
+    ss::future<> do_reconcile();
+    // Returns true if interrupted via the abort source.
+    ss::future<bool>
+    sleep_or_aborted(std::chrono::milliseconds, ss::abort_source&);
 
     model::node_id _self;
     size_t _target_replication_factor;
@@ -62,8 +67,9 @@ private:
     ss::sharded<partition_leaders_table>& _leaders;
     ss::sharded<members_table>& _members;
     ss::sharded<ss::abort_source>& _as;
-    ss::gate _gate;
-    ss::timer<clock_type> _timer;
+    ssx::single_fiber_executor<
+      ss::noncopyable_function<ss::future<>(ss::abort_source&)>>
+      _reconciliation_executor;
 };
 
 } // namespace cluster

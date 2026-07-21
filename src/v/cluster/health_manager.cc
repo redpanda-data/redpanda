@@ -22,7 +22,7 @@
 #include "model/transform.h"
 
 #include <seastar/core/sleep.hh>
-#include <seastar/core/timer.hh>
+#include <seastar/coroutine/as_future.hh>
 
 namespace cluster {
 
@@ -44,18 +44,16 @@ health_manager::health_manager(
   , _topics_frontend(topics_frontend)
   , _leaders(leaders)
   , _members(members)
-  , _as(as)
-  , _timer([this] { tick(); }) {}
+  , _as(as) {}
 
 ss::future<> health_manager::start() {
-    _timer.arm(_tick_interval);
+    submit_reconcile();
     co_return;
 }
 
 ss::future<> health_manager::stop() {
     vlog(clusterlog.info, "Stopping Health Manager...");
-    _timer.cancel();
-    return _gate.close();
+    co_await _reconciliation_executor.drain();
 }
 
 ss::future<bool>
@@ -110,26 +108,42 @@ health_manager::ensure_topic_replication(model::topic_namespace_view topic) {
     co_return true;
 }
 
-void health_manager::tick() {
-    ssx::background = ssx::spawn_with_gate_then(_gate, [this] {
-                          return do_tick();
-                      }).handle_exception([this](const std::exception_ptr& e) {
-        vlog(clusterlog.info, "Health manager caught error {}", e);
-        _timer.arm(_tick_interval * 2);
-    });
+void health_manager::submit_reconcile() {
+    ssx::background = _reconciliation_executor.submit(
+      [this](ss::abort_source& executor_as) {
+          return reconcile_loop(executor_as);
+      });
 }
 
-ss::future<> health_manager::do_tick() {
-    auto cluster_leader = _leaders.local().get_leader(model::controller_ntp);
-    if (cluster_leader != _self) {
-        vlog(clusterlog.trace, "Health: skipping tick as non-leader");
-        co_return;
-    }
+ss::future<> health_manager::reconcile_loop(ss::abort_source& executor_as) {
+    while (!executor_as.abort_requested()) {
+        auto cluster_leader = _leaders.local().get_leader(
+          model::controller_ntp);
+        if (cluster_leader != _self) {
+            vlog(clusterlog.trace, "Health: skipping reconcile as non-leader");
+            if (co_await sleep_or_aborted(_tick_interval, executor_as)) {
+                co_return;
+            }
+            continue;
+        }
 
+        try {
+            co_await do_reconcile();
+        } catch (...) {
+            auto e = std::current_exception();
+            vlog(clusterlog.info, "Health manager caught error {}", e);
+        }
+
+        if (co_await sleep_or_aborted(_tick_interval, executor_as)) {
+            co_return;
+        }
+    }
+}
+
+ss::future<> health_manager::do_reconcile() {
     // Only ensure replication if we have a big enough cluster, to avoid
     // spamming log with replication complaints on single node cluster
     if (_members.local().node_count() < 3) {
-        _timer.arm(_tick_interval);
         co_return;
     }
 
@@ -169,8 +183,17 @@ ss::future<> health_manager::do_tick() {
         ok = co_await ensure_topic_replication(
           model::transform_log_internal_nt);
     }
+}
 
-    _timer.arm(_tick_interval);
+ss::future<bool> health_manager::sleep_or_aborted(
+  std::chrono::milliseconds duration, ss::abort_source& executor_as) {
+    auto slept = co_await ss::coroutine::as_future(
+      ss::sleep_abortable<clock_type>(duration, executor_as));
+    if (slept.failed()) {
+        slept.ignore_ready_future();
+        co_return true;
+    }
+    co_return false;
 }
 
 } // namespace cluster
