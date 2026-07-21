@@ -12,6 +12,7 @@
 #include "cloud_io/tests/s3_imposter.h"
 #include "cloud_storage_clients/client_pool.h"
 #include "cloud_storage_clients/tests/client_pool_builder.h"
+#include "test_utils/metrics.h"
 
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/future.hh>
@@ -26,6 +27,8 @@
 #include <seastar/util/later.hh>
 
 #include <boost/test/tools/interface.hpp>
+
+#include <vector>
 
 using namespace std::chrono_literals;
 using namespace cloud_storage_clients::tests;
@@ -289,4 +292,55 @@ SEASTAR_THREAD_TEST_CASE(test_client_pool_max_upstreams_limit) {
           return std::string_view(e.what()).find("registry entry limit")
                  != std::string_view::npos;
       });
+}
+
+// The client_pool_utilization gauge must reflect the live idle state of the
+// pool. It is refreshed only when a client is taken (acquire / lend to a
+// peer) and when a peer returns a borrow, but never on the normal local
+// release. So after leasing and then returning every client, the pool is
+// genuinely fully idle while the gauge stays pinned at its acquire-time
+// value.
+SEASTAR_THREAD_TEST_CASE(test_client_pool_utilization_reflects_release) {
+    constexpr size_t num_connections_per_shard = 4;
+
+    ss::sharded<cloud_storage_clients::client_pool> pool;
+    auto stop_guard = test_pool_builder
+                        .connections_per_shard(num_connections_per_shard)
+                        .build(pool)
+                        .get();
+
+    ss::abort_source as;
+
+    // Reads the same gauge value that Prometheus scrapes, on this shard. The
+    // value-map key has no "vectorized_" prefix; that is added at scrape time.
+    auto reported_utilization = [] {
+        return test_utils::find_metric_value<uint64_t>(
+          "cloud_client_client_pool_utilization",
+          ss::metrics::default_handle(),
+          {{"endpoint", "localhost"}, {"region", "us-east-1"}});
+    };
+
+    // Fully idle at rest reads 0%. Also guards the gauge against being read
+    // before it is ever written (it was previously an uninitialized field).
+    BOOST_REQUIRE(reported_utilization().has_value());
+    BOOST_REQUIRE_EQUAL(reported_utilization().value(), 0);
+
+    // Lease every client: the pool is fully in use and the gauge tracks it.
+    std::vector<cloud_storage_clients::client_pool::client_lease> leases;
+    for (size_t i = 0; i < num_connections_per_shard; ++i) {
+        leases.push_back(pool.local().acquire(test_bucket, as).get());
+    }
+    BOOST_REQUIRE_EQUAL(pool.local().idle_count(), 0);
+    BOOST_REQUIRE_EQUAL(reported_utilization().value(), 100);
+
+    // Return the clients one at a time. The gauge must track the live idle
+    // count on every release, with no intervening acquire to refresh it --
+    // the shape of the bug, which stuck at 100 until the next acquire.
+    const uint64_t expected_after_release[] = {75, 50, 25, 0};
+    for (size_t i = 0; i < num_connections_per_shard; ++i) {
+        leases.pop_back();
+        BOOST_REQUIRE_EQUAL(pool.local().idle_count(), i + 1);
+        BOOST_REQUIRE_EQUAL(
+          reported_utilization().value(), expected_after_release[i]);
+    }
 }

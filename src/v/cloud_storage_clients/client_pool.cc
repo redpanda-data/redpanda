@@ -428,7 +428,6 @@ ss::future<client_pool::client_lease> client_pool::acquire(
     }
     vassert(client.has_value(), "'acquire' invariant is broken");
 
-    update_usage_stats();
     vlog(
       pool_log.debug,
       "client lease is acquired, own usage stat: {}, is-borrowed: {}",
@@ -586,12 +585,6 @@ auto client_pool::acquire_with_timeout(
       bucket, cloud_io::group_id::default_group, as, timeout, std::move(ctx));
 }
 
-void client_pool::update_usage_stats() {
-    if (_probe) {
-        _probe->register_utilization(normalized_num_clients_in_use());
-    }
-}
-
 size_t client_pool::normalized_num_clients_in_use() const {
     // Here we won't be showing that some clients are available if previously
     // the pool was depleted. This is needed to prevent borrowing from
@@ -616,7 +609,6 @@ bool client_pool::borrow_one(unsigned other) noexcept {
     // TODO: do not use the bottommost (oldest) element. Find the one
     // with expired connection.
     auto c = pop_least_recently_used();
-    update_usage_stats();
     c->shutdown();
     ssx::spawn_with_gate(_bg_gate, [c] { return c->stop().finally([c] {}); });
     return true;
@@ -629,7 +621,6 @@ void client_pool::return_one(
       _idle_clients.size() < _capacity,
       "tried to return a borrowed client but the pool is full");
     emplace_idle(up);
-    update_usage_stats();
     vlog(
       pool_log.debug,
       "creating new client, current usage is {}/{}",
@@ -740,6 +731,16 @@ void client_pool::populate_client_pool(upstream_registry::handle& up) {
     _idle_clients.reserve(_capacity);
     for (size_t i = 0; i < _capacity; i++) {
         emplace_idle(up);
+    }
+
+    if (_probe) {
+        // Sample utilization live at scrape time. Capture a weak reference so
+        // the gauge stays safe once the pool is gone: the probe is owned by
+        // the upstream registry and outlives us. Mirrors the lease deleter.
+        _probe->set_pool_utilization_source(
+          [w = weak_from_this()]() -> uint64_t {
+              return w ? w->normalized_num_clients_in_use() : 0;
+          });
     }
 
     // Be defensive in checking that we properly synchronized access to

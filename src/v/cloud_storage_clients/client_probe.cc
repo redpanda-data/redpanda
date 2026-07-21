@@ -97,8 +97,8 @@ client_probe::register_lease_duration() {
     return _lease_duration.auto_measure();
 }
 
-void client_probe::register_utilization(unsigned clients_in_use) {
-    _pool_utilization = clients_in_use;
+void client_probe::set_pool_utilization_source(std::function<uint64_t()> src) {
+    _pool_utilization_source = std::move(src);
 }
 
 void client_probe::register_timeout() { _total_timeouts += 1; }
@@ -218,7 +218,10 @@ void client_probe::setup_internal_metrics(
           labels),
         sm::make_gauge(
           "client_pool_utilization",
-          [this] { return _pool_utilization; },
+          [this] {
+              return _pool_utilization_source ? _pool_utilization_source()
+                                              : uint64_t{0};
+          },
           sm::description(
             "Utilization of the cloud storage pool(0 - unused, "
             "100 - fully utilized)"),
@@ -330,7 +333,10 @@ void client_probe::setup_public_metrics(
           labels),
         sm::make_gauge(
           "client_pool_utilization",
-          [this] { return _pool_utilization; },
+          [this] {
+              return _pool_utilization_source ? _pool_utilization_source()
+                                              : uint64_t{0};
+          },
           sm::description(
             "Utilization of the cloud storage pool(0 - unused, "
             "100 - fully utilized)"),

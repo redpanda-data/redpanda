@@ -25,6 +25,7 @@
 
 #include <chrono>
 #include <cstdint>
+#include <functional>
 #include <span>
 
 namespace cloud_storage_clients {
@@ -84,8 +85,11 @@ public:
     void register_borrow();
     /// Register total lease duration
     std::unique_ptr<hist_t::measurement> register_lease_duration();
-    /// Utilization metric which is used to decide if borrowing is possible
-    void register_utilization(unsigned clients_in_use);
+    /// Set the callback sampled at scrape time to produce the pool
+    /// utilization gauge value, or clear it by passing {}. Sampled on the
+    /// metrics shard, so the callback must be safe to call there while
+    /// installed (the pool installs one holding a weak self-reference).
+    void set_pool_utilization_source(std::function<uint64_t()> src);
     /// Register client timeout
     void register_timeout();
 
@@ -123,8 +127,9 @@ private:
     uint64_t _total_borrows{0};
     /// Total time the lease is held by the ntp_archiver (or another user)
     hist_t _lease_duration;
-    /// Current utilization of the client pool
-    uint64_t _pool_utilization;
+    /// Live source for the client pool utilization gauge, sampled at scrape
+    /// time. Empty until a pool installs it via set_pool_utilization_source.
+    std::function<uint64_t()> _pool_utilization_source;
     /// Total client timeouts;
     uint64_t _total_timeouts{0};
     /// Total multipart upload creates

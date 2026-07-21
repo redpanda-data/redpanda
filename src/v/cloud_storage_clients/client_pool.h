@@ -256,8 +256,6 @@ private:
     [[nodiscard]] client_ptr
     replace_least_recently_used(client_ptr leased) noexcept;
 
-    void update_usage_stats();
-
     upstream_registry& _upstreams;
     std::optional<upstream_registry::handle> _default_upstream;
 
