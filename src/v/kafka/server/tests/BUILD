@@ -263,6 +263,26 @@ redpanda_cc_gtest(
 )
 
 redpanda_cc_gtest(
+    name = "consumer_group_test",
+    timeout = "short",
+    srcs = [
+        "consumer_group_test.cc",
+    ],
+    deps = [
+        "//src/v/kafka/protocol",
+        "//src/v/kafka/protocol:consumer_group_describe",
+        "//src/v/kafka/protocol:consumer_group_heartbeat",
+        "//src/v/kafka/server",
+        "//src/v/model",
+        "//src/v/test_utils:gtest",
+        "@abseil-cpp//absl/container:btree",
+        "@googletest//:gtest",
+        "@seastar",
+        "@seastar//:testing",
+    ],
+)
+
+redpanda_cc_gtest(
     name = "consumer_group_recovery_test",
     timeout = "short",
     srcs = [

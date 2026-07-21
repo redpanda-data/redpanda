@@ -122,6 +122,24 @@ redpanda_cc_gtest(
 )
 
 redpanda_cc_gtest(
+    name = "consumer_group_serde_test",
+    timeout = "short",
+    srcs = [
+        "consumer_group_serde_test.cc",
+    ],
+    deps = [
+        "//src/v/bytes",
+        "//src/v/bytes:iobuf",
+        "//src/v/kafka/protocol",
+        "//src/v/kafka/protocol:consumer_group_describe",
+        "//src/v/kafka/protocol:consumer_group_heartbeat",
+        "//src/v/model",
+        "//src/v/test_utils:gtest",
+        "@googletest//:gtest",
+    ],
+)
+
+redpanda_cc_gtest(
     name = "api_key_table_test",
     timeout = "short",
     srcs = [
