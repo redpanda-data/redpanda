@@ -164,12 +164,21 @@ ss::future<> segment_appender::do_append(const char* buf, size_t n) {
             co_await do_next_adaptive_fallocation();
             continue;
         }
-        // we need to copy the reminder of the chunk into the new one not write
-        // to the one currently being written
-        if (is_chunk_write_dispatched(_head)) {
-            // if head write is dispatched it means there is at least one
-            // inflight write. Always copy the remainder to a new chunk
-            // to simplify the logic (aligned case is very rare ~0.02%)
+        // If the head has an already-dispatched in-flight write, appending into
+        // it risks corrupting a page the DMA is still reading -- but only when
+        // that write ended mid-page. Writes are rounded up to a full page
+        // (pending_aligned_end), so a write ending at an unaligned offset
+        // leaves a trailing partial page that new appends would share; in that
+        // case copy the unflushed remainder into a fresh chunk and append
+        // there.
+        //
+        // When the dispatched write ended on a page boundary (flushed_pos is
+        // aligned) no page is shared: pending and new data live on later,
+        // disjoint pages, so we keep appending to the same chunk and skip the
+        // copy. This is always the case for page-aligned appends.
+        if (
+          is_chunk_write_dispatched(_head)
+          && _head->flushed_pos() != _head->pending_aligned_begin()) {
             auto last_inflight_write = _inflight.back();
             auto old_head = std::exchange(_head, nullptr);
             /**
