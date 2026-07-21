@@ -72,14 +72,14 @@ public:
     }
 
     ss::future<> append_data(const char* data, size_t size) {
-        co_await appender->append(data, size);
         reference.append(data, size);
+        co_await appender->append(data, size);
     }
 
     ss::future<> append_data(const iobuf& data) {
         vlog(tst_log.debug, "Appending iobuf of size {}", data.size_bytes());
-        co_await appender->append(data.copy());
         reference.append(data.copy());
+        co_await appender->append(data.copy());
     }
 
     ss::future<bool> file_content_equal_to_reference() {
