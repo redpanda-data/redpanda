@@ -7,6 +7,7 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
+#include "bytes/iobuf.h"
 #include "pandaproxy/json/requests/produce.h"
 #include "pandaproxy/json/rjson_util.h"
 
@@ -46,4 +47,17 @@ inline void parse_test(size_t data_size) {
     perf_tests::stop_measuring_time();
 }
 
+// Parse from an iobuf via chunked_input_stream, the path production HTTP
+// bodies take (pandaproxy streams request content into an iobuf).
+inline void parse_test_iobuf(size_t data_size) {
+    auto input = gen(data_size);
+    iobuf buf;
+    buf.append(input.data(), input.size());
+
+    perf_tests::start_measuring_time();
+    auto records = ppj::rjson_parse(std::move(buf), make_binary_v2_handler());
+    perf_tests::stop_measuring_time();
+}
+
 PERF_TEST(json_parse_test, binary) { parse_test(record_count); }
+PERF_TEST(json_parse_test, binary_iobuf) { parse_test_iobuf(record_count); }
