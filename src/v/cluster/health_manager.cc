@@ -49,12 +49,30 @@ health_manager::health_manager(
 ss::future<> health_manager::start() {
     _as_sub = _as.local().subscribe(
       [this]() noexcept { _reconciliation_executor.request_abort(); });
+
+    // Reconcile promptly on leadership/membership changes; runs are gated on
+    // controller leadership, so notifications on non-leaders are no-ops.
+    _leadership_notification_id
+      = _leaders.local().register_leadership_change_notification(
+        model::controller_ntp,
+        [this](const model::ntp&, model::term_id, model::node_id) {
+            submit_reconcile();
+        });
+    _members_notification_id
+      = _members.local().register_members_updated_notification(
+        [this](model::node_id, model::membership_state) {
+            submit_reconcile();
+        });
     submit_reconcile();
     co_return;
 }
 
 ss::future<> health_manager::stop() {
     vlog(clusterlog.info, "Stopping Health Manager...");
+    _members.local().unregister_members_updated_notification(
+      _members_notification_id);
+    _leaders.local().unregister_leadership_change_notification(
+      model::controller_ntp, _leadership_notification_id);
     co_await _reconciliation_executor.drain();
 }
 
@@ -128,10 +146,7 @@ ss::future<> health_manager::reconcile_loop(ss::abort_source& executor_as) {
           model::controller_ntp);
         if (cluster_leader != _self) {
             vlog(clusterlog.trace, "Health: skipping reconcile as non-leader");
-            if (co_await sleep_or_aborted(next_pass, executor_as)) {
-                co_return;
-            }
-            continue;
+            co_return;
         }
 
         try {

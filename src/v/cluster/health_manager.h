@@ -11,6 +11,7 @@
 #pragma once
 #include "base/seastarx.h"
 #include "cluster/fwd.h"
+#include "cluster/notification.h"
 #include "config/property.h"
 #include "model/metadata.h"
 #include "random/simple_time_jitter.h"
@@ -67,6 +68,8 @@ private:
     ss::sharded<partition_leaders_table>& _leaders;
     ss::sharded<members_table>& _members;
     ss::sharded<ss::abort_source>& _as;
+    notification_id_type _leadership_notification_id{};
+    notification_id_type _members_notification_id{};
     ssx::single_fiber_executor<
       ss::noncopyable_function<ss::future<>(ss::abort_source&)>>
       _reconciliation_executor;
