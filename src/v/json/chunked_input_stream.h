@@ -9,9 +9,10 @@
 
 #pragma once
 
-#include "bytes/streambuf.h"
+#include "bytes/iobuf.h"
 #include "json/encodings.h"
-#include "json/istreamwrapper.h"
+
+#include <utility>
 
 namespace json {
 
@@ -19,39 +20,72 @@ namespace impl {
 
 /**
  * \brief An in-memory input stream with non-contiguous memory allocation.
+ *
+ * Reads directly from the iobuf's fragments via iobuf::byte_iterator:
+ * Peek()/Take() are pointer operations over the current fragment, hopping
+ * to the next fragment at its boundary.
  */
 template<typename Encoding = ::json::UTF8<>>
 class chunked_input_stream {
 public:
     using Ch = Encoding::Ch;
+    static_assert(
+      sizeof(Ch) == sizeof(char), "only single-byte encodings are supported");
+
+    /// rapidjson streams have no explicit end-of-input signal; the reader
+    /// detects termination by seeing a NUL (StringStream parses C strings
+    /// and runs into the terminator, other streams synthesize it). A raw
+    /// NUL is never legitimate JSON, so no payload byte is masked.
+    static constexpr Ch eof_sentinel = '\0';
 
     explicit chunked_input_stream(iobuf&& buf)
       : _buf(std::move(buf))
-      , _is(_buf)
-      , _sis{&_is}
-      , _isw(_sis) {}
+      , _it(std::as_const(_buf).begin(), std::as_const(_buf).end())
+      , _end(std::as_const(_buf).end(), std::as_const(_buf).end()) {}
+
+    chunked_input_stream(const chunked_input_stream&) = delete;
+    chunked_input_stream& operator=(const chunked_input_stream&) = delete;
+    chunked_input_stream(chunked_input_stream&&) = delete;
+    chunked_input_stream& operator=(chunked_input_stream&&) = delete;
+    ~chunked_input_stream() = default;
 
     /**
      * \defgroup Implement rapidjson::Stream
      */
     /**@{*/
 
-    Ch Peek() const { return _isw.Peek(); }
-    Ch Peek4() const { return _isw.Peek4(); }
-    Ch Take() { return _isw.Take(); }
-    size_t Tell() const { return _isw.Tell(); }
-    void Put(Ch ch) { return _isw.Put(ch); }
-    Ch* PutBegin() { return _isw.PutBegin(); }
-    size_t PutEnd(Ch* ch) { return _isw.PutEnd(ch); }
-    void Flush() { return _isw.Flush(); }
+    Ch Peek() const { return _it != _end ? *_it : eof_sentinel; }
+    Ch Take() {
+        if (_it == _end) [[unlikely]] {
+            return eof_sentinel;
+        }
+        Ch c = *_it;
+        ++_it;
+        ++_consumed;
+        return c;
+    }
+    size_t Tell() const { return _consumed; }
+
+    // Not implemented, present to satisfy in-situ parsing codepaths that are
+    // instantiated but never taken.
+    void Put(Ch) { RAPIDJSON_ASSERT(false); }
+    Ch* PutBegin() {
+        RAPIDJSON_ASSERT(false);
+        return nullptr;
+    }
+    size_t PutEnd(Ch*) {
+        RAPIDJSON_ASSERT(false);
+        return 0;
+    }
+    void Flush() { RAPIDJSON_ASSERT(false); }
 
     /**@}*/
 
 private:
     iobuf _buf;
-    iobuf_istreambuf _is;
-    std::istream _sis;
-    ::json::IStreamWrapper _isw;
+    iobuf::byte_iterator _it;
+    iobuf::byte_iterator _end;
+    size_t _consumed{0};
 };
 
 } // namespace impl
