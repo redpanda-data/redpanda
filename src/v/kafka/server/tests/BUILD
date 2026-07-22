@@ -285,6 +285,7 @@ redpanda_cc_btest(
         "//src/v/model",
         "//src/v/model:timeout_clock",
         "//src/v/redpanda/tests:fixture",
+        "//src/v/ssx:sformat",
         "//src/v/test_utils:scoped_config",
         "//src/v/test_utils:seastar_boost",
         "//src/v/utils:base64",
