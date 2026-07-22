@@ -10,8 +10,6 @@
 #include "batch_cache.h"
 
 #include "base/vassert.h"
-#include "bytes/iobuf_parser.h"
-#include "model/adl_serde.h"
 #include "model/fundamental.h"
 #include "resource_mgmt/available_memory.h"
 #include "ssx/future-util.h"
@@ -38,26 +36,14 @@ batch_cache::range::range(
     add(batch, dirty);
 }
 
-model::record_batch batch_cache::range::batch(size_t o) {
-    return batch(o, header(o));
-}
-
-model::record_batch
-batch_cache::range::batch(size_t o, const model::record_batch_header& hdr) {
+model::record_batch batch_cache::range::batch(
+  size_t data_offset, const model::record_batch_header& hdr) {
     vassert(_valid, "cannot access invalided batch");
     auto buffer = _arena.share(
-      o + serialized_header_size,
-      hdr.size_bytes - model::packed_record_batch_header_size);
+      data_offset, hdr.size_bytes - model::packed_record_batch_header_size);
 
     return model::record_batch(
-      hdr, std::move(buffer), model::record_batch::tag_ctor_ng{});
-}
-
-model::record_batch_header batch_cache::range::header(size_t o) {
-    vassert(_valid, "cannot access invalided batch");
-    iobuf_const_parser parser(_arena);
-    parser.skip(o);
-    return reflection::adl<model::record_batch_header>{}.from(parser);
+      hdr.copy(), std::move(buffer), model::record_batch::tag_ctor_ng{});
 }
 
 size_t batch_cache::range::memory_size() const {
@@ -76,10 +62,10 @@ double batch_cache::range::waste() const {
     return (1.0 - ((double)_size / memory_size())) * 100.0;
 }
 
-bool batch_cache::range::empty() const { return _size == 0; }
+bool batch_cache::range::empty() const { return _offsets.empty(); }
 
 bool batch_cache::range::fits(const model::record_batch& b) const {
-    const size_t to_add = serialized_header_size + b.data().size_bytes();
+    const size_t to_add = b.data().size_bytes();
     // if there are not enough bytes in current range return true even
     // though batch doesn't fit into arena. This way we can control maximum
     // waste
@@ -98,13 +84,14 @@ bool batch_cache::range::fits(const model::record_batch& b) const {
 
 uint32_t
 batch_cache::range::add(const model::record_batch& b, is_dirty_entry dirty) {
-    auto offset = _arena.size_bytes();
-    reflection::adl<model::record_batch_header>{}.to(_arena, b.header().copy());
-    _size += serialized_header_size;
+    auto data_offset = _arena.size_bytes();
     // if there is not enough space left in last arena fragment we
     // trim it and append existing fragments directly to the arena
-    // iobuf
-    if (_arena.rbegin()->available_bytes() < b.data().size_bytes()) {
+    // iobuf. the arena is empty when the range was constructed for a
+    // single large batch.
+    if (
+      _arena.begin() == _arena.end()
+      || _arena.rbegin()->available_bytes() < b.data().size_bytes()) {
         _size += b.data().size_bytes();
         _arena.append_fragments(b.data().copy());
     } else {
@@ -127,7 +114,7 @@ batch_cache::range::add(const model::record_batch& b, is_dirty_entry dirty) {
         _max_dirty_offset = b.last_offset();
     }
 
-    return offset;
+    return data_offset;
 }
 
 static resources::available_memory::deregister_holder
@@ -173,7 +160,7 @@ batch_cache::entry batch_cache::put(
         auto r = new range(index, input, dirty);
         _lru.push_back(*r);
         _size_bytes += r->memory_size();
-        return entry(0, r->weak_from_this());
+        return entry(0, r->weak_from_this(), input.header());
     }
 
     if (
@@ -191,7 +178,8 @@ batch_cache::entry batch_cache::put(
     int64_t diff = (int64_t)index._small_batches_range->memory_size()
                    - initial_sz;
     _size_bytes += diff;
-    return entry(offset, index._small_batches_range->weak_from_this());
+    return entry(
+      offset, index._small_batches_range->weak_from_this(), input.header());
 }
 
 batch_cache::~batch_cache() noexcept {
@@ -382,18 +370,18 @@ batch_cache_index::read_result batch_cache_index::read(
         return ret;
     }
     for (auto it = find_first_contains(offset); it != _index.end();) {
-        auto batch_header = it->second.header();
+        auto& e = it->second;
 
-        auto take = !type_filter || type_filter == batch_header.type;
-        take &= !first_ts || batch_header.max_timestamp >= *first_ts;
-        offset = batch_header.last_offset() + model::offset(1);
+        auto take = !type_filter || type_filter == e.type();
+        take &= !first_ts || e.max_timestamp() >= *first_ts;
+        offset = e.last_offset() + model::offset(1);
         if (take) {
-            auto batch = it->second.batch(batch_header);
-            batch_cache::range::lock_guard g(*it->second.range());
+            batch_cache::range::lock_guard g(*e.range());
+            auto batch = e.batch();
             ret.memory_usage += batch.memory_usage();
             ret.batches.emplace_back(std::move(batch));
             if (!skip_lru_promote) {
-                _cache->touch(it->second.range());
+                _cache->touch(e.range());
             }
         }
 
@@ -419,7 +407,7 @@ batch_cache_index::read_result batch_cache_index::read(
                   return e.second.range() && e.second.range()->valid();
               });
             if (next_batch != _index.end()) {
-                ret.next_cached_batch = next_batch->second.header().base_offset;
+                ret.next_cached_batch = next_batch->first;
             }
             break;
         }
@@ -452,11 +440,10 @@ bool batch_cache_index::has_contiguous_coverage(
         if (!range || !range->valid()) {
             return false;
         }
-        auto hdr = it->second.header();
-        if (hdr.base_offset > expected) {
+        if (it->first > expected) {
             return false;
         }
-        auto next = model::next_offset(hdr.last_offset());
+        auto next = model::next_offset(it->second.last_offset());
         if (next <= expected) {
             ++it;
             continue;
@@ -478,11 +465,10 @@ model::offset batch_cache_index::contiguous_end(model::offset from) const {
         if (!range || !range->valid()) {
             break;
         }
-        auto hdr = it->second.header();
-        if (hdr.base_offset > expected) {
+        if (it->first > expected) {
             break;
         }
-        auto next = model::next_offset(hdr.last_offset());
+        auto next = model::next_offset(it->second.last_offset());
         if (next <= expected) {
             ++it;
             continue;
@@ -505,7 +491,7 @@ void batch_cache_index::truncate(model::offset offset) {
         // rule out if possible, otherwise always be pessimistic
         if (
           it->second.range() && it->second.valid()
-          && !it->second.header().contains(offset)) {
+          && !(it->first <= offset && offset <= it->second.last_offset())) {
             ++it;
         }
         std::for_each(it, _index.end(), [this](index_type::value_type& e) {

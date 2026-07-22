@@ -29,6 +29,7 @@
 #include <seastar/core/weak_ptr.hh>
 
 #include <limits>
+#include <memory>
 #include <type_traits>
 
 class batch_cache_test_fixture;
@@ -174,15 +175,8 @@ public:
         // into an invalid state where the batch data cannot be accessed.
         bool valid() const { return _valid; }
         void invalidate() { _valid = false; }
-        static constexpr size_t serialized_header_size
-          = model::packed_record_batch_header_size + sizeof(size_t);
-
-        model::record_batch batch(size_t o);
-        /// Builds the batch from an already-parsed header, avoiding a second
-        /// header decode when the caller has already read it.
         model::record_batch
-        batch(size_t o, const model::record_batch_header& hdr);
-        model::record_batch_header header(size_t o);
+        batch(size_t data_offset, const model::record_batch_header&);
 
         void pin() { _pinned = true; }
         void unpin() { _pinned = false; }
@@ -282,8 +276,9 @@ public:
      */
     class entry {
     public:
-        entry(uint32_t o, range_ptr&& ptr)
-          : _range_offset(o)
+        entry(uint32_t o, range_ptr&& ptr, const model::record_batch_header& h)
+          : _data_offset(o)
+          , _header(std::make_unique<model::record_batch_header>(h.copy()))
           , _range(std::move(ptr)) {}
 
         ~entry() noexcept = default;
@@ -292,12 +287,19 @@ public:
         entry(const entry&) = delete;
         entry& operator=(const entry&) = delete;
 
-        model::record_batch batch() { return _range->batch(_range_offset); }
-        model::record_batch batch(const model::record_batch_header& hdr) {
-            return _range->batch(_range_offset, hdr);
+        model::record_batch batch() {
+            return _range->batch(_data_offset, *_header);
         }
-        model::record_batch_header header() const {
-            return _range->header(_range_offset);
+
+        /*
+         * the batch header is captured at insertion time so that lookups,
+         * filtering and materialization never deserialize it from the
+         * range's arena.
+         */
+        model::record_batch_type type() const { return _header->type; }
+        model::offset last_offset() const { return _header->last_offset(); }
+        model::timestamp max_timestamp() const {
+            return _header->max_timestamp;
         }
 
         range_ptr& range() { return _range; }
@@ -305,7 +307,8 @@ public:
         bool valid() const { return _range->valid(); }
 
     private:
-        uint32_t _range_offset;
+        uint32_t _data_offset;
+        std::unique_ptr<model::record_batch_header> _header;
         range_ptr _range;
     };
 
@@ -755,8 +758,8 @@ private:
 
     /*
      * Return an iterator to the first batch that _may_ contain the specified
-     * offset. Since the batch may have been evicted, and we only store the base
-     * offset in the index, the caller deals with the missing upper bound.
+     * offset. The caller verifies containment against the entry's cached
+     * offset bounds and liveness.
      */
     index_type::iterator find_first(model::offset offset) {
         if (_index.empty()) {
@@ -771,16 +774,15 @@ private:
 
     /*
      * Return an iterator to the first batch known to contain the specified
-     * offset, otherwise return the end iterator. Since a batch must be present
-     * in memory to verify that it contains the offset, a non-end returned
-     * iterator is guaranteed to point to a live batch.
+     * offset, otherwise return the end iterator. A non-end returned iterator
+     * is guaranteed to point to a live batch.
      */
     index_type::iterator find_first_contains(model::offset offset) {
         if (
-          auto it = find_first(offset);
-          it != _index.end() && it->second.range()
-          && it->second.range()->valid()
-          && it->second.header().contains(offset)) {
+          auto it = find_first(offset); it != _index.end() && it->second.range()
+                                        && it->second.range()->valid()
+                                        && it->first <= offset
+                                        && offset <= it->second.last_offset()) {
             return it;
         }
         return _index.end();
