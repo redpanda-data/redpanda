@@ -332,7 +332,10 @@ public:
     bool empty() const { return _lru.empty(); }
 
     /// Removes all entries from the cache.
-    void clear() { reclaim(std::numeric_limits<size_t>::max()); }
+    void clear() {
+        reclaim(std::numeric_limits<size_t>::max());
+        drain_pending_index_removals();
+    }
 
     /**
      * Copies a batch into the LRU cache.
@@ -457,7 +460,31 @@ private:
                               : reclaim_result::reclaimed_nothing;
     }
 
-    intrusive_list<range, &range::_hook> _lru;
+    /*
+     * Remove the index entries of ranges whose memory was reclaimed. The
+     * asynchronous form runs in the background reclaimer fiber and yields
+     * between ranges; the synchronous form is used by clear() where the
+     * deferred work must complete before returning.
+     */
+    ss::future<> do_pending_index_removals();
+    void drain_pending_index_removals();
+
+    /*
+     * Complete a reclaimed range's deferred index entry removal and dispose
+     * of it.
+     */
+    static void dispose_pending(range* r);
+
+    using intrusive_range_list = intrusive_list<range, &range::_hook>;
+
+    intrusive_range_list _lru;
+    /*
+     * ranges whose arena memory has been reclaimed but whose entries have
+     * not yet been removed from their owning index. drained by the
+     * background reclaimer so that the removals stay off the memory
+     * allocation path.
+     */
+    intrusive_range_list _pending_index_removal;
     reclaimer _reclaimer;
     bool _is_reclaiming{false};
     size_t _size_bytes{0};
@@ -472,10 +499,12 @@ public:
     fmt::iterator format_to(fmt::iterator it) const {
         return fmt::format_to(
           it,
-          "{{is_reclaiming:{}, size_bytes: {}, lru_empty:{}}}",
+          "{{is_reclaiming:{}, size_bytes: {}, lru_empty:{}, "
+          "pending_index_removal_empty:{}}}",
           is_memory_reclaiming(),
           _size_bytes,
-          _lru.empty());
+          _lru.empty(),
+          _pending_index_removal.empty());
     }
 };
 
@@ -556,6 +585,12 @@ public:
           _dirty_tracker);
         std::for_each(
           _index.begin(), _index.end(), [this](index_type::value_type& e) {
+              /*
+               * this also disposes any ranges awaiting deferred index entry
+               * removal: every range is reachable from its index entries,
+               * and evict() unlinks it from the cache's pending removal
+               * list.
+               */
               _cache->evict(std::move(e.second.range()));
           });
     }

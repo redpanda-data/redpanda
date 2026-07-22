@@ -49,6 +49,9 @@ public:
       : cache(opts) {}
 
     auto& get_lru() { return cache._lru; };
+    // complete the index removals that reclaim defers to the background
+    // reclaimer, so tests can make synchronous assertions
+    void drain_pending() { cache.drain_pending_index_removals(); }
     ~batch_cache_test_fixture() { cache.stop().get(); }
 
     storage::batch_cache cache;
@@ -81,6 +84,10 @@ TEST_F(batch_cache_test_fixture, reclaim_rounds_up) {
     // reclaims rounds up to the range size for small batches
     EXPECT_EQ(size, storage::batch_cache::range::range_size);
     EXPECT_TRUE(cache.empty());
+
+    // this test bypasses batch_cache_index::put, so the reclaimed range has
+    // no index entries and must be drained before the index is destroyed
+    drain_pending();
 }
 
 TEST_F(batch_cache_test_fixture, reclaim_removes_multiple) {
@@ -100,6 +107,11 @@ TEST_F(batch_cache_test_fixture, reclaim_removes_multiple) {
     auto size = cache.reclaim(b_size + 1);
     EXPECT_GT(size, (2 * b_size));
     EXPECT_TRUE(cache.empty());
+
+    // this test bypasses batch_cache_index::put, so the reclaimed ranges
+    // have no index entries and must be drained before the index is
+    // destroyed
+    drain_pending();
 }
 
 TEST_F(batch_cache_test_fixture, weakness) {
@@ -116,6 +128,7 @@ TEST_F(batch_cache_test_fixture, weakness) {
     EXPECT_TRUE(b2.range());
 
     cache.reclaim(1);
+    drain_pending();
     EXPECT_FALSE(b0.range());
     EXPECT_FALSE(b1.range());
     EXPECT_FALSE(b2.range());
@@ -141,8 +154,8 @@ TEST(batch_cache_test, touch) {
 
         // first one is invalid, second one still valid
         cache.reclaim(1);
-        EXPECT_FALSE(b0.range());
-        EXPECT_TRUE(b1.range());
+        EXPECT_FALSE(b0.range() && b0.range()->valid());
+        EXPECT_TRUE(b1.range() && b1.range()->valid());
         cache.stop().get();
     }
 
@@ -161,8 +174,8 @@ TEST(batch_cache_test, touch) {
         cache.touch(b0.range());
         // so reclaiming now frees the second
         cache.reclaim(1);
-        EXPECT_TRUE(b0.range());
-        EXPECT_FALSE(b1.range());
+        EXPECT_TRUE(b0.range() && b0.range()->valid());
+        EXPECT_FALSE(b1.range() && b1.range()->valid());
         cache.stop().get();
     }
 }

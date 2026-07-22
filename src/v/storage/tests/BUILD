@@ -286,6 +286,7 @@ redpanda_cc_gtest(
         "//src/v/model",
         "//src/v/storage:batch_cache",
         "//src/v/storage:record_batch_builder",
+        "//src/v/test_utils:async",
         "//src/v/test_utils:gtest",
         "@googletest//:gtest",
         "@seastar",

@@ -197,7 +197,7 @@ batch_cache::entry batch_cache::put(
 batch_cache::~batch_cache() noexcept {
     clear();
     vassert(
-      _size_bytes == 0 && _lru.empty(),
+      _size_bytes == 0 && _lru.empty() && _pending_index_removal.empty(),
       "Detected incorrect batch_cache accounting. {}",
       *this);
 }
@@ -214,8 +214,10 @@ void batch_cache::evict(range_ptr&& e) {
         // r-value reference `e` wouldn't do that.
         auto p = std::exchange(e, {});
         _size_bytes -= p->memory_size();
-        _lru.erase_and_dispose(
-          _lru.iterator_to(*p), [](range* e) { delete e; });
+        // the range is linked on either the lru list or, if its memory was
+        // already reclaimed, the pending index removal list. the auto-unlink
+        // hook removes it from whichever list holds it on destruction.
+        delete p.get(); // NOLINT
     }
 }
 
@@ -249,16 +251,16 @@ size_t batch_cache::reclaim(size_t size) {
     _reclaim_size = std::max(size, _reclaim_size);
 
     /*
-     * reclaiming is a two pass process. given that the range isn't pinned (in
-     * which case it is skipped), the first step is to reclaim the batch's
-     * record data. at this point, if the range's owning index is not locked the
-     * range is added to a temporary list of entries which will be removed.
-     * otherwise if the index is locked, removal is deferred but the range is
-     * invalidated. invalidation is important because the batch reference in the
-     * index still exists even though the batch data was removed.
+     * given that the range isn't pinned (in which case it is skipped), the
+     * batch's record data is reclaimed and the range is invalidated and moved
+     * to the pending index removal list. invalidation is important because the
+     * batch reference in the index still exists even though the batch data was
+     * removed. removal of the index entries is completed by the background
+     * reclaimer so that the potentially large number of index erases stays off
+     * the memory allocation path (this reclaimer runs synchronously within
+     * allocation).
      */
     size_t reclaimed = 0;
-    intrusive_list<range, &range::_hook> reclaimed_ranges;
 
     for (auto it = _lru.begin(); it != _lru.end();) {
         if (reclaimed >= _reclaim_size) {
@@ -277,51 +279,55 @@ size_t batch_cache::reclaim(size_t size) {
         // reclaim the batch's record data
         reclaimed += it->memory_size();
         it->_arena.clear();
+        it->invalidate();
 
-        /*
-         * if the owning index is locked invalidate the range but leave it on
-         * the lru list for deferred deletion so as to not invalidate any open
-         * iterators on the index.
-         */
-        if (unlikely(it->_index.locked())) {
-            it->invalidate();
-            ++it;
-            continue;
-        }
-
-        // collect the entries that will be fully removed
-        it = _lru.erase_and_dispose(it, [&reclaimed_ranges](range* e) {
-            reclaimed_ranges.push_back(*e);
-        });
+        it = _lru.erase_and_dispose(
+          it, [this](range* e) { _pending_index_removal.push_back(*e); });
     }
 
-    /*
-     * final removal from the index is deferred because there is some chance
-     * that removal allocates, so waiting until the bulk of the reclaims have
-     * occurred reduces the probability of an allocation failure.
-     */
-
-    reclaimed_ranges.clear_and_dispose([](range* e) {
-        auto* index = &e->_index;
-        auto offsets = std::move(e->_offsets);
-        delete e; // NOLINT
-
-        /*
-         * since reclaim may be invoked at any moment and removals may be
-         * deferred if an index is locked, one can imagine races in which a
-         * batch is removed by offset here which is not the same batch that was
-         * reclaimed in a prior pass. at worst this would raise the miss ratio,
-         * but is still generally safe since all batch cache users are prepared
-         * to handle a miss.
-         */
-        for (auto& o : offsets) {
-            index->remove(o);
-        }
-    });
+    if (reclaimed != 0) {
+        _background_reclaimer.notify();
+    }
 
     _last_reclaim = ss::lowres_clock::now();
     _size_bytes -= reclaimed;
     return reclaimed;
+}
+
+void batch_cache::dispose_pending(range* r) {
+    auto* index = &r->_index;
+    auto offsets = std::move(r->_offsets);
+    delete r; // NOLINT
+
+    /*
+     * since reclaim may be invoked at any moment and removals are
+     * deferred, one can imagine races in which a batch is removed by
+     * offset here which is not the same batch that was reclaimed in a
+     * prior pass. at worst this would raise the miss ratio, but is still
+     * generally safe since all batch cache users are prepared to handle a
+     * miss.
+     */
+    for (auto& o : offsets) {
+        index->remove(o);
+    }
+}
+
+ss::future<> batch_cache::do_pending_index_removals() {
+    /*
+     * detach the current pending set so that list mutations during scheduling
+     * points (new arrivals from reclaim, ranges evicted by their index) don't
+     * interfere with iteration.
+     */
+    intrusive_range_list work;
+    work.splice(work.begin(), _pending_index_removal);
+    while (!work.empty()) {
+        dispose_pending(&work.front());
+        co_await ss::coroutine::maybe_yield();
+    }
+}
+
+void batch_cache::drain_pending_index_removals() {
+    _pending_index_removal.clear_and_dispose(dispose_pending);
 }
 
 void batch_cache_index::dirty_tracker::mark_dirty(
@@ -568,6 +574,8 @@ ss::future<> batch_cache::background_reclaimer::reclaim_loop() {
         if (unlikely(_stopped)) {
             co_return;
         }
+
+        co_await _cache.do_pending_index_removals();
 
         if (!have_to_reclaim()) {
             continue;

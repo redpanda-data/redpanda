@@ -10,6 +10,7 @@
 #include "model/record.h"
 #include "storage/batch_cache.h"
 #include "storage/record_batch_builder.h"
+#include "test_utils/async.h"
 
 #include <seastar/core/memory.hh>
 #include <seastar/core/thread.hh>
@@ -95,8 +96,9 @@ TEST(BatchCacheReclaimTest, reclaim) {
         cache_entries.emplace_back(std::move(e));
     }
 
-    // cache uses an async reclaimer. give it a chance to run
-    ss::thread::yield();
+    // reclaim frees batch data synchronously but defers the invalidation of
+    // entry weak pointers to the background reclaimer. wait for it to run
+    tests::drain_task_queue().get();
 
     // now some of the cache entries should have been reclaimed
     EXPECT_TRUE(
@@ -112,5 +114,11 @@ TEST(BatchCacheReclaimTest, reclaim) {
               << " free " << stats.free_memory() / 1024 << " min_free "
               << ss::memory::min_free_memory() / 1024 << " until_reclaim "
               << bytes_until_reclaim / 1024 << " reclaims " << stats.reclaims();
+
+    // this test bypasses the batch_cache_index::put interface, so the ranges
+    // in the cache are not reachable from the index and would dangle past the
+    // index's destruction (the index is declared after the cache, so it is
+    // destroyed first). release them while the index is still alive.
+    cache.clear();
     cache.stop().get();
 }
