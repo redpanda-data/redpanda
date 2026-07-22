@@ -70,6 +70,7 @@ redpanda_cc_library(
         "//src/v/pandaproxy/schema_registry:types",
         "//src/v/security",
         "//src/v/serde:chrono",
+        "//src/v/ssx:sformat",
         "//src/v/strings:string_switch",
         "//src/v/utils:absl_sstring_hash",
         "//src/v/utils:tristate",

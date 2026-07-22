@@ -11,6 +11,7 @@
 
 #pragma once
 
+#include "base/type_traits.h"
 #include "cluster/types.h"
 #include "container/chunked_vector.h"
 #include "kafka/protocol/describe_configs.h"
@@ -18,7 +19,10 @@
 #include "model/compression.h"
 #include "model/fundamental.h"
 #include "pandaproxy/schema_registry/subject_name_strategy.h"
+#include "ssx/sformat.h"
+#include "utils/tristate.h"
 
+#include <chrono>
 #include <iterator>
 #include <optional>
 
@@ -41,6 +45,28 @@ struct config_response {
 
 using config_response_container_t = chunked_vector<config_response>;
 using config_key_t = std::optional<chunked_vector<ss::sstring>>;
+
+/// Serialize a topic property value the way it appears in Kafka
+/// configuration responses (durations as their millisecond count).
+template<typename T>
+ss::sstring describe_as_string(const T& t) {
+    if constexpr (::detail::is_specialization_of_v<T, std::chrono::duration>) {
+        return ssx::sformat("{}", t.count());
+    } else {
+        return ssx::sformat("{}", t);
+    }
+}
+
+/// Serialize a tristate topic property value the way it appears in Kafka
+/// configuration responses: -1 when disabled or not set.
+template<typename T>
+ss::sstring maybe_print_tristate(const tristate<T>& tri) {
+    if (tri.is_disabled() || !tri.has_optional_value()) {
+        return "-1";
+    }
+
+    return describe_as_string(tri.value());
+}
 
 /// This abstract interface was added in order to decouple metadata_cache from
 /// the make_topic_configs method below.  This allows us to create our own
