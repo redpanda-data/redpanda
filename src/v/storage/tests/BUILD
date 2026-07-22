@@ -1075,6 +1075,19 @@ redpanda_cc_gtest(
 )
 
 redpanda_cc_bench(
+    name = "batch_cache_rpbench",
+    srcs = ["batch_cache_bench.cc"],
+    deps = [
+        "//src/v/bytes:iobuf",
+        "//src/v/model",
+        "//src/v/storage:batch_cache",
+        "//src/v/storage:record_batch_builder",
+        "@seastar",
+        "@seastar//:benchmark",
+    ],
+)
+
+redpanda_cc_bench(
     name = "storage_rpbench",
     srcs = ["compaction_idx_bench.cc"],
     deps = [
