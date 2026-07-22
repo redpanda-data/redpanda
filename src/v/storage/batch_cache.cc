@@ -39,10 +39,12 @@ batch_cache::range::range(
 }
 
 model::record_batch batch_cache::range::batch(size_t o) {
+    return batch(o, header(o));
+}
+
+model::record_batch
+batch_cache::range::batch(size_t o, const model::record_batch_header& hdr) {
     vassert(_valid, "cannot access invalided batch");
-    iobuf_const_parser parser(_arena);
-    parser.skip(o);
-    auto hdr = reflection::adl<model::record_batch_header>{}.from(parser);
     auto buffer = _arena.share(
       o + serialized_header_size,
       hdr.size_bytes - model::packed_record_batch_header_size);
@@ -374,12 +376,13 @@ batch_cache_index::read_result batch_cache_index::read(
         return ret;
     }
     for (auto it = find_first_contains(offset); it != _index.end();) {
-        auto batch = it->second.batch();
+        auto batch_header = it->second.header();
 
-        auto take = !type_filter || type_filter == batch.header().type;
-        take &= !first_ts || batch.header().max_timestamp >= *first_ts;
-        offset = batch.last_offset() + model::offset(1);
+        auto take = !type_filter || type_filter == batch_header.type;
+        take &= !first_ts || batch_header.max_timestamp >= *first_ts;
+        offset = batch_header.last_offset() + model::offset(1);
         if (take) {
+            auto batch = it->second.batch(batch_header);
             batch_cache::range::lock_guard g(*it->second.range());
             ret.memory_usage += batch.memory_usage();
             ret.batches.emplace_back(std::move(batch));

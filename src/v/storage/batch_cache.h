@@ -178,6 +178,10 @@ public:
           = model::packed_record_batch_header_size + sizeof(size_t);
 
         model::record_batch batch(size_t o);
+        /// Builds the batch from an already-parsed header, avoiding a second
+        /// header decode when the caller has already read it.
+        model::record_batch
+        batch(size_t o, const model::record_batch_header& hdr);
         model::record_batch_header header(size_t o);
 
         void pin() { _pinned = true; }
@@ -289,6 +293,9 @@ public:
         entry& operator=(const entry&) = delete;
 
         model::record_batch batch() { return _range->batch(_range_offset); }
+        model::record_batch batch(const model::record_batch_header& hdr) {
+            return _range->batch(_range_offset, hdr);
+        }
         model::record_batch_header header() const {
             return _range->header(_range_offset);
         }
