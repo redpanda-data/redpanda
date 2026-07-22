@@ -12,6 +12,7 @@
 #include "pandaproxy/schema_registry/json.h"
 
 #include "base/format_to.h"
+#include "bytes/streambuf.h"
 #include "container/chunked_hash_map.h"
 #include "json/chunked_buffer.h"
 #include "json/chunked_input_stream.h"
