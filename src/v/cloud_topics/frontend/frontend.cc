@@ -43,7 +43,6 @@
 #include "storage/offset_translator_state.h"
 #include "storage/types.h"
 
-#include <seastar/core/circular_buffer.hh>
 #include <seastar/core/future.hh>
 #include <seastar/core/shared_ptr.hh>
 #include <seastar/coroutine/as_future.hh>
@@ -60,7 +59,7 @@ namespace cloud_topics {
 namespace {
 
 struct placeholder_batches_with_size {
-    ss::circular_buffer<model::record_batch> batches;
+    chunked_vector<model::record_batch> batches;
     // Total size of all referenced data
     size_t extent_size{0};
 };
@@ -1047,10 +1046,7 @@ ss::future<std::expected<kafka::offset, std::error_code>> frontend::replicate(
     auto placeholders = co_await convert_to_placeholders(
       res.value().extents, headers);
 
-    chunked_vector<model::record_batch> placeholder_batches;
-    for (auto&& batch : placeholders.batches) {
-        placeholder_batches.push_back(std::move(batch));
-    }
+    auto placeholder_batches = std::move(placeholders.batches);
 
     opts = update_replicate_options(opts, fence->term);
     auto result = co_await _partition->replicate(
@@ -1527,9 +1523,7 @@ ss::future<result<raft::replicate_result>> frontend::replicate_at_offset(
 
         auto placeholders = co_await convert_to_placeholders(
           res.value().extents, data_headers);
-        placeholder_batches = chunked_vector<model::record_batch>(
-          std::make_move_iterator(placeholders.batches.begin()),
-          std::make_move_iterator(placeholders.batches.end()));
+        placeholder_batches = std::move(placeholders.batches);
     }
 
     // Restore the original input order by 2-way merging placeholders and
