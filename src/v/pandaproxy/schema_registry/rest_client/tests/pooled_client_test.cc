@@ -194,7 +194,7 @@ TEST(pooled_client, forwards_request_response_and_arguments) {
 }
 
 TEST(pooled_client, bounds_concurrency_and_queues_fifo) {
-    pool_fixture fx(2);
+    pool_fixture fx(1);
     fx.observer.park = true;
 
     std::vector<ss::future<http::downloaded_response>> futs;
@@ -202,11 +202,13 @@ TEST(pooled_client, bounds_concurrency_and_queues_fifo) {
     for (int i = 0; i < 5; ++i) {
         futs.push_back(issue(*fx.pool, fmt::format("/r{}", i)));
     }
-    // Two requests hold the two transports; three wait for a slot.
-    RPTEST_REQUIRE_EVENTUALLY(5s, [&] { return fx.observer.inflight == 2; });
-    EXPECT_EQ(fx.observer.dispatched.size(), 2);
 
-    // Drain: complete parked requests as they arrive until all five ran.
+    // One request holds the transport; the other four wait for the slot.
+    RPTEST_REQUIRE_EVENTUALLY(5s, [&] { return fx.observer.inflight == 1; });
+    EXPECT_EQ(fx.observer.dispatched.size(), 1);
+
+    // Complete the in-flight request one at a time; each freed slot is granted
+    // to the earliest queued waiter (semaphore FIFO fairness).
     for (int released = 0; released < 5; ++released) {
         RPTEST_REQUIRE_EVENTUALLY(
           5s, [&] { return !fx.observer.parked.empty(); });
@@ -216,7 +218,7 @@ TEST(pooled_client, bounds_concurrency_and_queues_fifo) {
         EXPECT_EQ(fut.get().status, bh::status::ok);
     }
 
-    EXPECT_EQ(fx.observer.max_inflight, 2);
+    EXPECT_EQ(fx.observer.max_inflight, 1);
     // Waiters got slots in issue order.
     EXPECT_EQ(
       fx.observer.dispatched,
