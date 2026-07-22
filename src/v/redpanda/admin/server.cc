@@ -1406,6 +1406,9 @@ ss::future<> admin_server::throw_on_error(
             // rather than a node ID appearing in a URL path.
             throw ss::httpd::bad_request_exception(
               fmt::format("Invalid request: {}", ec.message()));
+        case raft::errc::invalid_configuration_update:
+            throw ss::httpd::bad_request_exception(
+              fmt::format("Invalid request: {}", ec.message()));
         default:
             throw ss::httpd::server_error_exception(
               fmt::format("Unexpected raft error: {}", ec.message()));
