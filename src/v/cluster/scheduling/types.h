@@ -25,6 +25,7 @@
 #include <seastar/util/noncopyable_function.hh>
 
 #include <optional>
+#include <utility>
 
 namespace cluster {
 class allocation_node;
@@ -243,6 +244,7 @@ public:
 
 private:
     friend class partition_allocator;
+    friend class allocated_partition_test;
     reallocation_step(
       model::broker_shard current, std::optional<model::broker_shard> previous)
       : _current(current)
@@ -275,6 +277,7 @@ public:
 
 private:
     friend class partition_allocator;
+    friend class allocated_partition_test;
 
     // construct an object from an original assignment
     allocated_partition(
@@ -296,8 +299,38 @@ private:
 private:
     model::ntp _ntp;
     replicas_t _replicas;
-    std::optional<absl::flat_hash_map<model::node_id, uint32_t>>
-      _original_node2shard;
+
+    class original_node2shard {
+    public:
+        bool has_ever_seen_modifications() const;
+        void capture(const replicas_t& replicas);
+        void reset();
+        bool is_original(model::node_id node) const;
+        size_t size() const;
+
+        template<typename Self>
+        auto find(this Self&& self, model::node_id node) {
+            vassert(self._snapshot, "original placement snapshot not captured");
+            return std::forward<Self>(self)._snapshot->find(node);
+        }
+
+        template<typename Self>
+        auto end(this Self&& self) {
+            vassert(self._snapshot, "original placement snapshot not captured");
+            return std::forward<Self>(self)._snapshot->end();
+        }
+
+        template<typename Self>
+        auto&& get(this Self&& self) {
+            vassert(self._snapshot, "original placement snapshot not captured");
+            return *std::forward<Self>(self)._snapshot;
+        }
+
+    private:
+        std::optional<absl::flat_hash_map<model::node_id, uint32_t>> _snapshot;
+    };
+    original_node2shard _original_node2shard;
+
     ss::weak_ptr<allocation_state> _state;
     // oncore checker to ensure destruction happens on the same core
     [[no_unique_address]] oncore _oncore;
