@@ -321,6 +321,7 @@ redpanda_cc_library(
         "//src/v/cluster:shard_table",
         "//src/v/cluster:state_machine_registry",
         "//src/v/cluster:tm_stm",
+        "//src/v/cluster:topic_configuration",
         "//src/v/cluster:topic_table",
         "//src/v/cluster:tx_protocol_types",
         "//src/v/cluster:types",

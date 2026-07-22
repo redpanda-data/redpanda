@@ -14,6 +14,7 @@
 #include "cluster/errc.h"
 #include "cluster/logger.h"
 #include "cluster/types.h"
+#include "config/configuration.h"
 #include "model/metadata.h"
 
 #include <fmt/format.h>
@@ -413,6 +414,18 @@ void members_table::notify_member_updated(
     for (const auto& [id, cb] : _members_updated_notifications) {
         cb(n, new_state);
     }
+}
+
+int16_t internal_topic_replication(size_t node_count) {
+    auto replication_factor = static_cast<int16_t>(
+      config::shard_local_cfg().internal_topic_replication_factor());
+    if (replication_factor > static_cast<int16_t>(node_count)) {
+        // Fall back to r=1 if we do not have sufficient nodes
+        return 1;
+    }
+    // Respect `internal_topic_replication_factor` if enough
+    // nodes were available.
+    return replication_factor;
 }
 
 } // namespace cluster

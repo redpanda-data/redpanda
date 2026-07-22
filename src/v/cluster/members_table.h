@@ -115,4 +115,10 @@ private:
 
     void notify_member_updated(model::node_id, model::membership_state);
 };
+
+/// Helper for subsystems that create internal topics, to discover how many
+/// replicas they should use: respects `internal_topic_replication_factor`
+/// if enough nodes are available, otherwise falls back to r=1.
+int16_t internal_topic_replication(size_t node_count);
+
 } // namespace cluster
