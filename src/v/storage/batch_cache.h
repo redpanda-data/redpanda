@@ -749,12 +749,11 @@ private:
     }
 
     /*
+     * Remove the entries of a reclaimed range from the index.
+     *
      * XXX: only safe when invoked by the batch cache reclaimer.
      */
-    bool remove(model::offset offset) {
-        vassert(!locked(), "attempt to erase from locked index");
-        return _index.erase(offset) == 1;
-    }
+    void remove(std::vector<model::offset> offsets);
 
     /*
      * Return an iterator to the first batch that _may_ contain the specified

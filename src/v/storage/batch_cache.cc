@@ -20,6 +20,8 @@
 #include <seastar/coroutine/maybe_yield.hh>
 #include <seastar/util/defer.hh>
 
+#include <algorithm>
+
 namespace storage {
 
 batch_cache::range::range(batch_cache_index& index)
@@ -295,9 +297,7 @@ void batch_cache::dispose_pending(range* r) {
      * generally safe since all batch cache users are prepared to handle a
      * miss.
      */
-    for (auto& o : offsets) {
-        index->remove(o);
-    }
+    index->remove(std::move(offsets));
 }
 
 ss::future<> batch_cache::do_pending_index_removals() {
@@ -316,6 +316,28 @@ ss::future<> batch_cache::do_pending_index_removals() {
 
 void batch_cache::drain_pending_index_removals() {
     _pending_index_removal.clear_and_dispose(dispose_pending);
+}
+
+void batch_cache_index::remove(std::vector<model::offset> offsets) {
+    vassert(!locked(), "attempt to erase from locked index");
+    /*
+     * a range's batches are typically adjacent in the index, so erasing in
+     * offset order and resuming from the iterator returned by the previous
+     * erase avoids a full-tree descent per entry. offsets are appended in
+     * put() order and may be unsorted when reads populated the range out of
+     * order.
+     */
+    std::sort(offsets.begin(), offsets.end());
+    auto it = _index.end();
+    for (auto o : offsets) {
+        if (it == _index.end() || it->first != o) {
+            it = _index.find(o);
+            if (it == _index.end()) {
+                continue;
+            }
+        }
+        it = _index.erase(it);
+    }
 }
 
 void batch_cache_index::dirty_tracker::mark_dirty(
