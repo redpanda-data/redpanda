@@ -55,6 +55,7 @@ go_test(
         "delete_test.go",
         "describe_test.go",
         "list_test.go",
+        "produce_test.go",
         "trim_test.go",
         "utils_test.go",
     ],
