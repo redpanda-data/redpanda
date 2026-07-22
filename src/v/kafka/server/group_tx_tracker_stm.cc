@@ -144,7 +144,7 @@ group_tx_tracker_stm::apply_local_snapshot(
     if (!snap.blocked_groups.empty() && snap.group_blocks.empty())
       [[unlikely]] {
         // legacy snapshot from version 1, reconstruct the map
-        _group_blocks = chunked_hash_map_from_range(
+        _group_blocks = ss::chunked_hash_map_from_range(
           snap.blocked_groups
           | std::views::transform([](const kafka::group_id& gid) {
                 return std::make_pair(
@@ -154,7 +154,7 @@ group_tx_tracker_stm::apply_local_snapshot(
             })
           | std::views::as_rvalue);
     } else {
-        _group_blocks = chunked_hash_map_from_range(
+        _group_blocks = ss::chunked_hash_map_from_range(
           snap.group_blocks | std::views::as_rvalue);
     }
     co_return raft::local_snapshot_applied::yes;
