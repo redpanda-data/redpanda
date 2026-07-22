@@ -108,37 +108,37 @@ static ss::future<result<model::record_batch_header>> read_header_impl(
   ss::input_stream<char>& input,
   const Consumer& consumer,
   bool recovery = false) {
-    auto b = co_await read_iobuf_exactly(
-      input, model::packed_record_batch_header_size);
+    auto b = co_await input.read_exactly(
+      model::packed_record_batch_header_size);
 
     if (b.empty()) {
         // benign outcome. happens at end of file
         co_return parser_errc::end_of_stream;
     }
-    if (b.size_bytes() != model::packed_record_batch_header_size) {
+    if (b.size() != model::packed_record_batch_header_size) {
         if (!recovery) {
             stlog.error(
               "Could not parse header. Expected:{}, but Got:{}. consumer:{}",
               model::packed_record_batch_header_size,
-              b.size_bytes(),
+              b.size(),
               consumer);
         } else {
             stlog.debug(
               "End of recovery with parse error. Expected:{}, but Got:{}. "
               "consumer:{})",
               model::packed_record_batch_header_size,
-              b.size_bytes(),
+              b.size(),
               consumer);
         }
         co_return parser_errc::input_stream_not_enough_bytes;
     }
-    // check if iobuf is filled is zeros, this means that we are reading
+    // check if the buffer is filled with zeros, this means that we are reading
     // fallocated range filled with zeros
-    if (unlikely(storage::internal::is_zero(b))) {
+    if (unlikely(storage::internal::is_zero(b.get(), b.size()))) {
         // happens when we fallocate the file
         co_return parser_errc::fallocated_file_read_zero_bytes_for_header;
     }
-    auto header = batch_header_from_disk_iobuf(std::move(b));
+    auto header = batch_header_from_disk_buf({b.get(), b.size()});
 
     if (
       auto computed_crc = model::internal_header_only_crc(header);

@@ -28,6 +28,10 @@
 
 namespace reflection {
 
+/// A parser that exposes consume_type<T>() of which adl can decode from.
+template<typename Parser>
+concept AdlParser = requires(Parser& p) { p.template consume_type<int8_t>(); };
+
 template<typename T>
 struct adl {
     using type = std::remove_reference_t<std::decay_t<T>>;
@@ -66,9 +70,7 @@ struct adl {
         return adl<type>{}.from(parser);
     }
 
-    type from(iobuf_parser& in) { return parse_from(in); }
-
-    type from(iobuf_const_parser& in) { return parse_from(in); }
+    type from(AdlParser auto& in) { return parse_from(in); }
 
     template<typename Parser>
     type parse_from(Parser& in) {

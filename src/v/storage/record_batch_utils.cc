@@ -12,35 +12,44 @@
 #include "model/record.h"
 #include "reflection/adl.h"
 
+#include <cstring>
+#include <span>
+
 namespace storage {
 
-iobuf batch_header_to_disk_iobuf(const model::record_batch_header& h) {
-    iobuf b;
-    reflection::serialize(
-      b,
-      h.header_crc,
-      h.size_bytes,
-      h.base_offset(),
-      h.type,
-      h.crc,
-      h.attrs.value(),
-      h.last_offset_delta,
-      h.first_timestamp.value(),
-      h.max_timestamp.value(),
-      h.producer_id,
-      h.producer_epoch,
-      h.base_sequence,
-      h.record_count);
-    vassert(
-      b.size_bytes() == model::packed_record_batch_header_size,
-      "disk headers must be of static size:{}, but got{}",
-      model::packed_record_batch_header_size,
-      b.size_bytes());
-    return b;
-}
+namespace {
 
-model::record_batch_header batch_header_from_disk_iobuf(iobuf b) {
-    iobuf_parser parser(std::move(b));
+/// Minimal parser over a contiguous buffer, exposing just enough of the
+/// iobuf_parser interface for reflection::adl to decode fixed-layout scalar
+/// fields.
+class buffer_parser {
+public:
+    explicit buffer_parser(std::span<const char> buf)
+      : _buf(buf)
+      , _size(buf.size()) {}
+
+    template<typename T>
+    T consume_type() {
+        vassert(
+          _buf.size() >= sizeof(T),
+          "buffer_parser over-read: need {} bytes, have {}",
+          sizeof(T),
+          _buf.size());
+        T v;
+        std::memcpy(&v, _buf.data(), sizeof(T));
+        _buf = _buf.subspan(sizeof(T));
+        return v;
+    }
+
+    size_t bytes_consumed() const { return _size - _buf.size(); }
+
+private:
+    std::span<const char> _buf;
+    size_t _size;
+};
+
+template<typename Parser>
+model::record_batch_header parse_header(Parser& parser) {
     auto header_crc = reflection::adl<uint32_t>{}.from(parser);
     auto sz = reflection::adl<int32_t>{}.from(parser);
     using offset_t = model::offset::type;
@@ -79,6 +88,49 @@ model::record_batch_header batch_header_from_disk_iobuf(iobuf b) {
       .record_count = record_count};
     hdr.ctx.owner_shard = ss::this_shard_id();
     return hdr;
+}
+
+} // namespace
+
+iobuf batch_header_to_disk_iobuf(const model::record_batch_header& h) {
+    iobuf b;
+    reflection::serialize(
+      b,
+      h.header_crc,
+      h.size_bytes,
+      h.base_offset(),
+      h.type,
+      h.crc,
+      h.attrs.value(),
+      h.last_offset_delta,
+      h.first_timestamp.value(),
+      h.max_timestamp.value(),
+      h.producer_id,
+      h.producer_epoch,
+      h.base_sequence,
+      h.record_count);
+    vassert(
+      b.size_bytes() == model::packed_record_batch_header_size,
+      "disk headers must be of static size:{}, but got{}",
+      model::packed_record_batch_header_size,
+      b.size_bytes());
+    return b;
+}
+
+model::record_batch_header batch_header_from_disk_iobuf(iobuf b) {
+    iobuf_const_parser parser(b);
+    return parse_header(parser);
+}
+
+model::record_batch_header
+batch_header_from_disk_buf(std::span<const char> data) {
+    vassert(
+      data.size() == model::packed_record_batch_header_size,
+      "disk headers must be of static size {}, but got {}",
+      model::packed_record_batch_header_size,
+      data.size());
+    buffer_parser parser(data);
+    return parse_header(parser);
 }
 
 } // namespace storage

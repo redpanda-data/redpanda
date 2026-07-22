@@ -415,6 +415,22 @@ redpanda_cc_gtest(
 )
 
 redpanda_cc_gtest(
+    name = "record_batch_utils_test",
+    timeout = "short",
+    srcs = [
+        "record_batch_utils_test.cc",
+    ],
+    deps = [
+        "//src/v/bytes:iobuf",
+        "//src/v/model",
+        "//src/v/random:generators",
+        "//src/v/storage:record_batch_utils",
+        "//src/v/test_utils:gtest",
+        "@googletest//:gtest",
+    ],
+)
+
+redpanda_cc_gtest(
     name = "produce_consume_test",
     timeout = "short",
     srcs = [
