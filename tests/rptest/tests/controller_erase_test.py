@@ -50,6 +50,7 @@ class ControllerEraseTest(RedpandaTest):
 
         # Do a bunch of metadata operations to put something in the controller log
         transfers_leadership_count = 4
+        pre_transfer_dirty_offset = -1
         for i in range(0, transfers_leadership_count):
             for j in range(0, 4):
                 spec = TopicSpec(partition_count=1, replication_factor=3)
@@ -58,6 +59,9 @@ class ControllerEraseTest(RedpandaTest):
             # Move a leader to roll a segment
             leader_node = self.redpanda.controller()
             assert leader_node
+            pre_transfer_dirty_offset = admin.get_controller_status(leader_node)[
+                "dirty_offset"
+            ]
             next_leader = ((self.redpanda.idx(leader_node) + 1) % 3) + 1
             admin.partition_transfer_leadership(
                 "redpanda", "controller", 0, next_leader
@@ -74,24 +78,34 @@ class ControllerEraseTest(RedpandaTest):
             controller_elected, timeout_sec=15, backoff_sec=1
         )
 
-        bystander_node_dirty_offset = admin.get_controller_status(bystander_node)[
-            "dirty_offset"
-        ]
+        def final_config_batch_committed():
+            status = admin.get_controller_status(bystander_node)
+            committed_index = status["committed_index"]
+            if (
+                committed_index > pre_transfer_dirty_offset
+                and committed_index == status["dirty_offset"]
+            ):
+                return (True, committed_index)
+            return (False, None)
+
+        target_offset = wait_until_result(
+            final_config_batch_committed,
+            timeout_sec=30,
+            backoff_sec=1,
+            err_msg="Final term's raft configuration batch was not committed",
+        )
 
         def wait_victim_node_apply_segments():
             status = admin.get_controller_status(victim_node)
             last_applied = status["last_applied_offset"]
             dirty_offset = status["dirty_offset"]
-            return (
-                dirty_offset == last_applied
-                and last_applied >= bystander_node_dirty_offset
-            )
+            return dirty_offset == last_applied and last_applied >= target_offset
 
         wait_until(
             wait_victim_node_apply_segments,
             timeout_sec=40,
             backoff_sec=1,
-            err_msg=f"Victim node did not apply {bystander_node_dirty_offset} offset",
+            err_msg=f"Victim node did not apply {target_offset} offset",
         )
 
         self.redpanda.stop_node(victim_node)
