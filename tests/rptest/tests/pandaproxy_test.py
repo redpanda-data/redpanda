@@ -2563,6 +2563,186 @@ class PandaProxyConsumerGroupTest(PandaProxyEndpoints):
             f"got {recovered[0]['offset']}"
         )
 
+    @cluster(num_nodes=3)
+    def test_consumer_group_resumes_from_committed_offset(self):
+        """
+        CORE-16860: a fresh consumer instance in a group that has a committed
+        offset must resume from it, not restart at earliest. A committed offset
+        is the last consumed offset, so the resumed position is committed+1
+        (posting X resumes at X+1). A group with no committed offset still
+        starts at earliest. This behaves very similarly to the Confluent REST
+        API.
+        """
+        num_records = 20
+        commit_offset = 9
+
+        # One produce call per record so each lands on its own offset, making
+        # the resume position unambiguous (see the OOR tests for why).
+        self.logger.info(f"Producing {num_records} records to topic: {self.topic}")
+        for i in range(num_records):
+            produce_result_raw = self._produce_topic(
+                self.topic,
+                json.dumps({"records": [{"value": {"i": i}, "partition": 0}]}),
+                headers=HTTP_PRODUCE_JSON_V2_TOPIC_HEADERS,
+            )
+            assert produce_result_raw.status_code == requests.codes.ok
+
+        group_id = f"pandaproxy-group-{uuid.uuid4()}"
+        self.logger.info(
+            f"Instance A joins group {group_id} and commits offset {commit_offset}"
+        )
+        cc_res = self._create_consumer(group_id)
+        assert cc_res.status_code == requests.codes.ok
+        a = Consumer(cc_res.json(), self.logger)
+        assert a.subscribe([self.topic]).status_code == requests.codes.no_content
+
+        sco_req = dict(
+            partitions=[dict(topic=self.topic, partition=0, offset=commit_offset)]
+        )
+        assert (
+            a.set_offsets(data=json.dumps(sco_req)).status_code
+            == requests.codes.no_content
+        )
+        # Remove A: its in-RAM position is gone, only the committed offset in
+        # the group survives.
+        assert a.remove().status_code == requests.codes.no_content
+
+        self.logger.info(
+            "Fresh instance B in the same group must resume from "
+            f"the committed offset ({commit_offset}+1)"
+        )
+        cc_res = self._create_consumer(group_id)
+        assert cc_res.status_code == requests.codes.ok
+        b = Consumer(cc_res.json(), self.logger)
+        assert b.subscribe([self.topic]).status_code == requests.codes.no_content
+
+        resumed: list = []
+
+        def resumed_records():
+            cf_res = b.fetch(headers=HTTP_CONSUMER_FETCH_JSON_V2_HEADERS)
+            assert cf_res.status_code == requests.codes.ok, (
+                f"Expected 200, got {cf_res.status_code}: {cf_res.text}"
+            )
+            resumed.extend(cf_res.json())
+            return len(resumed) > 0
+
+        wait_until(
+            resumed_records,
+            timeout_sec=30,
+            backoff_sec=0,
+            err_msg="fresh instance never resumed from the committed offset",
+        )
+        assert resumed[0]["offset"] == commit_offset + 1, (
+            f"expected resume from committed+1 ({commit_offset + 1}), "
+            f"got {resumed[0]['offset']}"
+        )
+
+        self.logger.info(
+            "Control: a new group with no committed offset must start at earliest (0)"
+        )
+        control_group = f"pandaproxy-group-{uuid.uuid4()}"
+        cc_res = self._create_consumer(control_group)
+        assert cc_res.status_code == requests.codes.ok
+        c = Consumer(cc_res.json(), self.logger)
+        assert c.subscribe([self.topic]).status_code == requests.codes.no_content
+
+        fresh: list = []
+
+        def fresh_records():
+            cf_res = c.fetch(headers=HTTP_CONSUMER_FETCH_JSON_V2_HEADERS)
+            assert cf_res.status_code == requests.codes.ok, (
+                f"Expected 200, got {cf_res.status_code}: {cf_res.text}"
+            )
+            fresh.extend(cf_res.json())
+            return len(fresh) > 0
+
+        wait_until(
+            fresh_records,
+            timeout_sec=30,
+            backoff_sec=0,
+            err_msg="fresh group never fetched from earliest",
+        )
+        assert fresh[0]["offset"] == 0, (
+            f"expected a group with no committed offset to start at 0, "
+            f"got {fresh[0]['offset']}"
+        )
+
+    @cluster(num_nodes=3)
+    def test_consumer_group_resume_recovers_below_trimmed_log_start(self):
+        """
+        CORE-16860 + CORE-16844: a consumer commits an offset, then retention
+        trims the log start past it. A fresh instance in the same group resumes
+        from the committed offset, its fetch hits offset_out_of_range, and it
+        recovers to the new log start -- rather than staying stuck or silently
+        re-reading from 0.
+        """
+        num_records = 20
+        commit_offset = 5
+        trim_offset = 10
+
+        self.logger.info(f"Producing {num_records} records to topic: {self.topic}")
+        for i in range(num_records):
+            r = self._produce_topic(
+                self.topic,
+                json.dumps({"records": [{"value": {"i": i}, "partition": 0}]}),
+                headers=HTTP_PRODUCE_JSON_V2_TOPIC_HEADERS,
+            )
+            assert r.status_code == requests.codes.ok
+
+        group_id = f"pandaproxy-group-{uuid.uuid4()}"
+        self.logger.info(f"Instance A commits offset {commit_offset} in {group_id}")
+        cc_res = self._create_consumer(group_id)
+        assert cc_res.status_code == requests.codes.ok
+        a = Consumer(cc_res.json(), self.logger)
+        assert a.subscribe([self.topic]).status_code == requests.codes.no_content
+        sco_req = dict(
+            partitions=[dict(topic=self.topic, partition=0, offset=commit_offset)]
+        )
+        assert (
+            a.set_offsets(data=json.dumps(sco_req)).status_code
+            == requests.codes.no_content
+        )
+        assert a.remove().status_code == requests.codes.no_content
+
+        self.logger.info(
+            f"Trimming {self.topic}/0 prefix to {trim_offset} (past committed "
+            f"{commit_offset})"
+        )
+        rpk = RpkTool(self.redpanda)
+        trim_result = rpk.trim_prefix(self.topic, offset=trim_offset, partitions=[0])
+        assert len(trim_result) == 1
+        assert trim_result[0].new_start_offset == trim_offset, trim_result[0]
+
+        self.logger.info(
+            "Fresh instance B resumes from committed+1 (below the new log start), "
+            f"hits offset_out_of_range, and recovers to the log start ({trim_offset})"
+        )
+        cc_res = self._create_consumer(group_id)
+        assert cc_res.status_code == requests.codes.ok
+        b = Consumer(cc_res.json(), self.logger)
+        assert b.subscribe([self.topic]).status_code == requests.codes.no_content
+
+        recovered: list = []
+
+        def recovered_records():
+            cf_res = b.fetch(headers=HTTP_CONSUMER_FETCH_JSON_V2_HEADERS)
+            assert cf_res.status_code == requests.codes.ok, (
+                f"Expected 200, got {cf_res.status_code}: {cf_res.text}"
+            )
+            recovered.extend(cf_res.json())
+            return len(recovered) > 0
+
+        wait_until(
+            recovered_records,
+            timeout_sec=30,
+            backoff_sec=0,
+            err_msg="consumer never recovered after its committed offset was trimmed",
+        )
+        assert recovered[0]["offset"] == trim_offset, (
+            f"expected recovery to the new log start ({trim_offset}), "
+            f"got {recovered[0]['offset']}"
+        )
+
 
 class PandaProxyCompressedBatchesTest(PandaProxyEndpoints):
     topics = [

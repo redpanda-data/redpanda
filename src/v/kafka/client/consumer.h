@@ -107,6 +107,18 @@ private:
 
     ss::future<fetch_response> dispatch_fetch(broker_reqs_t::value_type br);
 
+    /// \brief Seed the fetch position of every assigned partition that has no
+    /// position yet from the group's committed offset, mirroring the Java
+    /// consumer's updateFetchPositions -> refreshCommittedOffsetsIfNeeded.
+    ///
+    /// Runs at the start of each fetch() but issues an OffsetFetch only when a
+    /// partition is still initializing (freshly (re)assigned). Partitions that
+    /// already carry an in-RAM position -- e.g. a same-instance rebalance --
+    /// keep it. A partition with no committed offset is seeded to earliest,
+    /// which also marks it initialized so committed is not re-fetched on every
+    /// poll.
+    ss::future<> seed_positions_from_committed();
+
     /// \brief Build one fetch_request per broker leading a partition in the
     /// current assignment, seeded with each broker's fetch_session id/epoch
     /// and each partition's tracked fetch offset.

@@ -40,6 +40,14 @@ public:
     kafka::fetch_session_epoch epoch() const { return _epoch; }
     model::offset offset(model::topic_partition_view tpv) const;
 
+    /// \brief Whether a fetch position is tracked for a partition.
+    ///
+    /// Distinguishes a genuinely-tracked offset of 0 from an absent one, which
+    /// offset() cannot (it returns 0 for both). Used to decide which assigned
+    /// partitions are still initializing and need seeding from the committed
+    /// offset.
+    bool has_offset(model::topic_partition_view tpv) const;
+
     /// \brief Directly set the tracked fetch offset for a partition, e.g. to
     /// recover from offset_out_of_range by seeking to the log_start_offset
     /// the broker reported (pandaproxy only allows
