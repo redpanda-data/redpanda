@@ -44,6 +44,7 @@ redpanda_cc_gtest(
         "//src/v/cloud_topics/level_zero/pipeline:serializer",
         "//src/v/cloud_topics/level_zero/pipeline:write_pipeline",
         "//src/v/cloud_topics/level_zero/pipeline:write_request",
+        "//src/v/config",
         "//src/v/model",
         "//src/v/model/tests:random",
         "//src/v/random:generators",

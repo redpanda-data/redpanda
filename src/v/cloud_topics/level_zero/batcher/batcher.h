@@ -33,6 +33,7 @@
 #include <seastar/core/future.hh>
 #include <seastar/core/gate.hh>
 #include <seastar/core/lowres_clock.hh>
+#include <seastar/core/timed_out_error.hh>
 
 #include <chrono>
 
@@ -43,6 +44,13 @@ class remote;
 } // namespace cloud_io
 
 namespace cloud_topics::l0 {
+
+/// Raised through the per-upload abort source when the batcher's upload
+/// timer expires. Derives from ss::timed_out_error so cloud_io's existing
+/// exception classification maps it to upload_result::timedout.
+struct upload_timeout_exception final : ss::timed_out_error {
+    const char* what() const noexcept override { return "L0 upload timed out"; }
+};
 
 struct batcher_result {
     uuid_t uuid;

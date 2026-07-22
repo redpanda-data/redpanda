@@ -12,6 +12,7 @@
 #include "cloud_topics/level_zero/batcher/batcher.h"
 #include "cloud_topics/level_zero/common/extent_meta.h"
 #include "cloud_topics/object_utils.h"
+#include "config/configuration.h"
 #include "model/fundamental.h"
 #include "model/namespace.h"
 #include "model/record.h"
@@ -27,6 +28,7 @@
 #include <seastar/core/when_all.hh>
 #include <seastar/util/later.hh>
 #include <seastar/util/log.hh>
+#include <seastar/util/optimized_optional.hh>
 
 #include <chrono>
 #include <iterator>
@@ -420,4 +422,239 @@ TEST_CORO(batcher_test, chunk_splitting_balances_upload_sizes) {
           << "Upload " << i << " size " << mock.payloads[i].size()
           << " is too small relative to average " << avg_size;
     }
+}
+
+namespace {
+
+/// State for a mocked upload that completes only when the caller aborts
+/// it through the retry chain's root abort source — the behavior the
+/// real remote has after the cloud_io abort-subscription fix.
+struct parked_upload {
+    ss::promise<cloud_io::upload_result> promise;
+    ss::optimized_optional<ss::abort_source::subscription> sub;
+    bool abort_seen{false};
+
+    /// Resolve with `res` when the abort fires.
+    void park_until_abort(remote_mock& mock, cloud_io::upload_result res) {
+        EXPECT_CALL(mock, upload_object(::testing::_, ::testing::_))
+          .WillOnce(
+            [this, res](
+              const cloud_io::basic_upload_request<ss::manual_clock>& req,
+              cloud_io::group_id) {
+                auto& as = req.transfer_details.parent_rtc.root_abort_source();
+                sub = as.subscribe([this, res]() noexcept {
+                    abort_seen = true;
+                    promise.set_value(res);
+                });
+                return promise.get_future();
+            });
+    }
+
+    /// Resolve by throwing when the abort fires (models the real remote
+    /// path where fib.retry() -> as.check() rethrows the abort exception).
+    void park_until_abort_then_throw(remote_mock& mock) {
+        EXPECT_CALL(mock, upload_object(::testing::_, ::testing::_))
+          .WillOnce(
+            [this](
+              const cloud_io::basic_upload_request<ss::manual_clock>& req,
+              cloud_io::group_id) {
+                auto& as = req.transfer_details.parent_rtc.root_abort_source();
+                sub = as.subscribe([this]() noexcept {
+                    abort_seen = true;
+                    promise.set_exception(
+                      std::make_exception_ptr(
+                        cloud_topics::l0::upload_timeout_exception{}));
+                });
+                return promise.get_future();
+            });
+    }
+};
+
+} // namespace
+
+TEST_CORO(batcher_test, upload_timer_aborts_wedged_upload) {
+    scoped_config cfg;
+    cfg.get("cloud_storage_segment_upload_timeout_ms")
+      .set_value(std::chrono::milliseconds(10s));
+
+    remote_mock mock;
+    cloud_storage_clients::bucket_name bucket("foo");
+    cloud_topics::l0::write_pipeline<ss::manual_clock> pipeline;
+    static_cluster_services cluster_services;
+    cloud_topics::l0::batcher<ss::manual_clock> batcher(
+      pipeline.register_write_pipeline_stage(),
+      bucket,
+      mock,
+      &cluster_services);
+    cloud_topics::l0::batcher_accessor batcher_accessor{
+      .batcher = &batcher,
+    };
+    cloud_topics::l0::write_pipeline_accessor pipeline_accessor{
+      .pipeline = &pipeline,
+    };
+
+    parked_upload parked;
+    parked.park_until_abort(mock, cloud_io::upload_result::timedout);
+
+    auto [_, records, reader] = get_random_batches(10, 10);
+    // Generous request deadline: the upload timer, not request expiry,
+    // must end this upload.
+    auto deadline = ss::manual_clock::now() + 200s;
+    auto write_fut = pipeline.write_and_debounce(
+      model::controller_ntp, min_epoch, std::move(reader), deadline);
+    co_await sleep_until(
+      10ms, [&] { return pipeline_accessor.write_requests_pending(1); });
+
+    auto run_fut = batcher_accessor.run_once();
+    // The upload parks; nothing resolves before the timer deadline.
+    co_await sleep(1s);
+    ASSERT_FALSE_CORO(run_fut.available());
+    ASSERT_FALSE_CORO(parked.abort_seen);
+
+    // Cross the upload timeout: the timer must fire the per-request
+    // abort, which the (mocked) remote observes.
+    co_await sleep_until(10s, [&] { return run_fut.available(); });
+    ASSERT_TRUE_CORO(parked.abort_seen);
+
+    auto run_res = co_await std::move(run_fut);
+    ASSERT_FALSE_CORO(run_res.has_value());
+    ASSERT_EQ_CORO(run_res.error(), cloud_topics::errc::timeout);
+
+    auto write_res = co_await std::move(write_fut);
+    ASSERT_FALSE_CORO(write_res.has_value());
+    ASSERT_EQ_CORO(write_res.error(), cloud_topics::errc::timeout);
+}
+
+TEST_CORO(batcher_test, upload_timeout_exception_maps_to_timeout) {
+    scoped_config cfg;
+    cfg.get("cloud_storage_segment_upload_timeout_ms")
+      .set_value(std::chrono::milliseconds(10s));
+
+    remote_mock mock;
+    cloud_storage_clients::bucket_name bucket("foo");
+    cloud_topics::l0::write_pipeline<ss::manual_clock> pipeline;
+    static_cluster_services cluster_services;
+    cloud_topics::l0::batcher<ss::manual_clock> batcher(
+      pipeline.register_write_pipeline_stage(),
+      bucket,
+      mock,
+      &cluster_services);
+    cloud_topics::l0::batcher_accessor batcher_accessor{
+      .batcher = &batcher,
+    };
+    cloud_topics::l0::write_pipeline_accessor pipeline_accessor{
+      .pipeline = &pipeline,
+    };
+
+    parked_upload parked;
+    parked.park_until_abort_then_throw(mock);
+
+    auto [_, records, reader] = get_random_batches(10, 10);
+    auto deadline = ss::manual_clock::now() + 200s;
+    auto write_fut = pipeline.write_and_debounce(
+      model::controller_ntp, min_epoch, std::move(reader), deadline);
+    co_await sleep_until(
+      10ms, [&] { return pipeline_accessor.write_requests_pending(1); });
+
+    auto run_fut = batcher_accessor.run_once();
+    // Let the upload timer actually get armed (run_once() suspends at
+    // least once before reaching upload_object's timer-arm statement,
+    // e.g. on the already-ready current_epoch() future) before crossing
+    // the timeout below, otherwise the clock advance below could race
+    // ahead of the timer's arm point.
+    co_await sleep_until(1ms, [&] { return bool(parked.sub); });
+    co_await sleep_until(10s, [&] { return run_fut.available(); });
+    ASSERT_TRUE_CORO(parked.abort_seen);
+
+    // The custom exception classifies as timeout, not shutdown and not
+    // an unexpected failure.
+    auto run_res = co_await std::move(run_fut);
+    ASSERT_FALSE_CORO(run_res.has_value());
+    ASSERT_EQ_CORO(run_res.error(), cloud_topics::errc::timeout);
+
+    auto write_res = co_await std::move(write_fut);
+    ASSERT_FALSE_CORO(write_res.has_value());
+}
+
+TEST_CORO(batcher_test, batcher_abort_propagates_to_upload) {
+    remote_mock mock;
+    cloud_storage_clients::bucket_name bucket("foo");
+    cloud_topics::l0::write_pipeline<ss::manual_clock> pipeline;
+    static_cluster_services cluster_services;
+    cloud_topics::l0::batcher<ss::manual_clock> batcher(
+      pipeline.register_write_pipeline_stage(),
+      bucket,
+      mock,
+      &cluster_services);
+    cloud_topics::l0::batcher_accessor batcher_accessor{
+      .batcher = &batcher,
+    };
+    cloud_topics::l0::write_pipeline_accessor pipeline_accessor{
+      .pipeline = &pipeline,
+    };
+
+    parked_upload parked;
+    parked.park_until_abort(mock, cloud_io::upload_result::cancelled);
+
+    auto [_, records, reader] = get_random_batches(10, 10);
+    auto deadline = ss::manual_clock::now() + 200s;
+    auto write_fut = pipeline.write_and_debounce(
+      model::controller_ntp, min_epoch, std::move(reader), deadline);
+    co_await sleep_until(
+      10ms, [&] { return pipeline_accessor.write_requests_pending(1); });
+
+    auto run_fut = batcher_accessor.run_once();
+    co_await sleep(100ms);
+    ASSERT_FALSE_CORO(run_fut.available());
+
+    // Main abort (batcher shutdown) must reach the in-flight upload
+    // through the per-request abort source — no clock advance needed.
+    auto stop_fut = batcher.stop();
+    co_await sleep_until(10ms, [&] { return run_fut.available(); });
+    ASSERT_TRUE_CORO(parked.abort_seen);
+
+    auto run_res = co_await std::move(run_fut);
+    ASSERT_FALSE_CORO(run_res.has_value());
+    ASSERT_EQ_CORO(run_res.error(), cloud_topics::errc::shutting_down);
+
+    auto write_res = co_await std::move(write_fut);
+    ASSERT_FALSE_CORO(write_res.has_value());
+    co_await std::move(stop_fut);
+}
+
+TEST_CORO(batcher_test, upload_timer_disarmed_on_completion) {
+    remote_mock mock;
+    cloud_storage_clients::bucket_name bucket("foo");
+    cloud_topics::l0::write_pipeline<ss::manual_clock> pipeline;
+    static_cluster_services cluster_services;
+    cloud_topics::l0::batcher<ss::manual_clock> batcher(
+      pipeline.register_write_pipeline_stage(),
+      bucket,
+      mock,
+      &cluster_services);
+    cloud_topics::l0::batcher_accessor batcher_accessor{
+      .batcher = &batcher,
+    };
+    cloud_topics::l0::write_pipeline_accessor pipeline_accessor{
+      .pipeline = &pipeline,
+    };
+
+    auto [_, records, reader] = get_random_batches(10, 10);
+    mock.expect_upload_object(records);
+
+    auto deadline = ss::manual_clock::now() + 200s;
+    auto write_fut = pipeline.write_and_debounce(
+      model::controller_ntp, min_epoch, std::move(reader), deadline);
+    co_await sleep_until(
+      10ms, [&] { return pipeline_accessor.write_requests_pending(1); });
+
+    auto res = co_await batcher_accessor.run_once();
+    ASSERT_TRUE_CORO(res.has_value());
+    auto write_res = co_await std::move(write_fut);
+    ASSERT_TRUE_CORO(write_res.has_value());
+
+    // The timer must be disarmed after completion: crossing the timeout
+    // now must not fire a callback into the destroyed per-request abort
+    // source (ASAN would catch a use-after-free here).
+    co_await sleep(200'000ms);
 }

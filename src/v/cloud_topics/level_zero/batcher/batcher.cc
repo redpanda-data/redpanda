@@ -20,7 +20,9 @@
 #include "config/configuration.h"
 #include "utils/human.h"
 
+#include <seastar/core/timer.hh>
 #include <seastar/coroutine/as_future.hh>
+#include <seastar/util/defer.hh>
 
 #include <exception>
 #include <limits>
@@ -78,12 +80,32 @@ batcher<Clock>::upload_object(object_id id, iobuf payload) {
 
     auto err = errc::success;
     try {
+        ss::abort_source per_request_as;
+        // Propagate batcher shutdown into the per-request abort source so
+        // the main abort path still reaches the remote mid-upload.
+        auto main_abort_sub = _as.subscribe(
+          [&per_request_as]() noexcept { per_request_as.request_abort(); });
+        if (!main_abort_sub) {
+            co_return std::unexpected{errc::shutting_down};
+        }
+        // Bound the whole upload, including an attempt wedged on a dead
+        // socket that no lower-level deadline can reach. On expiry the
+        // abort tears down the leased client connection in
+        // cloud_io::remote.
+        auto deadline = Clock::now() + _upload_timeout();
+        ss::timer<Clock> upload_timer([&per_request_as] {
+            per_request_as.request_abort_ex(upload_timeout_exception{});
+        });
+        upload_timer.arm(deadline);
+        auto timer_guard = ss::defer(
+          [&upload_timer]() noexcept { upload_timer.cancel(); });
+
         // Clock type is not parametrized further down the call chain.
         basic_retry_chain_node<Clock> local_rtc(
-          Clock::now() + _upload_timeout(),
+          per_request_as,
+          deadline,
           _upload_backoff_interval(),
-          retry_strategy::backoff,
-          &_rtc);
+          retry_strategy::backoff);
 
         auto path = object_path_factory::level_zero_path(id);
 
@@ -114,7 +136,7 @@ batcher<Clock>::upload_object(object_id id, iobuf payload) {
         case cloud_io::upload_result::success:
             break;
         case cloud_io::upload_result::cancelled:
-            err = errc::shutting_down;
+            err = _as.abort_requested() ? errc::shutting_down : errc::timeout;
             break;
         case cloud_io::upload_result::timedout:
             err = errc::timeout;
@@ -122,6 +144,11 @@ batcher<Clock>::upload_object(object_id id, iobuf payload) {
         case cloud_io::upload_result::failed:
             err = errc::upload_failure;
         }
+    } catch (const upload_timeout_exception&) {
+        // The upload timer fired and the abort exception propagated out
+        // of the remote (e.g. via the retry chain's abort check) instead
+        // of being classified into a result code.
+        co_return std::unexpected{errc::timeout};
     } catch (...) {
         auto e = std::current_exception();
         if (ssx::is_shutdown_exception(e)) {
