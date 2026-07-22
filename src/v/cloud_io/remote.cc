@@ -1247,6 +1247,24 @@ remote::upload_object(upload_request upload_request, group_id gid) {
         }
         auto lease = std::move(fut).get();
 
+        // The lease already subscribes this abort source and shuts the
+        // client down on abort for the in-flight window, but its
+        // constructor silently skips that subscription if abort was
+        // already requested, and the pool's fast path never checks it.
+        // The `!abort_sub` branch below closes that already-aborted
+        // window; the subscription itself is a second line of defense
+        // so upload_object's promptness on abort doesn't depend on pool
+        // internals. The callback owns a reference to the client so a
+        // late abort (after the lease is dropped on the error path)
+        // stays safe; shutdown is idempotent.
+        auto abort_sub = fib.root_abort_source().subscribe(
+          [client = lease.client]() noexcept { client->shutdown(); });
+        if (!abort_sub) {
+            // Abort was requested while acquiring the client.
+            transfer_details.on_failure();
+            co_return upload_result::cancelled;
+        }
+
         vlog(
           ctxlog.debug,
           "Uploading {} to path {}, length {}",

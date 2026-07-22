@@ -148,6 +148,24 @@ redpanda_cc_gtest(
 )
 
 redpanda_cc_gtest(
+    name = "remote_abort_test",
+    timeout = "short",
+    srcs = [
+        "remote_abort_test.cc",
+    ],
+    deps = [
+        ":scoped_remote",
+        "//src/v/bytes:iobuf",
+        "//src/v/cloud_io:remote",
+        "//src/v/cloud_storage_clients",
+        "//src/v/test_utils:gtest",
+        "//src/v/utils:retry_chain_node",
+        "@googletest//:gtest",
+        "@seastar",
+    ],
+)
+
+redpanda_cc_gtest(
     name = "io_resources_test",
     timeout = "short",
     srcs = [
