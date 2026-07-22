@@ -28,6 +28,7 @@
 #include "model/timeout_clock.h"
 #include "redpanda/tests/fixture.h"
 #include "security/acl.h"
+#include "ssx/sformat.h"
 #include "test_utils/async.h"
 #include "test_utils/boost_fixture.h"
 #include "test_utils/scoped_config.h"
@@ -583,6 +584,85 @@ FIXTURE_TEST(conditional_retention_test, consumer_offsets_fixture) {
                 std::rethrow_exception(std::make_exception_ptr(e));
             }
         }
+    }
+}
+
+FIXTURE_TEST(group_delete_races_topic_cleanup, consumer_offsets_fixture) {
+    // regression test for a group gate double-close crash: deleting a topic
+    // triggers cleanup_removed_topic_partitions for every group holding
+    // offsets on it, while delete_groups can target the same groups
+    // concurrently (during data migration cut_over the migration worker does
+    // exactly this combination). both paths must agree on a single owner of
+    // group::shutdown() — a group must be erased from the group index before
+    // the erasing fiber suspends — or the loser trips the seastar gate
+    // double-close assertion and aborts the binary.
+    scoped_config cfg;
+    cfg.get("group_topic_partitions").set_value(1);
+
+    kafka::group_instance_id gi("group-instance");
+    wait_for_consumer_offsets_topic(gi);
+
+    auto client = make_kafka_client().get();
+    auto deferred = ss::defer([&client] {
+        client.stop().then([&client] { client.shutdown(); }).get();
+    });
+    client.connect().get();
+
+    model::ntp gntp(
+      model::kafka_namespace,
+      model::kafka_consumer_offsets_topic,
+      model::partition_id(0));
+    wait_for_leader(gntp).get();
+
+    constexpr int iterations = 10;
+    constexpr int groups_per_iteration = 8;
+
+    for (int iter = 0; iter < iterations; ++iter) {
+        model::topic t(ssx::sformat("gate-race-{}", iter));
+        add_topic(model::topic_namespace_view{model::kafka_namespace, t}).get();
+
+        std::vector<kafka::group_id> groups;
+        groups.reserve(groups_per_iteration);
+        for (int i = 0; i < groups_per_iteration; ++i) {
+            kafka::group_id g(ssx::sformat("gate-race-{}-{}", iter, i));
+            auto req = offset_commit_request{.data{
+              .group_id = g,
+              .topics = chunked_vector<offset_commit_request_topic>::single(
+                offset_commit_request_topic{
+                  .name = t,
+                  .partitions
+                  = chunked_vector<offset_commit_request_partition>::single(
+                    offset_commit_request_partition{
+                      .partition_index = model::partition_id{0},
+                      .committed_offset = model::offset{0}})})}};
+            auto resp
+              = client.dispatch(std::move(req), kafka::api_version(7)).get();
+            BOOST_REQUIRE(!resp.data.errored());
+            groups.push_back(std::move(g));
+        }
+
+        auto topic_deleted = delete_topic(
+          model::topic_namespace(model::kafka_namespace, t));
+
+        // hammer delete_groups while the topic deletion propagates and the
+        // background cleanup shuts the groups down, until every group is
+        // gone from the group index
+        auto deadline = model::timeout_clock::now() + 60s;
+        bool all_gone = false;
+        while (!all_gone) {
+            BOOST_REQUIRE(model::timeout_clock::now() < deadline);
+            chunked_vector<std::pair<model::ntp, kafka::group_id>> gs;
+            for (const auto& g : groups) {
+                gs.emplace_back(gntp, g);
+            }
+            auto results = app._group_manager.local()
+                             .delete_groups(std::move(gs), false)
+                             .get();
+            all_gone = std::ranges::all_of(results, [](const auto& r) {
+                return r.error_code == kafka::error_code::group_id_not_found;
+            });
+        }
+        std::move(topic_deleted).get();
     }
 }
 
