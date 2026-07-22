@@ -562,9 +562,15 @@ class firewall_blocked:
     """Temporary firewall barrier that isolates set of redpanda
     nodes from the ip-address"""
 
-    def __init__(self, nodes, blocked_port, full_block=False):
+    def __init__(self, nodes, blocked_port, full_block=False, kill_sockets=True):
         self._nodes = nodes
         self._port = blocked_port
+        # When False, established connections to the port are left alive
+        # and silently blackholed (packets dropped, no RST/FIN), so they
+        # wedge in kernel retransmit -- use to reproduce hung-socket
+        # behavior. When True (default), existing sockets are destroyed
+        # on entry, forcing prompt errors on in-flight operations.
+        self._kill_sockets = kill_sockets
 
         self.mode_for_input = "sport"
         if full_block:
@@ -575,8 +581,9 @@ class firewall_blocked:
         cmd = [
             f"iptables -A INPUT -p tcp --{self.mode_for_input} {self._port} -j DROP",
             f"iptables -A OUTPUT -p tcp --dport {self._port} -j DROP",
-            f"ss -K dport {self._port}",
         ]
+        if self._kill_sockets:
+            cmd.append(f"ss -K dport {self._port}")
         cmd = " && ".join(cmd)
         for node in self._nodes:
             node.account.ssh_output(cmd, allow_fail=False)
