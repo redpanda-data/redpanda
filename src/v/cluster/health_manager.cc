@@ -80,45 +80,70 @@ ss::future<> health_manager::stop() {
 
 ss::future<> health_manager::ensure_topic_replication(
   model::topic_namespace_view topic, ss::abort_source& as) {
-    if (as.abort_requested()) {
-        co_return;
-    }
-    auto tp_metadata = _topics.local().get_topic_metadata_ref(topic);
-    if (!tp_metadata.has_value()) {
-        vlog(clusterlog.debug, "Health manager: topic {} not found", topic);
-        co_return;
-    }
+    while (!as.abort_requested()) {
+        auto tp_metadata = _topics.local().get_topic_metadata_ref(topic);
+        if (!tp_metadata.has_value()) {
+            vlog(clusterlog.debug, "Health manager: topic {} not found", topic);
+            co_return;
+        }
 
-    auto current_replication_factor
-      = tp_metadata.value().get().get_replication_factor();
-    if (current_replication_factor() >= _target_replication_factor) {
-        vlog(
-          clusterlog.debug,
-          "Health manager: topic {} with replication {} reached target "
-          "{}",
-          topic,
-          current_replication_factor,
-          _target_replication_factor);
-        co_return;
-    }
+        auto current_replication_factor
+          = tp_metadata.value().get().get_replication_factor();
+        if (current_replication_factor() >= _target_replication_factor) {
+            vlog(
+              clusterlog.debug,
+              "Health manager: topic {} with replication {} reached target "
+              "{}",
+              topic,
+              current_replication_factor,
+              _target_replication_factor);
+            co_return;
+        }
 
-    if (
-      _topics.local().updates_in_progress().size() >= _max_concurrent_moves()) {
-        vlog(
-          clusterlog.info,
-          "Health manager: max number of reconfigurations reached");
-        co_return;
-    }
+        if (
+          _topics.local().updates_in_progress().size()
+          >= _max_concurrent_moves()) {
+            vlog(
+              clusterlog.info,
+              "Health manager: max number of reconfigurations reached");
+            co_return;
+        }
 
-    topic_properties_update properties_update(model::topic_namespace{topic});
-    properties_update.custom_properties.replication_factor.op
-      = incremental_update_operation::set;
-    properties_update.custom_properties.replication_factor.value
-      = replication_factor(_target_replication_factor);
-    auto res = co_await _topics_frontend.local().do_update_topic_properties(
-      std::move(properties_update),
-      model::timeout_clock::now() + set_replicas_timeout);
-    if (res.ec != errc::success) {
+        topic_properties_update properties_update(
+          model::topic_namespace{topic});
+        properties_update.custom_properties.replication_factor.op
+          = incremental_update_operation::set;
+        properties_update.custom_properties.replication_factor.value
+          = replication_factor(_target_replication_factor);
+        auto res = co_await _topics_frontend.local().do_update_topic_properties(
+          std::move(properties_update),
+          model::timeout_clock::now() + set_replicas_timeout);
+        if (res.ec == errc::success) {
+            vlog(clusterlog.info, "Increased replication factor for {}", topic);
+            co_return;
+        }
+
+        // Right after cluster bootstrap the target replicas may not be
+        // allocatable yet (brokers are still joining), so the update fails
+        // transiently. Waiting for the next reconcile tick could leave an
+        // internal topic born at a reduced replication factor (e.g. the
+        // cloud-topics metastore, created r=1 before a quorum of brokers
+        // joined) under-replicated for minutes. Retry promptly instead.
+        if (
+          res.ec == errc::no_eligible_allocation_nodes
+          || res.ec == errc::topic_invalid_replication_factor) {
+            vlog(
+              clusterlog.info,
+              "Health manager: transient error increasing replication factor "
+              "for {}: {}; retrying",
+              topic,
+              res.ec);
+            if (co_await sleep_or_aborted(std::chrono::seconds{1}, as)) {
+                co_return;
+            }
+            continue;
+        }
+
         vlog(
           clusterlog.warn,
           "Health manager: error updating properties for {}: {}",
@@ -126,8 +151,6 @@ ss::future<> health_manager::ensure_topic_replication(
           res.ec);
         co_return;
     }
-
-    vlog(clusterlog.info, "Increased replication factor for {}", topic);
 }
 
 void health_manager::submit_reconcile() {
