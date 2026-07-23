@@ -590,10 +590,16 @@ class ConsumerGroupTest(RedpandaTest):
                     )
                     try:
                         consumer.subscribe([self.topic_spec.name])
-                        # poll() must run long enough for JoinGroup to
-                        # complete so the group is registered; kafka-python
-                        # 2.3.1's coordinator poll honors this timeout.
-                        consumer.poll(timeout_ms=5000)
+                        # Poll until the consumer is actually assigned
+                        # partitions, which proves JoinGroup/SyncGroup
+                        # completed and the group is registered on the
+                        # coordinator.
+                        deadline = time.monotonic() + 30
+                        while not consumer.assignment() and time.monotonic() < deadline:
+                            consumer.poll(timeout_ms=500)
+                        assert consumer.assignment(), (
+                            f"consumer g-{i} failed to join group in time"
+                        )
                     finally:
                         consumer.close(autocommit=True)
                 except Exception as e:
