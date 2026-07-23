@@ -18,6 +18,7 @@ redpanda_cc_library(
     name = "audit",
     srcs = [
         "audit_log_manager.cc",
+        "audit_log_topic.cc",
         "client.cc",
         "client.h",  # Maybe split client into its own target
         "logger.cc",
@@ -27,6 +28,7 @@ redpanda_cc_library(
     ],
     hdrs = [
         "audit_log_manager.h",
+        "audit_log_topic.h",
         "client_probe.h",
         "fwd.h",
         "logger.h",
@@ -41,6 +43,7 @@ redpanda_cc_library(
     implementation_deps = [
         "//src/v/features",
         "//src/v/kafka/data:record_batcher",
+        "//src/v/kafka/server:topic_config_utils",
         "@abseil-cpp//absl/algorithm:container",
     ],
     visibility = ["//visibility:public"],
@@ -48,6 +51,7 @@ redpanda_cc_library(
         ":types",
         "//src/v/base",
         "//src/v/cluster",
+        "//src/v/cluster:topic_configuration",
         "//src/v/config",
         "//src/v/container:chunked_vector",
         "//src/v/hashing:combine",
