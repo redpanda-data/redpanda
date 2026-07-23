@@ -103,7 +103,8 @@ struct prod_consume_fixture : public redpanda_thread_fixture {
 
     ss::future<kafka::produce_response> produce_raw(
       kafka::client::transport& producer,
-      chunked_vector<kafka::produce_request::partition>&& partitions) {
+      chunked_vector<kafka::produce_request::partition>&& partitions,
+      kafka::api_version version = kafka::api_version(7)) {
         kafka::produce_request::topic tp;
         tp.partitions = std::move(partitions);
         tp.name = test_topic;
@@ -113,7 +114,7 @@ struct prod_consume_fixture : public redpanda_thread_fixture {
         req.data.timeout_ms = std::chrono::seconds(2);
         req.has_idempotent = false;
         req.has_transactional = false;
-        return producer.dispatch(std::move(req), kafka::api_version(7));
+        return producer.dispatch(std::move(req), version);
     }
 
     ss::future<kafka::produce_response> produce_raw(
@@ -236,6 +237,38 @@ FIXTURE_TEST(test_produce_consume_small_batches, prod_consume_fixture) {
       resp_2.data.responses.begin()->partitions.begin()->records->last_offset(),
       offset_2);
 };
+
+/// Produce works at every supported version that accepts v2 record batches
+/// (v3 was the first). Notably covers v8 (KIP-467 error fields) and v9, the
+/// first flexible version (KIP-482: compact strings/arrays, varint-prefixed
+/// records and tagged fields).
+FIXTURE_TEST(test_produce_all_supported_versions, prod_consume_fixture) {
+    wait_for_controller_leadership().get();
+    start();
+    static constexpr size_t records_per_batch = 10;
+    auto expected_offset = model::offset(0);
+    for (auto v = kafka::api_version(3);
+         v <= kafka::produce_handler::max_supported;
+         ++v) {
+        auto resp = produce_raw(
+                      producers.front(), small_batches(records_per_batch), v)
+                      .get();
+        BOOST_REQUIRE_EQUAL(resp.data.responses.size(), 1);
+        BOOST_REQUIRE_EQUAL(resp.data.responses.begin()->partitions.size(), 1);
+        const auto& p = *resp.data.responses.begin()->partitions.begin();
+        BOOST_REQUIRE_EQUAL(p.error_code, kafka::error_code::none);
+        BOOST_REQUIRE_EQUAL(p.base_offset, expected_offset);
+        expected_offset += model::offset(records_per_batch);
+    }
+    // all batches produced above are readable
+    auto resp = fetch_next().get();
+    BOOST_REQUIRE_EQUAL(resp.data.responses.empty(), false);
+    BOOST_REQUIRE_EQUAL(resp.data.responses.begin()->partitions.empty(), false);
+    const auto& part = *resp.data.responses.begin()->partitions.begin();
+    BOOST_REQUIRE_EQUAL(part.error_code, kafka::error_code::none);
+    BOOST_REQUIRE_EQUAL(
+      part.records->last_offset(), expected_offset - model::offset(1));
+}
 
 FIXTURE_TEST(test_version_handler, prod_consume_fixture) {
     wait_for_controller_leadership().get();
