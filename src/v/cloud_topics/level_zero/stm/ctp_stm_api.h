@@ -85,6 +85,20 @@ public:
       ss::abort_source& as,
       std::optional<kafka::offset> min_allowed_local_threshold = std::nullopt);
 
+    /// As above, but with the reconciled log offset supplied explicitly rather
+    /// than derived from the raft offset translator. Used to seed the
+    /// reconciliation baseline of a TS-migrated partition directly to the
+    /// migration boundary (kafka offset + the raft offset of the last uploaded
+    /// TS segment) so the already-uploaded TS region of the local raft log can
+    /// be trimmed without waiting for the first CT reconciliation cycle.
+    ss::future<std::expected<std::monostate, ctp_stm_api_errc>>
+    advance_reconciled_offset(
+      kafka::offset last_reconciled_offset,
+      model::offset last_reconciled_log_offset,
+      model::timeout_clock::time_point deadline,
+      ss::abort_source& as,
+      std::optional<kafka::offset> min_allowed_local_threshold = std::nullopt);
+
     ss::future<std::expected<std::monostate, ctp_stm_api_errc>>
     set_start_offset(
       kafka::offset new_start_offset,
