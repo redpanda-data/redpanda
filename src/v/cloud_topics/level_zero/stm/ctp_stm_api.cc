@@ -123,6 +123,18 @@ ctp_stm_api::advance_reconciled_offset(
   model::timeout_clock::time_point deadline,
   ss::abort_source& as,
   std::optional<kafka::offset> min_allowed_local_threshold) {
+    auto lrlo = _stm->_raft->log()->to_log_offset(kafka::offset_cast(lro));
+    return advance_reconciled_offset(
+      lro, lrlo, deadline, as, min_allowed_local_threshold);
+}
+
+ss::future<std::expected<std::monostate, ctp_stm_api_errc>>
+ctp_stm_api::advance_reconciled_offset(
+  kafka::offset lro,
+  model::offset lrlo,
+  model::timeout_clock::time_point deadline,
+  ss::abort_source& as,
+  std::optional<kafka::offset> min_allowed_local_threshold) {
     // The floor is monotonic: drop targets the state already covers.
     if (
       min_allowed_local_threshold.has_value()
@@ -138,7 +150,6 @@ ctp_stm_api::advance_reconciled_offset(
       model::record_batch_type::ctp_stm_command, model::offset(0));
 
     if (advances_lro) {
-        auto lrlo = _stm->_raft->log()->to_log_offset(kafka::offset_cast(lro));
         vlog(
           _log.debug,
           "Replicating ctp_stm_cmd::advance_reconciled_offset{{lro:{} "
