@@ -407,8 +407,15 @@ ss::future<> app::cleanup_tmp_files() {
 }
 
 ss::future<> app::stop() {
-    ssx::sharded_service_container::shutdown();
+    // Stop the data plane first: pipeline shutdown aborts the pipelines'
+    // abort sources, waking any request-resolver fibers parked in retry
+    // backoff. Container services (e.g. the reconciler) block their own
+    // stop() on those requests resolving; stopping the container first
+    // deadlocks until the backoff expires. Services that call into the
+    // stopped data plane during their shutdown receive benign
+    // shutting_down errors.
     co_await data_plane->stop();
+    co_await ss::async([this] { ssx::sharded_service_container::shutdown(); });
 }
 
 ss::sharded<l1::leader_router>* app::get_sharded_l1_metastore_router() {
