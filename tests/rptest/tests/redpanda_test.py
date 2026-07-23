@@ -220,36 +220,54 @@ class RedpandaTest(RedpandaTestBase):
             self.redpanda._installer.install(self.redpanda.nodes, v)
             return v
 
-        def logical_version_stable(old_logical_version: int):
+        def logical_version_stable(old_logical_version: int) -> bool:
             """Assuming all nodes have been updated to a particular version,
             check that the cluster's active version has advanced to match the
             logical version of the node we are talking to.
+
+            Logs which node/condition is still blocking so that a timeout is
+            diagnosable rather than a bare TimeoutError.
             """
             for node in self.redpanda.nodes:
                 features = self.redpanda._admin.get_features(node=node)
+                cluster_version = features["cluster_version"]
 
                 if "node_latest_version" in features:
                     # Only Redpanda >= v23.2 has this field
-                    if features["cluster_version"] != features["node_latest_version"]:
-                        # The cluster logical version has not yet updated
-                        return False
-                    else:
+                    node_latest_version = features["node_latest_version"]
+                    if cluster_version != node_latest_version:
                         self.logger.debug(
-                            f"Accepting node {node.name} active version {features['cluster_version']}, it is equal to highest version"
+                            f"node {node.name}: cluster_version {cluster_version} "
+                            f"has not advanced to node_latest_version "
+                            f"{node_latest_version}"
                         )
-
+                        return False
+                    self.logger.debug(
+                        f"Accepting node {node.name} active version "
+                        f"{cluster_version}, it is equal to highest version"
+                    )
+                elif cluster_version <= old_logical_version:
+                    # Older feature API just tells us the cluster version, we
+                    # compare it to the logical version pre-upgrade
+                    self.logger.debug(
+                        f"node {node.name}: cluster_version {cluster_version} has "
+                        f"not advanced past pre-upgrade logical version "
+                        f"{old_logical_version}"
+                    )
+                    return False
                 else:
-                    # Older feature API just tells us the cluster version, we compare
-                    # it to the logical version pre-upgrade
-                    if features["cluster_version"] <= old_logical_version:
-                        return False
-                    else:
-                        self.logger.debug(
-                            f"Accepting node {node.name} active version {features['cluster_version']}, it is > {old_logical_version}"
-                        )
+                    self.logger.debug(
+                        f"Accepting node {node.name} active version "
+                        f"{cluster_version}, it is > {old_logical_version}"
+                    )
 
-                if any(f["state"] == "preparing" for f in features["features"]):
-                    # One or more features is still in preparing state.
+                preparing = [
+                    f["name"] for f in features["features"] if f["state"] == "preparing"
+                ]
+                if preparing:
+                    self.logger.debug(
+                        f"node {node.name}: features still preparing: {preparing}"
+                    )
                     return False
 
             return True
@@ -333,8 +351,10 @@ class RedpandaTest(RedpandaTestBase):
                 # upgrading "too fast" such that the cluster thinks we skipped a version.
                 self.redpanda.wait_until(
                     lambda: logical_version_stable(old_logical_version),
-                    timeout_sec=30,
+                    timeout_sec=60,
                     backoff_sec=1,
+                    err_msg="logical version / feature flags did not stabilize "
+                    "after rolling restart",
                 )
 
             old_version = current_version
