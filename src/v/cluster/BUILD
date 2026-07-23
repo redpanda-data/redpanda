@@ -1247,6 +1247,7 @@ redpanda_cc_library(
         ":errc",
         ":logger",
         "//src/v/base",
+        "//src/v/config",
         "@fmt",
     ],
     visibility = ["//visibility:public"],

@@ -136,18 +136,6 @@ bool config_property_requested(
                 != configuration_keys->end();
 }
 
-template<typename T>
-ss::sstring describe_as_string(const T& t) {
-    if constexpr (::detail::is_specialization_of_v<T, std::chrono::duration>) {
-        return ssx::sformat("{}", t.count());
-    } else {
-        return ssx::sformat("{}", t);
-    }
-}
-
-// Instantiate explicitly for unit testing
-template ss::sstring describe_as_string(const int&);
-
 // Kafka protocol defines integral types by sizes. See
 // https://kafka.apache.org/protocol.html
 // Therefore we should also use type sizes for integrals and use Java type sizes
@@ -464,15 +452,6 @@ template void add_topic_config_if_requested<int, describe_int_t>(
   std::optional<ss::sstring> documentation,
   describe_int_t&& describe_f,
   bool hide_default_override = false);
-
-template<typename T>
-static ss::sstring maybe_print_tristate(const tristate<T>& tri) {
-    if (tri.is_disabled() || !tri.has_optional_value()) {
-        return "-1";
-    }
-
-    return describe_as_string(tri.value());
-}
 
 template<typename T>
 static void add_topic_config(

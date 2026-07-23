@@ -20,6 +20,7 @@
 #include "kafka/server/handlers/details/security.h"
 #include "kafka/server/handlers/metadata.h"
 #include "model/fundamental.h"
+#include "model/namespace.h"
 #include "model/timeout_clock.h"
 #include "redpanda/tests/fixture.h"
 #include "security/acl.h"
@@ -548,6 +549,73 @@ FIXTURE_TEST(metadata_autocreate, metadata_fixture) {
         BOOST_REQUIRE_EQUAL(topics.size(), 1);
         BOOST_REQUIRE_EQUAL(topics[0].error_code, kafka::error_code::none);
     }
+}
+
+FIXTURE_TEST(metadata_autocreate_internal_topics, metadata_fixture) {
+    // Internal topics auto-created in response to a metadata request must
+    // get their owning subsystem's configuration, not cluster defaults.
+    auto undo = set_auto_create_topics(true);
+    wait_for_controller_leadership().get();
+
+    auto client = make_kafka_client().get();
+    client.connect().get();
+    auto close = ss::defer([&client] { client.stop().get(); });
+
+    auto req = kafka::metadata_request{.data{
+      .topics = {{
+        {.name{model::kafka_consumer_offsets_topic}},
+        {.name{model::schema_registry_internal_tp.topic}},
+        {.name{model::kafka_audit_logging_topic}},
+      }},
+      .allow_auto_topic_creation = true,
+      .include_cluster_authorized_operations = false,
+      .include_topic_authorized_operations = false}};
+    auto resp = client.dispatch(std::move(req), kafka::api_version{9}).get();
+
+    // Only check topic-level errors: partitions may transiently report
+    // leader_not_available until leadership metadata catches up with the
+    // freshly created topics.
+    BOOST_REQUIRE_EQUAL(resp.data.topics.size(), 3);
+    for (const auto& topic : resp.data.topics) {
+        BOOST_REQUIRE_EQUAL(topic.error_code, kafka::error_code::none);
+    }
+
+    const auto& topics_state = app.controller->get_topics_state().local();
+
+    auto co_cfg = topics_state.get_topic_cfg(model::kafka_consumer_offsets_nt);
+    BOOST_REQUIRE(co_cfg.has_value());
+    BOOST_CHECK_EQUAL(
+      co_cfg->partition_count,
+      config::shard_local_cfg().group_topic_partitions());
+    BOOST_CHECK(
+      co_cfg->properties.cleanup_policy_bitflags
+      == model::cleanup_policy_bitflags::compaction);
+
+    auto schemas_cfg = topics_state.get_topic_cfg(
+      {model::kafka_namespace, model::schema_registry_internal_tp.topic});
+    BOOST_REQUIRE(schemas_cfg.has_value());
+    BOOST_CHECK_EQUAL(schemas_cfg->partition_count, 1);
+    BOOST_CHECK(
+      schemas_cfg->properties.cleanup_policy_bitflags
+      == model::cleanup_policy_bitflags::compaction);
+    BOOST_CHECK(
+      schemas_cfg->properties.compression == model::compression::none);
+    BOOST_CHECK(schemas_cfg->properties.retention_duration.is_disabled());
+    BOOST_CHECK(schemas_cfg->properties.retention_bytes.is_disabled());
+
+    auto audit_cfg = topics_state.get_topic_cfg(model::kafka_audit_logging_nt);
+    BOOST_REQUIRE(audit_cfg.has_value());
+    BOOST_CHECK_EQUAL(
+      audit_cfg->partition_count,
+      config::shard_local_cfg().audit_log_num_partitions());
+    BOOST_CHECK(
+      audit_cfg->properties.cleanup_policy_bitflags
+      == model::cleanup_policy_bitflags::deletion);
+    BOOST_REQUIRE(
+      audit_cfg->properties.retention_duration.has_optional_value());
+    BOOST_CHECK(
+      audit_cfg->properties.retention_duration.value()
+      == std::chrono::milliseconds(604800000));
 }
 
 FIXTURE_TEST(metadata_v12_unauthorized, metadata_fixture) {

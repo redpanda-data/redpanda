@@ -1199,16 +1199,8 @@ ss::future<> controller::cluster_creation_hook(
  * how many replicas they should use.
  */
 int16_t controller::internal_topic_replication() const {
-    auto replication_factor
-      = (int16_t)config::shard_local_cfg().internal_topic_replication_factor();
-    if (replication_factor > (int16_t)_members_table.local().node_count()) {
-        // Fall back to r=1 if we do not have sufficient nodes
-        return 1;
-    } else {
-        // Respect `internal_topic_replication_factor` if enough
-        // nodes were available.
-        return replication_factor;
-    }
+    return cluster::internal_topic_replication(
+      _members_table.local().node_count());
 }
 
 ss::future<result<std::vector<partition_state>>>

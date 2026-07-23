@@ -18,8 +18,8 @@
 #include "kafka/client/client.h"
 #include "kafka/data/record_batcher.h"
 #include "kafka/data/rpc/client.h"
-#include "kafka/protocol/topic_properties.h"
 #include "security/audit/audit_log_manager.h"
+#include "security/audit/audit_log_topic.h"
 #include "security/audit/logger.h"
 #include "utils/retry.h"
 
@@ -100,9 +100,6 @@ public:
         return ss::now();
     }
     ss::future<> create_internal_topic() {
-        constexpr auto seven_days = 604800000ms;
-        using namespace std::chrono_literals;
-
         int16_t replication_factor
           = config::shard_local_cfg().audit_log_replication_factor().value_or(
             controller()->internal_topic_replication());
@@ -111,12 +108,7 @@ public:
           "Attempting to create internal topic (replication={})",
           replication_factor);
 
-        cluster::topic_properties audit_topic_props;
-        audit_topic_props.retention_bytes = tristate<size_t>{};
-        audit_topic_props.retention_duration
-          = tristate<std::chrono::milliseconds>{seven_days};
-        audit_topic_props.cleanup_policy_bitflags
-          = model::cleanup_policy_bitflags::deletion;
+        auto audit_topic_props = audit_log_topic_properties();
         vlog(
           adtlog.info,
           "Creating audit log topic with settings: {}",
@@ -377,8 +369,6 @@ private:
     }
 
     ss::future<> create_internal_topic() {
-        constexpr std::string_view retain_forever = "-1";
-        constexpr std::string_view seven_days = "604800000";
         int16_t replication_factor
           = config::shard_local_cfg().audit_log_replication_factor().value_or(
             controller()->internal_topic_replication());
@@ -392,16 +382,7 @@ private:
           = config::shard_local_cfg().audit_log_num_partitions(),
           .replication_factor = replication_factor,
           .assignments = {},
-          .configs = {
-            kafka::createable_topic_config{
-              .name = ss::sstring(kafka::topic_property_retention_bytes),
-              .value{retain_forever}},
-            kafka::createable_topic_config{
-              .name = ss::sstring(kafka::topic_property_retention_duration),
-              .value{seven_days}},
-            kafka::createable_topic_config{
-              .name = ss::sstring(kafka::topic_property_cleanup_policy),
-              .value = "delete"}}};
+          .configs = audit_log_topic_configs()};
         vlog(
           adtlog.info,
           "Creating audit log topic with settings: {}",

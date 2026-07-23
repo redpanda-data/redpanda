@@ -13,6 +13,8 @@ from typing import Any, Callable
 
 from ducktape.mark import parametrize
 from ducktape.utils.util import wait_until
+from kafka import KafkaClient
+from kafka.protocol.metadata import MetadataRequest
 
 from rptest.clients.kafka_cat import KafkaCat
 from rptest.clients.kafka_cli_tools import KafkaCliTools
@@ -206,6 +208,125 @@ class InternalTopicProtectionTest(RedpandaTest):
             lambda: test_topic not in client.list_topics(),
             timeout_sec=90,
             backoff_sec=3,
+        )
+
+
+class InternalTopicAutoCreateTest(RedpandaTest):
+    """
+    With `auto_create_topics_enabled=true`, a metadata request that names an
+    internal topic (with the request's allow_auto_topic_creation flag set)
+    must create the topic with its owning subsystem's configuration, not
+    cluster defaults. Otherwise e.g. `_schemas` would end up on the default
+    delete cleanup policy and schema data would be subject to retention.
+    """
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(
+            *args,
+            num_brokers=3,
+            extra_rp_conf={"auto_create_topics_enabled": True},
+            **kwargs,
+        )
+
+        self.rpk = RpkTool(self.redpanda)
+
+    def _metadata_auto_create(self, topic: str):
+        """Send a metadata request naming `topic` with
+        allow_auto_topic_creation=true, as e.g. Java clients do by default."""
+        client = KafkaClient(bootstrap_servers=self.redpanda.brokers())
+        try:
+            node_id = self.redpanda.node_id(self.redpanda.nodes[0])
+
+            def node_ready():
+                if not client.ready(node_id):
+                    client.poll()
+                    return False
+                return True
+
+            wait_until(
+                node_ready,
+                timeout_sec=30,
+                backoff_sec=1,
+                err_msg="Timeout waiting for broker connection to be ready",
+            )
+            request = MetadataRequest[4]([topic], True)
+            future = client.send(node_id, request)
+            client.poll(future=future)
+            assert future.succeeded(), f"metadata request failed: {future.exception}"
+        finally:
+            client.close()
+
+    def _partitions(self, topic: str):
+        def topic_ready():
+            partitions = list(self.rpk.describe_topic(topic))
+            return (len(partitions) > 0, partitions)
+
+        return wait_until_result(
+            topic_ready,
+            timeout_sec=30,
+            backoff_sec=1,
+            err_msg=f"{topic} never became ready",
+        )
+
+    @cluster(num_nodes=3)
+    def test_consumer_offsets_topic(self):
+        self._metadata_auto_create("__consumer_offsets")
+
+        partitions = self._partitions("__consumer_offsets")
+        assert len(partitions) == 16, (
+            f"Expected 16 partitions (group_topic_partitions) but got {len(partitions)}"
+        )
+        assert len(partitions[0].replicas) == 3, (
+            f"Expected RF of 3 but got {len(partitions[0].replicas)}"
+        )
+        cleanup_policy, _ = self.rpk.describe_topic_configs("__consumer_offsets")[
+            "cleanup.policy"
+        ]
+        assert cleanup_policy == "compact", (
+            f"Expected compact cleanup.policy but got {cleanup_policy}"
+        )
+
+    @cluster(num_nodes=3)
+    def test_schemas_topic(self):
+        self._metadata_auto_create("_schemas")
+
+        partitions = self._partitions("_schemas")
+        assert len(partitions) == 1, f"Expected 1 partition but got {len(partitions)}"
+        assert len(partitions[0].replicas) == 3, (
+            f"Expected RF of 3 but got {len(partitions[0].replicas)}"
+        )
+        configs = self.rpk.describe_topic_configs("_schemas")
+        cleanup_policy, source = configs["cleanup.policy"]
+        assert (cleanup_policy, source) == ("compact", "DYNAMIC_TOPIC_CONFIG"), (
+            f"Expected explicitly-set compact cleanup.policy but got "
+            f"{cleanup_policy} ({source})"
+        )
+        retention_ms, _ = configs["retention.ms"]
+        assert retention_ms == "-1", (
+            f"Expected disabled retention.ms but got {retention_ms}"
+        )
+
+    @cluster(num_nodes=3)
+    def test_audit_log_topic(self):
+        self._metadata_auto_create("_redpanda.audit_log")
+
+        partitions = self._partitions("_redpanda.audit_log")
+        assert len(partitions) == 12, (
+            f"Expected 12 partitions (audit_log_num_partitions) but got "
+            f"{len(partitions)}"
+        )
+        assert len(partitions[0].replicas) == 3, (
+            f"Expected RF of 3 but got {len(partitions[0].replicas)}"
+        )
+        configs = self.rpk.describe_topic_configs("_redpanda.audit_log")
+        cleanup_policy, _ = configs["cleanup.policy"]
+        assert cleanup_policy == "delete", (
+            f"Expected delete cleanup.policy but got {cleanup_policy}"
+        )
+        retention_ms, source = configs["retention.ms"]
+        assert (retention_ms, source) == ("604800000", "DYNAMIC_TOPIC_CONFIG"), (
+            f"Expected explicitly-set 7 day retention.ms but got "
+            f"{retention_ms} ({source})"
         )
 
 

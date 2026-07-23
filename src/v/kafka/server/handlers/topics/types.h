@@ -165,6 +165,11 @@ cluster::topic_configuration to_topic_config(
   int16_t replication_factor,
   const config_map_t& config_map);
 
+/// \brief The intended configuration of the schema registry's internal
+/// topic (_schemas): a single compacted partition with retention disabled.
+cluster::topic_configuration
+schema_registry_topic_configuration(int16_t replication_factor);
+
 std::vector<kafka::creatable_topic_configs> report_topic_configs(
   const cluster::metadata_cache& metadata_cache,
   const cluster::topic_properties& topic_properties);

@@ -385,6 +385,33 @@ cluster::topic_configuration to_topic_config(
     return cfg;
 }
 
+cluster::topic_configuration
+schema_registry_topic_configuration(int16_t replication_factor) {
+    // Create the base topic configuration to get the cluster defaults
+    auto cfg = to_topic_config(
+      model::kafka_namespace,
+      model::schema_registry_internal_tp.topic,
+      /*partition_count=*/1,
+      replication_factor,
+      {});
+    // Now update the properties
+    cfg.properties.cleanup_policy_bitflags
+      = model::cleanup_policy_bitflags::compaction;
+    cfg.properties.compression = model::compression::none;
+    cfg.properties.retention_bytes = tristate<size_t>{disable_tristate};
+    cfg.properties.retention_duration = tristate<std::chrono::milliseconds>{
+      disable_tristate};
+    cfg.properties.retention_local_target_bytes = tristate<size_t>{
+      disable_tristate};
+    cfg.properties.retention_local_target_ms
+      = tristate<std::chrono::milliseconds>{disable_tristate};
+    cfg.properties.initial_retention_local_target_bytes = tristate<size_t>{
+      disable_tristate};
+    cfg.properties.initial_retention_local_target_ms
+      = tristate<std::chrono::milliseconds>{disable_tristate};
+    return cfg;
+}
+
 static std::vector<kafka::creatable_topic_configs>
 convert_topic_configs(config_response_container_t&& topic_cfgs) {
     auto configs = std::vector<kafka::creatable_topic_configs>();

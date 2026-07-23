@@ -9,6 +9,7 @@
 
 #include "kafka/server/handlers/metadata.h"
 
+#include "cluster/members_table.h"
 #include "cluster/metadata_cache.h"
 #include "cluster/topics_frontend.h"
 #include "cluster/types.h"
@@ -20,10 +21,12 @@
 #include "kafka/protocol/types.h"
 #include "kafka/server/errors.h"
 #include "kafka/server/fwd.h"
+#include "kafka/server/group_initializer.h"
 #include "kafka/server/handlers/describe_cluster.h"
 #include "kafka/server/handlers/details/leader_epoch.h"
 #include "kafka/server/handlers/details/security.h"
 #include "kafka/server/handlers/topics/topic_utils.h"
+#include "kafka/server/handlers/topics/types.h"
 #include "kafka/server/response.h"
 #include "model/errc.h"
 #include "model/metadata.h"
@@ -31,6 +34,7 @@
 #include "model/timeout_clock.h"
 #include "random/generators.h"
 #include "security/acl.h"
+#include "security/audit/audit_log_topic.h"
 
 #include <seastar/core/coroutine.hh>
 #include <seastar/core/future-util.hh>
@@ -206,6 +210,49 @@ metadata_response::topic make_topic_response_from_topic_metadata(
 }
 
 namespace {
+/// Internal topics requested by name are created with their owning
+/// subsystem's configuration rather than cluster defaults, mirroring Apache
+/// Kafka's special-casing of internal topics during metadata-driven topic
+/// auto-creation.
+cluster::topic_configuration
+autocreate_topic_configuration(request_context& ctx, model::topic topic) {
+    if (topic == model::kafka_consumer_offsets_topic) {
+        return consumer_offsets_topic_configuration(
+          model::kafka_consumer_offsets_nt,
+          cluster::internal_topic_replication(
+            ctx.metadata_cache().node_count()));
+    }
+    if (topic == model::schema_registry_internal_tp.topic) {
+        return schema_registry_topic_configuration(
+          cluster::internal_topic_replication(
+            ctx.metadata_cache().node_count()));
+    }
+    if (topic == model::kafka_audit_logging_topic) {
+        auto replication_factor
+          = config::shard_local_cfg().audit_log_replication_factor().value_or(
+            cluster::internal_topic_replication(
+              ctx.metadata_cache().node_count()));
+        cluster::topic_configuration cfg{
+          model::kafka_namespace,
+          std::move(topic),
+          config::shard_local_cfg().audit_log_num_partitions(),
+          replication_factor};
+        cfg.properties = security::audit::audit_log_topic_properties();
+        return cfg;
+    }
+    // default topic configuration
+    cluster::topic_configuration cfg{
+      model::kafka_namespace,
+      std::move(topic),
+      config::shard_local_cfg().default_topic_partitions(),
+      config::shard_local_cfg().default_topic_replication()};
+    // Need to respect the default_redpanda_storage_mode when autocreating a
+    // topic.
+    cfg.properties.storage_mode
+      = config::shard_local_cfg().default_redpanda_storage_mode();
+    return cfg;
+}
+
 ss::future<metadata_response::topic> create_topic(
   request_context& ctx,
   model::topic topic,
@@ -221,20 +268,10 @@ ss::future<metadata_response::topic> create_topic(
         t.error_code = error_code::broker_not_available;
         co_return t;
     }
-    // default topic configuration
-    cluster::topic_configuration cfg{
-      model::kafka_namespace,
-      topic,
-      config::shard_local_cfg().default_topic_partitions(),
-      config::shard_local_cfg().default_topic_replication()};
-    // Need to respect the default_redpanda_storage_mode when autocreating a
-    // topic.
-    cfg.properties.storage_mode
-      = config::shard_local_cfg().default_redpanda_storage_mode();
     auto tout = config::shard_local_cfg().internal_rpc_request_timeout_ms();
     try {
         auto res = co_await ctx.topics_frontend().autocreate_topics(
-          {std::move(cfg)}, tout);
+          {autocreate_topic_configuration(ctx, topic)}, tout);
         vassert(res.size() == 1, "expected single result");
         // error, neither success nor topic exists
         if (!(res[0].ec == cluster::errc::success
@@ -251,10 +288,11 @@ ss::future<metadata_response::topic> create_topic(
           ctx.controller_api(),
           tout + model::timeout_clock::now());
 
-        auto tp_md = ctx.metadata_cache().get_topic_metadata(res[0].tp_ns);
+        auto tp_md = ctx.metadata_cache().get_topic_metadata(
+          model::topic_namespace_view(model::kafka_namespace, topic));
         if (!tp_md) {
             metadata_response::topic t;
-            t.name = std::move(res[0].tp_ns.tp);
+            t.name = std::move(topic);
             t.error_code = error_code::invalid_topic_exception;
             co_return t;
         }
