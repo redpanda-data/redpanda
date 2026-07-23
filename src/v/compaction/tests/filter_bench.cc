@@ -64,10 +64,10 @@ public:
             builder.add_raw_kv(reflection::to_iobuf(i), gen_value(value_size));
         }
         auto batch = std::move(builder).build();
+        const auto uncompressed_bytes = batch.size_bytes();
         if (codec != model::compression::none) {
             batch = model::compress_batch_sync(codec, std::move(batch));
         }
-        const auto input_bytes = batch.size_bytes();
 
         // Index the keys of the records we want removed at an offset strictly
         // higher than any record in the batch, so the filter drops them. The
@@ -91,7 +91,7 @@ public:
         perf_tests::stop_measuring_time();
 
         perf_tests::do_not_optimize(output);
-        co_return input_bytes;
+        co_return uncompressed_bytes;
     }
 };
 

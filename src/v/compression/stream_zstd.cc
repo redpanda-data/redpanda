@@ -123,7 +123,7 @@ iobuf stream_zstd::do_compress(const iobuf& x) {
         } else {
             in = {.src = nullptr, .size = 0, .pos = 0};
         }
-        auto mode = ZSTD_e_flush;
+        auto mode = ZSTD_e_continue;
         r = ZSTD_compressStream2(ctx, &out, &in, mode);
         throw_if_error(r);
         in_pos = in.pos;

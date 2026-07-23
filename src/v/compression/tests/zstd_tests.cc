@@ -94,6 +94,30 @@ SEASTAR_THREAD_TEST_CASE(stream_zstd_test) {
     }
 }
 
+SEASTAR_THREAD_TEST_CASE(stream_zstd_fragmentation_independence_test) {
+    constexpr size_t fragment_size = 113;
+    const auto data = random_generators::gen_alphanum_string(10_KiB);
+
+    iobuf contiguous;
+    contiguous.append(data.data(), data.size());
+
+    iobuf fragmented;
+    auto remaining = std::string_view(data);
+    while (!remaining.empty()) {
+        const auto fragment = remaining.substr(0, fragment_size);
+        iobuf buf;
+        buf.append(fragment.data(), fragment.size());
+        fragmented.append_fragments(std::move(buf));
+        remaining.remove_prefix(fragment.size());
+    }
+    BOOST_REQUIRE_EQUAL(fragmented, contiguous);
+
+    compression::stream_zstd fn;
+    auto contiguous_compressed = fn.compress(contiguous);
+    auto fragmented_compressed = fn.compress(fragmented);
+    BOOST_REQUIRE_EQUAL(fragmented_compressed, contiguous_compressed);
+}
+
 SEASTAR_THREAD_TEST_CASE(async_stream_zstd_test) {
     compression::async_stream_zstd fn(default_decompression_size, 1);
     auto test_sizes = get_test_sizes();
