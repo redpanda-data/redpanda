@@ -206,6 +206,32 @@ SEASTAR_THREAD_TEST_CASE(test_fetch_session_reseed) {
     BOOST_REQUIRE_EQUAL(s.offset(ctx.tp), model::offset{48});
 }
 
+// CORE-16860: has_offset() distinguishes a genuinely-tracked offset of 0 from
+// an absent one (offset() returns 0 for both), so consumer::fetch() can tell
+// which assigned partitions are still initializing and must be seeded from the
+// committed offset.
+SEASTAR_THREAD_TEST_CASE(test_fetch_session_has_offset) {
+    context ctx;
+    kc::fetch_session s;
+
+    const model::topic_partition other_tp{ctx.tp.topic, model::partition_id{3}};
+
+    // Nothing tracked yet.
+    BOOST_REQUIRE(!s.has_offset(ctx.tp));
+    BOOST_REQUIRE(!s.has_offset(other_tp));
+
+    // A reseed to 0 is a tracked position, not an absence.
+    s.reseed(ctx.tp, model::offset{0});
+    BOOST_REQUIRE(s.has_offset(ctx.tp));
+    BOOST_REQUIRE_EQUAL(s.offset(ctx.tp), model::offset{0});
+    // A sibling partition is still absent.
+    BOOST_REQUIRE(!s.has_offset(other_tp));
+
+    // Delivered records also make a partition tracked.
+    ctx.apply_fetch_response(s, 8);
+    BOOST_REQUIRE(s.has_offset(ctx.tp));
+}
+
 // CORE-16844: apply()/discard() do not reseed offset_out_of_range
 // partitions themselves -- that's the caller's job via reseed(), done once
 // while scanning every broker's response to decide whether to retry (see
