@@ -190,10 +190,22 @@ func checkReplicated() error {
 	}
 	assert.Always(drained, "eventually: shadow link lag drains to zero after faults stop", lags)
 
-	st, err := getShadowLink()
-	linkActive := err == nil && st.State == "SHADOW_LINK_STATE_ACTIVE"
+	// The admin API can hiccup right after recovery; bound time, not
+	// attempts (the eventually-phase policy), and assert the final answer.
+	var st linkStatus
+	var stErr error
+	linkDeadline := time.Now().Add(2 * time.Minute)
+	for {
+		st, stErr = getShadowLink()
+		if (stErr == nil && st.State == "SHADOW_LINK_STATE_ACTIVE") || time.Now().After(linkDeadline) {
+			break
+		}
+		fmt.Printf("waiting for shadow link status: state=%q err=%v\n", st.State, stErr)
+		time.Sleep(5 * time.Second)
+	}
+	linkActive := stErr == nil && st.State == "SHADOW_LINK_STATE_ACTIVE"
 	assert.Always(linkActive, "eventually: shadow link is ACTIVE after faults stop",
-		map[string]any{"state": st.State, "err": fmt.Sprint(err)})
+		map[string]any{"state": st.State, "err": fmt.Sprint(stErr)})
 
 	// Phase 2: per-partition byte comparison, with per-topic coverage
 	// properties (three literal names so tsv2 coverage cannot hide behind
@@ -224,6 +236,9 @@ func checkReplicated() error {
 			if records > 0 {
 				assert.Reachable("eventually: validated a non-empty local shadow topic", details)
 			}
+		default:
+			assert.Unreachable("eventually: unknown test topic in coverage switch",
+				map[string]any{"topic": t.name})
 		}
 	}
 	return nil
