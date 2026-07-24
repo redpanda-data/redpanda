@@ -5035,6 +5035,15 @@ configuration::configuration()
       "in time and blast radius. Lower values mean more, smaller jobs.",
       {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
       1_GiB)
+  , cloud_topics_leveling_max_ranges_per_partition(
+      *this,
+      "cloud_topics_leveling_max_ranges_per_partition",
+      "Maximum number of levelable ranges returned per partition by a single "
+      "leveling scan. Bounds the scan reply's size as well as the rate at "
+      "which leveling work is produced along with "
+      "`cloud_topics_leveling_interval_ms`.",
+      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
+      5)
   , cloud_topics_compaction_disabled(
       *this,
       "cloud_topics_compaction_disabled",

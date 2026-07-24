@@ -829,6 +829,9 @@ simple_metastore::get_leveling_info(
         }
         const auto base = std::max(ext.base_offset, prt.start_offset);
         builder.process_extent(base, ext.last_offset, ext.len);
+        if (builder.is_full()) {
+            break;
+        }
     }
     resp.ranges = std::move(builder).finalize();
     return resp;

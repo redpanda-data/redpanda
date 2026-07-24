@@ -1455,6 +1455,9 @@ db_domain_manager::do_get_leveling_info(
             }
             builder.process_extent(
               base, extent.val.last_offset, extent.val.len);
+            if (builder.is_full()) {
+                break;
+            }
         }
     }
     co_return rpc::get_leveling_info_reply{
