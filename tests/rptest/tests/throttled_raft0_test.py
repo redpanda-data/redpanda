@@ -152,11 +152,17 @@ class AddNode:
     pinned) id to appear in the controller group_configuration learners list;
     ``False`` asserts it does not become a learner within a short window (e.g.
     because raft0 is already stuck on another in-flight add). ``None`` skips
-    the check."""
+    the check.
+
+    ``expect_voter`` waits for the node's raft0 join to fully complete: its id
+    must appear in the voters list with the configuration back to `simple`.
+    Use it when a later operation (e.g. ThrottleRaft0) must not catch this
+    node's join mid-recovery."""
 
     node_id: int | None = None
     node: ClusterNode | None = None
     expect_learner: bool | None = None
+    expect_voter: bool = False
 
 
 @dataclass
@@ -1269,6 +1275,25 @@ class Raft0MembershipOpsTest(_StuckRaft0LearnerBase):
             f"op {idx}: node {node_id} unexpectedly became a raft0 learner"
         )
 
+    def _wait_until_voter(self, node_id: int, idx: int) -> None:
+        """Wait until ``node_id`` is a raft0 voter with the configuration back
+        to `simple`, i.e. its join fully completed."""
+
+        def _is_voter() -> bool:
+            config = self._raft0_configuration()
+            return (
+                config is not None
+                and config.state == GroupConfigurationState.SIMPLE
+                and node_id in config.current.voters
+            )
+
+        wait_until(
+            _is_voter,
+            timeout_sec=MEDIUM_TIMEOUT.timeout_s,
+            backoff_sec=MEDIUM_TIMEOUT.backoff_s,
+            err_msg=f"op {idx}: node {node_id} never became a raft0 voter",
+        )
+
     def _run_operations(self, operations: list[Operation]) -> None:
         """Execute a list of operations against an already-started cluster
         (call ``_start_seed_cluster`` first)."""
@@ -1401,6 +1426,8 @@ class Raft0MembershipOpsTest(_StuckRaft0LearnerBase):
                 )
                 if op.expect_learner is not None:
                     self._assert_learner_expectation(assigned_id, op.expect_learner, i)
+                if op.expect_voter:
+                    self._wait_until_voter(assigned_id, i)
             elif isinstance(op, StopNode):
                 node = resolve_node(op, i, "StopNode")
                 self.logger.info(f"[raft0-ops] op {i}: stopping node {node.name}")
@@ -1496,7 +1523,7 @@ class Raft0MembershipOpsTest(_StuckRaft0LearnerBase):
         self._start_seed_cluster()
         self._run_operations(
             [
-                AddNode(node_id=NEW_JOINER),
+                AddNode(node_id=NEW_JOINER, expect_voter=True),
                 ThrottleRaft0(),
                 AddNode(node_id=STUCK_JOINER, expect_learner=True),
                 StopNode(node_id=STUCK_JOINER),
