@@ -46,9 +46,12 @@ func randN(n int) int {
 // /opt/antithesis/test/v1/sl/ (see `list-commands`). `setup` is the
 // container entrypoint, not a test command.
 var commands = map[string]func() error{
-	"setup":                        setup,
-	"first_create_topics_and_link": createTopicsAndLink,
-	"anytime_check_link":           checkLink,
+	"setup":                          setup,
+	"first_create_topics_and_link":   createTopicsAndLink,
+	"parallel_driver_produce":        produce,
+	"parallel_driver_consume_source": checkSourceRange,
+	"anytime_check_target":           checkTargetRange,
+	"anytime_check_link":             checkLink,
 }
 
 // cmdArgs holds positional arguments after the command token.
