@@ -52,6 +52,7 @@ var commands = map[string]func() error{
 	"parallel_driver_consume_source": checkSourceRange,
 	"anytime_check_target":           checkTargetRange,
 	"anytime_check_link":             checkLink,
+	"eventually_check_replicated":    checkReplicated,
 }
 
 // cmdArgs holds positional arguments after the command token.
