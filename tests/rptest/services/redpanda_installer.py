@@ -49,7 +49,7 @@ REDPANDA_INSTALLER_HEAD_TAG = "head"
 # The latest major version that has been released (binaries available on S3).
 # Update this when a new major version is published. No need to update it for
 # minors.
-LATEST_RELEASED_MAJOR: tuple[int, int, int] = (26, 1, 1)
+LATEST_RELEASED_MAJOR: tuple[int, int, int] = (26, 2, 1)
 
 RedpandaVersionTriple = tuple[int, int, int]
 RedpandaVersionLine = tuple[int, int]
