@@ -195,15 +195,19 @@ void check_kafka_binary_format(
     bytes b;
     {
         if constexpr (std::is_same_v<T, produce_request>) {
-            /// Redpanda currently does not support encoding legacy batches,
-            /// it is not possible to re-convert back to bytes and compare
-            BOOST_TEST(
-              !legacy_batch_failures(r, version),
-              fmt::format(
-                "produce_request encountered when decoding legacy batches, "
-                "version: {}",
-                version));
-            return;
+            /// Versions below 3 carry legacy (message-set) batches which are
+            /// decoded by conversion into v2 batches. Redpanda does not
+            /// support re-encoding legacy batches, so byte comparison is only
+            /// possible for v3+ where clients send v2 batches verbatim.
+            if (version < api_version(3)) {
+                BOOST_TEST(
+                  !legacy_batch_failures(r, version),
+                  fmt::format(
+                    "produce_request encountered when decoding legacy "
+                    "batches, version: {}",
+                    version));
+                return;
+            }
         }
         iobuf iob;
         kafka::protocol::encoder rw(iob);
