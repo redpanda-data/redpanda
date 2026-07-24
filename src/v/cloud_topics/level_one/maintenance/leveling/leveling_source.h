@@ -59,7 +59,9 @@ private:
     // undersized/fragmented L1 objects).
     chunked_vector<levelable_range> _leveling_ranges;
 
-    // Iterator over _leveling_ranges for the current range being processed.
+    // Cursor into `_leveling_ranges`. deduplication_iteration() processes the
+    // range it points at — iterating that range's extents one at a time — then
+    // advances it, one range per call, until the ranges are exhausted.
     chunked_vector<levelable_range>::iterator _range_it;
 
     metastore* _metastore;
