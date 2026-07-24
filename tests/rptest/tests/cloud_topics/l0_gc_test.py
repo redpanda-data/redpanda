@@ -508,7 +508,7 @@ class CloudTopicsL0GCAdminTest(CloudTopicsL0GCAdminBase):
         self.check_statuses(
             statuses,
             nodes=[kill_node_id],
-            error="(Service unavailable)",
+            error=f"failed to proxy admin request to node {kill_node_id}",
             strict=False,
         )
 

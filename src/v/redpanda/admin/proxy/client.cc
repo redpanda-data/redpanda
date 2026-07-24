@@ -18,6 +18,7 @@
 #include "redpanda/admin/proxy/types.h"
 #include "rpc/connection_cache.h"
 #include "serde/protobuf/rpc.h"
+#include "ssx/sformat.h"
 #include "strings/utf8.h"
 
 #include <exception>
@@ -90,7 +91,11 @@ ss::future<iobuf> client::send(
               target,
               result.error());
             proxy_resp.error_code = errc::unavailable;
-            // Leave it as a generic error message
+            proxy_resp.payload = iobuf::from(
+              ssx::sformat(
+                "failed to proxy admin request to node {}: {}",
+                target,
+                result.error().message()));
         } else {
             proxy_resp = std::move(result.value().data);
         }
@@ -101,7 +106,9 @@ ss::future<iobuf> client::send(
           target,
           std::current_exception());
         proxy_resp.error_code = errc::internal_error;
-        // Leave it as a generic error message
+        proxy_resp.payload = iobuf::from(
+          ssx::sformat(
+            "exception while proxying admin request to node {}", target));
     }
     switch (proxy_resp.error_code) {
     case errc::ok:

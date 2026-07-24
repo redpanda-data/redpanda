@@ -48,6 +48,7 @@ redpanda_cc_library(
     implementation_deps = [
         ":context",
         ":proxy_rpc",
+        "//src/v/ssx:sformat",
     ],
     visibility = ["//visibility:public"],
     deps = [
