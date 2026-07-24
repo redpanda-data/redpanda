@@ -1,13 +1,31 @@
+#include "cluster/security_frontend.h"
+#include "config/configuration.h"
+#include "kafka/client/api_types.h"
+#include "kafka/client/broker.h"
 #include "kafka/client/cluster.h"
 #include "kafka/client/configuration.h"
+#include "kafka/client/exceptions.h"
+#include "kafka/client/logger.h"
+#include "kafka/protocol/metadata.h"
 #include "kafka/protocol/produce.h"
 #include "redpanda/tests/fixture.h"
+#include "security/scram_algorithm.h"
+#include "security/types.h"
 #include "storage/types.h"
 #include "test_utils/test.h"
+#include "utils/prefix_logger.h"
 
+#include <seastar/core/future.hh>
+#include <seastar/core/map_reduce.hh>
+#include <seastar/core/smp.hh>
+#include <seastar/util/defer.hh>
+
+#include <boost/range/irange.hpp>
 #include <gtest/gtest.h>
 
 #include <chrono>
+#include <exception>
+#include <functional>
 
 using namespace kafka::client;
 
@@ -36,6 +54,51 @@ public:
     kafka::client::cluster
     create_cluster(std::chrono::milliseconds max_metadata_age = 10s) {
         return kafka::client::cluster{make_cluster_config(max_metadata_age)};
+    }
+
+    void
+    create_user(std::string_view username, security::scram_credential creds) {
+        auto ec = app.controller->get_security_frontend()
+                    .local()
+                    .create_user(
+                      security::credential_user(username),
+                      std::move(creds),
+                      model::timeout_clock::now() + 5s)
+                    .get();
+        ASSERT_FALSE(ec) << "create_user failed: " << ec.message();
+    }
+
+    // enable_sasl is a cluster property; patch() returns once the controller
+    // has applied it, but shard-local propagation happens afterwards. Wait for
+    // it to reach every shard so the broker enforces authentication on the
+    // connections a test is about to open.
+    void enable_sasl_and_wait() {
+        enable_sasl();
+        RPTEST_REQUIRE_EVENTUALLY(5s, [] {
+            auto shards = boost::irange(0u, ss::this_smp_shard_count());
+            return ss::map_reduce(
+              shards.begin(),
+              shards.end(),
+              [](unsigned shard) {
+                  return ss::smp::submit_to(shard, [] {
+                      return config::shard_local_cfg().enable_sasl();
+                  });
+              },
+              true,
+              std::logical_and<>());
+        });
+    }
+
+    connection_configuration
+    make_sasl_config(ss::sstring username, ss::sstring password) {
+        auto kafka_port = config::node().kafka_api()[0].address.port();
+        return connection_configuration{
+          .initial_brokers = {net::unresolved_address{"127.0.0.1", kafka_port}},
+          .sasl_cfg
+          = sasl_configuration{.mechanism = ss::sstring{"SCRAM-SHA-256"}, .username = std::move(username), .password = std::move(password)},
+          .client_id = ss::sstring{"cluster-test-sasl"},
+          .connection_timeout = 5s,
+        };
     }
 };
 
@@ -294,4 +357,121 @@ TEST_F(ClusterFixture, TestTopicTimeout) {
     ss::sleep(1000ms).get();
     cluster.request_metadata_update().get();
     ASSERT_FALSE(std::ranges::contains(cluster.get_topics().topics(), tpa));
+}
+
+namespace {
+std::string describe(const std::exception_ptr& e) {
+    try {
+        std::rethrow_exception(e);
+    } catch (const std::exception& ex) {
+        return ex.what();
+    } catch (...) {
+        return "unknown exception";
+    }
+}
+} // namespace
+
+// Regression test: two requests dispatched concurrently as the very first
+// operations on a fresh, SASL-configured broker must both succeed. This
+// exercises the race between connection setup and authentication.
+//
+// The bug this guards against: authentication ran OUTSIDE the reconnect mutex.
+// maybe_initialize_connection took the mutex only for the reconnect and
+// released it before authenticating. The first caller connected, set
+// _authentication_state to in_progress and started the SASL handshake with no
+// lock held; the second caller, parked on the reconnect mutex, then observed a
+// valid transport with in_progress state, decided it did not need to
+// authenticate, and sent its Metadata request while the handshake was still in
+// flight. The broker rejects a non-auth request mid-SASL by tearing the
+// connection down, so both dispatches failed with broker_not_available. The
+// fix holds the mutex across both reconnect and authentication.
+TEST_F(ClusterFixture, TestConcurrentDispatchRacesAuthentication) {
+    wait_for_controller_leadership().get();
+
+    const ss::sstring username{"broker_auth_user"};
+    const ss::sstring password{"broker_auth_password"};
+    create_user(
+      username,
+      security::scram_sha256::make_credentials(
+        password, security::scram_sha256::min_iterations));
+    enable_sasl_and_wait();
+    auto reset_sasl = ss::defer([this] { disable_sasl(); });
+
+    auto cfg = make_sasl_config(username, password);
+    prefix_logger logger(kclog, "broker-auth-test");
+    remote_broker_factory factory(cfg, logger);
+    auto broker
+      = factory.create_broker(model::node_id{1}, cfg.initial_brokers.front())
+          .get();
+    auto stop_broker = ss::defer([&] { broker->stop().get(); });
+
+    const auto metadata_request = [] {
+        return request_t{kafka::metadata_request{.list_all_topics = true}};
+    };
+
+    // Both coroutines are started (and suspend) before either future is
+    // awaited, so they contend for the connection concurrently.
+    std::exception_ptr first_err;
+    std::exception_ptr second_err;
+    const auto capture = [](std::exception_ptr& slot) {
+        return [&slot](ss::future<response_t> f) {
+            if (f.failed()) {
+                slot = f.get_exception();
+            } else {
+                f.ignore_ready_future();
+            }
+        };
+    };
+    auto f1 = broker->dispatch(metadata_request(), kafka::api_version{7})
+                .then_wrapped(capture(first_err));
+    auto f2 = broker->dispatch(metadata_request(), kafka::api_version{7})
+                .then_wrapped(capture(second_err));
+    ss::when_all(std::move(f1), std::move(f2)).get();
+
+    if (first_err) {
+        ADD_FAILURE() << "first concurrent dispatch failed: "
+                      << describe(first_err);
+    }
+    if (second_err) {
+        ADD_FAILURE() << "second concurrent dispatch failed: "
+                      << describe(second_err);
+    }
+}
+
+// A failed authentication must leave the broker reusable rather than wedged.
+// The credentials here are wrong, so every dispatch fails, but each attempt
+// must fail promptly with a broker_error and the broker must recover between
+// attempts: the reconnect mutex is released on the way out, the dead
+// connection is discarded, and the next dispatch reconnects and
+// re-authenticates from scratch. A wedged mutex or an un-discarded connection
+// would deadlock the second attempt.
+TEST_F(ClusterFixture, TestDispatchRemainsUsableAfterAuthFailure) {
+    wait_for_controller_leadership().get();
+
+    const ss::sstring username{"broker_auth_user"};
+    create_user(
+      username,
+      security::scram_sha256::make_credentials(
+        "correct_password", security::scram_sha256::min_iterations));
+    enable_sasl_and_wait();
+    auto reset_sasl = ss::defer([this] { disable_sasl(); });
+
+    auto cfg = make_sasl_config(username, "wrong_password");
+    prefix_logger logger(kclog, "broker-auth-fail-test");
+    remote_broker_factory factory(cfg, logger);
+    auto broker
+      = factory.create_broker(model::node_id{1}, cfg.initial_brokers.front())
+          .get();
+    auto stop_broker = ss::defer([&] { broker->stop().get(); });
+
+    const auto dispatch_metadata = [&] {
+        return broker
+          ->dispatch(
+            request_t{kafka::metadata_request{.list_all_topics = true}},
+            kafka::api_version{7})
+          .get();
+    };
+
+    EXPECT_THROW(dispatch_metadata(), broker_error);
+    EXPECT_THROW(dispatch_metadata(), broker_error);
 }

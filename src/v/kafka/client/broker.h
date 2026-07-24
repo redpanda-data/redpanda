@@ -167,9 +167,9 @@ private:
     ss::future<> connect_with_retries(
       std::optional<std::reference_wrapper<ss::abort_source>>);
 
-    bool needs_authentication() const {
-        return _config->sasl_cfg.has_value()
-               && _authentication_state == auth_state::none;
+    bool is_authentication_complete() const {
+        return !_config->sasl_cfg.has_value()
+               || _authentication_state == auth_state::authenticated;
     }
 
     api_version get_sasl_authenticate_request_version() const;
