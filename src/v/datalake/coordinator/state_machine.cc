@@ -19,6 +19,7 @@
 #include "utils/prefix_logger.h"
 
 #include <seastar/coroutine/as_future.hh>
+#include <seastar/coroutine/maybe_yield.hh>
 
 namespace datalake::coordinator {
 
@@ -167,6 +168,7 @@ coordinator_stm::take_local_snapshot(ssx::semaphore_units units) {
     auto snapshot_offset = last_applied_offset();
     auto snapshot = make_snapshot();
     units.return_all();
+    co_await ss::coroutine::maybe_yield();
     iobuf snapshot_buf;
     co_await serde::write_async(snapshot_buf, std::move(snapshot));
     co_return raft::stm_snapshot::create(
