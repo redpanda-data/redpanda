@@ -528,7 +528,7 @@ class ShadowLinkBasicTests(ShadowLinkTestBase):
 
         # Attempting to create a second one with the same name should fail
         with self._expect_connect_error(ConnectErrorCode.ALREADY_EXISTS):
-            self.create_link("test-link")
+            self.create_link("test-link", fetch_on_already_exists=False)
 
         # Attempting to create a second link should fail.
         # Only one link is supported per cluster

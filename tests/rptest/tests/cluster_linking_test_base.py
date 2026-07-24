@@ -16,6 +16,7 @@ from typing import Any, Callable, Optional
 
 import google.protobuf.duration_pb2
 import google.protobuf.field_mask_pb2
+from connectrpc.errors import ConnectError, ConnectErrorCode
 from ducktape.cluster.cluster import ClusterNode
 from ducktape.services.service import Service
 from ducktape.utils.util import wait_until
@@ -994,16 +995,67 @@ class ShadowLinkTestBase(PreallocNodesTest):
         return req
 
     def create_link(
-        self, link_name: str, *args: Any, **kwargs: Any
+        self,
+        link_name: str,
+        *args: Any,
+        fetch_on_already_exists: bool = True,
+        **kwargs: Any,
     ) -> shadow_link_pb2.ShadowLink:
         req = self.create_default_link_request(link_name=link_name, *args, **kwargs)
-        return self.create_link_with_request(req=req)
+        return self.create_link_with_request(
+            req=req, fetch_on_already_exists=fetch_on_already_exists
+        )
 
     @retry_request
-    def create_link_with_request(
+    def _create_link_rpc(
         self, req: shadow_link_pb2.CreateShadowLinkRequest
     ) -> shadow_link_pb2.ShadowLink:
         return self.service_client.create_shadow_link(req=req).shadow_link
+
+    def create_link_with_request(
+        self,
+        req: shadow_link_pb2.CreateShadowLinkRequest,
+        fetch_on_already_exists: bool = True,
+    ) -> shadow_link_pb2.ShadowLink:
+        # "Unavailable" is usually transient: leadership may still be
+        # settling, and the broker may have applied the create even though
+        # the RPC failed (e.g. the internal proxy hop to the controller
+        # leader timed out while the create kept running). Retry with
+        # backoff, treating "already exists" on a retry as an earlier
+        # attempt having landed.
+        #
+        # A validate_only request never creates anything, so "already exists"
+        # from one is always a real duplicate rather than our own earlier
+        # attempt. Tests that assert on a duplicate create pass
+        # fetch_on_already_exists=False for the same reason.
+        fetch_existing = fetch_on_already_exists and not req.validate_only
+        max_attempts = 5
+        for attempt in range(max_attempts):
+            try:
+                return self._create_link_rpc(req=req)
+            except ConnectError as e:
+                if (
+                    e.code == ConnectErrorCode.ALREADY_EXISTS
+                    and attempt > 0
+                    and fetch_existing
+                ):
+                    name = req.shadow_link.name
+                    self.logger.debug(
+                        f"Shadow link {name} was created by an earlier attempt"
+                    )
+                    return self.get_link(name)
+                if (
+                    e.code != ConnectErrorCode.UNAVAILABLE
+                    or attempt == max_attempts - 1
+                ):
+                    raise
+                backoff = 2**attempt
+                self.logger.debug(
+                    f"Received {e} while creating shadow link. "
+                    f"Retrying in {backoff}s..."
+                )
+                time.sleep(backoff)
+        raise RuntimeError("unreachable")
 
     def delete_link(
         self, link_name: str, force: bool = False, *args: Any, **kwargs: Any
