@@ -95,15 +95,14 @@ private:
             this->os_->_impl.trim_back(1);
 
             // 2. Stash the final character, ...
-            auto last = last_frag();
-            stashed = *std::prev(last->get_current());
+            stashed = *std::prev(last_frag()->get_current());
             // 3. Drop the final character
             this->os_->_impl.trim_back(1);
 
-            // Ensure a stable address to restore the stashed character
-            if (last != last_frag()) {
-                this->os_->_impl.reserve_memory(1);
-            }
+            // Ensure a stable address to restore the stashed character: the
+            // trim may have dropped the last fragment along with its final
+            // byte.
+            this->os_->_impl.reserve_memory(1);
             // 2. ...and where it is to be written.
             stash_pos = last_frag()->get_current();
         }
