@@ -4867,15 +4867,38 @@ class RedpandaService(Service, RedpandaServiceABC):
         env_preamble = self.redpanda_env_preamble()
         version_cmd = f"{env_preamble} {self.find_binary('redpanda')} --version"
         VERSION_LINE_RE = re.compile(".*(v\\d+\\.\\d+\\.\\d+).*")
+
+        def read_version_lines():
+            # `redpanda --version` is occasionally slow to respond over SSH on a
+            # loaded node, surfacing as a socket read timeout. The output is not
+            # latency-sensitive, so retry only that transient stall (CORE-9724);
+            # every other failure must surface immediately rather than spin until
+            # the wait_until_result timeout. Note socket.timeout is referenced
+            # explicitly because TimeoutError is shadowed by the ducktape import.
+            # ssh_capture yields lazily, so the read (and any timeout) happens
+            # while iterating -- keep the loop inside the try.
+            try:
+                version_lines = [
+                    l
+                    for l in node.account.ssh_capture(
+                        version_cmd, allow_fail=True, timeout_sec=30
+                    )
+                    if VERSION_LINE_RE.match(l)
+                ]
+            except socket.timeout:
+                return False, None
+
+            return True, version_lines
+
+        version_lines = wait_until_result(
+            read_version_lines,
+            timeout_sec=90,
+            backoff_sec=1,
+            err_msg="redpanda --version did not respond over SSH within 90s",
+        )
+
         # NOTE: not all versions of Redpanda support the --version field, even
         # though they print out the version.
-        version_lines = [
-            l
-            for l in node.account.ssh_capture(
-                version_cmd, allow_fail=True, timeout_sec=10
-            )
-            if VERSION_LINE_RE.match(l)
-        ]
         assert len(version_lines) == 1, version_lines
         return VERSION_LINE_RE.findall(version_lines[0])[0]
 
