@@ -45,7 +45,9 @@ func randN(n int) int {
 // Antithesis test-composer prefix are exposed as symlinks under
 // /opt/antithesis/test/v1/sl/ (see `list-commands`). `setup` is the
 // container entrypoint, not a test command.
-var commands = map[string]func() error{}
+var commands = map[string]func() error{
+	"setup": setup,
+}
 
 // cmdArgs holds positional arguments after the command token.
 var cmdArgs []string
