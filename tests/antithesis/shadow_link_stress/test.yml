@@ -1,0 +1,44 @@
+# Antithesis test manifest, consumed by tools/antithesis/template_test_package.py.
+#
+# Two 3-broker clusters (source-*, target-*) plus one MinIO (two buckets) and
+# a franz-go workload that creates a shadow link from target to source.
+#
+# NOTE: fault entries use literal container names because the packager's role
+# expansion only knows `redpanda`; changing source_nodes/target_nodes means
+# editing the fault lists below. --bootstrap-set does not apply to this test
+# (two role-specific bootstrap files instead of scripts/bootstrap.yaml).
+name: shadow link stress testing
+
+images:
+  workload_image:
+    context: sl
+
+faults:
+  clock_skew: true
+  cpu_mod: true
+  node_hang: [source-0, source-1, source-2, target-0, target-1, target-2, workload]
+  node_throttle: [source-0, source-1, source-2, target-0, target-1, target-2, workload]
+  # Brokers only: killing the workload would lose in-flight command state, and
+  # MinIO is a single instance whose S3 durability is not under test.
+  node_termination: [source-0, source-1, source-2, target-0, target-1, target-2]
+  # Nothing excluded: MinIO sees network faults too, exercising object-storage
+  # disruption on both clusters.
+  exclude_from_faults: []
+
+vars:
+  # Any image with the stock rpk entrypoint works here. Override with an
+  # instrumented build for real Antithesis runs (--redpanda-image).
+  redpanda_image: docker.redpanda.com/redpandadata/redpanda-nightly:latest
+  minio_image: minio/minio:RELEASE.2025-07-23T15-54-02Z
+  source_nodes: 3
+  target_nodes: 3
+  # 2 shards per broker; 6 brokers x 1000M = 6G of the ~10G Antithesis budget,
+  # leaving room for MinIO, the workload, page cache and hypervisor overhead.
+  # Below Redpanda's 1 GiB/shard floor (unavoidable), expect a cosmetic warning.
+  smp: 2
+  memory: 1000M
+  bucket_source: shadow-link-source
+  bucket_target: shadow-link-target
+  s3_access_key: panda-user
+  s3_secret_key: panda-secret
+  s3_region: panda-region

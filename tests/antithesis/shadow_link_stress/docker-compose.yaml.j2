@@ -1,0 +1,129 @@
+name: {{ test_slug }}
+
+services:
+  minio:
+    image: {{ minio_image }}
+    container_name: minio
+    hostname: minio
+    platform: linux/amd64
+    init: true
+    restart: "no"
+    command: server /data
+    environment:
+      MINIO_REGION_NAME: {{ s3_region }}
+      MINIO_ROOT_USER: {{ s3_access_key }}
+      MINIO_ROOT_PASSWORD: {{ s3_secret_key }}
+      MINIO_BROWSER: "off"
+    expose:
+      - "9000"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 5s
+      timeout: 5s
+      retries: 60
+
+  minio-init:
+    image: {{ minio_image }}
+    container_name: minio-init
+    hostname: minio-init
+    platform: linux/amd64
+    init: true
+    restart: "no"
+    entrypoint: ["/bin/bash", "/scripts/minio-init.sh"]
+    environment:
+      MINIO_URL: http://minio:9000
+      BUCKETS: "{{ bucket_source }} {{ bucket_target }}"
+      ACCESS_KEY: {{ s3_access_key }}
+      SECRET_KEY: {{ s3_secret_key }}
+    volumes:
+      - ./scripts:/scripts:ro
+    depends_on:
+      minio:
+        condition: service_healthy
+{% for role, count in [("source", source_nodes), ("target", target_nodes)] %}
+{% for i in range(count) %}
+
+  {{ role }}-{{ i }}:
+    image: {{ redpanda_image }}
+    container_name: {{ role }}-{{ i }}
+    hostname: {{ role }}-{{ i }}
+    platform: linux/amd64
+    init: true
+    # No restart policy: docker-compose restarting a killed broker would
+    # nullify Antithesis node-termination faults; Antithesis restarts the
+    # container itself after the fault window.
+    restart: "no"
+    entrypoint: ["/scripts/redpanda-entrypoint.sh"]
+    environment:
+      # Selects /scripts/bootstrap-{{ role }}.yaml in the entrypoint; the
+      # target's bootstrap enables shadow linking.
+      CLUSTER_ROLE: {{ role }}
+    command:
+      - redpanda
+      - start
+      # Pin node_id to the container index so {{ role }}-N is node N of its
+      # cluster; auto-assigned ids follow registration order, not names.
+      - --node-id={{ i }}
+      - --smp={{ smp }}
+      - --memory={{ memory }}
+      - --reserve-memory=0M
+      - --overprovisioned
+      - --kafka-addr=PLAINTEXT://0.0.0.0:9092
+      - --advertise-kafka-addr=PLAINTEXT://{{ role }}-{{ i }}:9092
+      - --rpc-addr=0.0.0.0:33145
+      - --advertise-rpc-addr={{ role }}-{{ i }}:33145
+{% if i > 0 %}
+      - --seeds={{ role }}-0:33145
+{% endif %}
+    volumes:
+      - ./scripts:/scripts:ro
+      - /var/lib/{{ role }}-{{ i }}:/var/lib/redpanda/data
+    # Abort a connection after ~12.6s without a TCP ack instead of the ~15min
+    # default; a network fault can leave an established socket as a black hole
+    # that redpanda's RPC layer never tears down on its own. Sender-side, so
+    # every broker (and the workload) needs it.
+    sysctls:
+      net.ipv4.tcp_retries2: 5
+    ulimits:
+      nofile:
+        soft: 131072
+        hard: 131072
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9644/v1/status/ready"]
+      interval: 5s
+      timeout: 5s
+      retries: 120
+    depends_on:
+      minio-init:
+        condition: service_completed_successfully
+{% endfor %}
+{% endfor %}
+
+  # franz-go workload. Its entrypoint (workload setup) waits for both
+  # clusters, emits setup_complete, then idles so Antithesis runs the baked-in
+  # test commands (/opt/antithesis/test/v1/sl/) in this container.
+  workload:
+    image: {{ workload_image }}
+    container_name: workload
+    hostname: workload
+    platform: linux/amd64
+    init: true
+    restart: "no"
+    environment:
+      SRC_KAFKA_BROKERS: "{% for i in range(source_nodes) %}{% if not loop.first %},{% endif %}source-{{ i }}:9092{% endfor %}"
+      SRC_ADMIN_HOSTS: "{% for i in range(source_nodes) %}{% if not loop.first %},{% endif %}source-{{ i }}:9644{% endfor %}"
+      SRC_EXPECTED_BROKERS: "{{ source_nodes }}"
+      DST_KAFKA_BROKERS: "{% for i in range(target_nodes) %}{% if not loop.first %},{% endif %}target-{{ i }}:9092{% endfor %}"
+      DST_ADMIN_HOSTS: "{% for i in range(target_nodes) %}{% if not loop.first %},{% endif %}target-{{ i }}:9644{% endfor %}"
+      DST_EXPECTED_BROKERS: "{{ target_nodes }}"
+    sysctls:
+      net.ipv4.tcp_retries2: 5
+    depends_on:
+{% for i in range(source_nodes) %}
+      source-{{ i }}:
+        condition: service_healthy
+{% endfor %}
+{% for i in range(target_nodes) %}
+      target-{{ i }}:
+        condition: service_healthy
+{% endfor %}

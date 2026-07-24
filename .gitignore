@@ -295,3 +295,4 @@ src/go/rpk/cmd/rpk/rpk
 # antithesis
 /.antithesis
 tests/antithesis/cloud_cluster_stress/ct/ct
+tests/antithesis/shadow_link_stress/sl/sl

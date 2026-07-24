@@ -1,0 +1,46 @@
+# Initial cluster configuration for the TARGET cluster, applied on first
+# bootstrap (staged to /etc/redpanda/.bootstrap.yaml by
+# redpanda-entrypoint.sh based on CLUSTER_ROLE).
+#
+# Keep in sync with bootstrap-source.yaml.j2 — the two files differ only in
+# the bucket and the target's enable_shadow_linking (the template renderer
+# has no include mechanism, so the common block is duplicated).
+cloud_storage_enabled: true
+cloud_storage_access_key: {{ s3_access_key }}
+cloud_storage_secret_key: {{ s3_secret_key }}
+cloud_storage_region: {{ s3_region }}
+cloud_storage_api_endpoint: minio
+cloud_storage_api_endpoint_port: 9000
+cloud_storage_disable_tls: true
+cloud_storage_url_style: path
+cloud_storage_bucket: {{ bucket_target }}
+
+auto_create_topics_enabled: false
+
+# The tiered storage-mode impl for `redpanda.storage.mode=tiered` topics.
+# Must match on both clusters: the impl resolves via this cluster default on
+# each side, and the shadow topic must land on tiered_v2 like its source.
+default_redpanda_storage_mode_tiered_impl: tiered_v2
+
+# One metastore/domain partition for concentrated activity.
+cloud_topics_num_metastore_partitions: 1
+
+# Shrink cloud-topics object sizes so a light workload still produces many
+# L0/L1 objects and dense indexes (same values and rationale as the ct test).
+cloud_topics_produce_batching_size_threshold: 65536   # 64 KiB (default 4 MiB)
+cloud_topics_reconciliation_max_object_size: 1048576  # 1 MiB (default 80 MiB)
+cloud_topics_indexing_interval: 16384                 # 16 KiB (default 4 MiB)
+
+# Smallest metastore LSM memtable and SST read chunk the config allows.
+cloud_topics_metastore_write_buffer_size: 1048576     # 1 MiB (min; default 16 MiB)
+cloud_topics_metastore_sst_chunk_size: 1048576        # 1 MiB (min; default 24 MiB)
+
+# Cap per-shard compaction key-offset map memory; the 128 MiB defaults were
+# the top allocators in the memory-constrained Antithesis environment.
+storage_compaction_key_map_memory: 33554432          # 32 MiB (default 128 MiB)
+cloud_topics_compaction_key_map_memory: 33554432     # 32 MiB (default 128 MiB)
+
+# The target cluster hosts the shadow link (enterprise feature; the fresh
+# cluster's built-in trial license covers it — clusters are recreated every
+# Antithesis run).
+enable_shadow_linking: true
