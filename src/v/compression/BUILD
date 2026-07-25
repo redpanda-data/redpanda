@@ -39,6 +39,7 @@ redpanda_cc_library(
         "@lz4//:lz4_frame",
         "@seastar",
         "@snappy",
+        "@snappy//:snappy-stubs-internal",
         "@zlib",
         "@zstd",
     ],

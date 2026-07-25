@@ -32,6 +32,11 @@ struct snappy_java_compressor {
 
     static iobuf compress(const iobuf&);
     static iobuf uncompress(const iobuf&);
+
+    /// Preallocate this shard's compression workspace (~278KiB). Called
+    /// during broker startup, before the large-allocation warning threshold
+    /// is armed. Otherwise the workspace is created lazily on first use.
+    static void init_workspace();
 };
 
 } // namespace compression::internal
