@@ -128,6 +128,9 @@ public:
     explicit append_entries_buffer(consensus&, size_t max_buffered_elements);
 
     ss::future<append_entries_reply> enqueue(append_entries_request&& r);
+    ss::future<append_entries_reply>
+    append_uncontended(append_entries_request&&, ssx::semaphore_units);
+    bool empty() const { return _requests.empty(); }
 
     void start();
     ss::future<> stop();

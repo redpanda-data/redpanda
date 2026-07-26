@@ -2061,6 +2061,19 @@ ss::future<append_entries_reply>
 consensus::append_entries(append_entries_request&& r) {
     return with_gate(_bg, [this, r = std::move(r)]() mutable {
         _probe->append_request();
+        if (r.is_flush_required() && _append_requests_buffer.empty()) {
+            auto units = _op_lock.try_get_units();
+            if (units) {
+                return ss::with_scheduling_group(
+                  _scheduling.recv_sg,
+                  [this,
+                   r = std::move(r),
+                   units = std::move(*units)]() mutable {
+                      return _append_requests_buffer.append_uncontended(
+                        std::move(r), std::move(units));
+                  });
+            }
+        }
         return _append_requests_buffer.enqueue(std::move(r));
     });
 }

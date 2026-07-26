@@ -331,6 +331,28 @@ ss::future<result<append_entries_reply>> append_entries_queue::append_entries(
     auto sz = r.total_size();
     // hold gate to prevent accessing state after the queue is stopped
     auto holder = _gate.hold();
+    if (r.is_flush_required() && _requests.empty()) {
+        auto units = ss::try_get_units(_inflight_requests_sem, 1);
+        if (units) {
+            opts.resource_units.reset();
+            const auto sent_ts = clock_type::now();
+            _last_sent_timestamp = sent_ts;
+            opts.timeout = rpc::timeout_spec::from_now(
+              opts.timeout.timeout_period);
+            return _base_protocol
+              .append_entries(_target_node, std::move(r), std::move(opts))
+              .then_wrapped(
+                [this,
+                 units = std::move(*units),
+                 holder = std::move(holder),
+                 sent_ts](ss::future<result<append_entries_reply>> reply_f) {
+                    auto now = clock_type::now();
+                    _last_reply_timestamp = now;
+                    _hist.record(now - sent_ts);
+                    return reply_f;
+                });
+        }
+    }
     return _dispatched.wait([this, sz] { return can_buffer_next_request(sz); })
       .then([this, r = std::move(r), opts = std::move(opts)]() mutable {
           /// consensus is no longer responsible for tracking memory usage and

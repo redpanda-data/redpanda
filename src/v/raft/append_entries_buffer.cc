@@ -36,6 +36,19 @@ append_entries_buffer::enqueue(append_entries_request&& r) {
       });
 }
 
+ss::future<append_entries_reply> append_entries_buffer::append_uncontended(
+  append_entries_request&& r, ssx::semaphore_units u) {
+    auto holder = _gate.hold();
+    append_entries_reply reply;
+    {
+        ssx::semaphore_units op_lock_units = std::move(u);
+        reply = co_await _consensus.do_append_entries(std::move(r));
+    }
+    co_await _consensus.flush_log();
+    reply.last_flushed_log_index = _consensus._flushed_offset;
+    co_return reply;
+}
+
 ss::future<> append_entries_buffer::stop() {
     auto f = _gate.close();
     // break the condition variables to initiate shutdown process
