@@ -13,9 +13,47 @@
 #include "test_utils/gtest_exception.h"
 #include "test_utils/random_bytes.h"
 
+#include <seastar/core/iostream.hh>
+#include <seastar/core/temporary_buffer.hh>
+
 #include <gtest/gtest.h>
 
+#include <memory>
+#include <span>
+#include <stdexcept>
+#include <string>
+
 using namespace redpanda::test_utils;
+
+namespace {
+
+constexpr const char* injected_sink_error = "injected snapshot sink failure";
+
+// Fails writes/flush (emulating e.g. ENOSPC) but records a successful close.
+class failing_data_sink final : public ss::data_sink_impl {
+public:
+    explicit failing_data_sink(bool& closed) noexcept
+      : _closed(closed) {}
+
+    ss::future<> put(std::span<ss::temporary_buffer<char>>) final {
+        return ss::make_exception_future<>(
+          std::runtime_error(injected_sink_error));
+    }
+    ss::future<> flush() final {
+        return ss::make_exception_future<>(
+          std::runtime_error(injected_sink_error));
+    }
+    ss::future<> close() final {
+        _closed = true;
+        return ss::make_ready_future<>();
+    }
+    size_t buffer_size() const noexcept final { return 4096; }
+
+private:
+    bool& _closed;
+};
+
+} // namespace
 
 TEST(SnapshotTest, MissingSnapshotIsNotError) {
     storage::simple_snapshot_manager mgr(
@@ -173,4 +211,34 @@ TEST(SnapshotTest, RemovePartialSnapshots) {
 
     ASSERT_FALSE(ss::file_exists(p1.string()).get());
     ASSERT_FALSE(ss::file_exists(p2.string()).get());
+}
+
+// Regression test for the ~snapshot_writer vassert(_closed) that used to mask
+// real I/O errors: a snapshot_writer whose underlying stream fails on
+// flush/close must (a) propagate the genuine error to the caller and (b) still
+// satisfy the destructor invariant, so going out of scope after a failed
+// close() does not abort the process. Previously close() set _closed only after
+// a successful flush(), so a flush failure left _closed==false and the
+// destructor aborted, masking the real error (e.g. ENOSPC).
+TEST(SnapshotTest, WriterCloseFailurePropagatesAndMarksClosed) {
+    bool sink_closed = false;
+    {
+        storage::snapshot_writer writer(
+          ss::output_stream<char>(
+            ss::data_sink(std::make_unique<failing_data_sink>(sink_closed))));
+
+        // Buffered; the write only reaches the failing sink at close().
+        writer.write_metadata(iobuf()).get();
+
+        ASSERT_THROWS_WITH_PREDICATE(
+          writer.close().get(),
+          std::runtime_error,
+          [](const std::runtime_error& e) {
+              return std::string(e.what()).find(injected_sink_error)
+                     != std::string::npos;
+          });
+
+        EXPECT_TRUE(sink_closed);
+    }
+    EXPECT_TRUE(sink_closed);
 }
