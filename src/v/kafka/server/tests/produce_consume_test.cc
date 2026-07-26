@@ -310,6 +310,46 @@ single_batch(model::partition_id p_id, const size_t volume) {
     return res;
 }
 
+/// KIP-467 added a per-partition ErrorMessage to the produce response at v8.
+/// Redpanda has always built these strings, but the encoder dropped them
+/// below v8; from v8 they reach the client. v9 re-encodes the same field as a
+/// compact nullable string, so it is worth covering separately.
+///
+/// The companion RecordErrors array stays empty: Redpanda rejects batches
+/// whole rather than per-record. See fill_response_with_errors in produce.cc.
+FIXTURE_TEST(test_produce_error_message_kip467, prod_consume_fixture) {
+    wait_for_controller_leadership().get();
+    start();
+
+    // comfortably over the 1 MiB kafka_batch_max_bytes default, so the
+    // handler rejects it with message_too_large and an explanatory string
+    const auto oversized = [] {
+        return single_batch(model::partition_id(0), 2_MiB);
+    };
+
+    for (auto v = kafka::api_version(3);
+         v <= kafka::produce_handler::max_supported;
+         ++v) {
+        auto resp = produce_raw(producers.front(), oversized(), v).get();
+        BOOST_TEST_CONTEXT("produce version " << v) {
+            BOOST_REQUIRE_EQUAL(resp.data.responses.size(), 1);
+            const auto& p = *resp.data.responses.begin()->partitions.begin();
+            BOOST_REQUIRE_EQUAL(
+              p.error_code, kafka::error_code::message_too_large);
+
+            if (v < kafka::api_version(8)) {
+                // the field does not exist on the wire yet
+                BOOST_REQUIRE(!p.error_message.has_value());
+            } else {
+                BOOST_REQUIRE(p.error_message.has_value());
+                BOOST_REQUIRE(
+                  std::string_view{*p.error_message}.contains("exceeds max"));
+            }
+            BOOST_REQUIRE(p.record_errors.empty());
+        }
+    }
+}
+
 namespace ch = std::chrono;
 
 namespace {
