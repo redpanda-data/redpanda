@@ -322,6 +322,15 @@ message ShadowLinkClientOptions {
     int32 effective_fetch_partition_max_bytes = 19
         [(google.api.field_behavior) = OUTPUT_ONLY];
 }
+// Storage mode override for shadow topics created by a shadow link.
+enum ShadowTopicStorageMode {
+    // Inherit source storage mode (default/existing behavior).
+    SHADOW_TOPIC_STORAGE_MODE_UNSPECIFIED = 0;
+    // Force cloud storage mode.
+    SHADOW_TOPIC_STORAGE_MODE_CLOUD = 1;
+    // Force tiered cloud storage mode.
+    SHADOW_TOPIC_STORAGE_MODE_TIERED_CLOUD = 2;
+}
 // Options for syncing topic metadata
 message TopicMetadataSyncOptions {
     // How often to sync metadata
@@ -396,6 +405,17 @@ message TopicMetadataSyncOptions {
     // the task will enter the 'paused' state and not sync topics or their
     // properties from the source cluster
     bool paused = 9;
+    // Storage mode override for shadow topics created by this link.
+    // Defaults to SHADOW_TOPIC_STORAGE_MODE_UNSPECIFIED (inherit from source).
+    // Immutable after link creation.
+    ShadowTopicStorageMode shadow_topic_storage_mode = 10;
+    // Scopes shadow_topic_storage_mode to a subset of this link's shadow
+    // topics. Evaluated only on topics already selected by the mirroring
+    // filters. Default-include: empty = all mirrored topics; an exclude
+    // pattern carves out topics that keep source-inherited storage; if any
+    // include patterns are present, only matching topics are affected.
+    // Mutable; changes apply to topics created after the change.
+    repeated NameFilter shadow_topic_storage_mode_filters = 11;
 }
 // Options for how the Schema Registry is synced.
 message SchemaRegistrySyncOptions {

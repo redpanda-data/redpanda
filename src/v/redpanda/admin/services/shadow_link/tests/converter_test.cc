@@ -981,6 +981,79 @@ TEST(converter_test, metadata_to_shadow_link_topic_mirroring_cfg) {
       schema_registry_sync_options.has_shadow_schema_registry_topic());
 }
 
+TEST(converter_test, shadow_topic_storage_mode_filters_round_trip) {
+    const auto name = "test-link";
+    proto::admin::shadow_link shadow_link;
+    proto::admin::create_shadow_link_request req;
+    proto::admin::shadow_link_configurations shadow_link_configurations;
+    proto::admin::shadow_link_client_options shadow_link_client_options;
+    proto::admin::topic_metadata_sync_options topic_metadata_sync_options;
+
+    chunked_vector<proto::admin::name_filter> filters;
+    filters.emplace_back(create_name_filter(
+      proto::admin::pattern_type::prefix,
+      proto::admin::filter_type::include,
+      "app-"));
+    filters.emplace_back(create_name_filter(
+      proto::admin::pattern_type::literal,
+      proto::admin::filter_type::exclude,
+      "app-debug"));
+    topic_metadata_sync_options.set_shadow_topic_storage_mode_filters(
+      std::move(filters));
+
+    shadow_link_client_options.set_bootstrap_servers({"localhost:9092"});
+    shadow_link_configurations.set_client_options(
+      std::move(shadow_link_client_options));
+    shadow_link_configurations.set_topic_metadata_sync_options(
+      std::move(topic_metadata_sync_options));
+
+    shadow_link.set_configurations(std::move(shadow_link_configurations));
+    shadow_link.set_name(ss::sstring{name});
+    req.set_shadow_link(std::move(shadow_link));
+
+    auto md = ss::make_lw_shared<cluster_link::model::metadata>(
+      admin::convert_create_to_metadata(std::move(req)));
+
+    const auto& model_filters = md->configuration.topic_metadata_mirroring_cfg
+                                  .storage_mode_override_filters;
+    ASSERT_EQ(model_filters.size(), 2);
+    EXPECT_EQ(
+      model_filters[0].pattern_type,
+      cluster_link::model::filter_pattern_type::prefix);
+    EXPECT_EQ(
+      model_filters[0].filter, cluster_link::model::filter_type::include);
+    EXPECT_EQ(model_filters[0].pattern, "app-");
+    EXPECT_EQ(
+      model_filters[1].pattern_type,
+      cluster_link::model::filter_pattern_type::literal);
+    EXPECT_EQ(
+      model_filters[1].filter, cluster_link::model::filter_type::exclude);
+    EXPECT_EQ(model_filters[1].pattern, "app-debug");
+
+    auto sl = admin::metadata_to_shadow_link(std::move(md), {});
+
+    const auto& round_tripped_filters
+      = sl.get_configurations()
+          .get_topic_metadata_sync_options()
+          .get_shadow_topic_storage_mode_filters();
+
+    ASSERT_EQ(round_tripped_filters.size(), 2);
+    EXPECT_EQ(
+      round_tripped_filters[0].get_pattern_type(),
+      proto::admin::pattern_type::prefix);
+    EXPECT_EQ(
+      round_tripped_filters[0].get_filter_type(),
+      proto::admin::filter_type::include);
+    EXPECT_EQ(round_tripped_filters[0].get_name(), "app-");
+    EXPECT_EQ(
+      round_tripped_filters[1].get_pattern_type(),
+      proto::admin::pattern_type::literal);
+    EXPECT_EQ(
+      round_tripped_filters[1].get_filter_type(),
+      proto::admin::filter_type::exclude);
+    EXPECT_EQ(round_tripped_filters[1].get_name(), "app-debug");
+}
+
 proto::admin::shadow_topic
 create_shadow_topic(ss::sstring name, proto::admin::shadow_topic_state state) {
     proto::admin::shadow_topic st;
