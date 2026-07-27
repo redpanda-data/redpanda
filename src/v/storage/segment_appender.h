@@ -33,19 +33,17 @@ namespace storage {
 /// other classes can add behavior and still be treated as
 /// an appender.
 ///
-/// The append() functions in this class take different input types to
-/// append but all return future<> and have the same general semantics:
-/// After the future<> for an append() call returns, the data has been
-/// logically appended to the segment in memory, but may not be, or not
-/// fully be flushed to disk and in general hasn't been fsynced. After
-/// the future from append() results, a subject flush() returns a future
-/// whose resolution indicates that all prior appends have been flushed
-/// and fsync'd on disk.
+/// The append() overloads take different input types but behave the same way:
+/// appends are write-behind. A resolved append() future means the segment holds
+/// the data in memory; some or all of it may not be flushed to disk, and in
+/// general it hasn't been fsynced. Once an append() has resolved, a subsequent
+/// flush() resolves only after that append and everything before it is on disk
+/// and fsynced.
 ///
-/// NOTE: Only one append() may be progress at one time. I.e., it is not
-/// safe to call append() before the prior append() call has resolved.
-/// However, there are no requirements around concurrent flushing: flush
-/// may be called even if other flushes or appends are in progress.
+/// NOTE: Only one append() may be in progress. It is not safe to call append()
+/// before the prior append() future has resolved. flush() has no such
+/// restriction; it may be called while other flushes or appends are in
+/// progress.
 class segment_appender {
 public:
     struct stats {

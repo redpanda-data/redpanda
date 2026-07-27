@@ -29,6 +29,79 @@
 namespace storage {
 
 /*
+ * segment_appender implementation notes. For the public contract see
+ * `segment_appender.h`.
+ *
+ * We write with direct I/O, bypassing the kernel's page cache. The device reads
+ * the buffer by direct memory access (DMA) some time after we submit the write.
+ * Two constraints follow:
+ *
+ * 1. The file offset and length must be multiples of the file's DMA alignment,
+ * and the buffer address a multiple of the memory DMA alignment. The appender
+ * writes at the chunk's fixed 4 KiB alignment, so "page" below means 4 KiB.
+ *
+ * 2. Memory under an in-flight DMA must not be modified [1]. The rule covers
+ * the write's entire range: on a checksummed path (DIF/DIX, iSCSI, RAID 5
+ * parity, a checksumming filesystem) one unstable byte can fail the whole
+ * sector or stripe, as a write error or as a bad read later. Seen in
+ * production [2].
+ *
+ * append() takes arbitrary memory addresses and lengths, so it copies the data
+ * into an aligned buffer, a `segment_appender_chunk`, and resolves without
+ * waiting for the data to reach disk (write-behind). That keeps disk latency
+ * off the append path and lets one write cover many appends. Chunks come from a
+ * per-shard cache, which bounds how much unwritten data the shard can hold in
+ * memory: when no chunk is free, append() waits.
+ *
+ * A full chunk's last write ends on a page boundary, since append_chunk_size is
+ * a multiple of 4 KiB. flush(), hard_flush() and `_inactive_timer` instead
+ * write a partly filled chunk; by rule 1 that write still covers whole pages,
+ * so the appender writes the last page before it is full.
+ *
+ *              page 0        page 1
+ *            ┌─────────────┬─────────────┐
+ *   chunk    │▓▓▓▓▓▓▓▓▓▓▓▓▓│▓▓▓▓▓░░░░░░░░│  memory; two of its four pages
+ *            └─────────────┴─────────────┘
+ *   write    ◄───────────────────────────►  the file range it covers
+ *
+ *              ▓ appended    ░ written, nothing appended there yet
+ *
+ * Unless that write ended on a page boundary, the next append() lands inside
+ * the file range it covers. Whether it may land in the chunk depends on the
+ * write's state. In the diagrams @ marks the bytes the next append adds.
+ *
+ * QUEUED - not submitted to the device, so the chunk is safe to modify. The
+ * append lands in it, and try_merge() folds the write into the queued
+ * one, so a single dma_write covers both appends.
+ *
+ *   chunk   │▓▓▓▓▓▓▓▓▓▓▓▓▓│▓▓▓▓▓@@@░░░░░│
+ *   write   ◄────────── QUEUED ─────────►  extends over @@@ when dispatched
+ *
+ * DONE - the device is finished with the buffer, so the append lands in the
+ * chunk and the following write covers page 1 again.
+ *
+ *   chunk   │▓▓▓▓▓▓▓▓▓▓▓▓▓│▓▓▓▓▓@@@░░░░░│
+ *   write 1 ◄────────── DONE ───────────►
+ *   write 2               ◄─────────────►  covers page 1 again, with @@@
+ *
+ * DISPATCHED - the device may be reading the buffer, so rule 2 forbids
+ * modifying page 1. copy_remainder_from() moves it into a new chunk and the
+ * append lands there. Waiting for the write to complete would satisfy rule 2
+ * too, at the cost of disk latency on the append path.
+ *
+ *   old     │▓▓▓▓▓▓▓▓▓▓▓▓▓│▓▓▓▓▓░░░░░░░░│
+ *   write 1 ◄──────── DISPATCHED ───────►
+ *   new                   │▓▓▓▓▓@@@░░░░░│  page 1 copied, then @@@
+ *   write 2               ◄─────────────►  must land after write 1
+ *
+ * The copy leaves two writes covering page 1, and the older one has no @@@:
+ * landing second, it would erase them. `_prev_head_write` serializes writes
+ * over the same file range so they land in append order.
+ *
+ * [1] "Semantics of racy O_DIRECT writes", linux-block:
+ * https://lore.kernel.org/linux-block/CAOBGo4xx+88nZM=nqqgQU5RRiHP1QOqU4i2dDwXt7rF6K0gaUQ@mail.gmail.com/
+ * [2] https://redpandadata.atlassian.net/browse/CORE-12458
+ *
  * Optimization ideas:
  *
  * 1. partial writes to the same physical head chunk are serialized to prevent
@@ -250,7 +323,7 @@ void segment_appender::handle_inactive_timer() {
     if (_head && _head->bytes_pending()) {
         /*
          * this is the why the timer was originally set upon returning from
-         * append: data was sitting in the write back buffer. the segment
+         * append: data was sitting in the write-behind buffer. the segment
          * appears to be inactive so go ahead and write that data to disk.
          */
         dispatch_background_head_write();
