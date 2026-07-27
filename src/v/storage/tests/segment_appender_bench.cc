@@ -8,19 +8,27 @@
 // by the Apache License, Version 2.0
 
 #include "ssx/future-util.h"
+#include "storage/chunk_cache.h"
 #include "storage/segment_appender.h"
-#include "test_utils/tmpbuf_file.h"
 
 #include <seastar/core/future.hh>
+#include <seastar/core/seastar.hh>
 #include <seastar/testing/perf_tests.hh>
+#include <seastar/util/tmp_file.hh>
+
+#include <filesystem>
 
 struct appender_fixture {
     ss::future<std::unique_ptr<storage::segment_appender>>
-    make_appender(tmpbuf_file::store_t& store) {
-        auto file = ss::file(ss::make_shared<tmpbuf_file>(store));
+    make_appender(const ss::sstring& path) {
+        auto file = co_await ss::open_file_dma(
+          path,
+          ss::open_flags::rw | ss::open_flags::create
+            | ss::open_flags::truncate,
+          ss::file_open_options{});
 
         storage::segment_appender::options opts(
-          std::nullopt, _resources, nullptr);
+          std::nullopt, _resources, _stats);
 
         co_return std::make_unique<storage::segment_appender>(
           std::move(file), opts);
@@ -31,10 +39,13 @@ struct appender_fixture {
         /**
          * Prepare appender
          */
-        tmpbuf_file::store_t store;
         ss::gate gate;
         co_await _resources.start();
-        auto appender = co_await make_appender(store);
+        // a unique directory per run: several of these may be running at once
+        auto dir = co_await ss::make_tmp_dir(
+          std::filesystem::path(".") / "segment_appender_bench-XXXX");
+        const ss::sstring path = (dir.get_path() / "appender.log").native();
+        auto appender = co_await make_appender(path);
 
         static constexpr std::array<char, WriteSize> write_buf = [] {
             std::array<char, WriteSize> buf{};
@@ -58,9 +69,49 @@ struct appender_fixture {
         co_await gate.close();
         co_await appender->close();
         co_await _resources.stop();
+        co_await ss::remove_file(path);
+        co_await dir.remove();
+
+        /*
+         * Guard against the benchmark quietly going back to measuring nothing.
+         * Flushing while appends smaller than a chunk accumulate dispatches
+         * several writes for one head, which is what write merging needs, and
+         * appends that leave the head on a partial page are what the chunk
+         * remainder copy needs.
+         */
+        static constexpr size_t alignment
+          = storage::internal::chunk_cache::alignment();
+        if (do_flush && WriteSize < _resources.chunks().chunk_size()) {
+            vassert(
+              _stats->merged_writes > 0,
+              "benchmark merged no writes, the dispatched write path is not "
+              "being exercised: {}",
+              *_stats);
+        }
+        if (do_flush && WriteSize % alignment != 0) {
+            vassert(
+              _stats->bytes_copied_in_chunk_remainder > 0,
+              "benchmark copied no chunk remainder, the copy path is not being "
+              "exercised: {}",
+              *_stats);
+        }
         co_return iterations;
     }
 
+    ~appender_fixture() {
+        // which appender paths the workload actually reached
+        fmt::print(
+          "[appender] appends={} dma_writes={} merged={} split={} "
+          "bytes_copied_in_chunk_remainder={}\n",
+          _stats->appends,
+          _stats->writes_completed,
+          _stats->merged_writes,
+          _stats->split_writes,
+          _stats->bytes_copied_in_chunk_remainder);
+    }
+
+    ss::lw_shared_ptr<storage::segment_appender::stats> _stats
+      = ss::make_lw_shared<storage::segment_appender::stats>();
     storage::storage_resources _resources;
 };
 
