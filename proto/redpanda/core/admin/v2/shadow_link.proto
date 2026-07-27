@@ -418,6 +418,10 @@ message TopicMetadataSyncOptions {
     // include patterns are present, only matching topics are affected.
     // Mutable; changes apply to topics created after the change.
     repeated NameFilter shadow_topic_storage_mode_filters = 11;
+    // When true, the link's cloud shadow topics are promoted to tiered_v2 on
+    // failover, so the promoted cluster serves reads and writes locally. Off
+    // by default; only meaningful when the storage mode is cloud.
+    bool promote_to_tiered_v2_on_failover = 12;
 }
 // Options for how the Schema Registry is synced.
 message SchemaRegistrySyncOptions {
