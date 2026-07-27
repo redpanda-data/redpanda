@@ -25,10 +25,8 @@ import (
 
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/httpapi"
 
-	"github.com/docker/docker/api/types/container"
-
 	"github.com/avast/retry-go"
-	"github.com/docker/docker/pkg/stdcopy"
+	"github.com/moby/moby/api/pkg/stdcopy"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/container/containerutil"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
 	vnet "github.com/redpanda-data/redpanda/src/go/rpk/pkg/netutil"
@@ -480,7 +478,7 @@ func restartCluster(
 			if !state.Running {
 				// Console node needs to start after the Redpanda nodes start.
 				if !state.Console {
-					err := c.ContainerStart(grpCtx, state.ContainerID, container.StartOptions{})
+					err := c.ContainerStart(grpCtx, state.ContainerID, containerutil.ContainerStartOptions{})
 					if err != nil {
 						return err
 					}
@@ -520,7 +518,7 @@ func restartCluster(
 	}
 
 	if consoleState != nil && !consoleState.Running {
-		err = c.ContainerStart(ctx, consoleState.ContainerID, container.StartOptions{})
+		err = c.ContainerStart(ctx, consoleState.ContainerID, containerutil.ContainerStartOptions{})
 		if err != nil {
 			return nil, fmt.Errorf("unable to start the Redpanda Console container: %v", err)
 		}
@@ -545,7 +543,7 @@ func restartCluster(
 }
 
 func startNode(ctx context.Context, c containerutil.Client, containerID string) error {
-	err := c.ContainerStart(ctx, containerID, container.StartOptions{})
+	err := c.ContainerStart(ctx, containerID, containerutil.ContainerStartOptions{})
 	return err
 }
 
@@ -716,7 +714,7 @@ func getContainerErr(ctx context.Context, state *containerutil.NodeState, c cont
 	reader, err := c.ContainerLogs(
 		ctx,
 		state.ContainerID,
-		container.LogsOptions{
+		containerutil.ContainerLogsOptions{
 			ShowStdout: false,
 			ShowStderr: true,
 			Since:      json.State.StartedAt,

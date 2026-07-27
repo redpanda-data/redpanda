@@ -13,12 +13,13 @@ import (
 	"context"
 	"io"
 	"os"
+	"strings"
 
 	"github.com/containerd/errdefs"
-	"github.com/docker/docker/api/types/container"
-	"github.com/docker/docker/api/types/image"
-	"github.com/docker/docker/api/types/network"
-	"github.com/docker/docker/client"
+	"github.com/moby/moby/api/types/container"
+	"github.com/moby/moby/api/types/image"
+	"github.com/moby/moby/api/types/network"
+	"github.com/moby/moby/client"
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
 )
 
@@ -30,12 +31,12 @@ type Client interface {
 	ImagePull(
 		ctx context.Context,
 		ref string,
-		options image.PullOptions,
+		options ImagePullOptions,
 	) (io.ReadCloser, error)
 
 	ImageList(
 		ctx context.Context,
-		options image.ListOptions,
+		options ImageListOptions,
 	) ([]image.Summary, error)
 	ContainerCreate(
 		ctx context.Context,
@@ -49,24 +50,24 @@ type Client interface {
 	ContainerStart(
 		ctx context.Context,
 		containerID string,
-		options container.StartOptions,
+		options ContainerStartOptions,
 	) error
 
 	ContainerStop(
 		ctx context.Context,
 		containerID string,
-		options container.StopOptions,
+		options ContainerStopOptions,
 	) error
 
 	ContainerList(
 		ctx context.Context,
-		options container.ListOptions,
+		options ContainerListOptions,
 	) ([]container.Summary, error)
 
 	ContainerLogs(
 		ctx context.Context,
 		containerID string,
-		options container.LogsOptions,
+		options ContainerLogsOptions,
 	) (io.ReadCloser, error)
 
 	ContainerInspect(
@@ -77,26 +78,26 @@ type Client interface {
 	ContainerRemove(
 		ctx context.Context,
 		containerID string,
-		options container.RemoveOptions,
+		options ContainerRemoveOptions,
 	) error
 
 	NetworkCreate(
 		ctx context.Context,
 		name string,
-		options network.CreateOptions,
+		options NetworkCreateOptions,
 	) (network.CreateResponse, error)
 
 	NetworkRemove(ctx context.Context, networkID string) error
 
 	NetworkList(
 		ctx context.Context,
-		options network.ListOptions,
-	) ([]network.Inspect, error)
+		options NetworkListOptions,
+	) ([]network.Summary, error)
 
 	NetworkInspect(
 		ctx context.Context,
 		networkID string,
-		options network.InspectOptions,
+		options NetworkInspectOptions,
 	) (network.Inspect, error)
 
 	IsErrNotFound(err error) bool
@@ -108,7 +109,118 @@ type dockerClient struct {
 	*client.Client
 }
 
-func NewDockerClient(ctx context.Context) (Client, error) {
+type (
+	ContainerListOptions   = client.ContainerListOptions
+	ContainerLogsOptions   = client.ContainerLogsOptions
+	ContainerRemoveOptions = client.ContainerRemoveOptions
+	ContainerStartOptions  = client.ContainerStartOptions
+	ContainerStopOptions   = client.ContainerStopOptions
+	ImageListOptions       = client.ImageListOptions
+	ImagePullOptions       = client.ImagePullOptions
+	NetworkCreateOptions   = client.NetworkCreateOptions
+	NetworkInspectOptions  = client.NetworkInspectOptions
+	NetworkListOptions     = client.NetworkListOptions
+)
+
+func (c *dockerClient) ImagePull(
+	ctx context.Context, ref string, options ImagePullOptions,
+) (io.ReadCloser, error) {
+	return c.Client.ImagePull(ctx, ref, options)
+}
+
+func (c *dockerClient) ImageList(
+	ctx context.Context, options ImageListOptions,
+) ([]image.Summary, error) {
+	result, err := c.Client.ImageList(ctx, options)
+	return result.Items, err
+}
+
+func (c *dockerClient) ContainerCreate(
+	ctx context.Context,
+	config *container.Config,
+	hostConfig *container.HostConfig,
+	networkingConfig *network.NetworkingConfig,
+	platform *specs.Platform,
+	containerName string,
+) (container.CreateResponse, error) {
+	result, err := c.Client.ContainerCreate(ctx, client.ContainerCreateOptions{
+		Config:           config,
+		HostConfig:       hostConfig,
+		NetworkingConfig: networkingConfig,
+		Platform:         platform,
+		Name:             containerName,
+	})
+	return container.CreateResponse{ID: result.ID, Warnings: result.Warnings}, err
+}
+
+func (c *dockerClient) ContainerStart(
+	ctx context.Context, containerID string, options ContainerStartOptions,
+) error {
+	_, err := c.Client.ContainerStart(ctx, containerID, options)
+	return err
+}
+
+func (c *dockerClient) ContainerStop(
+	ctx context.Context, containerID string, options ContainerStopOptions,
+) error {
+	_, err := c.Client.ContainerStop(ctx, containerID, options)
+	return err
+}
+
+func (c *dockerClient) ContainerList(
+	ctx context.Context, options ContainerListOptions,
+) ([]container.Summary, error) {
+	result, err := c.Client.ContainerList(ctx, options)
+	return result.Items, err
+}
+
+func (c *dockerClient) ContainerLogs(
+	ctx context.Context, containerID string, options ContainerLogsOptions,
+) (io.ReadCloser, error) {
+	return c.Client.ContainerLogs(ctx, containerID, options)
+}
+
+func (c *dockerClient) ContainerInspect(
+	ctx context.Context, containerID string,
+) (container.InspectResponse, error) {
+	result, err := c.Client.ContainerInspect(ctx, containerID, client.ContainerInspectOptions{})
+	return result.Container, err
+}
+
+func (c *dockerClient) ContainerRemove(
+	ctx context.Context, containerID string, options ContainerRemoveOptions,
+) error {
+	_, err := c.Client.ContainerRemove(ctx, containerID, options)
+	return err
+}
+
+func (c *dockerClient) NetworkCreate(
+	ctx context.Context, name string, options NetworkCreateOptions,
+) (network.CreateResponse, error) {
+	result, err := c.Client.NetworkCreate(ctx, name, options)
+	return network.CreateResponse{ID: result.ID, Warning: strings.Join(result.Warning, "; ")}, err
+}
+
+func (c *dockerClient) NetworkRemove(ctx context.Context, networkID string) error {
+	_, err := c.Client.NetworkRemove(ctx, networkID, client.NetworkRemoveOptions{})
+	return err
+}
+
+func (c *dockerClient) NetworkList(
+	ctx context.Context, options NetworkListOptions,
+) ([]network.Summary, error) {
+	result, err := c.Client.NetworkList(ctx, options)
+	return result.Items, err
+}
+
+func (c *dockerClient) NetworkInspect(
+	ctx context.Context, networkID string, options NetworkInspectOptions,
+) (network.Inspect, error) {
+	result, err := c.Client.NetworkInspect(ctx, networkID, options)
+	return result.Network, err
+}
+
+func NewDockerClient(_ context.Context) (Client, error) {
 	// First, we check if DOCKER_HOST is present or if /var/run/docker.sock
 	// exists. If either of these conditions is met, we can safely start the
 	// client using the pre-set client.FromEnv.
@@ -120,7 +232,7 @@ func NewDockerClient(ctx context.Context) (Client, error) {
 
 	var c *client.Client
 	if _, ok := os.LookupEnv(dockerHostEnv); ok || !socketNotPresent {
-		c, err = client.NewClientWithOpts(client.FromEnv)
+		c, err = client.New(client.FromEnv)
 		if err != nil {
 			return nil, err
 		}
@@ -133,7 +245,6 @@ func NewDockerClient(ctx context.Context) (Client, error) {
 			return nil, err
 		}
 	}
-	c.NegotiateAPIVersion(ctx)
 	return &dockerClient{c}, nil
 }
 
