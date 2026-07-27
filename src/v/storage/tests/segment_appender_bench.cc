@@ -66,7 +66,7 @@ struct appender_fixture {
 
 // 1 byte writes
 PERF_TEST_CN(appender_fixture, 1_byte_writes_no_flush) {
-    co_return co_await run_write_bench<1>(2_MiB, true);
+    co_return co_await run_write_bench<1>(2_MiB, false);
 }
 
 PERF_TEST_CN(appender_fixture, 1_byte_writes_flush) {
