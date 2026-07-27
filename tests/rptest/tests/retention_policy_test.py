@@ -312,17 +312,34 @@ class ShadowIndexingLocalRetentionTest(RedpandaTest):
         )
 
         if expect_deletion:
-            # Wait up to just a bit longer than the 10s default config value
-            # for `cloud_storage_upload_loop_max_backoff_ms`.
             # the target segments limit is one higher than expected because
             # retention policy won't violate the target max size. that is: it
             # won't reclaim the last segment if it puts it over the edge.
-            wait_until(
-                lambda: self.segments_removed(self.default_retention_segments + 1),
-                timeout_sec=15,
-                backoff_sec=1,
-                err_msg="Segments were not removed",
-            )
+            target_segments = self.default_retention_segments + 1
+            num_segs = len(self.query_segments())
+
+            # Local retention on a remote write topic can only advance as fast
+            # as the segments are uploaded, and the first upload round also
+            # waits out the upload loop backoff
+            # (`cloud_storage_upload_loop_max_backoff_ms`, 10s by default) and
+            # the blocking topic manifest upload. A slow cloud storage backend
+            # pushes the first removal well past that, so we don't wait for the
+            # target with a single fixed timeout. Instead we reset the timeout
+            # every time a removal is observed: the test only fails if
+            # retention stops making progress.
+            timeout_sec = 60
+            while num_segs > target_segments:
+                wait_until(
+                    lambda: self.segments_removed(num_segs - 1),
+                    timeout_sec=timeout_sec,
+                    backoff_sec=2,
+                    err_msg=f"Segments were not removed, stuck at {num_segs} "
+                    f"segments, target is {target_segments}",
+                )
+                remaining = len(self.query_segments())
+                assert remaining < num_segs
+                num_segs = remaining
+                timeout_sec = 30
         else:
             with expect_exception(TimeoutError, lambda e: True):
                 wait_until(
