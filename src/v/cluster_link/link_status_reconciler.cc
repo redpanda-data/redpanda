@@ -11,9 +11,15 @@
 
 #include "cluster_link/link_status_reconciler.h"
 
+#include "cluster/types.h"
 #include "cluster_link/deps.h"
 #include "cluster_link/logger.h"
+#include "kafka/data/rpc/deps.h"
+#include "model/metadata.h"
+#include "model/namespace.h"
 #include "ssx/future-util.h"
+
+#include <seastar/coroutine/as_future.hh>
 
 static constexpr auto reconciliation_interval = std::chrono::seconds{1};
 static constexpr auto mutation_timeout = std::chrono::seconds{5};
@@ -56,7 +62,12 @@ void link_status_reconciler::reconcile() {
             _reconcilers.emplace(
               link_id,
               std::make_unique<per_link_reconciler>(
-                *_link_registry, link_id, _controller_term, _as));
+                *_link_registry,
+                _topic_creator,
+                _topic_metadata_cache,
+                link_id,
+                _controller_term,
+                _as));
         }
     }
     // find all links that no longer exist and remove their reconcilers
@@ -83,10 +94,14 @@ void link_status_reconciler::reconcile() {
 
 link_status_reconciler::per_link_reconciler::per_link_reconciler(
   link_registry& registry,
+  kafka::data::rpc::topic_creator* topic_creator,
+  kafka::data::rpc::topic_metadata_cache* topic_metadata_cache,
   model::id_t link_id,
   ::model::term_id term,
   ss::abort_source& as)
   : _registry(registry)
+  , _topic_creator(topic_creator)
+  , _topic_metadata_cache(topic_metadata_cache)
   , _link_id(link_id)
   , _term(term) {
     _as_sub = as.subscribe([this] noexcept { _as.request_abort(); });
@@ -176,6 +191,10 @@ ss::future<> link_status_reconciler::per_link_reconciler::try_finish_failover(
           topic,
           model::mirror_topic_status::failed_over,
           result);
+        // The transition did not land, so the topic is not actually failed
+        // over. Do not fall through to promotion (which keys off the topic's
+        // storage mode, not its mirror status); the next reconcile retries.
+        co_return;
     }
     vlog(
       cllog.debug,
@@ -183,6 +202,100 @@ ss::future<> link_status_reconciler::per_link_reconciler::try_finish_failover(
       _link_id,
       topic,
       model::mirror_topic_status::failed_over);
+
+    // maybe_promote_storage_mode never throws (it swallows update_topic
+    // failures internally), so no outer guard is needed here even though
+    // try_finish_failover is noexcept.
+    co_await maybe_promote_storage_mode(topic);
+}
+
+bool link_status_reconciler::per_link_reconciler::topic_needs_promotion(
+  const ::model::topic& topic) const {
+    const auto& md = _registry.find_link_by_id(_link_id);
+    if (!md) {
+        return false;
+    }
+    const auto& cfg = md->configuration.topic_metadata_mirroring_cfg;
+    if (!cfg.promote_to_tiered_cloud_on_failover) {
+        return false;
+    }
+    if (
+      !cfg.storage_mode_override.has_value()
+      || *cfg.storage_mode_override != ::model::redpanda_storage_mode::cloud) {
+        return false;
+    }
+    auto topic_cfg = _topic_metadata_cache->find_topic_cfg(
+      {::model::kafka_namespace, topic});
+    if (!topic_cfg.has_value()) {
+        // Topic has been deleted locally; nothing to promote.
+        return false;
+    }
+    // Promote iff the topic is currently in cloud mode. For a topic whose
+    // source is non-cloud this is exactly the set the override created as
+    // cloud, honoring the create-time scope without re-reading the (mutable)
+    // storage_mode_override_filters.
+    //
+    // WARNING / KNOWN LIMITATION: if the source topic is itself cloud-mode,
+    // its shadow inherits cloud even when the override filters EXCLUDE it, so
+    // it is promoted here too -- promotion is not strictly scoped to the
+    // override. Strict per-topic scoping needs a persisted "override applied"
+    // marker per topic; deferred for now (see the RFC "known limitations").
+    return topic_cfg->properties.storage_mode
+           == ::model::redpanda_storage_mode::cloud;
+}
+
+ss::future<>
+link_status_reconciler::per_link_reconciler::maybe_promote_storage_mode(
+  const ::model::topic& topic) {
+    // After failover, promote cloud shadow topics to tiered_cloud so the
+    // now-primary cluster has low-latency local reads/writes. Safe to call
+    // repeatedly — early returns if the topic no longer needs promotion.
+    if (!topic_needs_promotion(topic)) {
+        co_return;
+    }
+    // No tiered_cloud_topics feature-active guard here: this feature cannot be
+    // exercised before the cluster is upgraded past the release that ships
+    // tiered_cloud, so the feature is active by construction whenever we reach
+    // promotion.
+    cluster::topic_properties_update update({::model::kafka_namespace, topic});
+    update.properties.storage_mode.op
+      = cluster::incremental_update_operation::set;
+    update.properties.storage_mode.value
+      = ::model::redpanda_storage_mode::tiered_cloud;
+    // Use as_future so this method is safe to call from any context, including
+    // noexcept callers like try_finish_failover, without an explicit throw. The
+    // reconciler loop retries on the next iteration.
+    auto fut = co_await ss::coroutine::as_future(
+      _topic_creator->update_topic(std::move(update)));
+    if (fut.failed()) {
+        auto eptr = fut.get_exception();
+        vlog(
+          cllog.warn,
+          "[{}] Exception while promoting storage mode for topic {}: {}",
+          _link_id,
+          topic,
+          eptr);
+        co_return;
+    }
+    auto result = fut.get();
+    if (result != cluster::errc::success) {
+        // The reconciliation loop retries on each tick, so this is not
+        // permanently stuck. Log at warn — if it persists the operator will
+        // see repeated warnings.
+        vlog(
+          cllog.warn,
+          "[{}] Failed to promote storage mode for topic {} to tiered_v2: "
+          "{}. Will retry.",
+          _link_id,
+          topic,
+          result);
+    } else {
+        vlog(
+          cllog.info,
+          "[{}] Promoted topic {} storage mode from cloud to tiered_v2",
+          _link_id,
+          topic);
+    }
 }
 
 ss::future<>
@@ -195,17 +308,34 @@ link_status_reconciler::per_link_reconciler::reconcile_status_changes() {
         if (!md) {
             continue;
         }
-        // check if there are any topics still not failing over
+        // Separate per-status buckets: failing_over topics need the finish-
+        // failover workflow, failed_over topics may still need post-failover
+        // storage mode promotion (retry path for cases where the immediate
+        // promotion after the state transition failed transiently).
         chunked_vector<::model::topic> pending_failover_topics;
+        chunked_vector<::model::topic> pending_promotion_topics;
         const auto& mirror_topics = md->state.mirror_topics;
         for (const auto& [topic, mt] : mirror_topics) {
-            if (mt.status == model::mirror_topic_status::failing_over) {
+            switch (mt.status) {
+            case model::mirror_topic_status::failing_over:
                 pending_failover_topics.push_back(topic);
+                break;
+            case model::mirror_topic_status::failed_over:
+                if (topic_needs_promotion(topic)) {
+                    pending_promotion_topics.push_back(topic);
+                }
+                break;
+            default:
+                break;
             }
         }
         co_await ss::max_concurrent_for_each(
           pending_failover_topics, 8, [this](const auto& topic) {
               return try_finish_failover(topic);
+          });
+        co_await ss::max_concurrent_for_each(
+          pending_promotion_topics, 8, [this](const auto& topic) {
+              return maybe_promote_storage_mode(topic);
           });
         co_await ss::sleep_abortable(reconciliation_interval, _as);
     }
@@ -219,14 +349,18 @@ bool link_status_reconciler::per_link_reconciler::has_pending_reconciliations()
         return false;
     }
     const auto& mirror_topics = md->state.mirror_topics;
-    for (const auto& [_, mt] : mirror_topics) {
+    for (const auto& [topic, mt] : mirror_topics) {
         switch (mt.status) {
         case model::mirror_topic_status::active:
         case model::mirror_topic_status::paused:
-        case model::mirror_topic_status::failed_over:
         case model::mirror_topic_status::failed:
         case model::mirror_topic_status::promoted:
             // non transitional
+            break;
+        case model::mirror_topic_status::failed_over:
+            if (topic_needs_promotion(topic)) {
+                return true;
+            }
             break;
         case model::mirror_topic_status::failing_over:
         case model::mirror_topic_status::promoting:

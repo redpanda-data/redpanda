@@ -1053,7 +1053,10 @@ ss::future<> manager::on_controller_leadership(::model::term_id term) {
     }
     if (!_link_status_reconciler) {
         _link_status_reconciler = std::make_unique<link_status_reconciler>(
-          _registry.get(), term);
+          _registry.get(),
+          _topic_creator.get(),
+          _topic_metadata_cache.get(),
+          term);
         try {
             co_await _link_status_reconciler->start();
         } catch (const std::exception& e) {

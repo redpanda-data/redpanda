@@ -122,12 +122,18 @@ ss::future<> topic_reconciler::do_reconcile_topic(model::id_t link_id) {
 
     for (auto& [topic_name, mirror_topic_config] : mirror_topics) {
         vlog(cllog.trace, "Checking topic: {}", topic_name);
-        // Do not attempt to reconcile mirror topics that have failed or are
-        // being promoted
+        // Do not reconcile mirror topics in a terminal state (failed,
+        // failed_over, promoted): they are no longer mirrored from the source,
+        // so their local properties must not be dragged back toward the source
+        // snapshot recorded in the mirror config. In particular a failed-over
+        // topic may have been promoted to tiered_cloud; reconciling it here
+        // would revert it toward the cloud value still recorded in the config,
+        // fighting the link_status_reconciler that keeps re-promoting it.
         if (
           mirror_topic_config.status == model::mirror_topic_status::failed
+          || mirror_topic_config.status == model::mirror_topic_status::promoted
           || mirror_topic_config.status
-               == model::mirror_topic_status::promoted) {
+               == model::mirror_topic_status::failed_over) {
             vlog(
               cllog.trace,
               "Skipping topic {} with state {}",
