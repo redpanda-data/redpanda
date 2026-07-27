@@ -84,6 +84,13 @@ private:
       reconciler_commands_vector& commands,
       const candidate_update_map& candidates,
       const chunked_vector<kafka::describe_configs_result>& describe_results);
+    // Applies the link's storage mode override to `configs` when `topic` is
+    // in scope of `storage_mode_override_filters`. Out-of-scope topics are
+    // left untouched so they inherit the source's storage mode already
+    // present in `configs`.
+    void maybe_apply_storage_mode_override(
+      ::model::topic_view topic,
+      chunked_hash_map<ss::sstring, ss::sstring>& configs) const;
     // Execute the commands
     ss::future<> submit_commands(reconciler_commands_vector commands);
     ss::future<kafka::describe_configs_response> describe_topics(

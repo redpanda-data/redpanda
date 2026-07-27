@@ -694,4 +694,309 @@ TEST_F_CORO(source_topic_syncer_test, cloud_topic_mirrored) {
     });
 }
 
+TEST_F_CORO(
+  source_topic_syncer_test, storage_mode_override_creates_cloud_topic) {
+    // Source topic is a regular (local) topic — no special storage mode
+    auto topic = ::model::topic("regular-topic");
+    fixture()->get_cluster_mock().add_topic(
+      topic, 3, 3, kafka::topic_authorized_operations(0x508));
+
+    // Create link with storage_mode_override = cloud
+    auto md = get_default_metadata();
+    md.configuration.topic_metadata_mirroring_cfg.storage_mode_override
+      = ::model::redpanda_storage_mode::cloud;
+    co_await fixture()->upsert_link(std::move(md));
+
+    // Topic should be mirrored
+    RPTEST_REQUIRE_EVENTUALLY_CORO(5s, [this, &topic] {
+        auto link_metadata = fixture()->find_link_by_name(
+          model::name_t("test_link"));
+        return link_metadata->state.mirror_topics.contains(topic);
+    });
+
+    // The mirrored topic's configs should have storage_mode=cloud
+    auto link_metadata = fixture()->find_link_by_name(
+      model::name_t("test_link"));
+    const auto& mirror = link_metadata->state.mirror_topics.at(topic);
+    auto it = mirror.topic_configs.find("redpanda.storage.mode");
+    ASSERT_TRUE_CORO(it != mirror.topic_configs.end())
+      << "storage mode should be in topic configs";
+    EXPECT_EQ(it->second, "cloud");
+}
+
+TEST_F_CORO(
+  source_topic_syncer_test,
+  storage_mode_override_overrides_source_storage_mode) {
+    // Source topic explicitly has storage_mode=local
+    auto topic = ::model::topic("local-topic");
+    fixture()->get_cluster_mock().add_topic(
+      topic, 3, 3, kafka::topic_authorized_operations(0x508));
+
+    ::cluster::topic_properties local_props;
+    local_props.storage_mode = ::model::redpanda_storage_mode::local;
+    fixture()->get_cluster_mock().set_topic_properties(
+      topic, std::move(local_props));
+
+    // Create link with storage_mode_override = cloud
+    auto md = get_default_metadata();
+    md.configuration.topic_metadata_mirroring_cfg.storage_mode_override
+      = ::model::redpanda_storage_mode::cloud;
+    co_await fixture()->upsert_link(std::move(md));
+
+    RPTEST_REQUIRE_EVENTUALLY_CORO(5s, [this, &topic] {
+        auto link_metadata = fixture()->find_link_by_name(
+          model::name_t("test_link"));
+        return link_metadata->state.mirror_topics.contains(topic);
+    });
+
+    // Even though source has local, mirror should have cloud due to override
+    auto link_metadata = fixture()->find_link_by_name(
+      model::name_t("test_link"));
+    const auto& mirror = link_metadata->state.mirror_topics.at(topic);
+    auto it = mirror.topic_configs.find("redpanda.storage.mode");
+    ASSERT_TRUE_CORO(it != mirror.topic_configs.end())
+      << "storage mode should be in topic configs";
+    EXPECT_EQ(it->second, "cloud");
+}
+
+TEST_F_CORO(
+  source_topic_syncer_test,
+  non_override_link_follows_source_storage_mode_on_update) {
+    // Regression guard: a link WITHOUT a storage_mode_override must keep the
+    // shadow's storage mode in sync with the source on the update path. Only
+    // links that DO have an override suppress storage.mode reconciliation.
+    auto topic = ::model::topic("follow-me");
+    fixture()->get_cluster_mock().add_topic(
+      topic, 3, 3, kafka::topic_authorized_operations(0x508));
+    ::cluster::topic_properties props;
+    props.storage_mode = ::model::redpanda_storage_mode::local;
+    fixture()->get_cluster_mock().set_topic_properties(topic, std::move(props));
+
+    co_await fixture()->upsert_link(get_default_metadata());
+
+    RPTEST_REQUIRE_EVENTUALLY_CORO(5s, [this, &topic] {
+        auto meta = fixture()->find_link_by_name(model::name_t("test_link"));
+        return meta->state.mirror_topics.contains(topic);
+    });
+
+    // Source changes its storage mode; the shadow must follow on update.
+    ::cluster::topic_properties tiered_props;
+    tiered_props.storage_mode = ::model::redpanda_storage_mode::tiered;
+    fixture()->get_cluster_mock().set_topic_properties(
+      topic, std::move(tiered_props));
+
+    RPTEST_REQUIRE_EVENTUALLY_CORO(5s, [this, &topic] {
+        auto meta = fixture()->find_link_by_name(model::name_t("test_link"));
+        const auto& cfgs = meta->state.mirror_topics.at(topic).topic_configs;
+        auto it = cfgs.find("redpanda.storage.mode");
+        return it != cfgs.end() && it->second == "tiered";
+    });
+}
+
+TEST_F_CORO(
+  source_topic_syncer_test,
+  override_link_keeps_override_when_source_storage_mode_changes) {
+    // A link WITH a cloud override must not reconcile storage.mode from the
+    // source on update: the override value stays even when the source's
+    // storage mode later changes (the update path erases storage.mode for
+    // override links so the source value cannot win).
+    auto topic = ::model::topic("override-me");
+    fixture()->get_cluster_mock().add_topic(
+      topic, 3, 3, kafka::topic_authorized_operations(0x508));
+    ::cluster::topic_properties props;
+    props.storage_mode = ::model::redpanda_storage_mode::local;
+    fixture()->get_cluster_mock().set_topic_properties(topic, std::move(props));
+
+    auto md = get_default_metadata();
+    md.configuration.topic_metadata_mirroring_cfg.storage_mode_override
+      = ::model::redpanda_storage_mode::cloud;
+    co_await fixture()->upsert_link(std::move(md));
+
+    RPTEST_REQUIRE_EVENTUALLY_CORO(5s, [this, &topic] {
+        auto meta = fixture()->find_link_by_name(model::name_t("test_link"));
+        if (!meta->state.mirror_topics.contains(topic)) {
+            return false;
+        }
+        const auto& cfgs = meta->state.mirror_topics.at(topic).topic_configs;
+        auto it = cfgs.find("redpanda.storage.mode");
+        return it != cfgs.end() && it->second == "cloud";
+    });
+
+    // Source changes storage mode; give the sync loop time to run, then
+    // confirm the override stuck rather than being reconciled to the source.
+    ::cluster::topic_properties tiered_props;
+    tiered_props.storage_mode = ::model::redpanda_storage_mode::tiered;
+    fixture()->get_cluster_mock().set_topic_properties(
+      topic, std::move(tiered_props));
+
+    co_await ss::sleep(2s);
+    auto meta = fixture()->find_link_by_name(model::name_t("test_link"));
+    const auto& cfgs = meta->state.mirror_topics.at(topic).topic_configs;
+    auto it = cfgs.find("redpanda.storage.mode");
+    ASSERT_TRUE_CORO(it != cfgs.end())
+      << "storage mode should still be present";
+    EXPECT_EQ(it->second, "cloud");
+}
+
+TEST_F_CORO(
+  source_topic_syncer_test, storage_mode_override_scoped_by_include_filter) {
+    // Only "app-1" is in scope of the override; "other" must inherit the
+    // source's storage mode instead of picking up the override.
+    auto in_scope_topic = ::model::topic("app-1");
+    auto out_of_scope_topic = ::model::topic("other");
+    fixture()->get_cluster_mock().add_topic(
+      in_scope_topic, 3, 3, kafka::topic_authorized_operations(0x508));
+    fixture()->get_cluster_mock().add_topic(
+      out_of_scope_topic, 3, 3, kafka::topic_authorized_operations(0x508));
+
+    ::cluster::topic_properties in_scope_props;
+    in_scope_props.storage_mode = ::model::redpanda_storage_mode::local;
+    fixture()->get_cluster_mock().set_topic_properties(
+      in_scope_topic, std::move(in_scope_props));
+    ::cluster::topic_properties out_of_scope_props;
+    out_of_scope_props.storage_mode = ::model::redpanda_storage_mode::local;
+    fixture()->get_cluster_mock().set_topic_properties(
+      out_of_scope_topic, std::move(out_of_scope_props));
+
+    auto md = get_default_metadata();
+    auto& mirroring_cfg = md.configuration.topic_metadata_mirroring_cfg;
+    mirroring_cfg.storage_mode_override = ::model::redpanda_storage_mode::cloud;
+    mirroring_cfg.storage_mode_override_filters.emplace_back(
+      resource_name_filter_pattern{
+        .pattern_type = filter_pattern_type::prefix,
+        .filter = filter_type::include,
+        .pattern = "app-"});
+    co_await fixture()->upsert_link(std::move(md));
+
+    RPTEST_REQUIRE_EVENTUALLY_CORO(5s, [this, &in_scope_topic] {
+        auto link_metadata = fixture()->find_link_by_name(
+          model::name_t("test_link"));
+        return link_metadata->state.mirror_topics.contains(in_scope_topic);
+    });
+    RPTEST_REQUIRE_EVENTUALLY_CORO(5s, [this, &out_of_scope_topic] {
+        auto link_metadata = fixture()->find_link_by_name(
+          model::name_t("test_link"));
+        return link_metadata->state.mirror_topics.contains(out_of_scope_topic);
+    });
+
+    auto link_metadata = fixture()->find_link_by_name(
+      model::name_t("test_link"));
+
+    const auto& in_scope_mirror = link_metadata->state.mirror_topics.at(
+      in_scope_topic);
+    auto in_scope_it = in_scope_mirror.topic_configs.find(
+      "redpanda.storage.mode");
+    ASSERT_TRUE_CORO(in_scope_it != in_scope_mirror.topic_configs.end())
+      << "storage mode should be in topic configs";
+    EXPECT_EQ(in_scope_it->second, "cloud");
+
+    const auto& out_of_scope_mirror = link_metadata->state.mirror_topics.at(
+      out_of_scope_topic);
+    auto out_of_scope_it = out_of_scope_mirror.topic_configs.find(
+      "redpanda.storage.mode");
+    ASSERT_TRUE_CORO(out_of_scope_it != out_of_scope_mirror.topic_configs.end())
+      << "storage mode should be in topic configs";
+    EXPECT_EQ(out_of_scope_it->second, "local")
+      << "out-of-scope topic should inherit the source storage mode";
+
+    // Let the syncer run a few more reconcile ticks. storage.mode is
+    // create-only, so the in-scope topic's override must keep winning on
+    // the update path too: if it were only applied at creation, the
+    // freshly re-fetched source value ("local") would diff against the
+    // cached "cloud" and get written back on the very next tick.
+    co_await ss::sleep(3s);
+
+    link_metadata = fixture()->find_link_by_name(model::name_t("test_link"));
+    const auto& in_scope_mirror_after = link_metadata->state.mirror_topics.at(
+      in_scope_topic);
+    auto in_scope_it_after = in_scope_mirror_after.topic_configs.find(
+      "redpanda.storage.mode");
+    ASSERT_TRUE_CORO(
+      in_scope_it_after != in_scope_mirror_after.topic_configs.end());
+    EXPECT_EQ(in_scope_it_after->second, "cloud")
+      << "in-scope topic's storage mode must not drift away from the "
+         "override on re-sync";
+}
+
+TEST_F_CORO(
+  source_topic_syncer_test, storage_mode_override_scoped_by_exclude_filter) {
+    // "secret" is excluded from the override's scope and must inherit the
+    // source's storage mode; "other-topic" is in scope (default-include)
+    // and picks up the override.
+    auto excluded_topic = ::model::topic("secret");
+    auto included_topic = ::model::topic("other-topic");
+    fixture()->get_cluster_mock().add_topic(
+      excluded_topic, 3, 3, kafka::topic_authorized_operations(0x508));
+    fixture()->get_cluster_mock().add_topic(
+      included_topic, 3, 3, kafka::topic_authorized_operations(0x508));
+
+    ::cluster::topic_properties excluded_props;
+    excluded_props.storage_mode = ::model::redpanda_storage_mode::local;
+    fixture()->get_cluster_mock().set_topic_properties(
+      excluded_topic, std::move(excluded_props));
+    ::cluster::topic_properties included_props;
+    included_props.storage_mode = ::model::redpanda_storage_mode::local;
+    fixture()->get_cluster_mock().set_topic_properties(
+      included_topic, std::move(included_props));
+
+    auto md = get_default_metadata();
+    auto& mirroring_cfg = md.configuration.topic_metadata_mirroring_cfg;
+    mirroring_cfg.storage_mode_override = ::model::redpanda_storage_mode::cloud;
+    mirroring_cfg.storage_mode_override_filters.emplace_back(
+      resource_name_filter_pattern{
+        .pattern_type = filter_pattern_type::literal,
+        .filter = filter_type::exclude,
+        .pattern = "secret"});
+    co_await fixture()->upsert_link(std::move(md));
+
+    RPTEST_REQUIRE_EVENTUALLY_CORO(5s, [this, &excluded_topic] {
+        auto link_metadata = fixture()->find_link_by_name(
+          model::name_t("test_link"));
+        return link_metadata->state.mirror_topics.contains(excluded_topic);
+    });
+    RPTEST_REQUIRE_EVENTUALLY_CORO(5s, [this, &included_topic] {
+        auto link_metadata = fixture()->find_link_by_name(
+          model::name_t("test_link"));
+        return link_metadata->state.mirror_topics.contains(included_topic);
+    });
+
+    auto link_metadata = fixture()->find_link_by_name(
+      model::name_t("test_link"));
+
+    const auto& excluded_mirror = link_metadata->state.mirror_topics.at(
+      excluded_topic);
+    auto excluded_it = excluded_mirror.topic_configs.find(
+      "redpanda.storage.mode");
+    ASSERT_TRUE_CORO(excluded_it != excluded_mirror.topic_configs.end())
+      << "storage mode should be in topic configs";
+    EXPECT_EQ(excluded_it->second, "local")
+      << "excluded topic should inherit the source storage mode";
+
+    const auto& included_mirror = link_metadata->state.mirror_topics.at(
+      included_topic);
+    auto included_it = included_mirror.topic_configs.find(
+      "redpanda.storage.mode");
+    ASSERT_TRUE_CORO(included_it != included_mirror.topic_configs.end())
+      << "storage mode should be in topic configs";
+    EXPECT_EQ(included_it->second, "cloud");
+
+    // Let the syncer run a few more reconcile ticks. storage.mode is
+    // create-only, so the in-scope topic's override must keep winning on
+    // the update path too: if it were only applied at creation, the
+    // freshly re-fetched source value ("local") would diff against the
+    // cached "cloud" and get written back on the very next tick.
+    co_await ss::sleep(3s);
+
+    link_metadata = fixture()->find_link_by_name(model::name_t("test_link"));
+    const auto& included_mirror_after = link_metadata->state.mirror_topics.at(
+      included_topic);
+    auto included_it_after = included_mirror_after.topic_configs.find(
+      "redpanda.storage.mode");
+    ASSERT_TRUE_CORO(
+      included_it_after != included_mirror_after.topic_configs.end());
+    EXPECT_EQ(included_it_after->second, "cloud")
+      << "in-scope topic's storage mode must not drift away from the "
+         "override on re-sync";
+}
+
 } // namespace cluster_link::tests
