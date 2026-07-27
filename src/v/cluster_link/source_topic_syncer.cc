@@ -344,6 +344,28 @@ source_topic_syncer::run_impl(ss::abort_source& as) {
       .reason = "Auto topic sensor task completed"};
 }
 
+void source_topic_syncer::maybe_apply_storage_mode_override(
+  ::model::topic_view topic,
+  chunked_hash_map<ss::sstring, ss::sstring>& configs) const {
+    if (!_config.storage_mode_override.has_value()) {
+        return;
+    }
+    if (!::cluster_link::model::select_topic_default_include(
+          topic, _config.storage_mode_override_filters)) {
+        return; // out-of-scope: inherit the source value already in `configs`
+    }
+    auto mode = *_config.storage_mode_override;
+    // Set both the user and impl properties: to_topic_config() resolves the
+    // storage mode from the impl property first, and the impl name
+    // disambiguates the tiered variants the user string cannot express.
+    configs.insert_or_assign(
+      ss::sstring(kafka::topic_property_redpanda_storage_mode),
+      ss::sstring(::model::redpanda_storage_mode_user_name(mode)));
+    configs.insert_or_assign(
+      ss::sstring(kafka::topic_property_redpanda_storage_mode_impl),
+      ss::sstring(::model::redpanda_storage_mode_impl_name(mode)));
+}
+
 void source_topic_syncer::enqueue_create_mirror_topic_commands(
   reconciler_commands_vector& commands,
   const chunked_hash_map<::model::topic, topic_metadata>& candidates,
@@ -371,6 +393,8 @@ void source_topic_syncer::enqueue_create_mirror_topic_commands(
               describe_result.resource_name);
             continue;
         }
+
+        maybe_apply_storage_mode_override(it->first, *configs);
 
         commands.emplace_back(
           model::add_mirror_topic_cmd{
@@ -488,6 +512,7 @@ void source_topic_syncer::enqueue_update_mirror_topic_commands(
           logger(), describe_result);
 
         if (configs.has_value()) {
+            maybe_apply_storage_mode_override(topic, *configs);
             // Now check to see if the the properties on the topic have differed
             for (const auto& [key, val] : *configs) {
                 auto cached_config_it = mirror_topic_cache.topic_configs.find(
