@@ -1205,6 +1205,46 @@ errc frontend::validator::validate_metadata_mirroring_config(
         }
     }
 
+    if (config.storage_mode_override.has_value()) {
+        // The proto layer only accepts UNSPECIFIED/CLOUD/TIERED_CLOUD, but
+        // the internal enum has more values (local, tiered, unset) that
+        // could reach us through serde deserialization of stale or
+        // corrupted data. Be defensive.
+        auto mode = *config.storage_mode_override;
+        if (
+          mode != ::model::redpanda_storage_mode::cloud
+          && mode != ::model::redpanda_storage_mode::tiered_cloud) {
+            vlog(
+              cluster::clusterlog.warn,
+              "Invalid storage mode override {}: only cloud and tiered_cloud "
+              "are supported",
+              mode);
+            return errc::invalid_create;
+        }
+        if (!config::shard_local_cfg().cloud_storage_enabled()) {
+            vlog(
+              cluster::clusterlog.warn,
+              "Cannot create shadow link with storage mode override: "
+              "cloud storage is not enabled");
+            return errc::feature_disabled;
+        }
+    }
+
+    if (!config.storage_mode_override_filters.empty()) {
+        if (!config.storage_mode_override.has_value()) {
+            vlog(
+              cluster::clusterlog.warn,
+              "shadow_topic_storage_mode_filters set without a storage mode "
+              "override");
+            return errc::invalid_create;
+        }
+        if (
+          std::ranges::any_of(
+            config.storage_mode_override_filters, check_filter_pattern)) {
+            return errc::topic_filter_invalid;
+        }
+    }
+
     return errc::success;
 }
 

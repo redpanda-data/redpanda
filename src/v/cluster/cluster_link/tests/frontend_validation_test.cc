@@ -11,6 +11,7 @@
 #include "cluster/cluster_link/frontend.h"
 #include "cluster/cluster_link/table.h"
 #include "cluster/cluster_link/tests/utils.h"
+#include "test_utils/scoped_config.h"
 #include "test_utils/test.h"
 #include "utils/unresolved_address.h"
 
@@ -931,6 +932,61 @@ TEST_F_CORO(
           co_await upsert_cluster_link(std::move(m1)),
           cluster::cluster_link::errc::success);
     }
+}
+
+TEST_F_CORO(frontend_validation_test, storage_mode_override_filters_success) {
+    scoped_config cfg;
+    cfg.get("cloud_storage_enabled").set_value(true);
+
+    auto m1 = create_base_metadata();
+    m1.configuration.topic_metadata_mirroring_cfg.storage_mode_override
+      = ::model::redpanda_storage_mode::cloud;
+    m1.configuration.topic_metadata_mirroring_cfg.storage_mode_override_filters
+      = {{
+        .pattern_type = ::cluster_link::model::filter_pattern_type::literal,
+        .filter = ::cluster_link::model::filter_type::include,
+        .pattern = "app",
+      }};
+
+    EXPECT_EQ(
+      co_await upsert_cluster_link(std::move(m1)),
+      cluster::cluster_link::errc::success);
+}
+
+TEST_F_CORO(
+  frontend_validation_test,
+  storage_mode_override_filters_without_override_invalid) {
+    auto m1 = create_base_metadata();
+    m1.configuration.topic_metadata_mirroring_cfg.storage_mode_override_filters
+      = {{
+        .pattern_type = ::cluster_link::model::filter_pattern_type::literal,
+        .filter = ::cluster_link::model::filter_type::include,
+        .pattern = "app",
+      }};
+
+    EXPECT_EQ(
+      co_await upsert_cluster_link(std::move(m1)),
+      cluster::cluster_link::errc::invalid_create);
+}
+
+TEST_F_CORO(
+  frontend_validation_test, storage_mode_override_filters_invalid_pattern) {
+    scoped_config cfg;
+    cfg.get("cloud_storage_enabled").set_value(true);
+
+    auto m1 = create_base_metadata();
+    m1.configuration.topic_metadata_mirroring_cfg.storage_mode_override
+      = ::model::redpanda_storage_mode::cloud;
+    m1.configuration.topic_metadata_mirroring_cfg.storage_mode_override_filters
+      = {{
+        .pattern_type = ::cluster_link::model::filter_pattern_type::literal,
+        .filter = ::cluster_link::model::filter_type::include,
+        .pattern = "a*b",
+      }};
+
+    EXPECT_EQ(
+      co_await upsert_cluster_link(std::move(m1)),
+      cluster::cluster_link::errc::topic_filter_invalid);
 }
 
 TEST_F_CORO(

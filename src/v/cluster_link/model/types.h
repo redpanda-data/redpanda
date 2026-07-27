@@ -468,7 +468,7 @@ struct resource_name_filter_pattern
 struct topic_metadata_mirroring_config
   : serde::envelope<
       topic_metadata_mirroring_config,
-      serde::version<0>,
+      serde::version<2>,
       serde::compat_version<0>> {
     /// Flag to indicate if the task is enabled or not
     enabled_t is_enabled{enabled_t::yes};
@@ -526,7 +526,9 @@ struct topic_metadata_mirroring_config
           topic_name_filters,
           topic_properties_to_mirror,
           exclude_default,
-          starting_offset);
+          starting_offset,
+          storage_mode_override,
+          storage_mode_override_filters);
     }
 
     topic_metadata_mirroring_config copy() const;
