@@ -392,6 +392,16 @@ ss::future<> fetcher::do_fetch() {
 
         auto fetch_result_value = std::move(fetch_result.value());
         _session_state.update_fetch_session(fetch_result_value.session_id);
+        if (fetch_result_value.needs_full_fetch) {
+            // Reset after update_fetch_session, otherwise the response we just
+            // processed transitions the session straight back to incremental.
+            vlog(
+              logger().debug,
+              "[broker: {}] resetting fetch session to re-report partitions "
+              "with unknown source offsets",
+              _id);
+            _session_state.reset();
+        }
         if (fetch_result_value.needs_metadata_update) {
             // if we need to update metadata, we should do it
             // so that we can retry fetching the partitions later
@@ -531,6 +541,7 @@ fetcher::process_fetch_response(
 
     // Clear incremental fetch state, skipping partitions that errored
     // or just returned new data.
+    size_t unreported_partitions = 0;
     for (const auto& to_process : partitions) {
         const auto& included = to_process.to_include_in_fetch;
         const auto& forgotten = to_process.to_forget;
@@ -567,6 +578,17 @@ fetcher::process_fetch_response(
                 auto& fetcher_state
                   = find_fetcher_state(topic, p.partition_id)->get();
 
+                if (!fetcher_state.source_reported) {
+                    // We asked for this partition and the broker reported
+                    // nothing about it, so we still do not know where the
+                    // source is. Per KIP-227 an unchanged partition is omitted
+                    // from incremental fetch responses, so re-including it in
+                    // an incremental request will not help; a full fetch is
+                    // returned unfiltered, so it will.
+                    ++unreported_partitions;
+                    result.needs_full_fetch = true;
+                }
+
                 fetcher_state.incremental_include = false;
             }
         }
@@ -592,6 +614,15 @@ fetcher::process_fetch_response(
                 _partitions_to_forget.erase(fgt_it);
             }
         }
+    }
+
+    if (unreported_partitions > 0) {
+        vlog(
+          logger().debug,
+          "[broker: {}] {} partition(s) unreported with unknown source "
+          "offsets, requesting a full fetch",
+          _id,
+          unreported_partitions);
     }
 
     co_return result;
@@ -686,6 +717,20 @@ fetcher::process_partition_response(
     }
     if (actions.maybe_fetched_partition_data.has_value()) {
         auto& fetched_partition_data = *actions.maybe_fetched_partition_data;
+
+        if (fetched_partition_data.error == kafka::error_code::none) {
+            // The broker reported this partition's offsets, records or not.
+            // Recording that is what lets us tell "the source is idle" apart
+            // from "the broker has never told us where the source is".
+            auto state = find_fetcher_state(topic, part_data.partition_id);
+            vassert(
+              state.has_value(),
+              "responses are filtered to consistent tps before processing, "
+              "which demands that {}/{} is still assigned",
+              topic,
+              part_data.partition_id);
+            state->get().source_reported = true;
+        }
 
         // if the fetched data is empty, its probably an offset update
         // notification, log it
