@@ -69,19 +69,7 @@ func (ors *OffsetRanges) Insert(o int64) {
 		if o < last.Upper {
 			if ors.TolerateDataLoss {
 				// Truncate the ranges to the last offset.
-				for i, r := range ors.Ranges {
-					if o >= r.Lower && o < r.Upper {
-						// If the offset is within the range, truncate the range
-						// and remove all subsequent ranges.
-						ors.Ranges = ors.Ranges[:i+1]
-						ors.Ranges[i].Upper = o
-						break
-					} else if o < r.Lower {
-						// If the offset is before the range, truncate the range and all subsequent ranges.
-						ors.Ranges = ors.Ranges[:i]
-						break
-					}
-				}
+				ors.TruncateAt(o)
 			} else {
 				// TODO: more flexible structure for out of order inserts, at the moment
 				// we rely on franz-go callbacks being invoked in order.
@@ -97,6 +85,26 @@ func (ors *OffsetRanges) Insert(o int64) {
 	} else {
 		// Otherwise, create a new range.
 		ors.Ranges = append(ors.Ranges, OffsetRange{Lower: o, Upper: o + 1})
+	}
+}
+
+// TruncateAt invalidates all recorded offsets >= o, marking them as no
+// longer valid. Used when data loss is detected: the log was truncated
+// at o and offsets from there on may have been rewritten with different
+// records than the ones originally acked.
+func (ors *OffsetRanges) TruncateAt(o int64) {
+	for i, r := range ors.Ranges {
+		if o >= r.Lower && o < r.Upper {
+			// If the offset is within the range, truncate the range
+			// and remove all subsequent ranges.
+			ors.Ranges = ors.Ranges[:i+1]
+			ors.Ranges[i].Upper = o
+			break
+		} else if o < r.Lower {
+			// If the offset is before the range, truncate the range and all subsequent ranges.
+			ors.Ranges = ors.Ranges[:i]
+			break
+		}
 	}
 }
 
@@ -130,6 +138,10 @@ func (tors *TopicOffsetRanges) Insert(p int32, o int64) {
 
 func (tors *TopicOffsetRanges) Contains(p int32, o int64) bool {
 	return tors.PartitionRanges[p].Contains(o)
+}
+
+func (tors *TopicOffsetRanges) TruncateAt(p int32, o int64) {
+	tors.PartitionRanges[p].TruncateAt(o)
 }
 
 func (tors *TopicOffsetRanges) GetLastConsumableOffset(p int32) int64 {
