@@ -16,6 +16,11 @@
 #include <seastar/core/condition-variable.hh>
 #include <seastar/core/gate.hh>
 
+namespace kafka::data::rpc {
+class topic_creator;
+class topic_metadata_cache;
+} // namespace kafka::data::rpc
+
 namespace cluster_link {
 
 class link;
@@ -28,8 +33,13 @@ class link_registry;
 class link_status_reconciler {
 public:
     explicit link_status_reconciler(
-      link_registry* link_registry, ::model::term_id term)
+      link_registry* link_registry,
+      kafka::data::rpc::topic_creator* topic_creator,
+      kafka::data::rpc::topic_metadata_cache* topic_metadata_cache,
+      ::model::term_id term)
       : _link_registry(link_registry)
+      , _topic_creator(topic_creator)
+      , _topic_metadata_cache(topic_metadata_cache)
       , _controller_term(term) {}
 
     ss::future<> start() noexcept;
@@ -40,7 +50,12 @@ private:
     class per_link_reconciler {
     public:
         explicit per_link_reconciler(
-          link_registry&, model::id_t, ::model::term_id, ss::abort_source&);
+          link_registry&,
+          kafka::data::rpc::topic_creator*,
+          kafka::data::rpc::topic_metadata_cache*,
+          model::id_t,
+          ::model::term_id,
+          ss::abort_source&);
         ss::future<> stop() noexcept;
         void notify_changes();
 
@@ -49,8 +64,19 @@ private:
         bool has_pending_reconciliations() const;
 
         ss::future<> try_finish_failover(const ::model::topic&) noexcept;
+        /// After failover, promote a cloud shadow topic to tiered_cloud for
+        /// low-latency reads/writes on the now-primary cluster. Safe to call
+        /// repeatedly: no-ops if the topic is already in a non-cloud storage
+        /// mode. Never throws.
+        ss::future<> maybe_promote_storage_mode(const ::model::topic&);
+        /// Returns true if this link has storage_mode_override=cloud and the
+        /// given topic is still in cloud mode per the metadata cache. Used
+        /// to identify failed_over topics that still need promotion.
+        bool topic_needs_promotion(const ::model::topic&) const;
         ss::condition_variable _cv;
         link_registry& _registry;
+        kafka::data::rpc::topic_creator* _topic_creator;
+        kafka::data::rpc::topic_metadata_cache* _topic_metadata_cache;
         model::id_t _link_id;
         ::model::term_id _term;
         ss::gate _gate;
@@ -60,6 +86,8 @@ private:
     chunked_hash_map<model::id_t, std::unique_ptr<per_link_reconciler>>
       _reconcilers;
     link_registry* _link_registry;
+    kafka::data::rpc::topic_creator* _topic_creator;
+    kafka::data::rpc::topic_metadata_cache* _topic_metadata_cache;
     ::model::term_id _controller_term;
     ss::gate _gate;
     ss::abort_source _as;
