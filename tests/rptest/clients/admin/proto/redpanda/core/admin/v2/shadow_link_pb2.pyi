@@ -33,6 +33,32 @@ else:
     import typing_extensions
 DESCRIPTOR: google.protobuf.descriptor.FileDescriptor
 
+class _ShadowTopicStorageMode:
+    ValueType = typing.NewType('ValueType', builtins.int)
+    V: typing_extensions.TypeAlias = ValueType
+
+class _ShadowTopicStorageModeEnumTypeWrapper(google.protobuf.internal.enum_type_wrapper._EnumTypeWrapper[_ShadowTopicStorageMode.ValueType], builtins.type):
+    DESCRIPTOR: google.protobuf.descriptor.EnumDescriptor
+    SHADOW_TOPIC_STORAGE_MODE_UNSPECIFIED: _ShadowTopicStorageMode.ValueType
+    "Inherit the source topic's storage mode (no override)."
+    SHADOW_TOPIC_STORAGE_MODE_CLOUD: _ShadowTopicStorageMode.ValueType
+    'redpanda.storage.mode=cloud, redpanda.storage.mode.impl=cloud.'
+    SHADOW_TOPIC_STORAGE_MODE_TIERED_V2: _ShadowTopicStorageMode.ValueType
+    'redpanda.storage.mode=tiered, redpanda.storage.mode.impl=tiered_v2.'
+
+class ShadowTopicStorageMode(_ShadowTopicStorageMode, metaclass=_ShadowTopicStorageModeEnumTypeWrapper):
+    """Storage mode override for shadow topics created by a shadow link. Each
+    value sets the redpanda.storage.mode and redpanda.storage.mode.impl topic
+    properties on the shadow topic.
+    """
+SHADOW_TOPIC_STORAGE_MODE_UNSPECIFIED: ShadowTopicStorageMode.ValueType
+"Inherit the source topic's storage mode (no override)."
+SHADOW_TOPIC_STORAGE_MODE_CLOUD: ShadowTopicStorageMode.ValueType
+'redpanda.storage.mode=cloud, redpanda.storage.mode.impl=cloud.'
+SHADOW_TOPIC_STORAGE_MODE_TIERED_V2: ShadowTopicStorageMode.ValueType
+'redpanda.storage.mode=tiered, redpanda.storage.mode.impl=tiered_v2.'
+Global___ShadowTopicStorageMode: typing_extensions.TypeAlias = ShadowTopicStorageMode
+
 class _ShadowLinkState:
     ValueType = typing.NewType('ValueType', builtins.int)
     V: typing_extensions.TypeAlias = ValueType
@@ -763,10 +789,17 @@ class TopicMetadataSyncOptions(google.protobuf.message.Message):
     START_AT_LATEST_FIELD_NUMBER: builtins.int
     START_AT_TIMESTAMP_FIELD_NUMBER: builtins.int
     PAUSED_FIELD_NUMBER: builtins.int
+    SHADOW_TOPIC_STORAGE_MODE_FIELD_NUMBER: builtins.int
+    SHADOW_TOPIC_STORAGE_MODE_FILTERS_FIELD_NUMBER: builtins.int
+    PROMOTE_TO_TIERED_V2_ON_FAILOVER_FIELD_NUMBER: builtins.int
     exclude_default: builtins.bool
     'If false, then the following topic properties will be synced by default:\n    - `compression.type`\n    - `retention.bytes`\n    - `retention.ms`\n    - `delete.retention.ms`\n    - Replication Factor\n    - `min.compaction.lag.ms`\n    - `max.compaction.lag.ms`\n\n    If this is true, then only the properties listed in\n    `synced_shadow_topic_properties` will be synced.\n    '
     paused: builtins.bool
     "Allows user to pause the topic sync task.  If paused, then\n    the task will enter the 'paused' state and not sync topics or their\n    properties from the source cluster\n    "
+    shadow_topic_storage_mode: Global___ShadowTopicStorageMode.ValueType
+    'Storage mode override for shadow topics created by this link.\n    Defaults to SHADOW_TOPIC_STORAGE_MODE_UNSPECIFIED (inherit from source).\n    Immutable after link creation.\n    '
+    promote_to_tiered_v2_on_failover: builtins.bool
+    "When true, the link's cloud shadow topics are promoted to tiered_v2 on\n    failover, so the promoted cluster serves reads and writes locally. Off\n    by default; only meaningful when the storage mode is cloud.\n    "
 
     @property
     def interval(self) -> google.protobuf.duration_pb2.Duration:
@@ -834,13 +867,23 @@ class TopicMetadataSyncOptions(google.protobuf.message.Message):
         at or after the specified timestamp.
         """
 
-    def __init__(self, *, interval: google.protobuf.duration_pb2.Duration | None=..., effective_interval: google.protobuf.duration_pb2.Duration | None=..., auto_create_shadow_topic_filters: collections.abc.Iterable[Global___NameFilter] | None=..., synced_shadow_topic_properties: collections.abc.Iterable[builtins.str] | None=..., exclude_default: builtins.bool=..., start_at_earliest: Global___TopicMetadataSyncOptions.EarliestOffset | None=..., start_at_latest: Global___TopicMetadataSyncOptions.LatestOffset | None=..., start_at_timestamp: google.protobuf.timestamp_pb2.Timestamp | None=..., paused: builtins.bool=...) -> None:
+    @property
+    def shadow_topic_storage_mode_filters(self) -> google.protobuf.internal.containers.RepeatedCompositeFieldContainer[Global___NameFilter]:
+        """Scopes shadow_topic_storage_mode to a subset of this link's shadow
+        topics. Evaluated only on topics already selected by the mirroring
+        filters. Default-include: empty = all mirrored topics; an exclude
+        pattern carves out topics that keep source-inherited storage; if any
+        include patterns are present, only matching topics are affected.
+        Mutable; changes apply to topics created after the change.
+        """
+
+    def __init__(self, *, interval: google.protobuf.duration_pb2.Duration | None=..., effective_interval: google.protobuf.duration_pb2.Duration | None=..., auto_create_shadow_topic_filters: collections.abc.Iterable[Global___NameFilter] | None=..., synced_shadow_topic_properties: collections.abc.Iterable[builtins.str] | None=..., exclude_default: builtins.bool=..., start_at_earliest: Global___TopicMetadataSyncOptions.EarliestOffset | None=..., start_at_latest: Global___TopicMetadataSyncOptions.LatestOffset | None=..., start_at_timestamp: google.protobuf.timestamp_pb2.Timestamp | None=..., paused: builtins.bool=..., shadow_topic_storage_mode: Global___ShadowTopicStorageMode.ValueType=..., shadow_topic_storage_mode_filters: collections.abc.Iterable[Global___NameFilter] | None=..., promote_to_tiered_v2_on_failover: builtins.bool=...) -> None:
         ...
 
     def HasField(self, field_name: typing.Literal['effective_interval', b'effective_interval', 'interval', b'interval', 'start_at_earliest', b'start_at_earliest', 'start_at_latest', b'start_at_latest', 'start_at_timestamp', b'start_at_timestamp', 'start_offset', b'start_offset']) -> builtins.bool:
         ...
 
-    def ClearField(self, field_name: typing.Literal['auto_create_shadow_topic_filters', b'auto_create_shadow_topic_filters', 'effective_interval', b'effective_interval', 'exclude_default', b'exclude_default', 'interval', b'interval', 'paused', b'paused', 'start_at_earliest', b'start_at_earliest', 'start_at_latest', b'start_at_latest', 'start_at_timestamp', b'start_at_timestamp', 'start_offset', b'start_offset', 'synced_shadow_topic_properties', b'synced_shadow_topic_properties']) -> None:
+    def ClearField(self, field_name: typing.Literal['auto_create_shadow_topic_filters', b'auto_create_shadow_topic_filters', 'effective_interval', b'effective_interval', 'exclude_default', b'exclude_default', 'interval', b'interval', 'paused', b'paused', 'promote_to_tiered_v2_on_failover', b'promote_to_tiered_v2_on_failover', 'shadow_topic_storage_mode', b'shadow_topic_storage_mode', 'shadow_topic_storage_mode_filters', b'shadow_topic_storage_mode_filters', 'start_at_earliest', b'start_at_earliest', 'start_at_latest', b'start_at_latest', 'start_at_timestamp', b'start_at_timestamp', 'start_offset', b'start_offset', 'synced_shadow_topic_properties', b'synced_shadow_topic_properties']) -> None:
         ...
 
     def WhichOneof(self, oneof_group: typing.Literal['start_offset', b'start_offset']) -> typing.Literal['start_at_earliest', 'start_at_latest', 'start_at_timestamp'] | None:
