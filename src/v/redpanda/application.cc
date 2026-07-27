@@ -22,6 +22,7 @@
 #include "cluster/node_isolation_watcher.h"
 #include "cluster/topic_recovery_service.h"
 #include "compression/async_stream_zstd.h"
+#include "compression/internal/snappy_java_compressor.h"
 #include "compression/lz4_decompression_buffers.h"
 #include "compression/stream_zstd.h"
 #include "config/configuration.h"
@@ -465,6 +466,8 @@ void application::initialize(
           compression::lz4_decompression_buffers::bufsize,
           compression::lz4_decompression_buffers::min_threshold,
           config::shard_local_cfg().lz4_decompress_reusable_buffers_disabled());
+
+        compression::internal::snappy_java_compressor::init_workspace();
     }).get();
 
     if (config::shard_local_cfg().enable_pid_file()) {

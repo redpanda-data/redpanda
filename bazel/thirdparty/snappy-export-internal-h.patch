@@ -1,0 +1,19 @@
+Export snappy-internal.h so dependents can drive CompressFragment with a
+caller-owned WorkingMemory (see src/v/compression/internal/
+snappy_java_compressor.cc).
+
+--- a/BUILD.bazel
++++ b/BUILD.bazel
+@@ -74,11 +74,11 @@ cc_library(
+     name = "snappy",
+     srcs = [
+         "snappy.cc",
+-        "snappy-internal.h",
+         "snappy-sinksource.cc",
+     ],
+     hdrs = [
+         "snappy.h",
++        "snappy-internal.h",
+         "snappy-sinksource.h",
+     ],
+     copts = select({

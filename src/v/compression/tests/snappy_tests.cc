@@ -7,6 +7,7 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
+#include "base/units.h"
 #include "bytes/iobuf.h"
 #include "compression/internal/snappy_java_compressor.h"
 #include "compression/snappy_standard_compressor.h"
@@ -137,6 +138,109 @@ TEST(SnappyTest, CompressedVersionHeadersSnappyJavaTest) {
     snappy::GetUncompressedLength(&compressed_source, &decompressed_size);
     EXPECT_EQ(decompressed_size, data.size());
     compressed_frag->trim_front(sizeof(decompressed_size));
+}
+
+namespace {
+
+iobuf gen_iobuf(size_t size, bool compressible) {
+    iobuf ret;
+    if (compressible) {
+        const auto data = random_generators::gen_alphanum_string(512);
+        while (ret.size_bytes() < size) {
+            ret.append(
+              data.data(), std::min(data.size(), size - ret.size_bytes()));
+        }
+    } else {
+        while (ret.size_bytes() < size) {
+            const auto data = random_generators::gen_alphanum_string(
+              std::min<size_t>(4096, size - ret.size_bytes()));
+            ret.append(data.data(), data.size());
+        }
+    }
+    return ret;
+}
+
+// input sizes covering the snappy::kBlockSize (64KiB) and iobuf max fragment
+// (128KiB) boundaries
+constexpr std::array<size_t, 9> boundary_sizes = {
+  0,
+  1,
+  100,
+  64_KiB - 1,
+  64_KiB,
+  64_KiB + 1,
+  128_KiB,
+  128_KiB + 1,
+  1_MiB,
+};
+
+} // namespace
+
+TEST(SnappyTest, RoundTripBlockBoundariesSnappyJavaTest) {
+    for (size_t size : boundary_sizes) {
+        for (bool compressible : {true, false}) {
+            auto buf = gen_iobuf(size, compressible);
+            auto compressed
+              = compression::internal::snappy_java_compressor::compress(buf);
+            auto decompressed
+              = compression::internal::snappy_java_compressor::uncompress(
+                compressed);
+            EXPECT_EQ(buf, decompressed)
+              << "size=" << size << " compressible=" << compressible;
+        }
+    }
+}
+
+// Differential check of the compressor's snappy-internal.h based
+// implementation (a caller-owned WorkingMemory driving CompressFragment)
+// against the public one-shot API: each java-framed block must be
+// byte-identical to what snappy::RawCompress produces for the same input
+// block, since both emit a varint32 uncompressed-length prefix followed by
+// the same block compression. If this fails after a snappy version bump, the
+// internal contracts drifted; see the static_assert in
+// snappy_java_compressor.cc.
+TEST(SnappyTest, DifferentialVsPublicApiSnappyJavaTest) {
+    using compressor = compression::internal::snappy_java_compressor;
+    for (size_t size : boundary_sizes) {
+        for (bool compressible : {true, false}) {
+            auto buf = gen_iobuf(size, compressible);
+
+            iobuf expected;
+            expected.append(
+              compressor::snappy_magic::java_magic.data(),
+              compressor::snappy_magic::java_magic.size());
+            auto be_version = ss::cpu_to_be(
+              compressor::snappy_magic::default_version);
+            expected.append(
+              reinterpret_cast<const char*>(&be_version), sizeof(be_version));
+            auto be_compat = ss::cpu_to_be(
+              compressor::snappy_magic::min_compatible_version);
+            expected.append(
+              reinterpret_cast<const char*>(&be_compat), sizeof(be_compat));
+            ss::temporary_buffer<char> obuf(
+              snappy::MaxCompressedLength(snappy::kBlockSize));
+            for (const auto& frag : buf) {
+                for (size_t offset = 0; offset < frag.size();
+                     offset += snappy::kBlockSize) {
+                    const size_t block_len = std::min(
+                      snappy::kBlockSize, frag.size() - offset);
+                    size_t compressed_len = obuf.size();
+                    snappy::RawCompress(
+                      frag.get() + offset,
+                      block_len,
+                      obuf.get_write(),
+                      &compressed_len);
+                    auto be_len = ss::cpu_to_be(int32_t(compressed_len));
+                    expected.append(
+                      reinterpret_cast<const char*>(&be_len), sizeof(be_len));
+                    expected.append(obuf.get(), compressed_len);
+                }
+            }
+
+            EXPECT_EQ(compressor::compress(buf), expected)
+              << "size=" << size << " compressible=" << compressible;
+        }
+    }
 }
 
 TEST(SnappyTest, LittleEndianHeadersBackwardsCompatibilitySnappyJavaTest) {
