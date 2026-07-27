@@ -123,33 +123,6 @@ detect_instance(ss::abort_source& as) {
       .disable_metrics = net::metrics_disabled::yes,
       .disable_public_metrics = net::public_metrics_disabled::yes};
 
-    // Probe the metadata endpoint with a single bounded connect before issuing
-    // any request. The http client's request path retries the connection in a
-    // tight no-backoff loop (client::get_connected) that spins hot whenever the
-    // link-local address is unreachable, i.e. whenever we are not on EC2. A
-    // one-shot connect (base_transport makes exactly one attempt) lets us bail
-    // cleanly in that case instead of spinning, and avoids leaving a failed
-    // in-flight request to be reported as an abandoned failed future at
-    // shutdown.
-    {
-        net::base_transport probe{config, &ii_log};
-        // Cancel the probe promptly on shutdown: shutdown() fails any in-flight
-        // connect attempt so we don't wait out the timeout.
-        auto abort_sub = as.subscribe(
-          [&probe]() noexcept { probe.shutdown(); });
-        auto connected = co_await ss::coroutine::as_future(
-          probe.connect(ss::lowres_clock::now() + imds_timeout));
-        co_await probe.stop();
-        if (connected.failed()) {
-            auto ex = connected.get_exception();
-            vlog(
-              ii_log.debug,
-              "EC2 IMDS endpoint not reachable, assuming not on EC2: {}",
-              ex);
-            co_return std::nullopt;
-        }
-    }
-
     http::client client{config, as};
     auto fut = co_await ss::coroutine::as_future(
       query_ec2_instance_type(client, imds_timeout));
