@@ -15,6 +15,8 @@
 #include "serde/envelope.h"
 #include "serde/rw/envelope.h"
 
+#include <seastar/util/bool_class.hh>
+
 #include <fmt/core.h>
 
 #include <optional>
@@ -55,8 +57,8 @@ struct levelable_range
 // is considered undersized when its length is strictly less than
 // `min_acceptable_extent_bytes`.
 //
-// We only consider rewriting a *run* of consecutive undersized extents.
-// Healthy extents close the active run. We never include a healthy extent in
+// We only consider rewriting a *range* of consecutive undersized extents.
+// Healthy extents close the active range. We never include a healthy extent in
 // a leveling range, as those have per-byte rewrite cost without corresponding
 // extent-count savings.
 //
@@ -69,7 +71,14 @@ struct levelable_range
 //     minutes, and can be soft-stopped at coarse-grained boundaries without
 //     wasting hours of upload work.
 //   - On close: commit the range only if it contains more than one
-//     extent (K > 1), as singleton runs can't reduce extent count.
+//     extent (K > 1), as singleton ranges can't reduce extent count.
+//   - The range still open when the extents run out is the partition's tail;
+//     unlike a range closed by a healthy extent, it keeps growing as new data
+//     is reconciled. It is only committed once its total reaches
+//     `min_acceptable_extent_bytes`, so that its output is itself a healthy
+//     extent. Rewriting it earlier would produce yet another undersized
+//     extent that gets re-leveled on every pass as new small extents land
+//     behind it — quadratic write amplification at low produce rates.
 class leveling_range_builder {
 public:
     explicit leveling_range_builder(size_t min_acceptable_extent_bytes)
@@ -80,8 +89,8 @@ public:
     // Processes a single extent.
     void process_extent(kafka::offset base, kafka::offset last, size_t len) {
         if (len >= _min_acceptable_extent_bytes) {
-            // A healthy extent closes any active run.
-            maybe_commit_range();
+            // A healthy extent closes any active range.
+            maybe_commit_range(is_tail_range::no);
             return;
         }
         if (!_range.has_value()) {
@@ -94,14 +103,14 @@ public:
 
         // Cap per-range bytes so each leveling job stays bounded.
         if (_range->bytes >= _max_acceptable_range_bytes) {
-            maybe_commit_range();
+            maybe_commit_range(is_tail_range::no);
         }
     }
 
     // Commit any pending range and return the accumulated ranges. Must
     // be called after all extents have been processed.
     chunked_vector<levelable_range> finalize() && {
-        maybe_commit_range();
+        maybe_commit_range(is_tail_range::yes);
         return std::move(_ranges);
     }
 
@@ -113,11 +122,19 @@ private:
         size_t extent_count;
     };
 
-    void maybe_commit_range() {
+    using is_tail_range = ss::bool_class<struct is_tail_range_tag>;
+
+    void maybe_commit_range(is_tail_range tail) {
         if (!_range.has_value()) {
             return;
         }
-        if (_range->extent_count > 1) {
+        // The tail range keeps growing as new data is reconciled; hold it
+        // back until leveling it can produce a healthy output extent (see
+        // class comment).
+        const bool undersized_tail = tail == is_tail_range::yes
+                                     && _range->bytes
+                                          < _min_acceptable_extent_bytes;
+        if (_range->extent_count > 1 && !undersized_tail) {
             _ranges.push_back(
               levelable_range{
                 .base_offset = _range->base,

@@ -65,6 +65,12 @@ ss::future<bool> is_latest_record_for_key(
   const model::record_batch& b,
   const model::record& r);
 
+// As above, but for callers that have already extracted the record's absolute
+// offset and key (e.g. from a key-only parse), avoiding full record
+// materialization.
+ss::future<bool> is_latest_record_for_key(
+  const key_offset_map& map, model::offset o, const compaction_key& key);
+
 // A log is eligible for compaction if at least one of the following
 // is true:
 // 1. It's dirty enough: the dirty ratio is at least the minimum

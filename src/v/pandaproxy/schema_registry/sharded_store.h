@@ -54,14 +54,25 @@ public:
     };
     ss::future<insert_result> project_ids(stored_schema schema);
 
+    ///\brief Upsert a schema and its subject version.
+    ///
+    /// With defer_processing::no the schema is canonicalised inline (on the
+    /// calling shard); a schema that fails to canonicalise is stored raw and
+    /// marked for reprocessing. With defer_processing::yes canonicalisation
+    /// is skipped entirely and the schema is stored raw and marked; used by
+    /// the initial topic replay so that process_marked_schemas() can
+    /// canonicalise the store's final state in parallel across shards
+    /// instead of compiling every replayed record on the reader shard.
     ss::future<bool> upsert(
       seq_marker marker,
       subject_schema schema,
       schema_id id,
       schema_version version,
-      is_deleted deleted);
+      is_deleted deleted,
+      defer_processing defer = defer_processing::no);
 
-    // This function will try to compile all marked schemas.
+    // This function will try to compile all marked schemas, each on the
+    // shard that owns it, concurrently across shards.
     // It should be called every time new schemas are loaded from
     // the topic into the store.
     ss::future<> process_marked_schemas();

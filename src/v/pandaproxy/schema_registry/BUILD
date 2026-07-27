@@ -197,6 +197,7 @@ redpanda_cc_library(
     implementation_deps = [
         ":compatibility",
         "//src/v/base",
+        "//src/v/bytes:streambuf",
         "//src/v/container:chunked_hash_map",
         "//src/v/utils:to_string",
         "@boost//:graph",
@@ -477,6 +478,7 @@ redpanda_cc_library(
         "//src/v/security:request_auth",
         "//src/v/security/audit",
         "//src/v/security/audit:types",
+        "//src/v/ssx:future_util",
         "//src/v/ssx:semaphore",
         "//src/v/ssx:sformat",
         "//src/v/strings:string_switch",

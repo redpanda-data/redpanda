@@ -321,19 +321,23 @@ ss::future<> link_replication_manager::reconcile_ntp_once(
           "Cannot start replicator for {} without a term",
           ntp);
         auto term = target_state.term.value();
-        auto source = _source_factory->make_source(ntp);
-        auto sink = _sink_factory->make_sink(ntp);
-        auto replicator = std::make_unique<partition_replicator>(
-          ntp,
-          term,
-          *_config_provider,
-          std::move(source),
-          std::move(sink),
-          _sg,
-          _cfg_probe,
-          _link_data_probe);
-        auto [r_it, _] = _replicators.emplace(ntp, std::move(replicator));
         try {
+            // make_sink throws if the partition is no longer resident on this
+            // shard (e.g. leadership moved away between the residency check at
+            // start_replicator() time and now). Keep it inside the try so the
+            // failure is handled here instead of leaking to the reactor.
+            auto source = _source_factory->make_source(ntp);
+            auto sink = _sink_factory->make_sink(ntp);
+            auto replicator = std::make_unique<partition_replicator>(
+              ntp,
+              term,
+              *_config_provider,
+              std::move(source),
+              std::move(sink),
+              _sg,
+              _cfg_probe,
+              _link_data_probe);
+            auto [r_it, _] = _replicators.emplace(ntp, std::move(replicator));
             co_await r_it->second->start();
         } catch (const std::exception& e) {
             vlog(cllog.warn, "Error starting replicator for {}: {}", ntp, e);

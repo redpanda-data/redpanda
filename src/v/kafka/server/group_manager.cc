@@ -357,8 +357,10 @@ ss::future<size_t> group_manager::delete_offsets(
     if (group->in_state(group_state::dead)) {
         auto it = _groups.find(group->id());
         if (it != _groups.end() && it->second == group) {
-            co_await it->second->shutdown();
+            // erase before shutdown()'s suspension point so concurrent
+            // deletion paths can't find the group and close its gate twice
             _groups.erase(it);
+            co_await group->shutdown();
             if (group->generation() > 0) {
                 vlog(
                   cg_klog.trace,
@@ -455,10 +457,17 @@ ss::future<> group_manager::stop() {
 
     return _gate.close().then([this]() {
         /**
-         * cancel all pending group opeartions
+         * cancel all pending group opeartions. remove the groups from the
+         * index before shutting them down so that, like every other
+         * shutdown path, only the fiber that erased a group closes its
+         * gate
          */
-        return ss::do_for_each(
-                 _groups, [](auto& p) { return p.second->shutdown(); })
+        return ss::do_with(
+                 std::exchange(_groups, {}),
+                 [](auto& groups) {
+                     return ss::do_for_each(
+                       groups, [](auto& p) { return p.second->shutdown(); });
+                 })
           .then([this] { _partitions.clear(); });
     });
 }
@@ -524,30 +533,26 @@ ss::future<> group_manager::cleanup_removed_topic_partitions(
         groups.push_back(group.second);
     }
 
-    return ss::do_with(
-      std::move(groups), [this, &tps](chunked_vector<group_ptr>& groups) {
-          return ss::do_for_each(groups, [this, &tps](group_ptr& group) {
-              return group->remove_topic_partitions(tps).then(
-                [this, g = group] {
-                    if (!g->in_state(group_state::dead)) {
-                        return ss::now();
-                    }
-                    auto it = _groups.find(g->id());
-                    if (it == _groups.end()) {
-                        return ss::now();
-                    }
-                    // ensure the group didn't change
-                    if (it->second != g) {
-                        return ss::now();
-                    }
-                    vlog(cg_klog.trace, "Removed group {}", g);
-                    it->second->pre_shutdown();
-                    _groups.erase(it);
-                    _groups.rehash(0);
-                    return ss::now();
-                });
-          });
-      });
+    for (auto& group : groups) {
+        co_await group->remove_topic_partitions(tps);
+        if (!group->in_state(group_state::dead)) {
+            continue;
+        }
+        auto it = _groups.find(group->id());
+        if (it == _groups.end()) {
+            continue;
+        }
+        // ensure the group didn't change
+        if (it->second != group) {
+            continue;
+        }
+        vlog(cg_klog.trace, "Removed group {}", group);
+        // erase before shutdown()'s suspension point so concurrent
+        // deletion paths can't find the group and close its gate twice
+        _groups.erase(it);
+        _groups.rehash(0);
+        co_await group->shutdown();
+    }
 }
 
 void group_manager::handle_topic_delta(
@@ -2086,8 +2091,14 @@ ss::future<chunked_vector<deletable_group_result>> group_manager::delete_groups(
         // - batch tombstones same backing partition
         error = co_await group->remove();
         if (error == error_code::none) {
-            group->pre_shutdown();
-            _groups.erase(group_info.second);
+            auto it = _groups.find(group_info.second);
+            if (it != _groups.end() && it->second == group) {
+                // erase before shutdown()'s suspension point so concurrent
+                // deletion paths can't find the group and close its gate
+                // twice
+                _groups.erase(it);
+                co_await group->shutdown();
+            }
         }
         results.push_back(
           deletable_group_result{

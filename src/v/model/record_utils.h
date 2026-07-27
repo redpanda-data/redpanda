@@ -40,4 +40,17 @@ void append_record_to_buffer(iobuf& a, const model::record& r);
 model::record_metadata parse_record_metadata_from_buffer(
   iobuf_const_parser& p, bool fully_parse_record);
 
+/// A record's identity fields, without materializing its value or headers.
+struct record_key_metadata {
+    int32_t offset_delta;
+    // true when the record has a null value
+    bool is_tombstone;
+    // empty when the record has a null/empty key
+    bytes key;
+};
+
+/// \brief Parses a record's header and key, skipping the value and headers.
+/// Consumes exactly one record from `p`.
+model::record_key_metadata parse_record_key_from_buffer(iobuf_const_parser& p);
+
 } // namespace model

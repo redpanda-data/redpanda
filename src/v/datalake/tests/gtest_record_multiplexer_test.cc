@@ -44,6 +44,11 @@ const model::ntp
 const model::revision_id rev{123};
 record_translator translator;
 ss::abort_source as;
+// Record timestamps are pinned to the middle of an hour: the default table
+// partition spec is hour(redpanda.timestamp), so wall-clock timestamps
+// produce an extra partition (and data file) whenever a test's records
+// straddle the top of an hour.
+constexpr model::timestamp mid_hour_timestamp{1000002600000};
 } // namespace
 
 TEST(DatalakeMultiplexerTest, TestMultiplexer) {
@@ -76,6 +81,7 @@ TEST(DatalakeMultiplexerTest, TestMultiplexer) {
     batch_spec.records = record_count;
     batch_spec.count = batch_count;
     batch_spec.offset = model::offset{start_offset};
+    batch_spec.timestamp = mid_hour_timestamp;
     chunked_circular_buffer<model::record_batch> batches
       = model::test::make_random_batches(batch_spec).get();
 
@@ -195,6 +201,7 @@ TEST(DatalakeMultiplexerTest, WritesDataFiles) {
     batch_spec.records = record_count;
     batch_spec.count = batch_count;
     batch_spec.offset = model::offset{start_offset};
+    batch_spec.timestamp = mid_hour_timestamp;
     chunked_circular_buffer<model::record_batch> batches
       = model::test::make_random_batches(batch_spec).get();
 
@@ -372,6 +379,7 @@ TEST_F(RecordMultiplexerParquetTest, TestKeySchemaMode) {
     for (int i = 0; i < num_records; ++i) {
         storage::record_batch_builder builder(
           model::record_batch_type::raft_data, model::offset{o});
+        builder.set_timestamp(mid_hour_timestamp);
         auto key_buf = gen.encode_avro_buf("key_schema").get();
         ASSERT_FALSE(key_buf.has_error()) << key_buf.error();
         auto add_res = gen

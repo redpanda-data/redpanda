@@ -12,7 +12,9 @@
 
 #include "cloud_topics/level_one/metastore/offset_interval_set.h"
 #include "compaction/filter.h"
+#include "compaction/key.h"
 #include "compaction/key_offset_map.h"
+#include "model/record_utils.h"
 
 namespace cloud_topics::l1 {
 
@@ -25,12 +27,14 @@ public:
       const offset_interval_set&);
 
 private:
-    ss::future<bool>
-    should_keep(const model::record_batch&, const model::record&) const;
+    ss::future<bool> should_keep(
+      model::offset,
+      bool is_tombstone,
+      const compaction::compaction_key&) const;
 
     ss::future<> maybe_index_offset_delta(
       const model::record_batch&,
-      const model::record&,
+      model::record_key_metadata,
       chunked_vector<int32_t>&) const;
 
     ss::future<chunked_vector<int32_t>>

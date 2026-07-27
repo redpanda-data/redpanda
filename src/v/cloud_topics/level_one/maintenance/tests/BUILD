@@ -65,6 +65,7 @@ redpanda_cc_gtest(
         "//src/v/model",
         "//src/v/model/tests:random",
         "//src/v/test_utils:gtest",
+        "//src/v/test_utils:scoped_config",
         "@googletest//:gtest",
         "@seastar",
     ],

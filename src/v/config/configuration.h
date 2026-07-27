@@ -519,6 +519,7 @@ struct configuration final : public config_store {
     bounded_property<double, numeric_bounds> disk_reservation_percent;
     bounded_property<uint16_t> space_management_max_log_concurrency;
     bounded_property<uint16_t> space_management_max_segment_concurrency;
+    property<std::vector<ss::sstring>> log_eviction_exempt_topics;
     property<std::optional<size_t>>
       initial_retention_local_target_bytes_default;
     property<std::optional<std::chrono::milliseconds>>
@@ -683,6 +684,8 @@ struct configuration final : public config_store {
 
     enterprise<property<bool>> schema_registry_enable_authorization;
     property<bool> schema_registry_always_normalize;
+    property<bool> schema_registry_deferred_recovery;
+    property<bool> schema_registry_replay_on_startup;
     deprecated_property schema_registry_avro_use_named_references;
     property<bool> schema_registry_enable_qualified_subjects;
     bounded_property<size_t> schema_registry_sync_memory_bytes;

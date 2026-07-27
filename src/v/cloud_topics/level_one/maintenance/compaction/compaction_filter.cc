@@ -10,9 +10,11 @@
 
 #include "cloud_topics/level_one/maintenance/compaction/compaction_filter.h"
 
+#include "compaction/key.h"
 #include "compaction/utils.h"
 #include "model/fundamental.h"
 #include "model/record.h"
+#include "model/record_utils.h"
 
 #include <seastar/core/coroutine.hh>
 #include <seastar/core/future.hh>
@@ -32,27 +34,28 @@ compaction_filter::compaction_filter(
   , _removable_tombstone_ranges(removable_tombstone_ranges) {}
 
 ss::future<bool> compaction_filter::should_keep(
-  const model::record_batch& b, const model::record& r) const {
-    if (r.is_tombstone()) {
-        auto o = model::offset_cast(
-          b.base_offset() + model::offset_delta(r.offset_delta()));
-        if (_removable_tombstone_ranges.contains(o)) {
+  model::offset o,
+  bool is_tombstone,
+  const compaction::compaction_key& key) const {
+    if (is_tombstone) {
+        if (_removable_tombstone_ranges.contains(model::offset_cast(o))) {
             ++_stats.expired_tombstones_discarded;
             co_return false;
         }
     }
 
-    auto keep = co_await compaction::is_latest_record_for_key(_map, b, r);
-
-    co_return keep;
+    co_return co_await compaction::is_latest_record_for_key(_map, o, key);
 }
 
 ss::future<> compaction_filter::maybe_index_offset_delta(
   const model::record_batch& b,
-  const model::record& r,
+  model::record_key_metadata rec,
   chunked_vector<int32_t>& offset_deltas) const {
-    if (co_await should_keep(b, r)) {
-        offset_deltas.push_back(r.offset_delta());
+    const auto o = b.base_offset() + model::offset_delta(rec.offset_delta);
+    if (
+      co_await should_keep(
+        o, rec.is_tombstone, compaction::compaction_key{std::move(rec.key)})) {
+        offset_deltas.push_back(rec.offset_delta);
     }
 }
 
@@ -62,9 +65,9 @@ compaction_filter::compute_offset_deltas_to_keep(
     chunked_vector<int32_t> offset_deltas;
     offset_deltas.reserve(b.record_count());
 
-    co_await b.for_each_record_async(
-      [this, &b, &offset_deltas](const model::record& r) {
-          return maybe_index_offset_delta(b, r, offset_deltas);
+    co_await b.for_each_record_key_async(
+      [this, &b, &offset_deltas](model::record_key_metadata rec) {
+          return maybe_index_offset_delta(b, std::move(rec), offset_deltas);
       });
 
     co_return offset_deltas;

@@ -90,6 +90,14 @@ namespace storage {
  * driven / constrained by historical reads. Similarly for transactions and
  * idempotence. Controller topic should space can be managed by snapshots.
  *
+ * Topics listed in the log_eviction_exempt_topics cluster property are also
+ * exempt. It defaults to the schema registry topic (kafka/_schemas) for the
+ * same reason: the schema registry replays the full topic on startup, so
+ * trimming its local log to the cloud tier (via local retention or space
+ * management on a tiered topic) would make recovery dependent on cloud
+ * reads. Its size is bounded by compaction, so retaining it locally is
+ * cheap.
+ *
  * Note on unsafe_enable_consumer_offsets_delete_retention: This a special
  * configuration some select users can use to enable retention on CO topic
  * because the compaction logic is ineffective and they would like to use
@@ -105,8 +113,14 @@ bool deletion_exempt(const model::ntp& ntp) {
                                      == model::kafka_consumer_offsets_nt.ns()
                                    && ntp.tp.topic
                                         == model::kafka_consumer_offsets_nt.tp;
+    bool is_eviction_exempt_topic
+      = ntp.ns() == model::kafka_namespace
+        && std::ranges::contains(
+          config::shard_local_cfg().log_eviction_exempt_topics(),
+          ntp.tp.topic());
     return (!is_tx_manager_ntp && is_internal_namespace)
-           || (is_consumer_offsets_ntp && !config::shard_local_cfg().unsafe_enable_consumer_offsets_delete_retention());
+           || (is_consumer_offsets_ntp && !config::shard_local_cfg().unsafe_enable_consumer_offsets_delete_retention())
+           || is_eviction_exempt_topic;
 }
 
 // Meant for reading batches from a single `segment`. This does not consider any

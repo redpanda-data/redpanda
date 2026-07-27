@@ -17,6 +17,7 @@
 #include "absl/container/flat_hash_map.h"
 #include "absl/container/node_hash_map.h"
 #include "config/configuration.h"
+#include "container/chunked_hash_map.h"
 #include "container/chunked_vector.h"
 #include "metrics/metrics.h"
 #include "metrics/prometheus_sanitize.h"
@@ -840,7 +841,9 @@ public:
     bool upsert_schema(
       context_schema_id id, schema_definition def, bool mark_schema) {
         if (mark_schema) {
-            _marked_schemas.push_back(id);
+            _marked_schemas.insert(id);
+        } else {
+            _marked_schemas.erase(id);
         }
         auto [it, inserted] = _schemas.insert_or_assign(
           std::move(id), schema_entry(std::move(def)));
@@ -865,8 +868,8 @@ public:
         }
     }
 
-    // This function returns and unmarkes all marked schemas.
-    chunked_vector<context_schema_id> extract_marked_schemas() {
+    // This function returns and unmarks all marked schemas.
+    chunked_hash_set<context_schema_id> extract_marked_schemas() {
         return std::exchange(_marked_schemas, {});
     }
 
@@ -1338,7 +1341,7 @@ private:
 
     schema_map _schemas;
     subject_map _subjects;
-    chunked_vector<context_schema_id> _marked_schemas;
+    chunked_hash_set<context_schema_id> _marked_schemas;
     context_store_map _context_stores;
 
     is_mutable _mutable;

@@ -21,6 +21,7 @@
 #include "hashing/xx.h"
 #include "model/fundamental.h"
 #include "model/record_batch_reader.h"
+#include "model/record_utils.h"
 #include "storage/compacted_index.h"
 #include "storage/compacted_index_writer.h"
 #include "storage/compacted_offset_list.h"
@@ -125,7 +126,7 @@ private:
 class copy_data_segment_reducer : public compaction_reducer {
 public:
     using filter_t = ss::noncopyable_function<ss::future<bool>(
-      const model::record_batch&, const model::record&, bool)>;
+      const model::record_batch&, const model::record_key_metadata&, bool)>;
 
     struct idx_and_stats {
         index_state new_idx;
@@ -190,7 +191,7 @@ private:
 
     ss::future<> maybe_keep_offset(
       const model::record_batch&,
-      const model::record&,
+      model::record_key_metadata,
       bool,
       chunked_vector<int32_t>&);
 
@@ -247,7 +248,7 @@ public:
     void end_of_stream() {}
 
 private:
-    ss::future<> do_index(model::record_batch&&);
+    ss::future<> do_index(model::record_batch);
 
     compacted_index_writer* _w;
 };
@@ -363,7 +364,7 @@ public:
 
 private:
     ss::future<ss::stop_iteration> maybe_index_record_in_map(
-      const model::record& r,
+      model::record_key_metadata record,
       model::offset base_offset,
       model::record_batch_type type,
       bool is_control,

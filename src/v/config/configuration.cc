@@ -2074,8 +2074,8 @@ configuration::configuration()
       *this,
       true,
       "cloud_storage_enabled",
-      "Enable object storage. Must be set to `true` to use Tiered Storage or "
-      "Remote Read Replicas.",
+      "Enable object storage. Must be set to `true` to use Tiered Storage, "
+      "Remote Read Replicas, or Cloud Topics.",
       meta{.needs_restart = needs_restart::yes, .visibility = visibility::user},
       false)
   , cloud_storage_enable_remote_read(
@@ -3036,6 +3036,18 @@ configuration::configuration()
        .visibility = visibility::tunable},
       10,
       {.min = 1})
+  , log_eviction_exempt_topics(
+      *this,
+      "log_eviction_exempt_topics",
+      "A list of topics in the kafka namespace whose local log is exempt "
+      "from any form of data deletion: retention settings, local retention "
+      "for topics with Tiered Storage enabled, and disk space management "
+      "never remove their data from local disk, and partition moves always "
+      "deliver the full log to the new replica. Does not affect topic "
+      "deletion via the Kafka API (see kafka_nodelete_topics).",
+      {.needs_restart = needs_restart::yes, .visibility = visibility::user},
+      {model::schema_registry_internal_tp.topic()},
+      &validate_non_empty_string_vec)
   , initial_retention_local_target_bytes_default(
       *this,
       "initial_retention_local_target_bytes_default",
@@ -3973,6 +3985,23 @@ configuration::configuration()
       {.needs_restart = needs_restart::no,
        .visibility = visibility::user,
        .aliases = {"schema_registry_normalize_on_startup"}},
+      false)
+  , schema_registry_deferred_recovery(
+      *this,
+      "schema_registry_deferred_recovery",
+      "Defer schema compilation during Schema Registry startup, then compile "
+      "the loaded schemas in parallel across cores. If disabled, every "
+      "replayed record is compiled sequentially during the replay.",
+      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
+      true)
+  , schema_registry_replay_on_startup(
+      *this,
+      "schema_registry_replay_on_startup",
+      "Replay the internal `_schemas` topic into the store at Schema Registry "
+      "start-up instead of lazily on the first request. Makes recovery time "
+      "predictable and keeps the first request from blocking behind a full "
+      "replay.",
+      {.needs_restart = needs_restart::no, .visibility = visibility::user},
       false)
   , schema_registry_avro_use_named_references(
       *this, "schema_registry_avro_use_named_references")

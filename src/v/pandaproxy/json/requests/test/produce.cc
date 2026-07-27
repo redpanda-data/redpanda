@@ -15,9 +15,12 @@
 #include "model/timestamp.h"
 #include "pandaproxy/json/exceptions.h"
 #include "pandaproxy/json/rjson_util.h"
+#include "utils/base64.h"
 #include "utils/to_string.h"
 
 #include <seastar/testing/thread_test_case.hh>
+
+#include <fmt/format.h>
 
 #include <vector>
 
@@ -30,6 +33,22 @@ auto make_binary_v2_handler() {
 auto make_json_v2_handler() {
     return ppj::produce_request_handler<>(ppj::serialization_format::json_v2);
 }
+
+// Records that the reader delivered key/value strings through the chunked
+// sink protocol rather than the contiguous String() path.
+struct probe_produce_request_handler : public ppj::produce_request_handler<> {
+    probe_produce_request_handler(
+      ppj::serialization_format fmt, bool* chunked_string_used)
+      : ppj::produce_request_handler<>{fmt}
+      , chunked_string_used{chunked_string_used} {}
+
+    bool ChunkedString(::json::SizeType len) {
+        *chunked_string_used = true;
+        return ppj::produce_request_handler<>::ChunkedString(len);
+    }
+
+    bool* chunked_string_used;
+};
 
 SEASTAR_THREAD_TEST_CASE(test_produce_binary_request) {
     auto input = R"(
@@ -48,7 +67,7 @@ SEASTAR_THREAD_TEST_CASE(test_produce_binary_request) {
 
     auto records = ppj::impl::rjson_parse(input, make_binary_v2_handler());
     BOOST_TEST(records.size() == 2);
-    BOOST_TEST(!!records[0].value);
+    BOOST_TEST(records[0].value.has_value());
 
     auto parser = iobuf_parser(std::move(*records[0].value));
     auto value = parser.read_string(parser.bytes_left());
@@ -59,6 +78,75 @@ SEASTAR_THREAD_TEST_CASE(test_produce_binary_request) {
     value = parser.read_string(parser.bytes_left());
     BOOST_TEST(value == "pandaproxy");
     BOOST_TEST(records[1].partition_id == model::partition_id(1));
+}
+
+// Large record keys/values are decoded by the reader directly into an
+// iobuf-backed sink and base64-decoded fragment-by-fragment, avoiding large
+// contiguous allocations.
+SEASTAR_THREAD_TEST_CASE(test_produce_binary_request_large_value) {
+    constexpr size_t num_reps = 100000;
+    // built via std::string, whose amortized append avoids the quadratic
+    // copying of repeated ss::sstring::operator+=
+    std::string raw;
+    raw.reserve(16 * num_reps);
+    for (size_t i = 0; i < num_reps; ++i) {
+        raw += "pandaproxy!";
+    }
+    auto encoded = bytes_to_base64(
+      bytes{reinterpret_cast<const uint8_t*>(raw.data()), raw.size()});
+
+    auto input = fmt::format(
+      R"({{
+        "records": [
+          {{
+            "key": "{}",
+            "value": "{}",
+            "partition": 0
+          }}
+        ]
+      }})",
+      encoded,
+      encoded);
+
+    bool chunked_string_used = false;
+    auto records = ppj::impl::rjson_parse(
+      input.c_str(),
+      probe_produce_request_handler{
+        ppj::serialization_format::binary_v2, &chunked_string_used});
+    BOOST_REQUIRE_EQUAL(records.size(), 1);
+    BOOST_REQUIRE(chunked_string_used);
+    BOOST_REQUIRE(records[0].key.has_value());
+    BOOST_REQUIRE(records[0].value.has_value());
+
+    auto parser = iobuf_parser(std::move(*records[0].key));
+    auto key = parser.read_string(parser.bytes_left());
+    BOOST_TEST(key == raw);
+
+    parser = iobuf_parser(std::move(*records[0].value));
+    auto value = parser.read_string(parser.bytes_left());
+    BOOST_TEST(value == raw);
+}
+
+SEASTAR_THREAD_TEST_CASE(test_produce_binary_request_invalid_base64) {
+    auto input = R"(
+      {
+        "records": [
+          {
+            "value": "!!!not-base64!!!",
+            "partition": 0
+          }
+        ]
+      })";
+
+    bool chunked_string_used = false;
+    BOOST_REQUIRE_THROW(
+      ppj::impl::rjson_parse(
+        input,
+        probe_produce_request_handler{
+          ppj::serialization_format::binary_v2, &chunked_string_used}),
+      ppj::parse_error);
+    // the base64 decode failure was detected inside the chunked path
+    BOOST_REQUIRE(chunked_string_used);
 }
 
 SEASTAR_THREAD_TEST_CASE(test_produce_json_request) {
@@ -80,19 +168,19 @@ SEASTAR_THREAD_TEST_CASE(test_produce_json_request) {
     auto records = ppj::impl::rjson_parse(input, make_json_v2_handler());
     BOOST_REQUIRE_EQUAL(records.size(), 2);
     BOOST_REQUIRE_EQUAL(records[0].partition_id, model::partition_id(0));
-    BOOST_REQUIRE(!records[0].key);
-    BOOST_REQUIRE(!!records[0].value);
+    BOOST_REQUIRE(!records[0].key.has_value());
+    BOOST_REQUIRE(records[0].value.has_value());
     auto parser = iobuf_parser(std::move(*records[0].value));
     auto value = parser.read_string(parser.bytes_left());
     BOOST_REQUIRE_EQUAL(value, R"(42)");
 
     BOOST_REQUIRE_EQUAL(records[1].partition_id, model::partition_id(1));
-    BOOST_REQUIRE(!!records[1].key);
+    BOOST_REQUIRE(records[1].key.has_value());
     parser = iobuf_parser(std::move(*records[1].key));
     value = parser.read_string(parser.bytes_left());
     BOOST_REQUIRE_EQUAL(value, R"("json_test")");
 
-    BOOST_REQUIRE(!!records[1].value);
+    BOOST_REQUIRE(records[1].value.has_value());
     parser = iobuf_parser(std::move(*records[1].value));
     value = parser.read_string(parser.bytes_left());
     BOOST_REQUIRE_EQUAL(

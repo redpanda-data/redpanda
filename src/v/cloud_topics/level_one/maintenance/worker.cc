@@ -43,6 +43,13 @@ ss::future<bool> is_linked(const log_compaction_meta* meta) {
     });
 }
 
+ss::future<bool> may_level(const log_compaction_meta* meta) {
+    return ss::smp::submit_to(worker_manager::worker_manager_shard, [meta] {
+        return meta->link.is_linked()
+               && !meta->compaction.inflight_shard.has_value();
+    });
+}
+
 } // namespace
 
 compaction_worker::compaction_worker(
@@ -446,7 +453,7 @@ ss::future<> compaction_worker::do_level_range(leveling_job* job) {
         }
     });
 
-    if (!co_await is_linked(job->meta.get())) {
+    if (!co_await may_level(job->meta.get())) {
         co_return;
     }
 

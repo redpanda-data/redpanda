@@ -22,6 +22,7 @@ jobs:
       - uses: peter-evans/slash-command-dispatch@v5
         with:
           token: ${{ env.ACTIONS_BOT_TOKEN }}
+          reaction-token: ${{ env.ACTIONS_BOT_TOKEN }}
           permission: read
           issue-type: both
           commands: |
