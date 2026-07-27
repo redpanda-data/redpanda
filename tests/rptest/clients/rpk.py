@@ -1368,6 +1368,12 @@ class RpkTool:
                 args.append("--no-confirm")
             return self._run_shadow(args)
 
+    def shadow_update(self, name: str, config: dict[str, Any]) -> str:
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml") as tf:
+            yaml.safe_dump(config, tf)
+            tf.flush()
+            return self._run_shadow(["update", name, "-c", tf.name])
+
     def shadow_status(self, name: str, output_format: str = "json") -> Any:
         return self._run_shadow(["status", name, "--print-all"], output_format)
 

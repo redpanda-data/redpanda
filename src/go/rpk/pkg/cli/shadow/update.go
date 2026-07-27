@@ -31,15 +31,38 @@ import (
 	"google.golang.org/protobuf/types/known/fieldmaskpb"
 )
 
+// redacted is the placeholder shown in place of a set password; the server
+// only reports whether a password is set, never its value.
+const redacted = "<redacted>"
+
+// cloudUpdateReplacePaths is the update mask covering every updatable field of
+// the cloud ShadowLinkUpdate message. The cloud API requires a mask, so
+// file-based updates use this to replace the entire configuration.
+var cloudUpdateReplacePaths = []string{
+	"client_options",
+	"topic_metadata_sync_options",
+	"consumer_offset_sync_options",
+	"security_sync_options",
+	"schema_registry_sync_options",
+}
+
 func newUpdateCommand(fs afero.Fs, p *config.Params) *cobra.Command {
+	var cfgLocation string
 	cmd := &cobra.Command{
 		Use:   "update [LINK_NAME]",
 		Short: "Update a Shadow Link",
-		Long: `Update a Shadow Link.
+		Long: `Updates a Shadow Link.
 
-This command opens your default editor with the current Shadow Link
-configuration. Update the fields you want to change, save the file, and close
-the editor. The command applies only the changed fields to the Shadow Link.
+By default, this command opens your default editor with the current Shadow
+Link configuration. Update the fields you want to change, save the file, and
+close the editor. The command applies only the changed fields to the Shadow
+Link.
+
+Alternatively, use the '--config-file' flag to apply a configuration file
+directly without opening an editor, which is useful for scripted workflows. In
+this mode the file replaces the entire Shadow Link configuration: any field
+omitted from the file is reset to its default value. The name in the
+configuration file must match LINK_NAME.
 
 You cannot change the Shadow Link name. If you need to rename a Shadow Link,
 delete it and create a new one with the desired name.
@@ -48,8 +71,11 @@ The editor respects your EDITOR environment variable. If EDITOR is not set, the
 command uses 'vi' on Unix-like systems.
 `,
 		Example: `
-Update a Shadow Link configuration:
+Update a Shadow Link in your editor:
   rpk shadow update my-shadow-link
+
+Replace the entire Shadow Link configuration from a file:
+  rpk shadow update my-shadow-link --config-file shadow-link.yaml
 `,
 		Args: cobra.ExactArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
@@ -58,21 +84,28 @@ Update a Shadow Link configuration:
 			prof := cfg.VirtualProfile()
 			config.CheckExitServerlessAdmin(prof)
 
-			// This commands retrieves the current ShadowLink configuration from
-			// 2 different sources depending on whether it's for Cloud or SH.
-			// The user will be prompted for changes in their editor of choice,
-			// and we calculate the diff from it. At the end, we need to call
-			// the appropriate API to submit the update.
+			// The editor flow (default) diffs the current config and applies
+			// only the changed fields via a mask; --config-file replaces the
+			// entire configuration.
 			fromCloud := prof.CheckFromCloud()
+			fileMode := cfgLocation != ""
 			linkName := args[0]
 			var (
 				originalCfg *ShadowLinkConfig
+				updatedCfg  *ShadowLinkConfig
+				diff        []string
 				adminClient *rpadmin.AdminAPI
 				cloudClient *publicapi.CloudClientSet
 				cloudLinkID string
 			)
 
-			// First part: retrieve current configuration.
+			if fileMode {
+				updatedCfg, err = updatedConfigFromFile(fs, cfgLocation, linkName, fromCloud, prof.CloudCluster.ClusterID)
+				out.MaybeDieErr(err)
+			}
+
+			// Cloud always looks up the link to resolve its ID; editor mode
+			// also seeds the config from the current one.
 			if fromCloud {
 				cloudClient, err = publicapi.NewValidatedCloudClientSet(
 					cfg.DevOverrides().PublicAPIURL,
@@ -86,58 +119,67 @@ Update a Shadow Link configuration:
 				out.MaybeDie(err, "unable to find Shadow Link %q", linkName)
 
 				cloudLinkID = link.GetId()
-				originalCfg = cloudShadowLinkToConfig(link)
-
-				// Cloud uses secrets for passwords so we don't need to add the
-				// redacted string here.
+				if !fileMode {
+					// Cloud uses secrets for passwords, no redaction needed.
+					originalCfg = cloudShadowLinkToConfig(link)
+				}
 			} else {
 				adminClient, err = adminapi.NewClient(cmd.Context(), fs, prof)
 				out.MaybeDie(err, "unable to initialize admin client: %v", err)
 
-				link, err := adminClient.ShadowLinkService().GetShadowLink(cmd.Context(), connect.NewRequest(&adminv2.GetShadowLinkRequest{
-					Name: linkName,
-				}))
-				out.MaybeDie(err, "unable to get Redpanda Shadow Link information: %v", handleConnectError(err, "get", linkName))
+				if !fileMode {
+					link, err := adminClient.ShadowLinkService().GetShadowLink(cmd.Context(), connect.NewRequest(&adminv2.GetShadowLinkRequest{
+						Name: linkName,
+					}))
+					out.MaybeDie(err, "unable to get Redpanda Shadow Link information: %v", handleConnectError(err, "get", linkName))
 
-				shadowLink := link.Msg.GetShadowLink()
-				originalCfg = shadowLinkToConfig(shadowLink)
+					shadowLink := link.Msg.GetShadowLink()
+					originalCfg = shadowLinkToConfig(shadowLink)
 
-				addRedactedPasswordString(originalCfg, shadowLink)
+					addRedactedPasswordString(originalCfg, shadowLink)
+				}
 			}
 
-			// Second part: open editor and get updated configuration.
-			updatedCfg, err := rpkos.EditTmpYAMLFile(cmd.Context(), fs, originalCfg)
-			out.MaybeDie(err, "unable to edit Shadow Link configuration: %v", err)
+			// Editor mode: open the editor and calculate the diff.
+			if !fileMode {
+				updatedCfg, err = rpkos.EditTmpYAMLFile(cmd.Context(), fs, originalCfg)
+				out.MaybeDie(err, "unable to edit Shadow Link configuration: %v", err)
 
-			err = validateParsedShadowLinkConfig(updatedCfg)
-			out.MaybeDie(err, "invalid Shadow Link configuration: %v", err)
+				err = validateParsedShadowLinkConfig(updatedCfg)
+				out.MaybeDie(err, "invalid Shadow Link configuration: %v", err)
 
-			if updatedCfg.Name != originalCfg.Name {
-				out.Die("shadow link name cannot be changed; if you need to rename, please delete and recreate the shadow link")
+				if updatedCfg.Name != originalCfg.Name {
+					out.Die("shadow link name cannot be changed; if you need to rename, please delete and recreate the shadow link")
+				}
+
+				diff = diffConfigs(originalCfg, updatedCfg)
+				if diff == nil {
+					out.Exit("No changes detected")
+				}
 			}
 
-			// Third part: calculate diff.
-			diff := diffConfigs(originalCfg, updatedCfg)
-			if diff == nil {
-				out.Exit("No changes detected")
-			}
-
-			// Finally: submit the update request, for that we calculate the
-			// field mask from the diff.
+			// Submit the update request.
 			if fromCloud {
 				updatedSL := shadowLinkConfigToCloudUpdate(updatedCfg, cloudLinkID)
 
-				// Cloud proto doesn't have the "configurations" wrapper, so we
-				// need to strip it from the paths.
-				cloudDiff := make([]string, len(diff))
-				for i, path := range diff {
-					cloudDiff[i] = strings.TrimPrefix(path, "configurations.")
+				var cloudPaths []string
+				if fileMode {
+					err = validateCloudSecrets(cmd.Context(), prof, updatedCfg)
+					out.MaybeDie(err, "unable to validate cloud secrets: %v", err)
+
+					cloudPaths = cloudUpdateReplacePaths
+				} else {
+					// Cloud proto has no "configurations" wrapper; strip it.
+					cloudPaths = make([]string, len(diff))
+					for i, path := range diff {
+						cloudPaths[i] = strings.TrimPrefix(path, "configurations.")
+					}
 				}
 
-				fm, err := fieldmaskpb.New(updatedSL, cloudDiff...)
+				fm, err := fieldmaskpb.New(updatedSL, cloudPaths...)
 				out.MaybeDie(err, "unrecognized changed fields: %v; please report this with Redpanda Support", err)
 
-				zap.L().Sugar().Debugf("Requesting configuration update for: %v", strings.Join(cloudDiff, ", "))
+				zap.L().Sugar().Debugf("Requesting configuration update for: %v", strings.Join(cloudPaths, ", "))
 				op, err := cloudClient.ShadowLink.UpdateShadowLink(cmd.Context(), connect.NewRequest(&controlplanev1.UpdateShadowLinkRequest{
 					ShadowLink: updatedSL,
 					UpdateMask: fm,
@@ -156,12 +198,18 @@ Update a Shadow Link configuration:
 				spinner.Success(fmt.Sprintf("Successfully updated shadow link %q", linkName))
 				os.Exit(0)
 			}
-			// Self-hosted path
+			// Self-hosted path. In file mode the mask stays unset, which the
+			// server treats as a full replace.
 			updatedSL := shadowLinkConfigToProto(updatedCfg)
-			fm, err := fieldmaskpb.New(updatedSL, diff...)
-			out.MaybeDie(err, "unrecognized changed fields: %v; please report this with Redpanda Support", err)
+			var fm *fieldmaskpb.FieldMask
+			if fileMode {
+				zap.L().Sugar().Debug("Requesting full configuration replacement")
+			} else {
+				fm, err = fieldmaskpb.New(updatedSL, diff...)
+				out.MaybeDie(err, "unrecognized changed fields: %v; please report this with Redpanda Support", err)
 
-			zap.L().Sugar().Debugf("Requesting configuration update for: %v", strings.Join(diff, ", "))
+				zap.L().Sugar().Debugf("Requesting configuration update for: %v", strings.Join(diff, ", "))
+			}
 			_, err = adminClient.ShadowLinkService().UpdateShadowLink(cmd.Context(), connect.NewRequest(&adminv2.UpdateShadowLinkRequest{
 				ShadowLink: updatedSL,
 				UpdateMask: fm,
@@ -170,15 +218,39 @@ Update a Shadow Link configuration:
 			fmt.Printf("Successfully updated shadow link %q.\n", linkName)
 		},
 	}
+	cmd.Flags().StringVarP(&cfgLocation, "config-file", "c", "", "Path to a configuration file that replaces the entire Shadow Link configuration; use --help for details")
 	return cmd
+}
+
+// updatedConfigFromFile parses and validates a Shadow Link configuration file
+// for use in update; the config's name must match linkName, and on a cloud
+// profile a cloud_options.shadow_redpanda_id, if present, must match the
+// selected cluster.
+func updatedConfigFromFile(fs afero.Fs, path, linkName string, fromCloud bool, clusterID string) (*ShadowLinkConfig, error) {
+	slCfg, err := parseShadowLinkConfig(fs, path)
+	if err != nil {
+		return nil, err
+	}
+	// A placeholder copied from the editor flow would be stored verbatim.
+	if authPassword(slCfg.ClientOptions) == redacted || srAPIAuthPassword(slCfg.SchemaRegistrySyncOptions) == redacted {
+		return nil, fmt.Errorf("the configuration file contains the placeholder password %q; set the real password, or leave it empty to keep the existing one", redacted)
+	}
+	if err := validateParsedShadowLinkConfig(slCfg); err != nil {
+		return nil, fmt.Errorf("invalid Shadow Link configuration: %w", err)
+	}
+	if slCfg.Name != linkName {
+		return nil, fmt.Errorf("shadow link name %q in the configuration file does not match %q; the link name cannot be changed", slCfg.Name, linkName)
+	}
+	if co := slCfg.CloudOptions; fromCloud && co != nil && co.ShadowRedpandaID != clusterID {
+		return nil, fmt.Errorf("shadow_redpanda_id %q in the configuration file does not match the selected cluster %q", co.ShadowRedpandaID, clusterID)
+	}
+	return slCfg, nil
 }
 
 // if a password is set, replace it with a redacted value so user can provide
 // a change easily instead of writing the full password field. The server only
 // reports whether a password is set, never its value.
 func addRedactedPasswordString(cfg *ShadowLinkConfig, link *adminv2.ShadowLink) {
-	const redacted = "<redacted>"
-
 	cfgs := link.GetConfigurations()
 	if cfgs.GetClientOptions().GetAuthenticationConfiguration().GetScramConfiguration().GetPasswordSet() {
 		if co := cfg.ClientOptions; co != nil {
