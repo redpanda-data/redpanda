@@ -4825,3 +4825,475 @@ class ShadowLinkingCloudTopicReplicationTests(ShadowLinkPreAllocTestBase):
 
         with self.producer_consumer(topic=topic.name, msg_size=128, msg_cnt=10000):
             self.verify()
+
+
+class ShadowLinkingCloudTopicStorageModeOverrideTests(ShadowLinkPreAllocTestBase):
+    """
+    Tests that a shadow link with shadow_topic_storage_mode=CLOUD creates
+    cloud topic shadows even when the source topic uses local storage.
+    """
+
+    def __init__(self, test_context: TestContext, *args: Any, **kwargs: Any):
+        si_settings = SISettings(
+            test_context,
+            cloud_storage_max_connections=10,
+            cloud_storage_enable_remote_read=False,
+            cloud_storage_enable_remote_write=False,
+            fast_uploads=True,
+        )
+
+        super().__init__(
+            test_context,
+            # Target cluster: cloud topics enabled (it will host cloud shadows)
+            si_settings=si_settings,
+            extra_rp_conf={
+                "enable_cluster_metadata_upload_loop": False,
+            },
+            # Source cluster: no cloud topics needed, just regular Redpanda
+            secondary_cluster_args=SecondaryClusterArgs(
+                extra_rp_conf={
+                    "enable_shadow_linking": True,
+                },
+            ),
+            *args,
+            **kwargs,
+        )
+
+    def create_link_with_storage_mode_override(
+        self,
+        link_name: str,
+        storage_mode: shadow_link_pb2.ShadowTopicStorageMode.ValueType,
+        storage_mode_filters: list[
+            tuple[
+                shadow_link_pb2.PatternType.ValueType,
+                shadow_link_pb2.FilterType.ValueType,
+                str,
+            ]
+        ]
+        | None = None,
+        promote_on_failover: bool = False,
+    ) -> shadow_link_pb2.ShadowLink:
+        """Create a shadow link with shadow_topic_storage_mode override.
+
+        storage_mode_filters, if given, is a list of
+        (pattern_type, filter_type, name) tuples appended as NameFilters to
+        shadow_topic_storage_mode_filters, scoping the override to a subset
+        of the link's shadow topics.
+
+        promote_on_failover sets the opt-in
+        promote_to_tiered_v2_on_failover flag, which promotes the link's
+        cloud shadow topics to tiered_cloud on failover (default off).
+        """
+        req = self.create_default_link_request(link_name=link_name)
+        req.shadow_link.configurations.topic_metadata_sync_options.shadow_topic_storage_mode = storage_mode
+        req.shadow_link.configurations.topic_metadata_sync_options.promote_to_tiered_v2_on_failover = promote_on_failover
+        if storage_mode_filters:
+            req.shadow_link.configurations.topic_metadata_sync_options.shadow_topic_storage_mode_filters.extend(
+                [
+                    shadow_link_pb2.NameFilter(
+                        pattern_type=pattern_type,
+                        filter_type=filter_type,
+                        name=name,
+                    )
+                    for pattern_type, filter_type, name in storage_mode_filters
+                ]
+            )
+        return self.create_link_with_request(req=req)
+
+    @cluster(num_nodes=6)
+    def test_storage_mode_override_creates_cloud_shadow(self):
+        """
+        When a shadow link has shadow_topic_storage_mode=CLOUD, all
+        shadow topics should be created with storage_mode=cloud,
+        regardless of the source topic's storage mode.
+        """
+        topic = TopicSpec(
+            name="override-test",
+            partition_count=3,
+            replication_factor=1,
+        )
+
+        # Create a regular (local storage mode) topic on the source
+        source_rpk = RpkTool(self.source_cluster.service)
+        source_rpk.create_topic(
+            topic=topic.name,
+            partitions=topic.partition_count,
+            replicas=topic.replication_factor,
+        )
+
+        # Verify source topic does NOT have cloud storage mode
+        source_configs = source_rpk.describe_topic_configs(topic.name)
+        assert (
+            source_configs[TopicSpec.PROPERTY_STORAGE_MODE][0]
+            != TopicSpec.STORAGE_MODE_CLOUD
+        ), (
+            f"Source topic should not be cloud but got: "
+            f"{source_configs[TopicSpec.PROPERTY_STORAGE_MODE]}"
+        )
+
+        # Create link with storage mode override = CLOUD
+        self.create_link_with_storage_mode_override(
+            "test-link",
+            shadow_link_pb2.SHADOW_TOPIC_STORAGE_MODE_CLOUD,
+        )
+
+        # Wait for shadow topic to appear on target
+        self.target_cluster.service.wait_until(
+            lambda: self.topic_partitions_exists_in_target(topic),
+            timeout_sec=30,
+            backoff_sec=1,
+            err_msg=f"Topic {topic.name} not found in target cluster",
+        )
+
+        # Verify target topic has cloud storage mode despite source being local
+        target_rpk = RpkTool(self.target_cluster.service)
+        target_configs = target_rpk.describe_topic_configs(topic.name)
+        assert (
+            target_configs[TopicSpec.PROPERTY_STORAGE_MODE][0]
+            == TopicSpec.STORAGE_MODE_CLOUD
+        ), (
+            f"Target topic storage mode: "
+            f"{target_configs[TopicSpec.PROPERTY_STORAGE_MODE]}, "
+            f"expected: {TopicSpec.STORAGE_MODE_CLOUD}"
+        )
+
+    @cluster(num_nodes=7)
+    def test_storage_mode_override_with_data_replication(self):
+        """
+        Verify that data produced to a regular topic on the source cluster
+        is replicated to a cloud topic shadow on the target cluster when
+        the link has shadow_topic_storage_mode=CLOUD.
+        """
+        topic = TopicSpec(
+            name="override-data-test",
+            partition_count=3,
+            replication_factor=1,
+        )
+
+        source_rpk = RpkTool(self.source_cluster.service)
+        source_rpk.create_topic(
+            topic=topic.name,
+            partitions=topic.partition_count,
+            replicas=topic.replication_factor,
+        )
+
+        self.create_link_with_storage_mode_override(
+            "test-link",
+            shadow_link_pb2.SHADOW_TOPIC_STORAGE_MODE_CLOUD,
+        )
+
+        self.target_cluster.service.wait_until(
+            lambda: self.topic_partitions_exists_in_target(topic),
+            timeout_sec=30,
+            backoff_sec=1,
+            err_msg=f"Topic {topic.name} not found in target cluster",
+        )
+
+        # Produce and verify data replicates through the cloud topics pipeline
+        with self.producer_consumer(topic=topic.name, msg_size=128, msg_cnt=10000):
+            self.verify()
+
+    @cluster(num_nodes=6)
+    def test_failover_promotes_cloud_to_tiered_cloud(self):
+        """
+        After failover, a cloud shadow topic should be automatically
+        promoted to tiered_cloud for low-latency reads/writes on the
+        now-primary cluster.
+        """
+        # tiered_cloud is explicit-only; activate on the target cluster so
+        # the post-failover AlterConfig to tiered_cloud succeeds.
+        self.target_cluster.service.set_feature_active(
+            "tiered_cloud_topics", True, timeout_sec=30
+        )
+
+        topic = TopicSpec(
+            name="failover-promote-test",
+            partition_count=1,
+            replication_factor=1,
+        )
+
+        source_rpk = RpkTool(self.source_cluster.service)
+        source_rpk.create_topic(
+            topic=topic.name,
+            partitions=topic.partition_count,
+            replicas=topic.replication_factor,
+        )
+
+        self.create_link_with_storage_mode_override(
+            "test-link",
+            shadow_link_pb2.SHADOW_TOPIC_STORAGE_MODE_CLOUD,
+            promote_on_failover=True,
+        )
+
+        # Wait for shadow topic to appear
+        self.target_cluster.service.wait_until(
+            lambda: self.topic_partitions_exists_in_target(topic),
+            timeout_sec=30,
+            backoff_sec=1,
+            err_msg=f"Topic {topic.name} not found in target cluster",
+        )
+
+        # Verify it's cloud before failover
+        target_rpk = RpkTool(self.target_cluster.service)
+        target_configs = target_rpk.describe_topic_configs(topic.name)
+        assert (
+            target_configs[TopicSpec.PROPERTY_STORAGE_MODE][0]
+            == TopicSpec.STORAGE_MODE_CLOUD
+        ), (
+            f"Before failover: expected cloud, got "
+            f"{target_configs[TopicSpec.PROPERTY_STORAGE_MODE]}"
+        )
+
+        # Failover the topic
+        self.failover_link_topic(link_name="test-link", topic=topic.name)
+
+        # Wait for failover to complete
+        self.wait_for_topic_status(
+            link="test-link",
+            topic=topic.name,
+            target_status=shadow_link_pb2.ShadowTopicState.SHADOW_TOPIC_STATE_FAILED_OVER,
+            timeout_sec=60,
+        )
+
+        # Verify storage mode was promoted to tiered_cloud
+        def storage_mode_is_tiered_cloud():
+            # tiered_cloud reports the user-facing redpanda.storage.mode as the
+            # ambiguous "tiered"; the unambiguous signal is the read-only impl
+            # property redpanda.storage.mode.impl, which is "tiered_v2".
+            configs = target_rpk.describe_topic_configs(topic.name)
+            return configs[TopicSpec.PROPERTY_STORAGE_MODE_IMPL][0] == "tiered_v2"
+
+        wait_until(
+            storage_mode_is_tiered_cloud,
+            timeout_sec=30,
+            backoff_sec=1,
+            err_msg=("Storage mode was not promoted to tiered_cloud after failover"),
+        )
+
+        # Regression guard (oscillation): once promoted, the topic must STAY
+        # tiered_cloud. If the destination reconciler were fighting the
+        # promotion it would flip back to cloud within a tick, so assert it
+        # never reverts over a window -- an expected timeout means it held.
+        def reverted_from_tiered_cloud():
+            configs = target_rpk.describe_topic_configs(topic.name)
+            return configs[TopicSpec.PROPERTY_STORAGE_MODE_IMPL][0] != "tiered_v2"
+
+        try:
+            wait_until(
+                reverted_from_tiered_cloud,
+                timeout_sec=15,
+                backoff_sec=1,
+            )
+            assert False, (
+                "storage mode reverted from tiered_cloud after promotion "
+                "(cloud<->tiered_cloud oscillation)"
+            )
+        except ducktape.errors.TimeoutError:
+            pass  # expected: promotion held, no oscillation
+
+    @cluster(num_nodes=6)
+    def test_failover_no_promotion_when_promotion_disabled(self):
+        """
+        Promotion to tiered_cloud on failover is opt-in via
+        promote_to_tiered_v2_on_failover (default off). With it disabled,
+        a cloud shadow topic stays cloud after failover instead of being
+        promoted to tiered_cloud.
+        """
+        # tiered_cloud is explicit-only; activate it on the target cluster so
+        # a (wrong) promotion COULD succeed -- isolating the disabled toggle as
+        # the only thing preventing promotion.
+        self.target_cluster.service.set_feature_active(
+            "tiered_cloud_topics", True, timeout_sec=30
+        )
+
+        topic = TopicSpec(
+            name="no-promote-test",
+            partition_count=1,
+            replication_factor=1,
+        )
+
+        source_rpk = RpkTool(self.source_cluster.service)
+        source_rpk.create_topic(
+            topic=topic.name,
+            partitions=topic.partition_count,
+            replicas=topic.replication_factor,
+        )
+
+        # Cloud override, but promotion left disabled (the default).
+        self.create_link_with_storage_mode_override(
+            "test-link",
+            shadow_link_pb2.SHADOW_TOPIC_STORAGE_MODE_CLOUD,
+        )
+
+        self.target_cluster.service.wait_until(
+            lambda: self.topic_partitions_exists_in_target(topic),
+            timeout_sec=30,
+            backoff_sec=1,
+            err_msg=f"Topic {topic.name} not found in target cluster",
+        )
+
+        # Failover the topic
+        self.failover_link_topic(link_name="test-link", topic=topic.name)
+        self.wait_for_topic_status(
+            link="test-link",
+            topic=topic.name,
+            target_status=shadow_link_pb2.ShadowTopicState.SHADOW_TOPIC_STATE_FAILED_OVER,
+            timeout_sec=60,
+        )
+
+        # With promotion disabled the topic must stay cloud. Give the
+        # reconciler the same window the positive test allows for promotion and
+        # assert it never flips to tiered_cloud (impl "tiered_v2"): an expected
+        # timeout means promotion never happened.
+        target_rpk = RpkTool(self.target_cluster.service)
+
+        def promoted_to_tiered_cloud():
+            configs = target_rpk.describe_topic_configs(topic.name)
+            return configs[TopicSpec.PROPERTY_STORAGE_MODE_IMPL][0] == "tiered_v2"
+
+        try:
+            wait_until(
+                promoted_to_tiered_cloud,
+                timeout_sec=30,
+                backoff_sec=1,
+            )
+            assert False, (
+                "cloud topic was promoted to tiered_cloud after failover even "
+                "though promote_to_tiered_v2_on_failover was disabled"
+            )
+        except ducktape.errors.TimeoutError:
+            pass  # expected: promotion disabled, so it never promotes
+
+        # And confirm it remains cloud (not silently downgraded either).
+        configs = target_rpk.describe_topic_configs(topic.name)
+        assert (
+            configs[TopicSpec.PROPERTY_STORAGE_MODE][0] == TopicSpec.STORAGE_MODE_CLOUD
+        ), (
+            f"topic should remain cloud after failover with promotion "
+            f"disabled, got: {configs[TopicSpec.PROPERTY_STORAGE_MODE]}"
+        )
+
+    @cluster(num_nodes=6)
+    def test_storage_mode_override_scoped_by_filter(self):
+        """
+        When shadow_topic_storage_mode_filters restricts the CLOUD storage
+        mode override to a subset of a link's shadow topics, only the
+        matching (in-scope) topic is created with storage_mode=cloud, while
+        an out-of-scope topic inherits the source topic's storage mode.
+        After failover, only the in-scope cloud topic is promoted to
+        tiered_cloud.
+        """
+        # tiered_cloud is explicit-only; activate on the target cluster so
+        # the post-failover AlterConfig to tiered_cloud succeeds.
+        self.target_cluster.service.set_feature_active(
+            "tiered_cloud_topics", True, timeout_sec=30
+        )
+
+        cloud_me = TopicSpec(
+            name="cloud-me",
+            partition_count=1,
+            replication_factor=1,
+        )
+        leave_me = TopicSpec(
+            name="leave-me",
+            partition_count=1,
+            replication_factor=1,
+        )
+
+        source_rpk = RpkTool(self.source_cluster.service)
+        source_rpk.create_topic(
+            topic=cloud_me.name,
+            partitions=cloud_me.partition_count,
+            replicas=cloud_me.replication_factor,
+        )
+        source_rpk.create_topic(
+            topic=leave_me.name,
+            partitions=leave_me.partition_count,
+            replicas=leave_me.replication_factor,
+        )
+
+        # Create link with storage mode override = CLOUD, scoped by an
+        # include filter to only "cloud-me".
+        self.create_link_with_storage_mode_override(
+            "test-link",
+            shadow_link_pb2.SHADOW_TOPIC_STORAGE_MODE_CLOUD,
+            storage_mode_filters=[
+                (
+                    shadow_link_pb2.PATTERN_TYPE_LITERAL,
+                    shadow_link_pb2.FILTER_TYPE_INCLUDE,
+                    "cloud-me",
+                )
+            ],
+            promote_on_failover=True,
+        )
+
+        # Wait for both shadow topics to appear on target
+        self.target_cluster.service.wait_until(
+            lambda: self.topic_partitions_exists_in_target(cloud_me),
+            timeout_sec=30,
+            backoff_sec=1,
+            err_msg=f"Topic {cloud_me.name} not found in target cluster",
+        )
+        self.target_cluster.service.wait_until(
+            lambda: self.topic_partitions_exists_in_target(leave_me),
+            timeout_sec=30,
+            backoff_sec=1,
+            err_msg=f"Topic {leave_me.name} not found in target cluster",
+        )
+
+        target_rpk = RpkTool(self.target_cluster.service)
+
+        # In-scope topic is created with cloud storage mode
+        cloud_me_configs = target_rpk.describe_topic_configs(cloud_me.name)
+        assert (
+            cloud_me_configs[TopicSpec.PROPERTY_STORAGE_MODE][0]
+            == TopicSpec.STORAGE_MODE_CLOUD
+        ), (
+            f"In-scope topic storage mode: "
+            f"{cloud_me_configs[TopicSpec.PROPERTY_STORAGE_MODE]}, "
+            f"expected: {TopicSpec.STORAGE_MODE_CLOUD}"
+        )
+
+        # Out-of-scope topic inherits the source's (non-cloud) storage mode
+        leave_me_configs = target_rpk.describe_topic_configs(leave_me.name)
+        assert (
+            leave_me_configs[TopicSpec.PROPERTY_STORAGE_MODE][0]
+            != TopicSpec.STORAGE_MODE_CLOUD
+        ), (
+            f"Out-of-scope topic should not be cloud but got: "
+            f"{leave_me_configs[TopicSpec.PROPERTY_STORAGE_MODE]}"
+        )
+
+        # Failover the in-scope topic
+        self.failover_link_topic(link_name="test-link", topic=cloud_me.name)
+
+        self.wait_for_topic_status(
+            link="test-link",
+            topic=cloud_me.name,
+            target_status=shadow_link_pb2.ShadowTopicState.SHADOW_TOPIC_STATE_FAILED_OVER,
+            timeout_sec=60,
+        )
+
+        # Verify the in-scope topic was promoted to tiered_cloud
+        def cloud_me_is_tiered_cloud():
+            # tiered_cloud reports the user-facing redpanda.storage.mode as the
+            # ambiguous "tiered"; the unambiguous signal is the read-only impl
+            # property redpanda.storage.mode.impl, which is "tiered_v2".
+            configs = target_rpk.describe_topic_configs(cloud_me.name)
+            return configs[TopicSpec.PROPERTY_STORAGE_MODE_IMPL][0] == "tiered_v2"
+
+        wait_until(
+            cloud_me_is_tiered_cloud,
+            timeout_sec=30,
+            backoff_sec=1,
+            err_msg=("Storage mode was not promoted to tiered_cloud after failover"),
+        )
+
+        # The out-of-scope topic was never cloud, so it is not promoted
+        leave_me_configs = target_rpk.describe_topic_configs(leave_me.name)
+        assert (
+            leave_me_configs[TopicSpec.PROPERTY_STORAGE_MODE_IMPL][0] != "tiered_v2"
+        ), (
+            f"Out-of-scope topic should not be promoted to tiered_cloud but got "
+            f"impl: {leave_me_configs[TopicSpec.PROPERTY_STORAGE_MODE_IMPL]}"
+        )
