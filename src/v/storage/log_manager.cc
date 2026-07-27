@@ -406,6 +406,43 @@ model::timestamp log_manager::lowest_ts_to_retain() const {
     return model::timestamp(now - retention);
 }
 
+
+size_t log_manager::expected_data_size_bytes() const {
+    size_t total = 0;
+
+    for (const auto& [ntp, meta] : _logs) {
+        total += meta->handle->size_bytes();
+    }
+
+    return total;
+}
+
+ss::future<size_t> log_manager::actual_data_size_bytes() const {
+    co_return co_await actual_data_size_bytes(
+        std::filesystem::path(_config.base_dir));
+}
+
+ss::future<size_t> log_manager::actual_data_size_bytes(const std::filesystem::path& dir) const {
+    size_t total = 0;
+
+    co_await directory_walker::walk(
+        dir.string(),
+        [&](ss::directory_entry de) -> ss::future<> {
+            auto path = dir / std::filesystem::path(de.name.c_str());
+
+            if (de.type == ss::directory_entry_type::regular) {
+                total += co_await ss::file_size(path.string());
+            } else if (de.type == ss::directory_entry_type::directory) {
+                total += co_await actual_data_size_bytes(path);
+            }
+
+            co_return;
+        });
+
+    co_return total;
+}
+
+
 ss::future<> log_manager::housekeeping_loop() {
     /*
      * data older than this threshold may be garbage collected
@@ -457,6 +494,13 @@ ss::future<> log_manager::housekeeping_loop() {
             vlog(stlog.warn, "Error processing housekeeping(): {}", eptr);
         }
     }
+}
+
+
+namespace {
+
+constexpr double expected_actual_size_warning_threshold = 0.05;
+
 }
 
 ss::future<> log_manager::gc_loop() {
@@ -574,6 +618,24 @@ ss::future<> log_manager::gc_loop() {
                     .finally(
                       [units = std::move(units), g = std::move(gate)] {});
               });
+
+            
+            // <-- HERE
+            auto expected = expected_data_size_bytes();
+            auto actual = co_await actual_data_size_bytes();
+
+            auto diff = std::max(expected, actual) - std::min(expected, actual);
+
+            // compare + warn
+            if (expected != 0 
+              && static_cast<double>(diff) / static_cast<double>(expected) > expected_actual_size_warning_threshold) {
+                vlog(
+                  gclog.warn,
+                  "Expected storage size {} differs from actual storage size {} by {} bytes",
+                  expected,
+                  actual,
+                  diff);
+            }
         }
     }
 }
