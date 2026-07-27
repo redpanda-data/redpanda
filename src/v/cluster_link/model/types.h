@@ -505,6 +505,12 @@ struct topic_metadata_mirroring_config
     /// select_topic_default_include). Empty = all mirrored topics.
     chunked_vector<resource_name_filter_pattern> storage_mode_override_filters;
 
+    /// When true, the link's cloud shadow topics are promoted to
+    /// tiered_cloud on failover, so the promoted cluster serves reads and
+    /// writes locally. Off by default; only meaningful when
+    /// storage_mode_override is cloud.
+    bool promote_to_tiered_cloud_on_failover{false};
+
     properties_set get_topic_properties_to_mirror() const;
 
     ss::lowres_clock::duration get_task_interval() const {

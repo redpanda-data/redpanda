@@ -157,6 +157,8 @@ topic_metadata_mirroring_config topic_metadata_mirroring_config::copy() const {
     copy.starting_offset = starting_offset;
     copy.storage_mode_override = storage_mode_override;
     copy.storage_mode_override_filters = storage_mode_override_filters.copy();
+    copy.promote_to_tiered_cloud_on_failover
+      = promote_to_tiered_cloud_on_failover;
 
     return copy;
 }
@@ -743,14 +745,16 @@ auto fmt::formatter<cluster_link::model::topic_metadata_mirroring_config>::
       ctx.out(),
       "{{is_enabled: {}, task_interval: {}, filters: {}, "
       "topic_properties_to_mirror: {}, exclude_default: {}, "
-      "starting_offset: {}, storage_mode_override_filters: {}}}",
+      "starting_offset: {}, storage_mode_override_filters: {}, "
+      "promote_to_tiered_cloud_on_failover: {}}}",
       m.is_enabled,
       m.task_interval,
       m.topic_name_filters,
       m.topic_properties_to_mirror,
       m.exclude_default,
       m.starting_offset,
-      m.storage_mode_override_filters);
+      m.storage_mode_override_filters,
+      m.promote_to_tiered_cloud_on_failover);
 }
 
 auto fmt::formatter<cluster_link::model::consumer_groups_mirroring_config>::
