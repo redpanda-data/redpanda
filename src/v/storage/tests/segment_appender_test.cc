@@ -609,3 +609,102 @@ TEST_F(
 
     driver.automate(io_kind_all);
 }
+
+// Reproduces last-page corruption: the guard against appending into a
+// chunk under dma consulted only _inflight.back(), so a newer QUEUED
+// write for the same chunk hid the older DISPATCHED one and the append
+// landed in the page its dma was still reading.
+TEST_F(
+  SegmentAppenderManualFileFixture, AppendWhileQueuedWriteHidesInflightDma) {
+    using manual_file::io_kind;
+    using manual_file::io_kind_all;
+    auto& driver = start_driver(io_kind_all & ~io_kind::write);
+    reference = random_generators::gen_alphanum_string(221);
+
+    // Write #1: dispatched by flush #1 and parked; pins the head-write
+    // semaphore.
+    appender->append(reference.data(), 100).get();
+    auto flush1 = appender->flush();
+    dev().wait_submitted(io_kind::write, 1).get();
+
+    // Remainder-copies into a fresh chunk (head has a dispatched write).
+    appender->append(reference.data() + 100, 50).get();
+    ASSERT_EQ(appender->file_byte_offset(), 150);
+
+    // flush #2 leaves write #2 QUEUED behind parked write #1...
+    auto flush2 = appender->flush();
+    // ...so this append lands in the same chunk behind it.
+    appender->append(reference.data() + 150, 61).get();
+    ASSERT_EQ(appender->file_byte_offset(), 211);
+
+    // Completing write #1 lets write #2 dispatch and park; its dma reads
+    // the page the 61 bytes share.
+    dev().complete_oldest(io_kind::write);
+    flush1.get();
+    dev().wait_submitted(io_kind::write, 2).get();
+
+    // flush #3 queues write #3 for the 61 bytes: _inflight.back() is now
+    // QUEUED for the head chunk, hiding dispatched write #2.
+    auto flush3 = appender->flush();
+    tests::drain_task_queue().get();
+    ASSERT_EQ(dev().pending_count(io_kind::write), 1);
+
+    // BUG: unfixed code consults only _inflight.back(), appends in place
+    // at 211 -- inside write #2's in-flight dma page -- and aborts on the
+    // snapshot check when write #2 completes below. Fixed code
+    // remainder-copies into a fresh chunk.
+    appender->append(reference.data() + 211, 10).get();
+    ASSERT_EQ(appender->file_byte_offset(), 221);
+    ASSERT_EQ(stats->bytes_copied_in_chunk_remainder, 100 + 211);
+
+    dev().complete_oldest(io_kind::write);
+    flush2.get();
+    expect_durable_prefix(150);
+
+    // Write #2's completion released the head-write semaphore; write #3
+    // dispatches and parks.
+    dev().wait_submitted(io_kind::write, 3).get();
+    dev().complete_oldest(io_kind::write);
+    flush3.get();
+    expect_durable_prefix(211);
+
+    // Teardown writes the final [211, 221) and verifies content.
+    driver.automate(io_kind_all);
+}
+
+// The guard's permit: a dispatched write that ended on a page boundary
+// leaves nothing to protect above it, so the next append lands in place
+// while the dma is in flight -- no remainder copy, no chunk consumed.
+// The old guard's copy branch would copy a zero-byte remainder here,
+// which the counter cannot distinguish; taking a chunk from the
+// exhausted cache is what tells them apart. Completing write #1 checks
+// its buffer against the dispatch-time snapshot, so an inexact recorded
+// dma extent aborts.
+TEST_F(SegmentAppenderManualFileFixture, AppendPastInflightDmaEndStaysInPlace) {
+    using manual_file::io_kind;
+    using manual_file::io_kind_all;
+    auto& driver = start_driver(io_kind_all & ~io_kind::write);
+    reference = random_generators::gen_alphanum_string(4_KiB + 100);
+
+    // Write #1 covers exactly one page: its dma ends on the boundary.
+    appender->append(reference.data(), 4_KiB).get();
+    ASSERT_EQ(appender->file_byte_offset(), 4_KiB);
+    auto flush1 = appender->flush();
+    dev().wait_submitted(io_kind::write, 1).get();
+
+    // In place: needs no chunk from the exhausted cache.
+    hoard_all_chunks();
+    auto in_place_append = appender->append(reference.data() + 4_KiB, 100);
+    tests::drain_task_queue().get();
+    ASSERT_TRUE(in_place_append.available());
+    in_place_append.get();
+    ASSERT_EQ(appender->file_byte_offset(), 4_KiB + 100);
+    ASSERT_EQ(stats->bytes_copied_in_chunk_remainder, 0);
+
+    dev().complete_oldest(io_kind::write);
+    flush1.get();
+    expect_durable_prefix(4_KiB);
+
+    // Teardown writes the trailing 100 bytes and verifies content.
+    driver.automate(io_kind_all);
+}

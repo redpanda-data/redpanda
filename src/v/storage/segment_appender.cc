@@ -237,12 +237,15 @@ ss::future<> segment_appender::do_append(const char* buf, size_t n) {
             co_await do_next_adaptive_fallocation();
             continue;
         }
-        // we need to copy the reminder of the chunk into the new one not write
-        // to the one currently being written
-        if (is_chunk_write_dispatched(_head)) {
-            // if head write is dispatched it means there is at least one
-            // inflight write. Always copy the remainder to a new chunk
-            // to simplify the logic (aligned case is very rare ~0.02%)
+        /*
+         * A dispatched write reads the chunk up to inflight_dma_end(),
+         * rounded up to a full page, so an append below that position would
+         * mutate memory the kernel is reading. Copy the unflushed remainder
+         * into a fresh chunk and append there. A queued write is no hazard:
+         * its buffer is not handed to the kernel yet, and appending in place
+         * lets the next write merge into it.
+         */
+        if (_head && _head->size() < _head->inflight_dma_end()) {
             // Keep the old head visible while waiting for a cache chunk. A
             // concurrent flush must be able to dispatch bytes appended after
             // the in-flight write covered by this branch.
@@ -272,19 +275,17 @@ ss::future<> segment_appender::do_append(const char* buf, size_t n) {
               "Head changed while waiting for a replacement chunk: {}",
               *this);
 
-            const auto remainder_sz = old_head->size()
-                                      - old_head->pending_aligned_begin();
-
-            new_head->copy_remainder_from(*old_head);
+            const auto remainder_sz = new_head->copy_remainder_from(*old_head);
             // swap in the new head with the remainder from the old one.
 
             _head = std::move(new_head);
             _opts.shared_stats->bytes_copied_in_chunk_remainder += remainder_sz;
             /**
-             * This is the place where we need to release the old head or
-             * mark it for release after the write completes. A concurrent
-             * flush may have added a new write for old_head while the chunk
-             * request was pending, so use the current last write.
+             * Release the old head, or mark it for release when its last
+             * write completes. A concurrent flush may have added a write for
+             * old_head while the chunk request was pending -- possibly still
+             * QUEUED, the dispatched one being what sent us here -- so use
+             * the current last write.
              */
 
             if (!_inflight.empty() && _inflight.back()->chunk == old_head) {
@@ -530,16 +531,8 @@ ss::future<> segment_appender::do_next_adaptive_fallocation() {
       });
 }
 
-ss::future<> segment_appender::maybe_advance_stable_offset(
-  const ss::lw_shared_ptr<inflight_write>& write) {
+ss::future<> segment_appender::maybe_advance_stable_offset() {
     vassert(!_inflight.empty(), "expected non-empty inflight set");
-
-    vassert(
-      write->state == write_state::DISPATCHED,
-      "write not in dispatched state: {}",
-      write);
-
-    write->set_state(write_state::DONE);
 
     std::optional<size_t> committed;
 
@@ -717,9 +710,13 @@ void segment_appender::dispatch_background_head_write() {
                   w->chunk_begin,
                   w->chunk_end);
 
-                // prevent any more writes from merging into this entry
-                // as it is about to be dma_write'd.
-                w->set_state(write_state::DISPATCHED);
+                /*
+                 * At most one write per chunk is in flight: a chunk's writes
+                 * all queue on one _prev_head_write - it is swapped only
+                 * when the head fills, which retires the chunk - and each
+                 * holds its unit until after complete().
+                 */
+                w->dispatch();
                 ++_inflight_dispatched;
                 ++_dispatched_writes;
 
@@ -734,6 +731,8 @@ void segment_appender::dispatch_background_head_write() {
                   .then([this, w, dma_size](size_t got) {
                       _opts.shared_stats->bytes_written += dma_size;
                       ++_opts.shared_stats->writes_completed;
+                      w->complete();
+
                       /*
                        * the continuation that captured full=true is the
                        * end of the dependency chain for this chunk. it
@@ -755,7 +754,7 @@ void segment_appender::dispatch_background_head_write() {
                           return size_mismatch_error(
                             "chunk::write", expected, got);
                       }
-                      return maybe_advance_stable_offset(w);
+                      return maybe_advance_stable_offset();
                   })
                   .finally([u = std::move(u)] {
                       // You might be tempted to release head_sem's units in

@@ -232,15 +232,6 @@ private:
     // still heavy weight operations compared to regular flush()
     ss::future<> hard_flush();
 
-    /**
-     * Returns true if there is an inflight write for the current head chunk and
-     * that write is already dispatched.
-     */
-    bool is_chunk_write_dispatched(const chunk_ptr& chunk) const {
-        return chunk && !_inflight.empty() && _inflight.back()->chunk == chunk
-               && _inflight.back()->state == inflight_write::DISPATCHED;
-    }
-
     enum class write_state : char { QUEUED = 1, DISPATCHED, DONE };
 
     struct inflight_write {
@@ -289,6 +280,20 @@ private:
             state = new_state;
         }
 
+        /// The write is about to be dma_write'd: stop merging into this
+        /// entry and mark the chunk's in-flight dma extent -- appends must
+        /// not land below chunk_end until complete().
+        void dispatch() {
+            set_state(DISPATCHED);
+            chunk->begin_inflight_dma(chunk_end);
+        }
+
+        /// The device is finished with the buffer.
+        void complete() {
+            set_state(DONE);
+            chunk->end_inflight_dma();
+        }
+
         /**
          * @brief Try to merge the given write with this one.
          *
@@ -335,8 +340,7 @@ private:
     // the lifetime of the appender
     size_t _dispatched_writes{0};
     committed_offset_clb _committed_offset_clb;
-    ss::future<>
-    maybe_advance_stable_offset(const ss::lw_shared_ptr<inflight_write>&);
+    ss::future<> maybe_advance_stable_offset();
     ss::future<> process_flush_ops(size_t);
 
     ss::timer<ss::lowres_clock> _inactive_timer;
