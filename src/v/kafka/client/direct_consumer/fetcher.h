@@ -197,9 +197,12 @@ private:
      * Fields required s.t. they are harder to forget.
      * Defaults:
      *  - high_watermark: nullopt, not known at instantiation
-     *  - current_leader_epoch: nullopt, not known at instantiation
+     *  - current_leader_epoch: invalid_leader_epoch, not known at
+     *    instantiation
      *  - incremental_include: true, new assignments should always be included
      *    in the next fetch
+     *  - source_reported: false, the broker has told us nothing about this
+     *    partition yet
      */
     struct partition_fetch_state {
         partition_fetch_state(
@@ -213,6 +216,7 @@ private:
           , current_leader_epoch{kafka::invalid_leader_epoch}
           , fetcher_epoch{fetcher_epoch}
           , incremental_include{true}
+          , source_reported{false}
           , subscription_epoch{subscription_epoch} {}
 
         model::partition_id partition_id;
@@ -221,6 +225,7 @@ private:
         leader_epoch current_leader_epoch;
         fetcher_epoch fetcher_epoch;
         bool incremental_include;
+        bool source_reported;
         subscription_epoch subscription_epoch;
 
         bool include_in_fetch_request() const {
@@ -262,6 +267,9 @@ private:
         chunked_vector<fetched_topic_data> topics;
         size_t total_bytes{0};
         bool needs_metadata_update{false};
+        // Set when the broker withheld a partition whose source offsets we have
+        // never learned. Only a full fetch makes the broker re-report it.
+        bool needs_full_fetch{false};
         kafka::fetch_session_id session_id{0};
     };
 
