@@ -1108,8 +1108,14 @@ ss::future<ss::httpd::redirect_exception> admin_server::redirect_to_leader(
     vlog(
       adminlog.info, "Redirecting admin API call to {} leader at {}", ntp, url);
 
+    if (retry_after) {
+        co_return ss::httpd::redirect_exception(
+          url,
+          ss::http::reply::status_type::temporary_redirect,
+          {{"Retry-After", std::to_string(*retry_after)}});
+    }
     co_return ss::httpd::redirect_exception(
-      url, ss::http::reply::status_type::temporary_redirect, retry_after);
+      url, ss::http::reply::status_type::temporary_redirect);
 }
 
 bool admin_server::need_redirect_to_leader(
