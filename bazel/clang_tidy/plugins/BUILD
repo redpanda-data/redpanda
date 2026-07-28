@@ -33,6 +33,7 @@ cc_binary(
     copts = redpanda_copts() + [
         "-Iexternal/toolchains_llvm++llvm+current_llvm_toolchain_llvm/include",
         "-Wno-deprecated-declarations",
+        "-Wno-deprecated-this-capture",
         "-Wno-unused-parameter",
     ],
     features = [
