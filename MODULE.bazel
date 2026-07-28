@@ -19,6 +19,18 @@ use_repo(
 
 bazel_dep(name = "gazelle", version = "0.45.0")
 bazel_dep(name = "abseil-cpp", version = "20250814.1")
+
+# Clang 23 deprecates lifetime_capture_by(this). Remove this override after
+# upgrading to an Abseil release containing this upstream fix:
+# https://github.com/abseil/abseil-cpp/commit/0784689a65b4ea1329fbc5174b8a57c88ec796a9
+single_version_override(
+    module_name = "abseil-cpp",
+    patch_strip = 1,
+    patches = [
+        "//bazel/thirdparty:abseil-clang-23-lifetime-capture.patch",
+    ],
+)
+
 bazel_dep(name = "bazel_skylib", version = "1.8.2")
 bazel_dep(name = "crc32c", version = "1.1.0")
 bazel_dep(name = "fmt", version = "12.1.0")
