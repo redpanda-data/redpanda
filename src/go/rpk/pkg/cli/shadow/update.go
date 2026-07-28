@@ -55,14 +55,20 @@ func newUpdateCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 
 By default, this command opens your default editor with the current Shadow
 Link configuration. Update the fields you want to change, save the file, and
-close the editor. The command applies only the changed fields to the Shadow
-Link.
+close the editor.
 
 Alternatively, use the '--config-file' flag to apply a configuration file
-directly without opening an editor, which is useful for scripted workflows. In
-this mode the file replaces the entire Shadow Link configuration: any field
-omitted from the file is reset to its default value. The name in the
-configuration file must match LINK_NAME.
+directly without opening an editor, which is useful for scripted workflows.
+
+In both modes the submitted configuration replaces the entire Shadow Link
+configuration: any field omitted is reset to its default value. The modes
+differ only in where the configuration comes from; the editor is seeded with
+the current configuration, while a configuration file is applied as-is. The
+name in the configuration file must match LINK_NAME.
+
+Set passwords appear in the editor as the placeholder '<redacted>'; leave the
+placeholder untouched to keep the existing password, or replace it to set a
+new one.
 
 You cannot change the Shadow Link name. If you need to rename a Shadow Link,
 delete it and create a new one with the desired name.
@@ -84,16 +90,15 @@ Replace the entire Shadow Link configuration from a file:
 			prof := cfg.VirtualProfile()
 			config.CheckExitServerlessAdmin(prof)
 
-			// The editor flow (default) diffs the current config and applies
-			// only the changed fields via a mask; --config-file replaces the
-			// entire configuration.
+			// Both modes replace the entire configuration; they differ only
+			// in where the config comes from: an editor seeded with the
+			// current config, or --config-file.
 			fromCloud := prof.CheckFromCloud()
 			fileMode := cfgLocation != ""
 			linkName := args[0]
 			var (
 				originalCfg *ShadowLinkConfig
 				updatedCfg  *ShadowLinkConfig
-				diff        []string
 				adminClient *rpadmin.AdminAPI
 				cloudClient *publicapi.CloudClientSet
 				cloudLinkID string
@@ -140,7 +145,8 @@ Replace the entire Shadow Link configuration from a file:
 				}
 			}
 
-			// Editor mode: open the editor and calculate the diff.
+			// Editor mode: open the editor and bail early when nothing
+			// changed.
 			if !fileMode {
 				updatedCfg, err = rpkos.EditTmpYAMLFile(cmd.Context(), fs, originalCfg)
 				out.MaybeDie(err, "unable to edit Shadow Link configuration: %v", err)
@@ -152,34 +158,26 @@ Replace the entire Shadow Link configuration from a file:
 					out.Die("shadow link name cannot be changed; if you need to rename, please delete and recreate the shadow link")
 				}
 
-				diff = diffConfigs(originalCfg, updatedCfg)
+				diff := diffConfigs(originalCfg, updatedCfg)
 				if diff == nil {
 					out.Exit("No changes detected")
 				}
+				zap.L().Sugar().Debugf("Detected changes in: %v", strings.Join(diff, ", "))
+
+				// An untouched password placeholder means "keep the existing
+				// password"; the server preserves the stored password when
+				// the submitted one is empty and the username is set.
+				stripRedactedPasswords(updatedCfg)
 			}
 
-			// Submit the update request.
 			if fromCloud {
+				err = validateCloudSecrets(cmd.Context(), prof, updatedCfg)
+				out.MaybeDie(err, "unable to validate cloud secrets: %v", err)
+
 				updatedSL := shadowLinkConfigToCloudUpdate(updatedCfg, cloudLinkID)
 
-				var cloudPaths []string
-				if fileMode {
-					err = validateCloudSecrets(cmd.Context(), prof, updatedCfg)
-					out.MaybeDie(err, "unable to validate cloud secrets: %v", err)
-
-					cloudPaths = cloudUpdateReplacePaths
-				} else {
-					// Cloud proto has no "configurations" wrapper; strip it.
-					cloudPaths = make([]string, len(diff))
-					for i, path := range diff {
-						cloudPaths[i] = strings.TrimPrefix(path, "configurations.")
-					}
-				}
-
-				fm, err := fieldmaskpb.New(updatedSL, cloudPaths...)
+				fm, err := fieldmaskpb.New(updatedSL, cloudUpdateReplacePaths...) // The cloud API rejects an empty mask.
 				out.MaybeDie(err, "unrecognized changed fields: %v; please report this with Redpanda Support", err)
-
-				zap.L().Sugar().Debugf("Requesting configuration update for: %v", strings.Join(cloudPaths, ", "))
 				op, err := cloudClient.ShadowLink.UpdateShadowLink(cmd.Context(), connect.NewRequest(&controlplanev1.UpdateShadowLinkRequest{
 					ShadowLink: updatedSL,
 					UpdateMask: fm,
@@ -198,21 +196,10 @@ Replace the entire Shadow Link configuration from a file:
 				spinner.Success(fmt.Sprintf("Successfully updated shadow link %q", linkName))
 				os.Exit(0)
 			}
-			// Self-hosted path. In file mode the mask stays unset, which the
-			// server treats as a full replace.
-			updatedSL := shadowLinkConfigToProto(updatedCfg)
-			var fm *fieldmaskpb.FieldMask
-			if fileMode {
-				zap.L().Sugar().Debug("Requesting full configuration replacement")
-			} else {
-				fm, err = fieldmaskpb.New(updatedSL, diff...)
-				out.MaybeDie(err, "unrecognized changed fields: %v; please report this with Redpanda Support", err)
 
-				zap.L().Sugar().Debugf("Requesting configuration update for: %v", strings.Join(diff, ", "))
-			}
+			zap.L().Sugar().Debug("Requesting full configuration replacement")
 			_, err = adminClient.ShadowLinkService().UpdateShadowLink(cmd.Context(), connect.NewRequest(&adminv2.UpdateShadowLinkRequest{
-				ShadowLink: updatedSL,
-				UpdateMask: fm,
+				ShadowLink: shadowLinkConfigToProto(updatedCfg),
 			}))
 			out.MaybeDie(err, "unable to update Shadow Link: %v", handleConnectError(err, "update", linkName))
 			fmt.Printf("Successfully updated shadow link %q.\n", linkName)
@@ -260,11 +247,40 @@ func addRedactedPasswordString(cfg *ShadowLinkConfig, link *adminv2.ShadowLink) 
 		}
 	}
 
+	if cfgs.GetClientOptions().GetAuthenticationConfiguration().GetPlainConfiguration().GetPasswordSet() {
+		if co := cfg.ClientOptions; co != nil {
+			if auth := co.AuthenticationConfiguration; auth != nil && auth.PlainConfiguration != nil {
+				auth.PlainConfiguration.Password = redacted
+			}
+		}
+	}
+
 	if cfgs.GetSchemaRegistrySyncOptions().GetShadowSchemaRegistryApi().GetAuthOptions().GetBasic().GetPasswordSet() {
 		if sr := cfg.SchemaRegistrySyncOptions; sr != nil && sr.ShadowSchemaRegistryAPI != nil {
 			if auth := sr.ShadowSchemaRegistryAPI.AuthOptions; auth != nil && auth.Basic != nil {
 				auth.Basic.Password = redacted
 			}
+		}
+	}
+}
+
+// stripRedactedPasswords clears passwords still holding the editor-seeded
+// placeholder. An empty password with a username set tells the server to keep
+// the existing password.
+func stripRedactedPasswords(cfg *ShadowLinkConfig) {
+	if co := cfg.ClientOptions; co != nil {
+		if auth := co.AuthenticationConfiguration; auth != nil {
+			if scram := auth.ScramConfiguration; scram != nil && scram.Password == redacted {
+				scram.Password = ""
+			}
+			if plain := auth.PlainConfiguration; plain != nil && plain.Password == redacted {
+				plain.Password = ""
+			}
+		}
+	}
+	if sr := cfg.SchemaRegistrySyncOptions; sr != nil && sr.ShadowSchemaRegistryAPI != nil {
+		if auth := sr.ShadowSchemaRegistryAPI.AuthOptions; auth != nil && auth.Basic != nil && auth.Basic.Password == redacted {
+			auth.Basic.Password = ""
 		}
 	}
 }
