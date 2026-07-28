@@ -51,6 +51,13 @@ public:
 
     bool has_pending_data() override { return true; }
 
+    // A partition migrating tiered->cloud is attached to the reconciler but
+    // reports false here, so the reconciler skips it while the archiver's
+    // mirror owns its L1 region.
+    bool is_cloud_topic() const override { return _is_cloud_topic; }
+
+    void set_is_cloud_topic(bool v) { _is_cloud_topic = v; }
+
     int64_t pending_offset_lag() override {
         if (_source_log.empty()) {
             return 0;
@@ -108,6 +115,7 @@ public:
     }
 
 private:
+    bool _is_cloud_topic{true};
     kafka::offset _lro;
     chunked_vector<model::record_batch> _source_log;
     bool _fail_set_lro = false;

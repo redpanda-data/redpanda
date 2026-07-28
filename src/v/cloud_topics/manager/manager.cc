@@ -103,16 +103,16 @@ ss::future<> cloud_topics_manager::start() {
           }
           model::topic_id_partition tidp{
             config->tp_id.value(), ntp.tp.partition};
-          switch (t) {
-          case notif_type::leadership_change:
-          case notif_type::partition_replica_assigned:
-          case notif_type::partition_replica_unassigned:
-              on_leadership_change(ntp, tidp, is_leader);
-              [[fallthrough]];
-          case notif_type::partition_properties_change:
-              on_leadership_or_properties_change(ntp, tidp, is_leader);
-              break;
-          }
+          // Re-evaluate the leadership-driven attach (reconciler, housekeeper)
+          // on every notification type, including property changes. A
+          // tiered->cloud migration is triggered by a storage-mode property
+          // change with no accompanying leadership change: the partition was
+          // skipped as a non-cloud topic when it became leader (while tiered),
+          // so only re-evaluating on property change picks it up as a cloud
+          // topic. (`t` is otherwise unused now; the switch collapsed to this.)
+          std::ignore = t;
+          on_leadership_change(ntp, tidp, is_leader);
+          on_leadership_or_properties_change(ntp, tidp, is_leader);
       },
       notify_current_state::yes);
     co_return;

@@ -89,6 +89,43 @@ using ::testing::Optional;
 
 } // namespace
 
+TEST_F(ReconcilerTest, MigratingSourceAlongsideCloudTopic) {
+    // A partition migrating tiered->cloud is attached to the reconciler (attach
+    // is by topic config) but is skipped every round, because the archiver's
+    // mirror is the sole L1 writer until cutover. attach_source still creates a
+    // scheduler for its topic, so the scheduler map is sized by the *attached*
+    // topics while the reconcilable set is smaller. Asserting the scheduler
+    // count against the filtered set aborted the broker on any shard hosting
+    // both a migrating topic and a native cloud topic -- the expected shape
+    // once a cluster with cloud topics starts migrating a tiered one.
+    auto migrating = add_source();
+    migrating->set_is_cloud_topic(false);
+    auto cloud = add_source();
+    cloud->add_batch({.count = 10});
+
+    reconcile();
+
+    // The cloud topic reconciles; the migrating one is left to the mirror.
+    EXPECT_GT(cloud->last_reconciled_offset(), kafka::offset{});
+    EXPECT_EQ(migrating->last_reconciled_offset(), kafka::offset{});
+    EXPECT_EQ(metastore_next_offset(migrating), std::nullopt);
+}
+
+TEST_F(ReconcilerTest, MigratingSourceOnlyIsSkipped) {
+    // The all-migrating case exits early on an empty filtered set, so it never
+    // reached the scheduler-count assertion even before the fix. Kept to pin
+    // that a migrating partition is not reconciled at all.
+    auto migrating = add_source();
+    migrating->set_is_cloud_topic(false);
+    migrating->add_batch({.count = 10});
+
+    reconcile();
+
+    EXPECT_EQ(migrating->last_reconciled_offset(), kafka::offset{});
+    EXPECT_EQ(metastore_next_offset(migrating), std::nullopt);
+    EXPECT_EQ(io().list_objects().size(), 0);
+}
+
 TEST_F(ReconcilerTest, EmptySource) {
     auto src = add_source();
     reconcile();

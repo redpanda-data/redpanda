@@ -70,6 +70,14 @@ public:
 
     ~l0_source() override { discard_placeholder_observation(); }
 
+    bool is_cloud_topic() const override {
+        // partition_mode is still tiered while migrating (and for a plain
+        // tiered partition carrying a pre-installed idle ctp_stm), so
+        // cloud_topic_enabled() is false until cutover advances it -- exactly
+        // when the reconciler should take over as the L1 writer.
+        return _partition->get_ntp_config().cloud_topic_enabled();
+    }
+
     bool has_pending_data() override {
         auto lro = last_reconciled_offset();
         auto lso = _fe->last_stable_offset();

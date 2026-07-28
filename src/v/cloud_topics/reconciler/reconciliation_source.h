@@ -58,6 +58,15 @@ public:
         return _tidp;
     }
 
+    // True if the partition is a cloud topic the reconciler should reconcile.
+    // False for a partition served as tiered storage: plain tiered (carrying a
+    // pre-installed idle ctp_stm) or still migrating tiered->cloud
+    // (partition_mode is still tiered, so cloud_topic_enabled() is false until
+    // cutover). While served as tiered storage the archiver's mirror -- not the
+    // reconciler -- owns the L1 region, so the reconciler must skip it to avoid
+    // two writers; it resumes the round after cutover advances partition_mode.
+    virtual bool is_cloud_topic() const { return true; }
+
     // Returns true if there may be new data to reconcile (LSO > LRO).
     virtual bool has_pending_data() = 0;
 

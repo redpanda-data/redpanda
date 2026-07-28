@@ -323,8 +323,24 @@ ss::future<> reconciler<Clock>::reconciliation_loop() {
 template<class Clock>
 ss::future<> reconciler<Clock>::reconcile() {
     chunked_vector<ss::shared_ptr<source>> sources;
+    // attach_source creates a scheduler for every attached source's topic,
+    // whether or not that source is currently reconcilable, so the
+    // scheduler-map invariant below is over the *attached* topics. It cannot be
+    // checked against the filtered set: a partition migrating tiered->cloud is
+    // attached and has a scheduler, but is skipped below.
+    chunked_hash_set<model::topic_id> attached_topics;
     // Make a copy of the sources to not worry about concurrent modification.
     for (auto& [_, src] : _sources) {
+        attached_topics.insert(src->topic_id_partition().topic_id);
+        // Reconcile only cloud topics. A partition served as tiered storage --
+        // plain tiered, or still migrating tiered->cloud (partition_mode is
+        // still tiered until cutover) -- has the archiver's mirror as its sole
+        // L1 writer, so the reconciler must skip it to avoid two writers.
+        // Re-evaluated every round, so a partition is picked up automatically
+        // the round after cutover advances partition_mode.
+        if (!src->is_cloud_topic()) {
+            continue;
+        }
         sources.push_back(src);
     }
     vlog(
@@ -342,12 +358,13 @@ ss::future<> reconciler<Clock>::reconcile() {
     chunked_vector<chunked_vector<ss::shared_ptr<source>>> due_topics;
 
     // No yield points between the source copy and here, so the scheduler
-    // map must be in sync with sources: one scheduler per distinct topic.
+    // map must be in sync with the attached sources: one scheduler per
+    // distinct attached topic.
     vassert(
-      topics.size() == _topic_schedulers.size(),
-      "Topic scheduler count ({}) doesn't match source topic count ({})",
+      attached_topics.size() == _topic_schedulers.size(),
+      "Topic scheduler count ({}) doesn't match attached topic count ({})",
       _topic_schedulers.size(),
-      topics.size());
+      attached_topics.size());
 
     for (auto& topic_sources : topics) {
         vassert(!topic_sources.empty(), "Empty topic source set");
