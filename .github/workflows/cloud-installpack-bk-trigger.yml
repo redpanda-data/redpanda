@@ -39,5 +39,5 @@ jobs:
           buildkite_pipeline: ${{ vars.CLOUD_PIPELINE }}
           commit: HEAD
           branch: ${{ vars.CLOUD_DEFAULT_BRANCH }}
-          message: Install Pack version bump trigger
+          message: 'Install pack version bump triggered for redpanda ${{ github.ref_name }} by ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}'
           env: '{"INSTALLPACK_BUMP": "1", "RELEASE_VERSION": "${{ github.ref_name }}"}'
