@@ -127,7 +127,7 @@ class ConsumerGroupTest(RedpandaTest):
 
         for c in consumers:
             c.start()
-        wait_until(self.co_topic_is_ready, 10, 1)
+        self.wait_for_co_topic()
 
         rpk = RpkTool(self.redpanda)
 
@@ -140,6 +140,18 @@ class ConsumerGroupTest(RedpandaTest):
 
     def co_topic_is_ready(self):
         return len(self.client().describe_topic("__consumer_offsets").partitions) > 0
+
+    def wait_for_co_topic(self):
+        # __consumer_offsets is created lazily, as a side effect of the first
+        # FindCoordinator request, which is only sent once a consumer has
+        # finished starting up. The budget therefore has to cover JVM startup
+        # of the CLI consumers on a busy machine, not just topic creation.
+        wait_until(
+            self.co_topic_is_ready,
+            timeout_sec=60,
+            backoff_sec=1,
+            err_msg="__consumer_offsets topic was not created",
+        )
 
     def consumed_at_least(consumers, count):
         return all([c._message_cnt > count for c in consumers])
@@ -300,7 +312,7 @@ class ConsumerGroupTest(RedpandaTest):
     def wait_for_members(self, group, members_count):
         rpk = RpkTool(self.redpanda)
 
-        wait_until(self.co_topic_is_ready, 10, 1)
+        self.wait_for_co_topic()
 
         def group_stable():
             rpk_group = rpk.group_describe(group)
@@ -658,7 +670,7 @@ class ConsumerGroupTest(RedpandaTest):
         )
 
         consumer1.start()
-        wait_until(self.co_topic_is_ready, 10, 1)
+        self.wait_for_co_topic()
 
         self.wait_for_members(group, 1)
 
