@@ -107,15 +107,6 @@ private:
     size_t _replicas_begin{0};
 };
 
-template<typename T>
-concept climbing_strategy_impl = requires(T& t, const reassignment& r) {
-    typename T::reassignment_score;
-    {
-        t.get_reassignment_score(r)
-    } -> std::same_as<std::optional<typename T::reassignment_score>>;
-    { t.generate_reassignment() } -> std::same_as<std::optional<reassignment>>;
-};
-
 template<typename Impl>
 class climbing_strategy_base : public leader_balancer_strategy {
 protected:
@@ -136,8 +127,17 @@ public:
       , _eslc(*_si, *_mi)
       , _enlc(*_si) {
         static_assert(
-          climbing_strategy_impl<Impl>,
-          "Impl must satisfy climbing_strategy_impl concept");
+          requires(Impl& impl, const reassignment& reassignment) {
+              typename Impl::reassignment_score;
+              {
+                  impl.get_reassignment_score(reassignment)
+              } -> std::same_as<
+                std::optional<typename Impl::reassignment_score>>;
+              {
+                  impl.generate_reassignment()
+              } -> std::same_as<std::optional<leader_balancer_types::reassignment>>;
+          },
+          "Impl must satisfy the climbing strategy interface");
         if (preference_idx) {
             _pinning_constr.emplace(
               *_group2topic, std::move(preference_idx.value()));
