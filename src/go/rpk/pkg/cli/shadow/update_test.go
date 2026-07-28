@@ -13,7 +13,10 @@ import (
 	"testing"
 	"time"
 
+	controlplanev1 "buf.build/gen/go/redpandadata/cloud/protocolbuffers/go/redpanda/api/controlplane/v1"
+	"github.com/spf13/afero"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/protobuf/types/known/fieldmaskpb"
 )
 
 func TestDiffConfigs(t *testing.T) {
@@ -311,6 +314,173 @@ func TestDiffConfigs(t *testing.T) {
 			got := diffConfigs(tt.original, tt.updated)
 
 			require.Equal(t, tt.want, got)
+		})
+	}
+}
+
+func TestCloudUpdateReplacePaths(t *testing.T) {
+	_, err := fieldmaskpb.New(&controlplanev1.ShadowLinkUpdate{}, cloudUpdateReplacePaths...)
+	require.NoError(t, err)
+
+	// The replace mask must cover every updatable field of ShadowLinkUpdate;
+	// if the cloud API grows a new option group it must be added to the mask.
+	fields := (&controlplanev1.ShadowLinkUpdate{}).ProtoReflect().Descriptor().Fields()
+	var want []string
+	for i := 0; i < fields.Len(); i++ {
+		if name := string(fields.Get(i).Name()); name != "id" {
+			want = append(want, name)
+		}
+	}
+	require.ElementsMatch(t, want, cloudUpdateReplacePaths)
+}
+
+func TestUpdatedConfigFromFile(t *testing.T) {
+	tests := []struct {
+		name      string
+		contents  string // written to the config file path, unless noFile is set
+		noFile    bool
+		linkName  string
+		fromCloud bool
+		clusterID string
+		expErr    string
+		exp       *ShadowLinkConfig
+	}{
+		{
+			name: "valid config with matching name",
+			contents: `name: my-link
+client_options:
+  bootstrap_servers:
+    - localhost:9092
+`,
+			linkName: "my-link",
+			exp: &ShadowLinkConfig{
+				Name: "my-link",
+				ClientOptions: &ShadowLinkClientOptions{
+					BootstrapServers: []string{"localhost:9092"},
+				},
+			},
+		},
+		{
+			name: "non-placeholder password is accepted",
+			contents: `name: my-link
+client_options:
+  bootstrap_servers:
+    - localhost:9092
+  authentication_configuration:
+    scram_configuration:
+      username: user
+      password: hunter2
+`,
+			linkName: "my-link",
+			exp: &ShadowLinkConfig{
+				Name: "my-link",
+				ClientOptions: &ShadowLinkClientOptions{
+					BootstrapServers: []string{"localhost:9092"},
+					AuthenticationConfiguration: &AuthenticationConfiguration{
+						ScramConfiguration: &ScramConfiguration{
+							Username: "user",
+							Password: "hunter2",
+						},
+					},
+				},
+			},
+		},
+		{
+			name: "name mismatch",
+			contents: `name: other-link
+client_options:
+  bootstrap_servers:
+    - localhost:9092
+`,
+			linkName: "my-link",
+			expErr:   "does not match",
+		},
+		{
+			name:     "empty file",
+			contents: "",
+			linkName: "my-link",
+			expErr:   "the Shadow Link name is required",
+		},
+		{
+			name:     "missing file",
+			noFile:   true,
+			linkName: "my-link",
+			expErr:   "unable to read",
+		},
+		{
+			name: "redacted scram password",
+			contents: `name: my-link
+client_options:
+  bootstrap_servers:
+    - localhost:9092
+  authentication_configuration:
+    scram_configuration:
+      username: user
+      password: <redacted>
+`,
+			linkName: "my-link",
+			expErr:   "placeholder password",
+		},
+		{
+			name: "redacted schema registry password",
+			contents: `name: my-link
+client_options:
+  bootstrap_servers:
+    - localhost:9092
+schema_registry_sync_options:
+  shadow_schema_registry_api:
+    source_url: https://source-sr:8081
+    auth_options:
+      basic:
+        username: user
+        password: <redacted>
+`,
+			linkName: "my-link",
+			expErr:   "placeholder password",
+		},
+		{
+			name: "cloud shadow_redpanda_id mismatch",
+			contents: `name: my-link
+cloud_options:
+  shadow_redpanda_id: other-cluster
+`,
+			linkName:  "my-link",
+			fromCloud: true,
+			clusterID: "my-cluster",
+			expErr:    "does not match the selected cluster",
+		},
+		{
+			name: "cloud shadow_redpanda_id match",
+			contents: `name: my-link
+cloud_options:
+  shadow_redpanda_id: my-cluster
+`,
+			linkName:  "my-link",
+			fromCloud: true,
+			clusterID: "my-cluster",
+			exp: &ShadowLinkConfig{
+				Name: "my-link",
+				CloudOptions: &CloudShadowLinkOptions{
+					ShadowRedpandaID: "my-cluster",
+				},
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			fs := afero.NewMemMapFs()
+			const path = "/shadow-link.yaml"
+			if !tt.noFile {
+				require.NoError(t, afero.WriteFile(fs, path, []byte(tt.contents), 0o644))
+			}
+
+			cfg, err := updatedConfigFromFile(fs, path, tt.linkName, tt.fromCloud, tt.clusterID)
+			if tt.expErr != "" {
+				require.ErrorContains(t, err, tt.expErr)
+				return
+			}
+			require.NoError(t, err)
+			require.Equal(t, tt.exp, cfg)
 		})
 	}
 }
