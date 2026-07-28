@@ -84,7 +84,15 @@ public:
     explicit leveling_range_builder(size_t min_acceptable_extent_bytes)
       : _min_acceptable_extent_bytes(min_acceptable_extent_bytes)
       , _max_acceptable_range_bytes(
-          config::shard_local_cfg().cloud_topics_leveling_max_range_bytes()) {}
+          config::shard_local_cfg().cloud_topics_leveling_max_range_bytes())
+      , _max_ranges(
+          config::shard_local_cfg()
+            .cloud_topics_leveling_max_ranges_per_partition()) {}
+
+    // Whether the cap on ranges per partition has been reached. Callers should
+    // stop feeding extents once this is true; the scan reply is bounded and
+    // the remaining ranges are picked up by a later scan.
+    bool is_full() const { return _ranges.size() >= _max_ranges; }
 
     // Processes a single extent.
     void process_extent(kafka::offset base, kafka::offset last, size_t len) {
@@ -134,7 +142,9 @@ private:
         const bool undersized_tail = tail == is_tail_range::yes
                                      && _range->bytes
                                           < _min_acceptable_extent_bytes;
-        if (_range->extent_count > 1 && !undersized_tail) {
+        if (
+          _range->extent_count > 1 && !undersized_tail
+          && _ranges.size() < _max_ranges) {
             _ranges.push_back(
               levelable_range{
                 .base_offset = _range->base,
@@ -148,6 +158,7 @@ private:
 
     size_t _min_acceptable_extent_bytes;
     size_t _max_acceptable_range_bytes;
+    size_t _max_ranges;
     std::optional<in_progress_range> _range;
     chunked_vector<levelable_range> _ranges;
 };

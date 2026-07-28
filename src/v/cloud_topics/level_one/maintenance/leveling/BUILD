@@ -36,6 +36,7 @@ redpanda_cc_library(
         "//src/v/cloud_topics/level_one/frontend_reader:reader",
         "//src/v/cloud_topics/level_one/maintenance:meta",
         "//src/v/cloud_topics/level_one/metastore",
+        "//src/v/cloud_topics/level_one/metastore:extent_metadata_reader",
         "//src/v/cloud_topics/level_one/metastore:leveling_range_builder",
         "//src/v/compaction:reducer",
         "//src/v/container:chunked_vector",

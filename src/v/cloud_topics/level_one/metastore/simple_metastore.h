@@ -102,6 +102,8 @@ public:
       const object_metadata_builder&, const compaction_map_t&) override;
     ss::future<std::expected<void, errc>> compact_objects(
       const chunked_vector<object_metadata>&, const compaction_map_t&);
+    ss::future<std::expected<void, errc>>
+    commit_compaction_metadata(const compaction_map_t&) override;
 
     void preregister_objects(const chunked_vector<object_id>&);
 

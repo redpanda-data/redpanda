@@ -529,6 +529,13 @@ simple_metastore::get_term_for_offset(
 }
 
 ss::future<std::expected<void, metastore::errc>>
+simple_metastore::commit_compaction_metadata(
+  const compaction_map_t& compaction_metas) {
+    co_return co_await compact_objects(
+      chunked_vector<object_metadata>{}, compaction_metas);
+}
+
+ss::future<std::expected<void, metastore::errc>>
 simple_metastore::compact_objects(
   const chunked_vector<object_metadata>& objects,
   const compaction_map_t& compaction_metas) {
@@ -822,6 +829,9 @@ simple_metastore::get_leveling_info(
         }
         const auto base = std::max(ext.base_offset, prt.start_offset);
         builder.process_extent(base, ext.last_offset, ext.len);
+        if (builder.is_full()) {
+            break;
+        }
     }
     resp.ranges = std::move(builder).finalize();
     return resp;

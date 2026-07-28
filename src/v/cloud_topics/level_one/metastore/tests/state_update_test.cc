@@ -1341,8 +1341,8 @@ TEST_P(StateUpdateParamTest, TestCompactWithEpochOnlyUpdate) {
 
     // A compact_objects request whose compaction_update has only the
     // expected_compaction_epoch set — no cleaned ranges, no tombstone
-    // removals — is valid. Extents are replaced, the epoch is bumped, and
-    // an empty compaction_state is visible.
+    // removals — is valid. Extents are replaced and the epoch is bumped,
+    // but the compaction state is left untouched (absent here).
     auto replace = compact_objects_builder()
                      .add(new_obj_builder(oid2, 100, 1100)
                             .add(tidp_a, 0_o, 10_o, 1999_t, 0, 99)
@@ -1359,7 +1359,7 @@ TEST_P(StateUpdateParamTest, TestCompactWithEpochOnlyUpdate) {
       = s.partition_state(model::topic_id_partition::from(tidp_a))->get();
     EXPECT_THAT(prt_a.extents, ElementsAre(MatchesRange(oid2, 0_o, 10_o)));
     EXPECT_EQ(prt_a.compaction_epoch, partition_state::compaction_epoch_t{1});
-    EXPECT_TRUE(prt_a.compaction_state.has_value());
+    EXPECT_FALSE(prt_a.compaction_state.has_value());
 }
 
 TEST_P(StateUpdateParamTest, TestRejectsNotPreregistered) {

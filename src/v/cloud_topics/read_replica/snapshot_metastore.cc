@@ -230,6 +230,11 @@ snapshot_metastore::compact_objects(
     co_return std::unexpected(errc::invalid_request);
 }
 
+ss::future<std::expected<void, l1::metastore::errc>>
+snapshot_metastore::commit_compaction_metadata(const compaction_map_t&) {
+    co_return std::unexpected(errc::invalid_request);
+}
+
 ss::future<
   std::expected<l1::metastore::compaction_info_response, l1::metastore::errc>>
 snapshot_metastore::get_compaction_info(const compaction_info_spec&) {

@@ -72,6 +72,8 @@ public:
 
     ss::future<std::expected<void, errc>> compact_objects(
       const object_metadata_builder&, const compaction_map_t&) override;
+    ss::future<std::expected<void, errc>>
+    commit_compaction_metadata(const compaction_map_t&) override;
 
     ss::future<std::expected<compaction_info_response, errc>>
     get_compaction_info(const compaction_info_spec&) override;

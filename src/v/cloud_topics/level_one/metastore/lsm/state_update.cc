@@ -922,6 +922,68 @@ compact_objects_db_update::build_rows(
     chunked_hash_map<model::topic_id_partition, metadata_row_value>
       updated_metadata;
 
+    if (new_objects.empty()) {
+        // Metadata-only commit.
+        chunked_hash_map<model::topic_id_partition, compaction_state>
+          merged_compaction_states;
+        for (const auto& [t, p_updates] : compaction_updates) {
+            for (const auto& [p, comp_update] : p_updates) {
+                model::topic_id_partition tidp{t, p};
+                auto meta = co_await get_metadata_for_update(
+                  state, updated_metadata, tidp, "compaction");
+                if (!meta.has_value()) {
+                    co_return std::unexpected(std::move(meta.error()));
+                }
+                // Cleaned ranges must refer to offsets the log has seen.
+                for (const auto& r : comp_update.new_cleaned_ranges) {
+                    if (r.last_offset >= meta.value()->next_offset) {
+                        co_return std::unexpected(db_update_error(
+                          invalid_update,
+                          fmt::format(
+                            "Cleaned range [{}, {}] for {} extends past the "
+                            "next offset {}",
+                            r.base_offset,
+                            r.last_offset,
+                            tidp,
+                            meta.value()->next_offset)));
+                    }
+                }
+                compaction_state merged;
+                auto merge_res = co_await merge_compaction_state(
+                  tidp, comp_update, state, *meta.value(), merged);
+                if (!merge_res.has_value()) {
+                    co_return std::unexpected(std::move(merge_res.error()));
+                }
+                // An update with no cleaned ranges and no tombstone
+                // removals validates and bumps the epoch but leaves the
+                // compaction state definitionally unchanged; skip
+                // rewriting the row. The epoch bump still lands via the
+                // metadata row.
+                if (
+                  !comp_update.new_cleaned_ranges.empty()
+                  || !comp_update.removed_tombstones_ranges.empty()) {
+                    merged_compaction_states[tidp] = std::move(merged);
+                }
+            }
+        }
+        for (const auto& [tidp, comp_state] : merged_compaction_states) {
+            out.emplace_back(
+              write_batch_row{
+                .key = compaction_row_key::encode(tidp),
+                .value = serde::to_iobuf(
+                  compaction_row_value{.state = comp_state}),
+              });
+        }
+        for (auto& [tidp, meta] : updated_metadata) {
+            out.emplace_back(
+              write_batch_row{
+                .key = metadata_row_key::encode(tidp),
+                .value = serde::to_iobuf(meta),
+              });
+        }
+        co_return std::expected<void, db_update_error>{};
+    }
+
     auto replacements_res = co_await validate_replacement(
       state, new_objects, updated_metadata);
     if (!replacements_res.has_value()) {
@@ -941,14 +1003,21 @@ compact_objects_db_update::build_rows(
             if (!meta.has_value()) {
                 co_return std::unexpected(std::move(meta.error()));
             }
+            compaction_state merged;
             auto merge_res = co_await merge_compaction_state(
-              tidp,
-              comp_update,
-              state,
-              *meta.value(),
-              merged_compaction_states[tidp]);
+              tidp, comp_update, state, *meta.value(), merged);
             if (!merge_res.has_value()) {
                 co_return std::unexpected(std::move(merge_res.error()));
+            }
+            // An update with no cleaned ranges and no tombstone removals —
+            // the shape a job uses to commit a batch of output objects
+            // mid-run — validates and bumps the epoch but leaves the
+            // compaction state definitionally unchanged; skip rewriting
+            // the row. The epoch bump still lands via the metadata row.
+            if (
+              !comp_update.new_cleaned_ranges.empty()
+              || !comp_update.removed_tombstones_ranges.empty()) {
+                merged_compaction_states[tidp] = std::move(merged);
             }
 
             // If there are new cleaned ranges, check that the extents replace
@@ -1001,6 +1070,17 @@ compact_objects_db_update::discover_replaced_object_ids(
 
 std::expected<void, db_update_error>
 compact_objects_db_update::validate_inputs() const {
+    if (new_objects.empty()) {
+        // Metadata-only commit (see build_rows). All request-level checks
+        // relate new objects to the compaction updates, so there is nothing
+        // further to validate here beyond the request not being a no-op.
+        if (compaction_updates.empty()) {
+            return std::unexpected(db_update_error(
+              invalid_input,
+              "Metadata-only compaction request carries no updates"));
+        }
+        return std::expected<void, db_update_error>{};
+    }
     auto layout_res = validate_new_objects_extent_layout(new_objects);
     if (!layout_res.has_value()) {
         return std::unexpected(layout_res.error());

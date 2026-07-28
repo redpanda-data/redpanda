@@ -368,6 +368,15 @@ public:
     virtual ss::future<std::expected<void, errc>> compact_objects(
       const object_metadata_builder&, const compaction_map_t&) = 0;
 
+    // Commits compaction metadata without any object replacements: the
+    // cleaned ranges, tombstone-removal ranges, and one epoch bump. Used by
+    // jobs that installed their output objects incrementally via partial
+    // compact_objects() commits (objects with an empty compaction update,
+    // each of which bumped the epoch), so the expected epoch here is the one
+    // the job's own partial commits advanced.
+    virtual ss::future<std::expected<void, errc>>
+    commit_compaction_metadata(const compaction_map_t&) = 0;
+
     // All the information required to query a `compaction_info_response` from
     // the metastore. Parameters are used for call to `get_compaction_info()`.
     struct compaction_info_spec {
