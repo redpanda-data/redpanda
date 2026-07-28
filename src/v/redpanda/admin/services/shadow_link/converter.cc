@@ -1678,6 +1678,30 @@ void merge_input_only_fields(
         }
     }
 
+    // Same for PLAIN, which is stored internally as scram_credentials with
+    // the "PLAIN" mechanism
+    if (
+      client_options.has_authentication_configuration()
+      && client_options.get_authentication_configuration()
+           .has_plain_configuration()) {
+        auto& to_plain = client_options.get_authentication_configuration()
+                           .get_plain_configuration();
+        if (
+          to_plain.get_password().empty() && !to_plain.get_username().empty()) {
+            if (
+              from.connection.authn_config.has_value()
+              && std::holds_alternative<cluster_link::model::scram_credentials>(
+                from.connection.authn_config.value())) {
+                const auto& from_creds
+                  = std::get<cluster_link::model::scram_credentials>(
+                    from.connection.authn_config.value());
+                if (from_creds.mechanism == "PLAIN") {
+                    to_plain.set_password(ss::sstring{from_creds.password});
+                }
+            }
+        }
+    }
+
     // Now check to see if the TLS settings are using values and if cert is set.
     // If so, then the key was not updated so we will use the curent key
     if (

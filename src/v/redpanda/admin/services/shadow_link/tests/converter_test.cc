@@ -1253,6 +1253,113 @@ TEST(converter_test, invalid_scram_update) {
       serde::pb::rpc::invalid_argument_exception);
 }
 
+TEST(converter_test, update_plain_creds_preserves_password) {
+    auto password_last_updated = model::to_timestamp(
+      std::chrono::system_clock::now() - 1h);
+    cluster_link::model::metadata current_md;
+    current_md.name = cluster_link::model::name_t{"test-link"};
+    current_md.uuid = cluster_link::model::uuid_t{uuid_t::create()};
+    current_md.connection.bootstrap_servers = {
+      net::unresolved_address("localhost", 9092)};
+    current_md.connection.authn_config = cluster_link::model::scram_credentials{
+      .username = "plain-user",
+      .password = "old-password",
+      .mechanism = "PLAIN",
+      .password_last_updated = password_last_updated};
+    admin::set_client_id(current_md);
+
+    // Mirror rpk's editor flow: an empty mask (full replace) carrying the
+    // complete configuration with the plain password left empty.
+    proto::admin::plain_config plain_config;
+    plain_config.set_username("plain-user");
+
+    proto::admin::authentication_configuration authn_config;
+    authn_config.set_plain_configuration(std::move(plain_config));
+
+    proto::admin::shadow_link_client_options client_options;
+    client_options.set_bootstrap_servers({"localhost:9092"});
+    client_options.set_authentication_configuration(std::move(authn_config));
+
+    proto::admin::update_shadow_link_request req;
+    req.get_shadow_link().set_name("test-link");
+    req.get_shadow_link().get_configurations().set_client_options(
+      std::move(client_options));
+
+    auto update_cmd = admin::create_update_cluster_link_config_cmd(
+      std::move(req),
+      ss::make_lw_shared<cluster_link::model::metadata>({
+        .name = current_md.name,
+        .uuid = current_md.uuid,
+        .connection = current_md.connection,
+        .configuration = current_md.configuration.copy(),
+      }));
+
+    ASSERT_TRUE(update_cmd.connection.authn_config.has_value());
+    const auto& creds = std::get<cluster_link::model::scram_credentials>(
+      update_cmd.connection.authn_config.value());
+    EXPECT_EQ(creds.username, "plain-user");
+    EXPECT_EQ(creds.password, "old-password");
+    EXPECT_EQ(creds.mechanism, "PLAIN");
+    EXPECT_EQ(creds.password_last_updated, password_last_updated);
+}
+
+TEST(converter_test, update_with_empty_mask_replaces_repeated_fields) {
+    cluster_link::model::metadata current_md;
+    current_md.name = cluster_link::model::name_t{"test-link"};
+    current_md.uuid = cluster_link::model::uuid_t{uuid_t::create()};
+    current_md.connection.bootstrap_servers = {
+      net::unresolved_address("localhost", 9092)};
+    current_md.configuration.topic_metadata_mirroring_cfg.topic_name_filters
+      .emplace_back(
+        cluster_link::model::resource_name_filter_pattern{
+          .pattern_type = cluster_link::model::filter_pattern_type::literal,
+          .filter = cluster_link::model::filter_type::include,
+          .pattern = "drop-me-1"});
+    current_md.configuration.topic_metadata_mirroring_cfg.topic_name_filters
+      .emplace_back(
+        cluster_link::model::resource_name_filter_pattern{
+          .pattern_type = cluster_link::model::filter_pattern_type::literal,
+          .filter = cluster_link::model::filter_type::include,
+          .pattern = "drop-me-2"});
+    admin::set_client_id(current_md);
+
+    // An empty mask replaces the whole configuration, so the repeated filter
+    // list must shrink to the single submitted entry rather than be appended
+    // to.
+    proto::admin::topic_metadata_sync_options topic_metadata_sync_options;
+    chunked_vector<proto::admin::name_filter> filters;
+    filters.emplace_back(create_name_filter(
+      proto::admin::pattern_type::literal,
+      proto::admin::filter_type::include,
+      "keep-me"));
+    topic_metadata_sync_options.set_auto_create_shadow_topic_filters(
+      std::move(filters));
+
+    proto::admin::shadow_link_client_options client_options;
+    client_options.set_bootstrap_servers({"localhost:9092"});
+
+    proto::admin::update_shadow_link_request req;
+    req.get_shadow_link().set_name("test-link");
+    req.get_shadow_link().get_configurations().set_client_options(
+      std::move(client_options));
+    req.get_shadow_link().get_configurations().set_topic_metadata_sync_options(
+      std::move(topic_metadata_sync_options));
+
+    auto update_cmd = admin::create_update_cluster_link_config_cmd(
+      std::move(req),
+      ss::make_lw_shared<cluster_link::model::metadata>({
+        .name = current_md.name,
+        .uuid = current_md.uuid,
+        .connection = current_md.connection,
+        .configuration = current_md.configuration.copy(),
+      }));
+
+    const auto& filters_after
+      = update_cmd.link_config.topic_metadata_mirroring_cfg.topic_name_filters;
+    ASSERT_EQ(filters_after.size(), 1);
+    EXPECT_EQ(filters_after[0].pattern, "keep-me");
+}
+
 TEST(converter_test, test_update_tls_value) {
     cluster_link::model::metadata current_md;
     current_md.name = cluster_link::model::name_t{"test-link"};
