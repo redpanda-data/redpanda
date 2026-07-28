@@ -50,9 +50,15 @@ var commands = map[string]func() error{
 	"first_create_topics_and_link":   createTopicsAndLink,
 	"parallel_driver_produce":        produce,
 	"parallel_driver_consume_source": checkSourceRange,
-	"anytime_check_target":           checkTargetRange,
-	"anytime_check_link":             checkLink,
-	"eventually_check_replicated":    checkReplicated,
+	// The flip and move drivers churn state that replication must survive:
+	// storage-mode transitions propagated source -> shadow by the reconciler,
+	// and raft reconfiguration under the shadow fetchers on both clusters.
+	"parallel_driver_flip_storage_mode": flipStorageMode,
+	"parallel_driver_move_kafka_topic":  moveKafkaTopic,
+	"parallel_driver_move_metastore":    moveMetastore,
+	"anytime_check_target":              checkTargetRange,
+	"anytime_check_link":                checkLink,
+	"eventually_check_replicated":       checkReplicated,
 }
 
 // cmdArgs holds positional arguments after the command token.

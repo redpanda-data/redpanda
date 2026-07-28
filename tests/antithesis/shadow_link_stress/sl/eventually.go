@@ -207,6 +207,36 @@ func checkReplicated() error {
 	assert.Always(linkActive, "eventually: shadow link is ACTIVE after faults stop",
 		map[string]any{"state": st.State, "err": fmt.Sprint(stErr)})
 
+	// Storage-mode convergence: the flip driver alters the SOURCE's
+	// redpanda.storage.mode mid-run and the cluster_link reconciler owns
+	// propagating that to the shadow topic; once faults stop the modes must
+	// converge. Time-bounded like the link probe; assert the final answer.
+	// Mode never affects the byte comparison below — flips move data between
+	// storage tiers, never change log content.
+	for _, t := range flippableTopics() {
+		var srcMode, dstMode string
+		var srcErr, dstErr error
+		modeDeadline := time.Now().Add(2 * time.Minute)
+		for {
+			srcMode, srcErr = describeStorageMode(srcCluster, t.name)
+			dstMode, dstErr = describeStorageMode(dstCluster, t.name)
+			if (srcErr == nil && dstErr == nil && srcMode == dstMode) || time.Now().After(modeDeadline) {
+				break
+			}
+			fmt.Printf("waiting for %s storage mode to converge: source=%q(%v) target=%q(%v)\n",
+				t.name, srcMode, srcErr, dstMode, dstErr)
+			time.Sleep(5 * time.Second)
+		}
+		converged := srcErr == nil && dstErr == nil && srcMode == dstMode
+		details := map[string]any{
+			"topic": t.name, "source_mode": srcMode, "target_mode": dstMode,
+			"src_err": fmt.Sprint(srcErr), "dst_err": fmt.Sprint(dstErr),
+		}
+		assert.Always(converged, "eventually: shadow topic storage mode converges to the source", details)
+		fmt.Printf("eventually %s: storage mode source=%q target=%q converged=%v\n",
+			t.name, srcMode, dstMode, converged)
+	}
+
 	// Phase 2: per-partition byte comparison, with per-topic coverage
 	// properties (three literal names so tsv2 coverage cannot hide behind
 	// local passing, and vice versa).
