@@ -59,6 +59,19 @@ redpanda_cc_gtest(
 )
 
 redpanda_cc_gtest(
+    name = "secure_erase_test",
+    timeout = "short",
+    srcs = [
+        "secure_erase_tests.cc",
+    ],
+    deps = [
+        "//src/v/crypto",
+        "//src/v/test_utils:gtest",
+        "@googletest//:gtest",
+    ],
+)
+
+redpanda_cc_gtest(
     name = "signature_test",
     timeout = "short",
     srcs = [

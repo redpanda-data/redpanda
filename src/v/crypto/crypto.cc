@@ -16,6 +16,7 @@
 #include "crypto/types.h"
 #include "internal.h"
 
+#include <openssl/crypto.h>
 #include <openssl/evp.h>
 #include <openssl/provider.h>
 
@@ -156,4 +157,11 @@ void clear_evp_cache() {
 
 bool fips_enabled() { return 1 == OSSL_PROVIDER_available(nullptr, "fips"); }
 } // namespace internal
+
+void secure_erase(bytes_span<> buf) noexcept {
+    if (buf.empty()) {
+        return;
+    }
+    OPENSSL_cleanse(buf.data(), buf.size());
+}
 } // namespace crypto

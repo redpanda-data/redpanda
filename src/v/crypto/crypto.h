@@ -377,6 +377,16 @@ bytes generate_random(
   size_t len, use_private_rng private_rng = use_private_rng::no);
 
 /**
+ * Securely erases the contents of the buffer
+ *
+ * Zeroes the buffer in a way the optimizer cannot elide; use it to scrub
+ * key material from memory that is about to be released or reused.
+ *
+ * @param buf The buffer to erase
+ */
+void secure_erase(bytes_span<> buf) noexcept;
+
+/**
  * Secure RNG structure that can be used with stdlib RNG utilities
  *
  * @tparam UsePrivate Whether or not to use the private RNG

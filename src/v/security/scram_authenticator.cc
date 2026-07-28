@@ -11,10 +11,12 @@
 #include "security/scram_authenticator.h"
 
 #include "base/vlog.h"
+#include "config/configuration.h"
 #include "random/secure_generators.h"
 #include "security/credential_store.h"
 #include "security/errc.h"
 #include "security/logger.h"
+#include "security/scram_credential_cache.h"
 
 namespace security {
 
@@ -148,22 +150,69 @@ scram_authenticator<T>::authenticate(bytes auth_bytes) {
 template class scram_authenticator<scram_sha256>;
 template class scram_authenticator<scram_sha512>;
 
+namespace {
+
+// Matches a password against a stored credential by rederiving its stored
+// key. When a cache is given, the derivation is memoized; a null cache
+// derives every time (the plain, un-memoized path).
+template<typename scram>
+bool match_password(
+  scram_credential_cache* cache,
+  const scram_credential& cred,
+  const credential_password& password) {
+    constexpr auto mech = scram_mechanism_traits<scram>::algorithm;
+    if (cache != nullptr) {
+        auto cached = cache->get(
+          mech, password, cred.salt(), cred.iterations());
+        if (cached != nullptr) {
+            return cached->data == cred.stored_key();
+        }
+    }
+    auto stored_key = scram::derive_stored_key(
+      password(), cred.salt(), cred.iterations());
+    auto valid = stored_key == cred.stored_key();
+    if (cache != nullptr) {
+        cache->put(
+          mech,
+          password,
+          cred.salt(),
+          cred.iterations(),
+          std::move(stored_key));
+    }
+    return valid;
+}
+} // namespace
+
+namespace detail {
+
 std::optional<std::string_view> validate_scram_credential(
-  const scram_credential& cred, const credential_password& password) {
+  const scram_credential& cred,
+  const credential_password& password,
+  scram_credential_cache* cache) {
     std::optional<std::string_view> sasl_mechanism;
     if (
-      cred.stored_key().size() == security::scram_sha256::key_size
-      && security::scram_sha256::validate_password(
-        password, cred.stored_key(), cred.salt(), cred.iterations())) {
-        sasl_mechanism = security::scram_sha256_authenticator::name;
+      cred.stored_key().size() == scram_sha256::key_size
+      && match_password<scram_sha256>(cache, cred, password)) {
+        sasl_mechanism = scram_sha256_authenticator::name;
     } else if (
-      cred.stored_key().size() == security::scram_sha512::key_size
-      && security::scram_sha512::validate_password(
-        password, cred.stored_key(), cred.salt(), cred.iterations())) {
-        sasl_mechanism = security::scram_sha512_authenticator::name;
+      cred.stored_key().size() == scram_sha512::key_size
+      && match_password<scram_sha512>(cache, cred, password)) {
+        sasl_mechanism = scram_sha512_authenticator::name;
     }
 
     return sasl_mechanism;
+}
+} // namespace detail
+
+std::optional<std::string_view> validate_scram_credential(
+  const scram_credential& cred, const credential_password& password) {
+    // Constructed on first use, which forces the shard's configuration
+    // thread_local into existence first and therefore destroys the holder
+    // (and its config binding) before the configuration at thread exit.
+    static thread_local scram_credential_cache_holder holder{
+      config::shard_local_cfg().scram_credential_cache_enabled.bind(),
+      scram_credential_cache::default_capacity};
+    return detail::validate_scram_credential(cred, password, holder.get());
 }
 
 } // namespace security

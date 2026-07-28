@@ -111,6 +111,7 @@ redpanda_cc_library(
         "role.cc",
         "scram_algorithm.cc",
         "scram_authenticator.cc",
+        "scram_credential_cache.cc",
     ],
     hdrs = [
         "acl.h",
@@ -142,6 +143,7 @@ redpanda_cc_library(
         "scram_algorithm.h",
         "scram_authenticator.h",
         "scram_credential.h",
+        "scram_credential_cache.h",
         "types.h",
     ],
     implementation_deps = [
@@ -186,6 +188,7 @@ redpanda_cc_library(
         "//src/v/strings:utf8",
         "//src/v/utils:absl_sstring_hash",
         "//src/v/utils:base64",
+        "//src/v/utils:chunked_kv_cache",
         "//src/v/utils:log_hist",
         "//src/v/utils:named_type",
         "//src/v/utils:to_string",

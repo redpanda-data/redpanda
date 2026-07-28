@@ -34,6 +34,23 @@ redpanda_cc_btest(
     ],
 )
 
+redpanda_cc_btest(
+    name = "scram_credential_cache_test",
+    timeout = "short",
+    srcs = [
+        "scram_credential_cache_test.cc",
+    ],
+    deps = [
+        "//src/v/bytes",
+        "//src/v/config",
+        "//src/v/security",
+        "//src/v/test_utils:random_bytes",
+        "@boost//:test",
+        "@fmt",
+        "@seastar//:testing",
+    ],
+)
+
 redpanda_cc_gtest(
     name = "plain_authenticator_test",
     timeout = "short",
@@ -246,6 +263,20 @@ redpanda_cc_bench(
         "//src/v/random:generators",
         "//src/v/security",
         "@boost//:range",
+        "@seastar",
+        "@seastar//:benchmark",
+    ],
+)
+
+redpanda_cc_bench(
+    name = "scram_credential_bench_rpbench",
+    srcs = [
+        "scram_credential_bench.cc",
+    ],
+    deps = [
+        "//src/v/config",
+        "//src/v/security",
+        "//src/v/ssx:sformat",
         "@seastar",
         "@seastar//:benchmark",
     ],

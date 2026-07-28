@@ -719,6 +719,7 @@ struct configuration final : public config_store {
 
     // HTTP Authentication
     enterprise<property<std::vector<ss::sstring>>> http_authentication;
+    property<bool> scram_credential_cache_enabled;
 
     // MPX
     property<bool> enable_mpx_extensions;

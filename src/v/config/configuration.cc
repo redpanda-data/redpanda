@@ -4243,6 +4243,16 @@ configuration::configuration()
       },
       std::vector<ss::sstring>{"BASIC"},
       validate_http_authn_mechanisms)
+  , scram_credential_cache_enabled(
+      *this,
+      "scram_credential_cache_enabled",
+      "Whether to cache SCRAM password validation results for authentication "
+      "paths that receive a plaintext password on every request (HTTP Basic "
+      "authentication and SASL/PLAIN). When enabled, repeat authentications "
+      "skip the salted password derivation, which costs thousands of HMAC "
+      "operations per validation.",
+      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
+      false)
   , enable_mpx_extensions(
       *this,
       "enable_mpx_extensions",
