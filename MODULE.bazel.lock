@@ -355,7 +355,7 @@
   "moduleExtensions": {
     "//bazel:extensions.bzl%non_module_dependencies": {
       "general": {
-        "bzlTransitiveDigest": "FiOjSQzJYv0eX0CT1OccUyAtMTAQxAX+KGU+yNIBxBI=",
+        "bzlTransitiveDigest": "xN1/c107YRjGtpPY+2BDUUt3v9YaECG+G9ZqjANMPPM=",
         "usagesDigest": "FEiDyZe9eAU6yEqnarZf0XMEUk+prUyYClvq1RU1J98=",
         "recordedInputs": [
           "REPO_MAPPING:,bazel_tools bazel_tools",
@@ -381,7 +381,8 @@
               "url": "https://github.com/redpanda-data/avro/archive/6821e2b454401308d4e3819c0569d0fe7f2a66fa.tar.gz",
               "patches": [
                 "@@//bazel/thirdparty:avro-snappy-includes.patch",
-                "@@//bazel/thirdparty:avro-fmt-const.patch"
+                "@@//bazel/thirdparty:avro-fmt-const.patch",
+                "@@//bazel/thirdparty:avro-libcxx-includes.patch"
               ],
               "patch_args": [
                 "-p1"
