@@ -257,7 +257,7 @@ ss::future<> manager<ClockType>::stop() {
     }
     _flusher.reset(nullptr);
     _probe.reset(nullptr);
-    std::exchange(_logger_probes, probe_map_t{});
+    _logger_probes = probe_map_t{};
 }
 
 template<typename ClockType>
