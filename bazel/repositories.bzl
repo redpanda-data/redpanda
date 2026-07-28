@@ -160,13 +160,13 @@ def data_dependency():
         url = "https://github.com/redpanda-data/CRoaring/archive/c433d1c70c10fb2e40f049e019e2abbcafa6e69d.tar.gz",
     )
 
-    # branch: v26.2.x
+    # branch: stephan/263
     http_archive(
         name = "seastar",
         build_file = "//bazel/thirdparty:seastar.BUILD",
-        sha256 = "120bb1711ea5c56124b83556fec3dc85d8edd9b3c0990419b7c8900659a46e5f",
-        strip_prefix = "seastar-cde680a9c6c3ff290a46f93a7ccea570ee8ccd87",
-        url = "https://github.com/redpanda-data/seastar/archive/cde680a9c6c3ff290a46f93a7ccea570ee8ccd87.tar.gz",
+        sha256 = "a3b557df841e25b3ce0f7ef228a86bd459a572861f17f77811658f5b30b9f95a",
+        strip_prefix = "seastar-da889df55fd3eaf12e70d7099c34f2186890ea15",
+        url = "https://github.com/redpanda-data/seastar/archive/da889df55fd3eaf12e70d7099c34f2186890ea15.tar.gz",
     )
 
     http_archive(
