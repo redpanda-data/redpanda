@@ -306,6 +306,7 @@ cc_library(
         "src/rpc/rpc.cc",
         "src/util/alloc_failure_injector.cc",
         "src/util/backtrace.cc",
+        "src/util/build_id.cc",
         "src/util/conversions.cc",
         "src/util/exceptions.cc",
         "src/util/file.cc",
@@ -372,9 +373,11 @@ cc_library(
         "include/seastar/core/internal/io_intent.hh",
         "include/seastar/core/internal/io_request.hh",
         "include/seastar/core/internal/io_sink.hh",
+        "include/seastar/core/internal/io_trace.hh",
         "include/seastar/core/internal/linux-aio.hh",
         "include/seastar/core/internal/poll.hh",
         "include/seastar/core/internal/pollable_fd.hh",
+        "include/seastar/core/internal/reactor_trace.hh",
         "include/seastar/core/internal/run_in_background.hh",
         "include/seastar/core/internal/signal_mutex.hh",
         "include/seastar/core/internal/stall_detector.hh",
@@ -482,7 +485,6 @@ cc_library(
         "include/seastar/http/response_parser.hh",
         "include/seastar/http/retry_strategy.hh",
         "include/seastar/http/routes.hh",
-        "include/seastar/http/short_streams.hh",
         "include/seastar/http/transformers.hh",
         "include/seastar/http/types.hh",
         "include/seastar/http/url.hh",
@@ -534,6 +536,7 @@ cc_library(
         "include/seastar/util/indirect.hh",
         "include/seastar/util/integrated-length.hh",
         "include/seastar/util/internal/array_map.hh",
+        "include/seastar/util/internal/build_id.hh",
         "include/seastar/util/internal/iovec_utils.hh",
         "include/seastar/util/internal/magic.hh",
         "include/seastar/util/iostream.hh",
@@ -598,6 +601,9 @@ cc_library(
         ":use_system_allocator": ["SEASTAR_DEFAULT_ALLOCATOR"],
         "//conditions:default": [],
     }) + select({
+        ":use_io_uring": ["SEASTAR_HAVE_URING"],
+        "//conditions:default": [],
+    }) + select({
         ":with_debug": [
             "SEASTAR_DEBUG",
             "SEASTAR_DEBUG_PROMISE",
@@ -637,9 +643,6 @@ cc_library(
         "//conditions:default": [],
     }) + select({
         ":use_hwloc": ["SEASTAR_HAVE_HWLOC"],
-        "//conditions:default": [],
-    }) + select({
-        ":use_io_uring": ["SEASTAR_HAVE_URING"],
         "//conditions:default": [],
     }) + select({
         # this only needs to be applied to memory.cc and reactor.cc. could be
