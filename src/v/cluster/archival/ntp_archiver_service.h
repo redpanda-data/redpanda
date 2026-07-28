@@ -724,8 +724,16 @@ private:
 
     /// Return true if it is permitted to start new uploads: this
     /// requires can_update_archival_metadata, plus that we are
-    /// not paused.
+    /// not paused, plus that the partition is not a dormant cut-over
+    /// cloud topic.
     bool may_begin_uploads() const;
+
+    /// Return true if this is a cloud-topic partition that has cut over (or has
+    /// no tiered data to migrate): its archival STM manifest is empty and it is
+    /// not migrating. Such a partition must not archive -- re-uploading would
+    /// re-trigger the migration. The archiver is normally torn down in this
+    /// state; the upload loop also idles on it to avoid spinning until then.
+    bool is_cloud_topic_dormant() const;
 
     /// Returns true if retention should remove data from STM
     /// region of the log and false if it should work on archive

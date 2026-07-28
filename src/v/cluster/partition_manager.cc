@@ -90,6 +90,12 @@ partition_manager::partition_manager(
                 // the async write.
                 ssx::spawn_with_gate(
                   _gate, [p] { return p->maybe_sync_partition_mode(); });
+                // Finish a TS->CT cutover interrupted after partition_mode
+                // advanced to cloud but before the archival manifest was
+                // emptied (idempotent; no-op unless that crash window is
+                // observed).
+                ssx::spawn_with_gate(
+                  _gate, [p] { return p->maybe_finish_cutover(); });
             }
         });
     _shutdown_watchdog.set_callback(

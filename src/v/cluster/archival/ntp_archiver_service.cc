@@ -24,6 +24,8 @@
 #include "cloud_storage/tx_range_manifest.h"
 #include "cloud_storage/types.h"
 #include "cloud_storage_clients/types.h"
+#include "cloud_topics/level_zero/stm/ctp_stm.h"
+#include "cloud_topics/level_zero/stm/ctp_stm_api.h"
 #include "cluster/archival/adjacent_segment_merger.h"
 #include "cluster/archival/archival_metadata_stm.h"
 #include "cluster/archival/archival_policy.h"
@@ -621,7 +623,12 @@ ss::future<> ntp_archiver::upload_until_abort() {
     }
 
     while (!_as.abort_requested()) {
-        if (!_parent.is_leader() || _paused) {
+        // Idle (rather than busy-loop on the may_begin_uploads() check below)
+        // while there is nothing to upload: not leader, paused, or a cut-over
+        // cloud topic whose archiver is dormant. The archiver of a cut-over
+        // partition is normally torn down (its manifest is empty), but until
+        // that happens it must not spin.
+        if (!_parent.is_leader() || _paused || is_cloud_topic_dormant()) {
             bool shutdown = false;
             try {
                 vlog(
@@ -1339,8 +1346,32 @@ bool ntp_archiver::can_update_archival_metadata() const {
            && _parent.term() == _start_term;
 }
 
+bool ntp_archiver::is_cloud_topic_dormant() const {
+    // A cloud-mode partition archives to tiered storage ONLY while it still
+    // holds archived data (mid tiered->cloud migration): it is served as tiered
+    // storage and the mirror imports the manifest the archiver builds. Once it
+    // has cut over -- partition_mode advanced to cloud and the archival STM
+    // emptied -- the archiver must go dormant. Otherwise it would re-upload the
+    // (not-yet-trimmed) raft log, re-populating the manifest, which re-triggers
+    // the migration: the partition would oscillate instead of settling as a
+    // native cloud topic, and post-cutover writes would never reach the
+    // cloud-topic (L0) path. cloud_topic_enabled() keys on partition_mode,
+    // which stays tiered throughout migration, so it becomes true only at
+    // cutover; holds_archived_data() then covers the brief window where
+    // partition_mode has advanced but reset_metadata has not yet committed.
+    //
+    // "No tiered data" must include the spillover archive, not just the live
+    // manifest (spillover/retention can empty the live manifest while the
+    // archive still holds data). Cutover (reset_metadata) clears both, so a
+    // cut-over partition is correctly dormant.
+    auto stm = _parent.archival_meta_stm();
+    return stm != nullptr && _parent.get_ntp_config().cloud_topic_enabled()
+           && !stm->holds_archived_data();
+}
+
 bool ntp_archiver::may_begin_uploads() const {
-    return can_update_archival_metadata() && !_paused;
+    return can_update_archival_metadata() && !_paused
+           && !is_cloud_topic_dormant();
 }
 
 ss::future<> ntp_archiver::stop() {
@@ -2820,72 +2851,135 @@ ss::future<> ntp_archiver::run_migration_mirror() {
         co_return;
     }
     const auto& m = manifest();
-    if (m.size() == 0) {
-        co_return;
-    }
+    const bool has_archived = stm->holds_archived_data();
 
-    // Current L1 coverage -- the mirror's durable progress cursor. Tiered
-    // storage retention and GC are suspended while migrating, so the log
-    // start cannot move: this only ever advances.
-    auto offs = co_await mm->get_offsets(_ntp);
+    // Import the archived data (live manifest + spillover) into L1, oldest
+    // first. When nothing is archived (no live segments AND no spillover --
+    // m.size() alone would miss a fully spilled manifest) there is nothing to
+    // import; fall through to convergence, which is then trivially satisfied.
+    if (has_archived) {
+        // Current L1 coverage -- the mirror's durable progress cursor. Tiered
+        // storage retention and GC are suspended while migrating, so the log
+        // start cannot move: this only ever advances.
+        auto offs = co_await mm->get_offsets(_ntp);
 
-    // The true start of the log, including any data offloaded to spillover
-    // (archive) sub-manifests. NB: this is not m.begin() once the manifest has
-    // spilled -- m.begin() is then the spillover boundary, not the log start.
-    const auto log_start = m.full_log_start_kafka_offset();
+        // The true start of the log, including any data offloaded to spillover
+        // (archive) sub-manifests. NB: this is not m.begin() once the manifest
+        // has spilled -- m.begin() is then the spillover boundary, not the log
+        // start.
+        const auto log_start = m.full_log_start_kafka_offset();
 
-    // Forward-append the tail: segments at or above the current L1 next offset
-    // (or the true log start if L1 is still empty). Iterate the whole log via
-    // the manifest view -- the spillover (archive) sub-manifests as well as the
-    // live STM manifest -- so the spilled history is imported, not just the
-    // live manifest tail.
-    const auto append_from = offs.has_value()
-                               ? offs->next_offset
-                               : log_start.value_or(kafka::offset{});
-    auto cursor = co_await _manifest_view->get_cursor(
-      m.full_log_start_offset().value_or(
-        m.get_start_offset().value_or(model::offset{})));
-    if (cursor.has_error()) {
-        vlog(
-          _rtclog.warn,
-          "migration mirror: failed to open manifest cursor: {}",
-          cursor.error());
-        co_return;
-    }
-    chunked_vector<migration_metastore::imported_segment> to_append;
-    co_await cloud_storage::for_each_manifest(
-      std::move(cursor.value()), [&, this](auto submanifest) {
-          const auto& sm = *submanifest;
-          for (const auto& meta : sm) {
-              if (meta.base_kafka_offset() < append_from) {
-                  continue;
-              }
-              // Resolve the per-segment imported descriptor (offset bounds, the
-              // delta-base sentinel guard, and the .tx-presence state) from
-              // segment_meta; nullopt means the segment has no
-              // Kafka-addressable records and is skipped. See
-              // make_imported_segment.
-              auto seg = make_imported_segment(
-                meta,
-                sm.generate_segment_path(meta, remote_path_provider())()
-                  .native());
-              if (seg.has_value()) {
-                  to_append.push_back(std::move(*seg));
-              }
-          }
-          return ss::stop_iteration::no;
-      });
-    if (!to_append.empty()) {
-        const auto append_count = to_append.size();
-        auto ar = co_await mm->append_imported(_ntp, std::move(to_append));
-        if (ar != migration_metastore::errc::ok) {
+        // Forward-append the tail: segments at or above the current L1 next
+        // offset (or the true log start if L1 is still empty). Iterate the
+        // whole log via the manifest view -- the spillover (archive)
+        // sub-manifests as well as the live STM manifest -- so the spilled
+        // history is imported, not just the live manifest tail.
+        const auto append_from = offs.has_value()
+                                   ? offs->next_offset
+                                   : log_start.value_or(kafka::offset{});
+        auto cursor = co_await _manifest_view->get_cursor(
+          m.full_log_start_offset().value_or(
+            m.get_start_offset().value_or(model::offset{})));
+        if (cursor.has_error()) {
             vlog(
               _rtclog.warn,
-              "migration mirror: append of {} imported segment(s) failed",
-              append_count);
-            // Don't claim convergence on a failed append.
+              "migration mirror: failed to open manifest cursor: {}",
+              cursor.error());
             co_return;
         }
+        chunked_vector<migration_metastore::imported_segment> to_append;
+        co_await cloud_storage::for_each_manifest(
+          std::move(cursor.value()), [&, this](auto submanifest) {
+              const auto& sm = *submanifest;
+              for (const auto& meta : sm) {
+                  if (meta.base_kafka_offset() < append_from) {
+                      continue;
+                  }
+                  // Resolve the per-segment imported descriptor (offset bounds,
+                  // the delta-base sentinel guard, and the .tx-presence state)
+                  // from segment_meta; nullopt means the segment has no
+                  // Kafka-addressable records and is skipped. See
+                  // make_imported_segment.
+                  auto seg = make_imported_segment(
+                    meta,
+                    sm.generate_segment_path(meta, remote_path_provider())()
+                      .native());
+                  if (seg.has_value()) {
+                      to_append.push_back(std::move(*seg));
+                  }
+              }
+              return ss::stop_iteration::no;
+          });
+        if (!to_append.empty()) {
+            const auto append_count = to_append.size();
+            auto ar = co_await mm->append_imported(_ntp, std::move(to_append));
+            if (ar != migration_metastore::errc::ok) {
+                vlog(
+                  _rtclog.warn,
+                  "migration mirror: append of {} imported segment(s) failed",
+                  append_count);
+                // Don't claim convergence on a failed append.
+                co_return;
+            }
+        }
+    }
+
+    // Convergence: cut over as soon as the L1 mirror covers the current
+    // manifest tail -- or immediately when there was nothing to mirror (empty
+    // manifest: no boundary to seed, so the ctp_stm stays at "nothing
+    // reconciled" and the reconciler materializes the raft log from the start
+    // after cutover). This does not require the log to have quiesced -- a
+    // cutover while the producer is still writing is safe, so migration
+    // completes under concurrent writes.
+    //
+    // Data above the boundary is not stranded. It is still in the raft log
+    // (ctp_stm clamps the local trim floor at the boundary), and after cutover
+    // the reconciler materializes it into L1 from the raft log -- the same path
+    // a native cloud topic uses for its not-yet-reconciled tail.
+    //
+    // The boundary-less case is weaker, and currently unprotected: with nothing
+    // archived there is no boundary to seed, so the ctp_stm holds no trim floor
+    // (an STM with no applied CT data reports offset::max() as collectible) and
+    // the archival STM has released its own floor by then. Nothing pins the
+    // local log -- which here holds the only copy of the data -- until the
+    // reconciler commits its first reconciled offset.
+    //
+    // The one hazard is a segment upload re-populating the just-emptied
+    // manifest (which would wake the dormant archiver). That cannot happen
+    // here: housekeeping (which runs this and triggers cutover_to_cloud_topic)
+    // is invoked from the upload loop *after* upload_next_candidates has
+    // finished committing its add_segment batches, so there is no in-flight
+    // upload racing the cutover; and once partition_mode advances to cloud and
+    // the manifest is emptied, may_begin_uploads is false
+    // (is_cloud_topic_dormant), so the loop issues no further uploads. This is
+    // the archival STM's normal "the manifest is the committed STM state; a
+    // leader re-derives uploads from it" contract
+    // -- an upload that does not commit its manifest entry is just an orphan
+    // object.
+    std::optional<kafka::offset> boundary;
+    std::optional<model::offset> log_boundary;
+    bool converged = !has_archived;
+    if (has_archived) {
+        auto after = co_await mm->get_offsets(_ntp);
+        auto tail = m.get_last_kafka_offset();
+        if (
+          after.has_value() && tail.has_value()
+          && after->next_offset == kafka::next_offset(*tail)) {
+            converged = true;
+            boundary = *tail;
+            log_boundary = m.get_last_offset();
+        }
+    }
+    if (
+      converged
+      && !config::shard_local_cfg()
+            .cloud_topics_disable_migration_cutover_for_tests()) {
+        // Cutover coordinates three STMs (ctp_stm, partition_properties_stm,
+        // archival_metadata_stm) plus the L1 metastore, so it lives on the
+        // partition, which owns them all. The archiver only detects convergence
+        // (the L1 mirror has covered the manifest tail, or there was nothing to
+        // mirror) and triggers it.
+        co_await _parent.cutover_to_cloud_topic(boundary, log_boundary);
     }
 }
 

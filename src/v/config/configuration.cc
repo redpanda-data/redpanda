@@ -2532,6 +2532,14 @@ configuration::configuration()
       "property exists to simplify testing and shouldn't be set in production.",
       {.needs_restart = needs_restart::yes, .visibility = visibility::tunable},
       false)
+  , cloud_topics_disable_migration_cutover_for_tests(
+      *this,
+      "cloud_topics_disable_migration_cutover_for_tests",
+      "Keeps a tiered->cloud migration mirroring without ever cutting over, so "
+      "a partition can be held in the migrating phase. This property exists to "
+      "simplify testing and shouldn't be set in production.",
+      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
+      false)
   , enable_cluster_metadata_upload_loop(
       *this,
       "enable_cluster_metadata_upload_loop",

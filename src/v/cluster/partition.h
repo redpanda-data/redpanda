@@ -185,6 +185,24 @@ public:
     // on topic-config changes (update_configuration).
     ss::future<> maybe_sync_partition_mode();
 
+    /// Cut a converged migrating partition over to a native cloud topic.
+    /// Coordinates the three STMs in order: seed the ctp_stm reconciliation
+    /// baseline at boundary B, advance partition_mode tiered->cloud (the
+    /// routing flip), then empty the archival STM + mark the offline phase
+    /// complete. Triggered by the archiver's mirror at convergence. A nullopt
+    /// boundary means there was nothing to mirror (no archived data): the
+    /// ctp_stm is left at its default (nothing reconciled) so the reconciler
+    /// materializes the whole raft log into L1 from the start.
+    ss::future<> cutover_to_cloud_topic(
+      std::optional<kafka::offset> boundary,
+      std::optional<model::offset> log_boundary);
+
+    /// On becoming leader, finish a cutover interrupted after partition_mode
+    /// advanced to cloud but before the archival manifest was emptied (a crash
+    /// window that would otherwise orphan the manifest). No-op unless
+    /// partition_mode==cloud and the archival STM still holds data.
+    ss::future<> maybe_finish_cutover();
+
     bool has_followers() const;
     void block_new_leadership() const;
     void unblock_new_leadership() const;
@@ -461,6 +479,23 @@ private:
     // the log's ntp_config, so ntp_config::partition_mode() reflects it. Called
     // at start and whenever the STM signals a change.
     void update_partition_mode();
+
+    /// Hand the Kafka start-offset override (DeleteRecords / prefix truncation)
+    /// to the ctp_stm, which is the only carrier of the trim floor once the
+    /// archival manifest has been emptied -- the cloud-topic read path consults
+    /// no other. Monotonic and idempotent, so it is deliberately invoked twice
+    /// per cutover (before the routing flip and again in finish_cutover_tail).
+    /// Returns false if a floor exists but could not be handed over, in which
+    /// case the caller must not proceed to empty the manifest.
+    ss::future<bool>
+    hand_over_trim_floor(ss::lowres_clock::time_point deadline);
+
+    /// The post-routing-flip tail of a TS->CT cutover, shared by
+    /// cutover_to_cloud_topic and maybe_finish_cutover: re-hand-over the trim
+    /// floor, empty the archival STM manifest (releasing the local-trim clamp
+    /// and making the archiver dormant) and mark the offline migration phase
+    /// complete. Idempotent.
+    ss::future<> finish_cutover_tail(ss::lowres_clock::time_point deadline);
 
     consensus_ptr _raft; // never null
     ss::shared_ptr<cluster::log_eviction_stm> _log_eviction_stm;

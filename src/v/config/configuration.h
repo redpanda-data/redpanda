@@ -449,6 +449,7 @@ struct configuration final : public config_store {
     property<bool> disable_cluster_recovery_loop_for_tests;
     property<bool> cloud_topics_disable_metastore_flush_loop_for_tests;
     property<bool> cloud_topics_disable_level_zero_gc_for_tests;
+    property<bool> cloud_topics_disable_migration_cutover_for_tests;
     property<bool> enable_cluster_metadata_upload_loop;
     property<std::optional<ss::sstring>> cloud_storage_cluster_name;
     property<size_t> cloud_storage_max_segments_pending_deletion_per_partition;
