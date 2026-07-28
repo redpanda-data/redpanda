@@ -727,6 +727,7 @@ redpanda_cc_gtest(
         "//src/v/storage/tests:storage_test_fixture",
         "//src/v/test_utils:gtest",
         "@boost//:range",
+        "@fmt",
         "@googletest//:gtest",
         "@seastar",
     ],

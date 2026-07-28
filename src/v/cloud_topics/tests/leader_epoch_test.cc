@@ -14,6 +14,9 @@
 #include "test_utils/async.h"
 #include "test_utils/scoped_config.h"
 
+#include <seastar/util/log.hh>
+
+#include <fmt/format.h>
 #include <gtest/gtest.h>
 
 using tests::kv_t;
@@ -269,9 +272,11 @@ TEST_F(LeaderEpochTest, TestGetLeaderEpochWhileReconciling) {
     gate_fut.get();
 
     ASSERT_FALSE(producer_error.has_value())
-      << "Producer fiber failed with exception " << *producer_error;
+      << "Producer fiber failed with exception "
+      << fmt::format("{}", *producer_error);
     ASSERT_FALSE(validator_error.has_value())
-      << "Validator fiber failed with exception " << *validator_error;
+      << "Validator fiber failed with exception "
+      << fmt::format("{}", *validator_error);
 
     // One more validation.
     auto p = wait_for_leadership().get();

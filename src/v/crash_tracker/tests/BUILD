@@ -60,6 +60,7 @@ redpanda_cc_binary(
         "//src/v/model",
         "//src/v/utils:file_io",
         "@boost//:program_options",
+        "@fmt",
         "@seastar",
     ],
 )
