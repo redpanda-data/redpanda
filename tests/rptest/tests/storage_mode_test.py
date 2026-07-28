@@ -711,13 +711,19 @@ class TieredCloudUpgradeTest(StorageModeTestBase):
         )
         self.installer = self.redpanda._installer
 
+    # The release that introduced the tiered_v2 variant and its
+    # tiered_cloud_topics feature flag.
+    TIERED_CLOUD_MIN_RELEASE = (26, 2, 1)
+
     def setUp(self):
         # Start the whole cluster on the latest release of the prior feature
-        # line (26.1.x), which supports the cloud storage mode but predates
-        # the tiered_v2 variant and its feature flag.
+        # line, which supports the cloud storage mode (v26.1+) but, before
+        # TIERED_CLOUD_MIN_RELEASE, predates the tiered_v2 variant and its
+        # feature flag.
         old_version = self.installer.highest_from_prior_feature_version(
             RedpandaInstaller.HEAD
         )
+        self.old_has_tiered_cloud = old_version >= self.TIERED_CLOUD_MIN_RELEASE
         self.installer.install(self.redpanda.nodes, old_version)
         super(TieredCloudUpgradeTest, self).setUp()
 
@@ -758,19 +764,25 @@ class TieredCloudUpgradeTest(StorageModeTestBase):
         _ = wait_for_num_versions(self.redpanda, 2)
 
         # The upgraded node knows the feature but must not report it active
-        # while old nodes are still in the cluster.
+        # while old nodes are still in the cluster, unless the prior release
+        # already ships it, in which case it activated before the upgrade
+        # began and must stay active.
         state = self.redpanda.get_feature_state("tiered_cloud_topics", node=first)
-        assert state == "unavailable", (
-            f"tiered_cloud_topics should be unavailable in a mixed cluster, got {state}"
+        expected_state = "active" if self.old_has_tiered_cloud else "unavailable"
+        assert state == expected_state, (
+            f"tiered_cloud_topics should be {expected_state} in this mixed "
+            f"cluster, got {state}"
         )
 
-        # CreateTopics is routed to the controller broker. A HEAD controller
-        # rejects the request via the feature gate. A v26.1 controller does
-        # not know the redpanda.storage.mode.impl property: unsupported
-        # topic configs are ignored on create, so the request silently
-        # degrades to a classic tiered topic. Either way the gating
-        # invariant holds: no tiered_v2 topic can exist in a partially
-        # upgraded cluster.
+        # CreateTopics is routed to the controller broker. While the feature
+        # is unavailable, a HEAD controller rejects the request via the
+        # feature gate, and a pre-feature controller does not know the
+        # redpanda.storage.mode.impl property: unsupported topic configs
+        # are ignored on create, so the request silently degrades to a
+        # classic tiered topic. Either way the gating invariant holds: no
+        # tiered_v2 topic can exist in a partially upgraded cluster. Once the
+        # feature is active, the create must instead succeed as a genuine
+        # tiered_v2 topic no matter which broker is the controller.
         created_in_mixed = True
         try:
             self._create_topic(
@@ -783,16 +795,25 @@ class TieredCloudUpgradeTest(StorageModeTestBase):
         except RpkException as e:
             created_in_mixed = False
             self.logger.info(f"tiered_v2 creation rejected in mixed cluster: {e}")
+            assert not self.old_has_tiered_cloud, (
+                "tiered_v2 creation must succeed once the feature is active"
+            )
         if created_in_mixed:
             version = self._get_topic_storage_mode_impl(rpk, "topic-tiered-v2-mixed")
-            assert version != TopicSpec.STORAGE_MODE_IMPL_TIERED_V2, (
-                "a tiered_v2 topic must not be creatable in a partially "
-                "upgraded cluster"
-            )
+            if self.old_has_tiered_cloud:
+                assert version == TopicSpec.STORAGE_MODE_IMPL_TIERED_V2, (
+                    f"expected a genuine tiered_v2 topic, got {version}"
+                )
+            else:
+                assert version != TopicSpec.STORAGE_MODE_IMPL_TIERED_V2, (
+                    "a tiered_v2 topic must not be creatable in a partially "
+                    "upgraded cluster"
+                )
 
-        # Conversion is expressed as an alter to 'tiered'; both binaries
-        # resolve it to a variant the cloud -> X transition rules forbid
-        # (classic tiered) while the cluster is not fully upgraded.
+        # Conversion is expressed as an alter to 'tiered'; with the default
+        # tiered impl (tiered_v1) both binaries resolve it to classic tiered,
+        # which the cloud -> X transition rules forbid regardless of upgrade
+        # state.
         self._expect_rejected(
             "cloud to tiered_v2 conversion",
             lambda: rpk.alter_topic_config(
@@ -822,15 +843,21 @@ class TieredCloudUpgradeTest(StorageModeTestBase):
             f"clusters should default to tiered_v1, got {default_impl}"
         )
 
-        # If the mixed-cluster create went through a v26.1 controller, the
-        # resulting topic must have degraded to classic tiered - never the
-        # v2 variant. Now that every broker runs HEAD, the version property
+        # If the mixed-cluster create went through a pre-feature controller,
+        # the resulting topic must have degraded to classic tiered - never the
+        # v2 variant (with the feature active it was genuine tiered_v2 all
+        # along). Now that every broker runs HEAD, the version property
         # is authoritative.
         if created_in_mixed:
+            expected_impl = (
+                TopicSpec.STORAGE_MODE_IMPL_TIERED_V2
+                if self.old_has_tiered_cloud
+                else TopicSpec.STORAGE_MODE_IMPL_TIERED_V1
+            )
             assert (
                 self._get_topic_storage_mode_impl(rpk, "topic-tiered-v2-mixed")
-                == TopicSpec.STORAGE_MODE_IMPL_TIERED_V1
-            ), "the mixed-cluster create must not have produced a tiered_v2 topic"
+                == expected_impl
+            ), f"the mixed-cluster create must have produced {expected_impl}"
 
         # Creation with an explicit version works under any default.
         self._create_topic(
