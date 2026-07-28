@@ -249,6 +249,94 @@ TEST(http_source_reader, list_subjects_filters_to_requested_context) {
     EXPECT_THAT(*res, ElementsAre(pps::context_subject::unqualified("s1")));
 }
 
+// The default context omits the `subject` query param, so a source without
+// context support is still served. One id can back several subjects.
+TEST(http_source_reader, list_schema_id_subject_versions_default_context) {
+    auto reader = reader_over([](mock_client& m) {
+        EXPECT_CALL(m, request_and_collect_response(_, _, _))
+          .WillOnce([](
+                      bh::request_header<>&& r,
+                      std::optional<iobuf>,
+                      ss::lowres_clock::duration) {
+              EXPECT_EQ(r.target(), "/schemas/ids/138/versions");
+              return ss::make_ready_future<http::downloaded_response>(
+                http::downloaded_response{
+                  .status = bh::status::ok,
+                  .body = iobuf::from(
+                    R"([{"subject":"orders","version":4},)"
+                    R"({"subject":"orders-copy","version":1}])")});
+          });
+    });
+    ss::abort_source as;
+    auto res = reader
+                 .list_schema_id_subject_versions(
+                   pps::schema_id{138}, pps::default_context, as)
+                 .get();
+    reader.stop().get();
+
+    EXPECT_THAT(
+      res,
+      Optional(ElementsAre(
+        pps::subject_version(
+          pps::context_subject::unqualified("orders"), pps::schema_version{4}),
+        pps::subject_version(
+          pps::context_subject::unqualified("orders-copy"),
+          pps::schema_version{1}))));
+}
+
+// A fully soft-deleted id is an empty success, not schema_id_not_found: the
+// source 404s only when the schema does not resolve, and filters soft-deleted
+// pairs out of the listing separately. The id is still allocated, so it is no
+// evidence the id space is exhausted.
+TEST(http_source_reader, list_schema_id_subject_versions_allows_empty_hit) {
+    auto reader = reader_over([](mock_client& m) {
+        EXPECT_CALL(m, request_and_collect_response(_, _, _))
+          .WillOnce(respond(bh::status::ok, "[]"));
+    });
+    ss::abort_source as;
+    auto res = reader
+                 .list_schema_id_subject_versions(
+                   pps::schema_id{138}, pps::default_context, as)
+                 .get();
+    reader.stop().get();
+
+    EXPECT_THAT(res, Optional(IsEmpty()));
+}
+
+// A non-default context is selected with the bare-context form (empty subject,
+// wire ":.dev:"); naming a subject would resolve only if that subject carried
+// the id. Subjects come back qualified.
+TEST(http_source_reader, list_schema_id_subject_versions_targets_context) {
+    auto reader = reader_over([](mock_client& m) {
+        EXPECT_CALL(m, request_and_collect_response(_, _, _))
+          .WillOnce([](
+                      bh::request_header<>&& r,
+                      std::optional<iobuf>,
+                      ss::lowres_clock::duration) {
+              EXPECT_EQ(
+                r.target(), "/schemas/ids/7/versions?subject=%3A.dev%3A");
+              return ss::make_ready_future<http::downloaded_response>(
+                http::downloaded_response{
+                  .status = bh::status::ok,
+                  .body = iobuf::from(
+                    R"([{"subject":":.dev:orders","version":2}])")});
+          });
+    });
+    ss::abort_source as;
+    auto res = reader
+                 .list_schema_id_subject_versions(
+                   pps::schema_id{7}, pps::context{".dev"}, as)
+                 .get();
+    reader.stop().get();
+
+    EXPECT_THAT(
+      res,
+      Optional(ElementsAre(
+        pps::subject_version(
+          pps::context_subject{pps::context{".dev"}, pps::subject{"orders"}},
+          pps::schema_version{2}))));
+}
+
 TEST(http_source_reader, read_subject_version_returns_schema) {
     auto reader = reader_over([](mock_client& m) {
         EXPECT_CALL(m, request_and_collect_response(_, _, _))
@@ -410,6 +498,43 @@ TEST(http_source_reader, not_found_maps_to_subject_not_found) {
 
     ASSERT_FALSE(res.has_value());
     EXPECT_EQ(res.error().kind, srs::source_error_kind::subject_not_found);
+}
+
+// A miss gets its own kind rather than the operation_failed catch-all, since
+// the probe hits unallocated ids on every tick. The kind is narrow on
+// purpose: only 404 *with* error_code 40403, so nothing else can read as
+// "nothing here" and stall discovery.
+TEST(http_source_reader, schema_id_miss_is_distinct_from_failure) {
+    struct tc {
+        bh::status status;
+        std::string_view body;
+        srs::source_error_kind expected;
+    };
+    for (auto [status, body, expected] : {
+           tc{
+             bh::status::not_found,
+             R"({"error_code": 40403})",
+             srs::source_error_kind::schema_id_not_found},
+           // Not a 404, so it is about the request rather than the id.
+           tc{
+             bh::status::unprocessable_entity,
+             R"({"error_code": 42201})",
+             srs::source_error_kind::operation_failed},
+         }) {
+        auto reader = reader_over([status, body](mock_client& m) {
+            EXPECT_CALL(m, request_and_collect_response(_, _, _))
+              .WillOnce(respond(status, body));
+        });
+        ss::abort_source as;
+        auto res = reader
+                     .list_schema_id_subject_versions(
+                       pps::schema_id{999}, pps::default_context, as)
+                     .get();
+        reader.stop().get();
+
+        ASSERT_FALSE(res.has_value()) << "body=" << body;
+        EXPECT_EQ(res.error().kind, expected) << "body=" << body;
+    }
 }
 
 // read_mode narrows the source's open-enum mode to Redpanda's three-valued

@@ -124,6 +124,11 @@ struct fake_source_state {
     // without taking down the whole listing.
     chunked_hash_map<ppsr::context_subject, srs::source_error>
       list_versions_errors;
+    // Forces list_schema_id_subject_versions to fail for specific ids: a real
+    // probe failure, as opposed to the miss an unallocated id yields anyway.
+    chunked_hash_map<ppsr::schema_id, srs::source_error> schema_id_errors;
+    // list_schema_id_subject_versions call count, keyed by probed id.
+    chunked_hash_map<ppsr::schema_id, uint32_t> schema_id_probe_counts;
     // read_subject_version call count, keyed by (subject, version).
     chunked_hash_map<ppsr::subject_version, uint32_t> read_counts;
     // Total list_subject_versions calls, so a test can assert a sync did no
@@ -243,6 +248,11 @@ struct fake_source_state {
           ppsr::subject_version{sub, ppsr::schema_version{version}});
         return it == read_counts.end() ? 0 : it->second;
     }
+
+    uint32_t probes(int32_t id) const {
+        auto it = schema_id_probe_counts.find(ppsr::schema_id{id});
+        return it == schema_id_probe_counts.end() ? 0 : it->second;
+    }
 };
 
 class fake_source_reader final : public srs::source_reader {
@@ -313,6 +323,39 @@ public:
                 .message = "subject not found (fully soft-deleted)"});
         }
         co_return versions;
+    }
+
+    ss::future<srs::source_result<chunked_vector<ppsr::subject_version>>>
+    list_schema_id_subject_versions(
+      ppsr::schema_id id, ppsr::context ctx, ss::abort_source&) override {
+        ++_state->schema_id_probe_counts[id];
+        if (
+          auto it = _state->schema_id_errors.find(id);
+          it != _state->schema_id_errors.end()) {
+            co_return std::unexpected(it->second);
+        }
+        // The real endpoint decides these independently: 404 only when the
+        // schema does not resolve, then the pair listing filters soft-deleted
+        // out. So a fully soft-deleted id is a hit with an empty list.
+        bool id_resolves = false;
+        chunked_vector<ppsr::subject_version> pairs;
+        for (const auto& s : _state->schemas) {
+            if (s.id != id || s.schema.sub().ctx != ctx) {
+                continue;
+            }
+            id_resolves = true;
+            if (s.deleted == ppsr::is_deleted::no) {
+                pairs.push_back(
+                  ppsr::subject_version{s.schema.sub(), s.version});
+            }
+        }
+        if (!id_resolves) {
+            co_return std::unexpected(
+              srs::source_error{
+                .kind = srs::source_error_kind::schema_id_not_found,
+                .message = fmt::format("schema id not found: {}", id())});
+        }
+        co_return pairs;
     }
 
     ss::future<srs::source_result<ppsr::source_schema_read>>

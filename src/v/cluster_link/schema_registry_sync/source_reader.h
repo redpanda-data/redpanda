@@ -38,6 +38,10 @@ enum class source_error_kind : uint8_t {
     source_unavailable,
     /// The subject does not exist in the source (HTTP 404).
     subject_not_found,
+    /// The numeric schema id does not resolve in the searched source context
+    /// (HTTP 404 / error_code 40403). The id probe expects this on every tick,
+    /// so it must not be counted as a sync error.
+    schema_id_not_found,
 };
 
 struct source_error {
@@ -79,6 +83,17 @@ public:
     virtual ss::future<source_result<chunked_vector<ppsr::schema_version>>>
     list_subject_versions(
       ppsr::context_subject, ppsr::include_deleted, ss::abort_source&) = 0;
+
+    /// Lists every (subject, version) pair in the given context backed by the
+    /// given numeric schema id -- tail sync's discovery probe. The result is
+    /// not narrowed by the link's scope (the caller applies `in_scope`), and
+    /// the pairs are unordered. An id the source never allocated (or
+    /// hard-deleted) yields `schema_id_not_found`; an allocated id whose
+    /// every version is soft-deleted yields an empty list instead -- only
+    /// existence tells the probe whether the id space is exhausted.
+    virtual ss::future<source_result<chunked_vector<ppsr::subject_version>>>
+    list_schema_id_subject_versions(
+      ppsr::schema_id, ppsr::context, ss::abort_source&) = 0;
 
     /// Reads a specific subject version's schema. The reconcile engine's
     /// schema-body fetch path: called for every node it discovers and imports.

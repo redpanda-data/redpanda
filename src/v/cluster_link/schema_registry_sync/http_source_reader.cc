@@ -53,7 +53,8 @@ constexpr size_t max_source_connections = 8;
 
 // Map a rest_client failure onto a source_error. A source that is unreachable
 // or rejecting every request is source_unavailable and parks the link; a 404 is
-// subject_not_found; any other terminal status is a per-item operation_failed.
+// subject_not_found, or schema_id_not_found when it names an unresolved schema
+// id; any other terminal status is a per-item operation_failed.
 source_error to_source_error(rc::domain_error err) {
     using enum boost::beast::http::status;
     auto kind = ss::visit(
@@ -81,6 +82,9 @@ source_error to_source_error(rc::domain_error err) {
       },
       [](const rc::subject_not_found&) {
           return source_error_kind::subject_not_found;
+      },
+      [](const rc::schema_id_not_found&) {
+          return source_error_kind::schema_id_not_found;
       },
       [](const auto&) { return source_error_kind::operation_failed; });
     return source_error{.kind = kind, .message = fmt::format("{}", err)};
@@ -299,6 +303,31 @@ http_source_reader::list_subject_versions(
     retry_chain_node rtc(as, request_timeout, request_backoff);
     auto res = co_await client.value()->list_subject_versions(
       sub, rtc, include_deleted);
+    if (!res.has_value()) {
+        co_return std::unexpected(to_source_error(std::move(res.error())));
+    }
+    co_return std::move(res.value());
+}
+
+ss::future<source_result<chunked_vector<ppsr::subject_version>>>
+http_source_reader::list_schema_id_subject_versions(
+  ppsr::schema_id id, ppsr::context ctx, ss::abort_source& as) {
+    auto client = co_await ensure_client(as);
+    if (!client.has_value()) {
+        co_return std::unexpected(std::move(client.error()));
+    }
+    retry_chain_node rtc(as, request_timeout, request_backoff);
+    // Ids are namespaced per context. The bare-context form (empty subject,
+    // wire ":.dev:") names the context without constraining which subject
+    // carries the id -- that is what the probe is discovering. As with
+    // mode/config, the default context omits the parameter so a source
+    // without context support is still served.
+    auto subject = ctx == ppsr::default_context
+                     ? std::nullopt
+                     : std::optional{
+                         ppsr::context_subject{ctx, ppsr::subject{""}}};
+    auto res = co_await client.value()->get_schema_id_subject_versions(
+      id, rtc, std::move(subject));
     if (!res.has_value()) {
         co_return std::unexpected(to_source_error(std::move(res.error())));
     }
