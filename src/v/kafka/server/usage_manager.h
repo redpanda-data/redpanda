@@ -93,7 +93,7 @@ public:
 
     /// Obtain all current stats - for all shards
     ///
-    ss::future<std::vector<usage_window>> get_usage_stats() const;
+    ss::future<chunked_vector<usage_window>> get_usage_stats() const;
 
     /// Obtain all current stats - for 'this' shard, resets window
     ///

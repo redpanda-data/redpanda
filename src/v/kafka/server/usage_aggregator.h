@@ -121,7 +121,7 @@ public:
     virtual ss::future<> start();
     virtual ss::future<> stop();
 
-    ss::future<std::vector<usage_window>> get_usage_stats();
+    ss::future<chunked_vector<usage_window>> get_usage_stats();
 
     std::chrono::seconds max_history() const {
         return _usage_window_width_interval * _usage_num_windows;

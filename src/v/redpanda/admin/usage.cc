@@ -16,8 +16,8 @@
 
 namespace {
 ss::json::json_return_type raw_data_to_usage_response(
-  const std::vector<kafka::usage_window>& total_usage, bool include_open) {
-    std::vector<ss::httpd::usage_json::usage_response> resp;
+  const chunked_vector<kafka::usage_window>& total_usage, bool include_open) {
+    chunked_vector<ss::httpd::usage_json::usage_response> resp;
     resp.reserve(total_usage.size());
     for (size_t i = (include_open ? 0 : 1); i < total_usage.size(); ++i) {
         resp.emplace_back();
@@ -51,7 +51,7 @@ ss::json::json_return_type raw_data_to_usage_response(
     if (include_open && !resp.empty()) {
         /// Handle case where client does not want to observe
         /// value of 0 for open buckets end timestamp
-        auto& e = resp.at(0);
+        auto& e = resp[0];
         vassert(e.open(), "Bucket not open when expecting to be");
         e.end_timestamp = std::chrono::duration_cast<std::chrono::seconds>(
                             ss::lowres_system_clock::now().time_since_epoch())
@@ -82,7 +82,7 @@ void admin_server::register_usage_routes() {
             .invoke_on(
               kafka::usage_manager::usage_manager_main_shard,
               [](kafka::usage_manager& um) { return um.get_usage_stats(); })
-            .then([include_open](auto total_usage) {
+            .then([include_open](const auto& total_usage) {
                 return raw_data_to_usage_response(total_usage, include_open);
             });
       });

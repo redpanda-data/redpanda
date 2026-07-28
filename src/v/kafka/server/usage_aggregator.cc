@@ -247,12 +247,12 @@ ss::future<> usage_aggregator<clock_type>::start() {
 }
 
 template<typename clock_type>
-ss::future<std::vector<usage_window>>
+ss::future<chunked_vector<usage_window>>
 usage_aggregator<clock_type>::get_usage_stats() {
     /// Get the freshest data for the open bucket
     co_await grab_data(_current_window);
 
-    std::vector<usage_window> stats;
+    chunked_vector<usage_window> stats;
     for (size_t i = 1; i < _buckets.size(); ++i) {
         const auto idx = (_current_window + i) % _usage_num_windows;
         if (!_buckets[idx].is_uninitialized()) {
