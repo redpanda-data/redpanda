@@ -12,6 +12,8 @@
 #include "redpanda/admin/api-doc/usage.json.hh"
 #include "redpanda/admin/server.h"
 
+#include <seastar/json/json_elements.hh>
+
 namespace {
 ss::json::json_return_type raw_data_to_usage_response(
   const std::vector<kafka::usage_window>& total_usage, bool include_open) {
@@ -55,7 +57,7 @@ ss::json::json_return_type raw_data_to_usage_response(
                             ss::lowres_system_clock::now().time_since_epoch())
                             .count();
     }
-    return resp;
+    return ss::json::stream_object(std::move(resp));
 }
 } // namespace
 
