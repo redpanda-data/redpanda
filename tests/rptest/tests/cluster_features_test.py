@@ -1308,16 +1308,27 @@ class ManualFinalizationUpgradeTest(UnfinalizedUpgradeMixin, FeaturesTestBase):
         """Perturb the cluster while it sits in `phase` (e.g.
         "...-upgraded-unfinalized" on the new binary, or "...-downgraded" after a
         rollback). Structured as 1 + N parts: shared baseline work, then one
-        function per supported unfinalized-upgrade step. Today N=1 -- the
-        v26.1 -> v26.2 step. See the note above the per-step functions for how
-        this grows for v26.3 and beyond."""
+        function per supported unfinalized-upgrade step, dispatched on the old
+        release's feature line so only the step matching the upgrade window
+        under test runs. See the note above the per-step functions for how
+        this grows for new majors."""
         self.logger.info(f"perturb: phase={phase}")
         self._perturb_common(phase)
         if "upgraded" in phase:
             # Generic across majors: every feature gated by the upgrade under
             # test must be exercised or acknowledged.
             self._assert_feature_coverage()
-        self._perturb_v26_1_to_v26_2(phase)
+        # A missing entry (e.g. right after a version cut, before any gated
+        # feature lands in the new major) leaves only the shared baseline and
+        # the coverage guard -- exactly what an upgrade that gates nothing
+        # needs. The guard fails loudly once a gated feature appears, forcing
+        # a new per-step function to be written and registered here.
+        per_step = {
+            (26, 1): self._perturb_v26_1_to_v26_2,
+        }
+        step = per_step.get(self.old_release[:2])
+        if step is not None:
+            step(phase)
 
     def _perturb_common(self, phase):
         """Baseline data-plane perturbation, run in every state. On the first
@@ -1367,20 +1378,24 @@ class ManualFinalizationUpgradeTest(UnfinalizedUpgradeMixin, FeaturesTestBase):
 
     # NOTE: growing this beyond the v26.1 -> v26.2 step.
     #
-    # When v26.2 is released and v26.3 development begins, two things change:
-    #   1. Add a new per-step function, e.g. _perturb_v26_2_to_v26_3, exercising
-    #      the features gated by the unfinalized v26.2 -> v26.3 upgrade, and call
-    #      it from _perturb alongside the existing one.
-    #   2. Extend the harness to perform CHAINED unfinalized upgrades: an
-    #      unfinalized upgrade v26.1 -> v26.2, then a further unfinalized upgrade
-    #      v26.2 -> v26.3, perturbing (and exercising downgrade) at each step
-    #      instead of a single old -> HEAD hop.
-    # Keep older step functions and their harness coverage for as long as the
-    # support window allows upgrading from those releases; drop a step once its
-    # source release leaves the supported upgrade matrix.
+    # Once the first feature gated on the new major lands, the coverage guard
+    # (_assert_feature_coverage) fails: add a new per-step function, e.g.
+    # _perturb_v26_2_to_v26_3, exercising the features gated by the unfinalized
+    # v26.2 -> v26.3 upgrade, and register it in _perturb's per-step dispatch.
+    # A step only runs when the installed old release matches its source line,
+    # so older steps go dormant (rather than fail) as the prior feature line
+    # moves forward; they stay live on release branches where the prior line
+    # still matches. Drop a step once its source release leaves the supported
+    # upgrade matrix everywhere.
+    #
+    # A possible further extension: perform CHAINED unfinalized upgrades (an
+    # unfinalized upgrade v26.1 -> v26.2, then a further unfinalized upgrade
+    # v26.2 -> v26.3, perturbing and exercising downgrade at each step) instead
+    # of a single old -> HEAD hop.
     def _perturb_v26_1_to_v26_2(self, phase):
-        """Per-step perturbation for the v26.1 -> v26.2 unfinalized upgrade (the
-        N=1 part of the 1 + N structure).
+        """Per-step perturbation for the v26.1 -> v26.2 unfinalized upgrade;
+        dispatched from _perturb only when the installed old release is on the
+        v26.1 line.
 
         Exercises the code paths gated by the v26.2 feature flags. While the
         upgrade is unfinalized the active version is held at v26.1, so these
