@@ -20,6 +20,7 @@ redpanda_cc_binary(
         "//src/v/redpanda/admin:cluster_config_schema_util",
         "//src/v/version",
         "@boost//:program_options",
+        "@fmt",
         "@seastar",
     ],
 )
