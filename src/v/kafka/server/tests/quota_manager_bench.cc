@@ -61,7 +61,7 @@ ss::future<> send_requests(quota_manager& qm, size_t count, bool use_unique) {
               user, client_id, 1, quota_manager::clock::now());
             perf_tests::do_not_optimize(delay);
         }
-        co_await maybe_yield();
+        co_await ss::maybe_yield();
     }
     co_return;
 }

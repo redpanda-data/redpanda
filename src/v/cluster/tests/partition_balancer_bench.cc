@@ -34,7 +34,7 @@ PERF_TEST_C(partition_balancer_planner_fixture, unavailable_nodes) {
     auto planner = make_planner(
       model::partition_autobalancing_mode::continuous, max_concurrent_actions);
 
-    abort_source as;
+    ss::abort_source as;
     perf_tests::start_measuring_time();
     auto plan_data = co_await planner.plan_actions(hr, as);
     perf_tests::stop_measuring_time();
@@ -89,7 +89,7 @@ PERF_TEST_C(partition_balancer_planner_fixture, counts_rebalancing) {
 
     auto planner = make_planner();
 
-    abort_source as;
+    ss::abort_source as;
     perf_tests::start_measuring_time();
     auto plan_data = co_await planner.plan_actions(hr, as);
     perf_tests::stop_measuring_time();
