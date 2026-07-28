@@ -24,17 +24,6 @@
 
 #include <chrono>
 namespace {
-template<typename T>
-T decode_signed(T value) {
-    return value < T(0) ? T{} : value;
-}
-
-template<typename T>
-T varlong_reader(iobuf_parser& in) {
-    auto [val, len] = in.read_varlong();
-    return T(val);
-}
-
 struct hbeat_soa {
     explicit hbeat_soa(size_t n)
       : groups(n)
@@ -80,37 +69,6 @@ struct hbeat_response_array {
     std::vector<model::revision_id> revisions;
     std::vector<model::revision_id> target_revisions;
 };
-template<typename T>
-void encode_one_vint(iobuf& out, const T& t) {
-    auto b = vint::to_bytes(t);
-    // NOLINTNEXTLINE
-    out.append(reinterpret_cast<const char*>(b.data()), b.size());
-}
-
-template<typename T>
-void encode_varint_delta(iobuf& out, const T& prev, const T& current) {
-    // TODO: use delta-delta:
-    // https://github.com/facebookarchive/beringei/blob/92784ec6e2/beringei/lib/BitUtil.cpp
-    auto delta = current - prev;
-    encode_one_vint(out, delta);
-}
-
-template<typename T>
-void encode_one_delta_array(iobuf& o, const std::vector<T>& v) {
-    if (v.empty()) {
-        return;
-    }
-    const size_t max = v.size();
-    encode_one_vint(o, v[0]);
-    for (size_t i = 1; i < max; ++i) {
-        encode_varint_delta(o, v[i - 1], v[i]);
-    }
-}
-template<typename T>
-T read_one_varint_delta(iobuf_parser& in, const T& prev) {
-    auto dst = varlong_reader<T>(in);
-    return prev + dst;
-}
 } // namespace
 
 namespace raft {

@@ -250,15 +250,6 @@ iceberg::table_metadata create_table_metadata() {
       .default_sort_order_id = iceberg::sort_order::id_t{3}};
 }
 
-template<typename T>
-iobuf as_json(const T& payload) {
-    json::chunked_buffer buf;
-    iceberg::json_writer writer(buf);
-    rjson_serialize(writer, payload);
-
-    return std::move(buf).as_iobuf();
-}
-
 ss::future<http::downloaded_response> handle_load_table(
   boost::beast::http::request_header<>&& r,
   std::optional<iobuf>,

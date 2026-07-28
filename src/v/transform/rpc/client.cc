@@ -165,17 +165,6 @@ std::invoke_result_t<Func> retry_with_backoff(Func func, ss::abort_source* as) {
     __builtin_unreachable();
 }
 
-template<typename T>
-requires outcome::is_basic_result_v<T>
-std::ostream& operator<<(std::ostream& os, T result) {
-    if (result.has_value()) {
-        return fmt::print(os, "{{ value: {} }}", result.value());
-    } else {
-        return fmt::print(os, "{{ error: {} }}", result.error());
-    }
-    return os;
-}
-
 } // namespace
 
 client::client(

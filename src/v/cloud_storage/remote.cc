@@ -37,17 +37,6 @@ struct key_and_node {
     std::unique_ptr<retry_chain_node> node;
 };
 
-template<typename R>
-requires std::ranges::range<R>
-size_t num_chunks(const R& r, size_t max_batch_size) {
-    const auto range_size = std::distance(r.begin(), r.end());
-
-    if (range_size % max_batch_size == 0) {
-        return range_size / max_batch_size;
-    } else {
-        return range_size / max_batch_size + 1;
-    }
-}
 } // namespace
 
 namespace cloud_storage {
