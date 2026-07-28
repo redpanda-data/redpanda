@@ -1,0 +1,140 @@
+// Copyright 2026 Redpanda Data, Inc.
+//
+// Use of this software is governed by the Business Source License
+// included in the file licenses/BSL.md
+//
+// As of the Change Date specified in that file, in accordance with
+// the Business Source License, use of this software will be governed
+// by the Apache License, Version 2.0
+
+// clang-format off
+// Test file for `redpanda-eager-json-serialization`.
+// Run with `./tools/clang-tidy --checks=-*,redpanda-eager-json-serialization bazel/clang_tidy/plugins/tests/redpanda_eager_json_serialization_check_test.cc.in`
+// clang-format on
+
+// Minimal mocks of the seastar types involved. The check matches by
+// qualified name, so namespaces and class names must match the real ones.
+namespace seastar {
+
+template<typename CharT>
+class basic_sstring {
+public:
+    basic_sstring() = default;
+    basic_sstring(const char*) {}
+    const CharT* begin() const { return nullptr; }
+    const CharT* end() const { return nullptr; }
+};
+
+using sstring = basic_sstring<char>;
+
+namespace json {
+
+struct formatter {
+    template<typename T>
+    static sstring to_json(const T&) {
+        return {};
+    }
+};
+
+struct json_return_type {
+    sstring _res;
+    using body_writer_type = void (*)();
+    body_writer_type _body_writer = nullptr;
+    json_return_type(body_writer_type body_writer)
+      : _body_writer(body_writer) {}
+    template<class T>
+    json_return_type(const T& res) {
+        _res = formatter::to_json(res);
+    }
+};
+
+struct json_void {
+    sstring to_json() const { return {}; }
+};
+
+} // namespace json
+} // namespace seastar
+
+namespace std {
+inline namespace __1 {
+template<typename T>
+class vector {
+public:
+    T* begin() { return nullptr; }
+    T* end() { return nullptr; }
+    const T* begin() const { return nullptr; }
+    const T* end() const { return nullptr; }
+};
+template<typename CharT>
+class basic_string {
+public:
+    basic_string(const char*) {}
+    const CharT* begin() const { return nullptr; }
+    const CharT* end() const { return nullptr; }
+};
+using string = basic_string<char>;
+} // namespace __1
+} // namespace std
+
+template<typename T>
+class chunked_vector {
+public:
+    T* begin() { return nullptr; }
+    T* end() { return nullptr; }
+};
+
+struct usage_response {
+    int begin_timestamp;
+};
+
+namespace {
+
+void body_writer_fn() {}
+
+struct Test {
+    // 1. Constructing from std::vector eagerly serializes: should fail.
+    seastar::json::json_return_type CaughtVector() {
+        std::vector<usage_response> resp;
+        return resp;
+    }
+
+    // 2. Explicit construction from a container: should fail.
+    seastar::json::json_return_type CaughtExplicit() {
+        std::vector<usage_response> resp;
+        return seastar::json::json_return_type(resp);
+    }
+
+    // 3. Custom containers with begin/end are ranges too: should fail.
+    seastar::json::json_return_type CaughtChunkedVector() {
+        chunked_vector<usage_response> resp;
+        return resp;
+    }
+
+    // 4. Strings are serialized via the scalar path: should pass.
+    seastar::json::json_return_type UncaughtSstring() {
+        seastar::sstring msg = "ok";
+        return msg;
+    }
+
+    // 5. std::string is string-like: should pass.
+    seastar::json::json_return_type UncaughtStdString() {
+        std::string msg = "ok";
+        return msg;
+    }
+
+    // 6. Fixed-size json objects (e.g. json_void) are not ranges: should
+    // pass.
+    seastar::json::json_return_type UncaughtJsonVoid() {
+        return seastar::json::json_void();
+    }
+
+    // 7. Scalars: should pass.
+    seastar::json::json_return_type UncaughtScalar() { return 42; }
+
+    // 8. The body-writer constructor is the streaming path: should pass.
+    seastar::json::json_return_type UncaughtBodyWriter() {
+        return seastar::json::json_return_type(&body_writer_fn);
+    }
+};
+
+} // namespace
