@@ -164,6 +164,16 @@ public:
 
     bool is_elected_leader() const;
     bool is_leader() const;
+
+    // Keep the durable partition_mode in step with the topic-configured
+    // storage mode: whenever they differ -- a storage.mode change, or the
+    // first time a leader records it -- write topic_mode() through to
+    // partition_properties. Gated behind the partition_mode feature and
+    // leader-only. Legacy shadow_indexing topics (topic_mode() == unset) are
+    // left unset. Invoked on leadership, on migration-feature activation, and
+    // on topic-config changes (update_configuration).
+    ss::future<> maybe_sync_partition_mode();
+
     bool has_followers() const;
     void block_new_leadership() const;
     void unblock_new_leadership() const;
@@ -424,6 +434,11 @@ private:
     // If should_notify_topic_config is set, it marks the topic_manifest as
     // dirty so that it gets reuploaded
     ss::future<> restart_archiver(bool should_notify_topic_config);
+
+    // Push the partition's durable storage mode (partition_properties_stm) into
+    // the log's ntp_config, so ntp_config::partition_mode() reflects it. Called
+    // at start and whenever the STM signals a change.
+    void update_partition_mode();
 
     consensus_ptr _raft; // never null
     ss::shared_ptr<cluster::log_eviction_stm> _log_eviction_stm;

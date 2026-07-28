@@ -40,7 +40,8 @@ partition_properties_stm::partition_properties_stm(
   , _state_snapshots({state_snapshot{
       .writes_disabled = writes_disabled::no,
       .update_offset = model::offset{},
-      .writes_revision_id{}}}) {}
+      .writes_revision_id{},
+      .partition_mode = model::redpanda_storage_mode::unset}}) {}
 
 ss::future<iobuf>
 partition_properties_stm::take_raft_snapshot(model::offset o) {
@@ -88,7 +89,8 @@ partition_properties_stm::take_raft_snapshot(model::offset o) {
     co_return serde::to_iobuf(
       raft_snapshot{
         .writes_disabled = it->writes_disabled,
-        .writes_revision_id = it->writes_revision_id});
+        .writes_revision_id = it->writes_revision_id,
+        .partition_mode = it->partition_mode});
 }
 
 ss::future<raft::local_snapshot_applied>
@@ -157,43 +159,66 @@ void partition_properties_stm::apply_record(
     auto key = r.release_key();
     auto value = r.release_value();
     auto ot = serde::from_iobuf<operation_type>(std::move(key));
-    if (ot != operation_type::update_writes_disabled) [[unlikely]] {
-        vlog(
-          _log.warn,
-          "ignored unknown operation type with value: {}",
-          static_cast<int>(ot));
-        return;
-    }
-    auto update = serde::from_iobuf<update_writes_disabled_cmd>(
-      std::move(value));
-    vlog(
-      _log.trace,
-      "Applying update {} at offset: {}",
-      update,
+    const auto update_offset = model::offset(
       r.offset_delta() + batch_begin_offset);
     const auto current_state = _state_snapshots.back();
-    bool is_legacy_command = update.writes_revision_id == model::revision_id{};
-    bool is_newer_revision = update.writes_revision_id
-                             > current_state.writes_revision_id;
-    if (!is_newer_revision && !is_legacy_command) {
+    switch (ot) {
+    case operation_type::update_writes_disabled: {
+        auto update = serde::from_iobuf<update_writes_disabled_cmd>(
+          std::move(value));
         vlog(
-          _log.error,
-          "Ignoring out-of-order update: {}, current state: {}",
+          _log.trace,
+          "Applying update {} at offset: {}",
           update,
-          _state_snapshots.back());
+          update_offset);
+        bool is_legacy_command = update.writes_revision_id
+                                 == model::revision_id{};
+        bool is_newer_revision = update.writes_revision_id
+                                 > current_state.writes_revision_id;
+        if (!is_newer_revision && !is_legacy_command) {
+            vlog(
+              _log.error,
+              "Ignoring out-of-order update: {}, current state: {}",
+              update,
+              current_state);
+            return;
+        }
+        bool differs = update.writes_disabled != current_state.writes_disabled
+                       || update.writes_revision_id
+                            != current_state.writes_revision_id;
+        if (differs) {
+            // copy-modify preserves the other properties (e.g. partition_mode)
+            auto next = current_state;
+            next.writes_disabled = update.writes_disabled;
+            next.writes_revision_id = update.writes_revision_id;
+            next.update_offset = update_offset;
+            _state_snapshots.push_back(next);
+        }
         return;
     }
-    bool differs = update.writes_disabled != current_state.writes_disabled
-                   || update.writes_revision_id
-                        != current_state.writes_revision_id;
-    if (differs) {
-        _state_snapshots.push_back(
-          state_snapshot{
-            .writes_disabled = update.writes_disabled,
-            .update_offset = model::offset(
-              r.offset_delta() + batch_begin_offset),
-            .writes_revision_id = update.writes_revision_id});
+    case operation_type::update_partition_mode: {
+        auto update = serde::from_iobuf<update_partition_mode_cmd>(
+          std::move(value));
+        vlog(
+          _log.trace,
+          "Applying partition_mode update {} at offset: {}",
+          update,
+          update_offset);
+        // idempotent by value, ordered by log offset (no revision needed).
+        if (update.partition_mode != current_state.partition_mode) {
+            auto next = current_state;
+            next.partition_mode = update.partition_mode;
+            next.update_offset = update_offset;
+            _state_snapshots.push_back(next);
+            notify_partition_mode_change();
+        }
+        return;
     }
+    }
+    vlog(
+      _log.warn,
+      "ignored unknown operation type with value: {}",
+      static_cast<int>(ot));
 }
 
 ss::future<>
@@ -211,7 +236,9 @@ partition_properties_stm::apply_raft_snapshot(const iobuf& buffer) {
       state_snapshot{
         .writes_disabled = snapshot.writes_disabled,
         .update_offset = model::prev_offset(_raft->start_offset()),
-        .writes_revision_id = snapshot.writes_revision_id});
+        .writes_revision_id = snapshot.writes_revision_id,
+        .partition_mode = snapshot.partition_mode});
+    notify_partition_mode_change();
     co_return;
 }
 
@@ -301,6 +328,93 @@ model::record_batch partition_properties_stm::make_update_partitions_batch(
     return std::move(builder).build();
 }
 
+model::record_batch partition_properties_stm::make_update_partition_mode_batch(
+  update_partition_mode_cmd cmd) {
+    storage::record_batch_builder builder(
+      model::record_batch_type::partition_properties_update, model::offset{});
+    builder.add_raw_kv(
+      serde::to_iobuf(operation_type::update_partition_mode),
+      serde::to_iobuf(std::move(cmd)));
+    return std::move(builder).build();
+}
+
+ss::future<result<model::offset>>
+partition_properties_stm::replicate_partition_mode_update(
+  model::timeout_clock::duration timeout, update_partition_mode_cmd cmd) {
+    auto holder = _gate.hold();
+    auto units = co_await _writes_mutex.get_units();
+    if (!co_await sync(timeout)) {
+        co_return errc::not_leader;
+    }
+
+    vassert(
+      !_state_snapshots.empty(),
+      "The invariant of state snapshot containing at least one element is "
+      "broken");
+    auto current_state = _state_snapshots.back();
+    if (cmd.partition_mode == current_state.partition_mode) [[unlikely]] {
+        // no-op
+        co_return current_state.update_offset;
+    }
+
+    auto b = make_update_partition_mode_batch(cmd);
+    vlog(_log.debug, "replicating update partition mode command: {}", cmd);
+    raft::replicate_options r_opts(
+      raft::consistency_level::quorum_ack,
+      _insync_term,
+      std::chrono::milliseconds(timeout / 1ms));
+    r_opts.set_force_flush();
+    auto r = co_await _raft->replicate(std::move(b), r_opts);
+
+    if (r.has_error()) {
+        vlog(
+          _log.warn,
+          "error replicating update partition mode command: {} - {}",
+          cmd,
+          r.error().message());
+        co_await _raft->step_down("partition_properties_stm/replication_error");
+        co_return r.error();
+    }
+
+    auto message_offset = r.value().last_offset;
+    if (!co_await wait_no_throw(
+          message_offset, model::timeout_clock::time_point::max())) {
+        co_await _raft->step_down("partition_properties_stm/replication_error");
+        co_return errc::shutting_down;
+    }
+    co_return message_offset;
+}
+
+ss::future<result<model::offset>> partition_properties_stm::set_partition_mode(
+  model::redpanda_storage_mode mode) {
+    vlog(_log.info, "setting partition mode to {}", mode);
+    return replicate_partition_mode_update(
+      _sync_timeout(), update_partition_mode_cmd{.partition_mode = mode});
+}
+
+model::redpanda_storage_mode partition_properties_stm::partition_mode() const {
+    vassert(
+      !_state_snapshots.empty(),
+      "The invariant of state snapshot containing at least one element is "
+      "broken");
+    return _state_snapshots.back().partition_mode;
+}
+
+void partition_properties_stm::notify_partition_mode_change() {
+    if (_partition_mode_change_cb) {
+        _partition_mode_change_cb();
+    }
+}
+
+ss::future<result<model::redpanda_storage_mode>>
+partition_properties_stm::sync_partition_mode() {
+    auto holder = _gate.hold();
+    if (!co_await sync(_sync_timeout())) {
+        co_return errc::not_leader;
+    }
+    co_return partition_mode();
+}
+
 ss::future<result<model::offset>>
 partition_properties_stm::disable_writes(model::revision_id revision_id) {
     vlog(_log.info, "disabling partition writes");
@@ -355,9 +469,18 @@ fmt::iterator
 partition_properties_stm::raft_snapshot::format_to(fmt::iterator it) const {
     return fmt::format_to(
       it,
-      "{{writes_disabled: {}, writes_revision_id: {}}}",
+      "{{writes_disabled: {}, writes_revision_id: {}, partition_mode: {}}}",
       writes_disabled,
-      writes_revision_id);
+      writes_revision_id,
+      model::redpanda_storage_mode_to_string(partition_mode));
+}
+
+fmt::iterator partition_properties_stm::update_partition_mode_cmd::format_to(
+  fmt::iterator it) const {
+    return fmt::format_to(
+      it,
+      "{{partition_mode: {}}}",
+      model::redpanda_storage_mode_to_string(partition_mode));
 }
 
 fmt::iterator partition_properties_stm::update_writes_disabled_cmd::format_to(
@@ -373,10 +496,12 @@ fmt::iterator
 partition_properties_stm::state_snapshot::format_to(fmt::iterator it) const {
     return fmt::format_to(
       it,
-      "{{update_offset: {}, writes_disabled: {}, writes_revision_id: {}}}",
+      "{{update_offset: {}, writes_disabled: {}, writes_revision_id: {}, "
+      "partition_mode: {}}}",
       update_offset,
       writes_disabled,
-      writes_revision_id);
+      writes_revision_id,
+      model::redpanda_storage_mode_to_string(partition_mode));
 }
 
 fmt::iterator

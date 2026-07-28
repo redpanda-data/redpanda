@@ -16,6 +16,7 @@
 #include "config/mock_property.h"
 #include "container/chunked_circular_buffer.h"
 #include "model/fundamental.h"
+#include "model/metadata.h"
 #include "model/record.h"
 #include "model/tests/random_batch.h"
 #include "raft/replicate.h"
@@ -113,6 +114,32 @@ struct partition_properties_stm_fixture : raft::raft_fixture {
         auto r = co_await get_writes_disabled_on_leader();
         ASSERT_TRUE_CORO(r.has_value());
         ASSERT_EQ_CORO(r.value(), disabled);
+    }
+
+    ss::future<> set_partition_mode(
+      model::redpanda_storage_mode mode, bool expect_success = true) {
+        auto res = co_await retry_with_leader(
+          raft::default_timeout(),
+          2s,
+          [mode](raft::raft_node_instance& leader_node) {
+              return get_stm(leader_node)->set_partition_mode(mode);
+          });
+        ASSERT_EQ_CORO(res.has_value(), expect_success);
+    }
+
+    ss::future<> assert_partition_mode(model::redpanda_storage_mode mode) {
+        auto r = co_await get_leader_stm()->sync_partition_mode();
+        ASSERT_TRUE_CORO(r.has_value());
+        ASSERT_EQ_CORO(r.value(), mode);
+    }
+
+    ss::future<>
+    check_partition_mode_consistent(model::redpanda_storage_mode mode) {
+        RPTEST_REQUIRE_EVENTUALLY_CORO(5s, [this, mode] {
+            return std::ranges::all_of(
+              node_stms | std::views::values,
+              [mode](auto stm) { return stm->partition_mode() == mode; });
+        });
     }
 
     ss::future<result<model::offset>> replicate_random_batches() {
@@ -415,6 +442,135 @@ TEST_F_CORO(
     ASSERT_EQ_CORO(writes_disabled, should_be_disabled);
     co_await wait_for_committed_offset(last_applied, 10s);
     co_await check_state_consistent(should_be_disabled);
+}
+
+TEST_F_CORO(partition_properties_stm_fixture, test_partition_mode_basic) {
+    co_await initialize_state_machines();
+    co_await wait_for_leader(10s);
+    // A fresh partition has never had partition_mode written: it reads `unset`
+    // (the "not bootstrapped -> fall back to topic_mode" sentinel).
+    co_await assert_partition_mode(model::redpanda_storage_mode::unset);
+
+    co_await set_partition_mode(model::redpanda_storage_mode::tiered);
+    co_await assert_partition_mode(model::redpanda_storage_mode::tiered);
+    // idempotent
+    co_await set_partition_mode(model::redpanda_storage_mode::tiered);
+    co_await assert_partition_mode(model::redpanda_storage_mode::tiered);
+    // the migration cutover transition: tiered -> cloud
+    co_await set_partition_mode(model::redpanda_storage_mode::cloud);
+    co_await assert_partition_mode(model::redpanda_storage_mode::cloud);
+    co_await check_partition_mode_consistent(
+      model::redpanda_storage_mode::cloud);
+}
+
+// writes_disabled and partition_mode share one state_snapshot; updating one
+// must preserve the other (the apply copy-modify).
+TEST_F_CORO(
+  partition_properties_stm_fixture, test_partition_mode_independent_of_writes) {
+    co_await initialize_state_machines();
+
+    co_await disable_writes(model::revision_id{1});
+    co_await set_partition_mode(model::redpanda_storage_mode::tiered);
+    co_await assert_writes(stm_t::writes_disabled::yes);
+    co_await assert_partition_mode(model::redpanda_storage_mode::tiered);
+
+    // a partition_mode update leaves writes_disabled untouched
+    co_await set_partition_mode(model::redpanda_storage_mode::cloud);
+    co_await assert_writes(stm_t::writes_disabled::yes);
+    co_await assert_partition_mode(model::redpanda_storage_mode::cloud);
+
+    // and a writes_disabled update leaves partition_mode untouched
+    co_await enable_writes(model::revision_id{2});
+    co_await assert_writes(stm_t::writes_disabled::no);
+    co_await assert_partition_mode(model::redpanda_storage_mode::cloud);
+}
+
+TEST_F_CORO(partition_properties_stm_fixture, test_partition_mode_snapshot) {
+    co_await initialize_state_machines();
+
+    auto before_set = co_await replicate_random_batches();
+    co_await set_partition_mode(model::redpanda_storage_mode::tiered);
+    [[maybe_unused]] auto _ignored = co_await replicate_random_batches();
+
+    auto leader_id = get_leader();
+    EXPECT_TRUE(leader_id.has_value());
+    auto& leader_node = node(leader_id.value());
+
+    // snapshot taken before the set command -> unset
+    auto o = co_await leader_node.random_batch_base_offset(before_set.value());
+    auto snap_before = partition_properties_stm_accessor::snap_from_iobuf(
+      co_await get_leader_stm()->take_raft_snapshot(o));
+    ASSERT_EQ_CORO(
+      snap_before.partition_mode, model::redpanda_storage_mode::unset);
+
+    // snapshot at the set command offset -> tiered (and writes_disabled intact)
+    auto snap_at = partition_properties_stm_accessor::snap_from_iobuf(
+      co_await get_leader_stm()->take_raft_snapshot(
+        model::next_offset(before_set.value())));
+    ASSERT_EQ_CORO(
+      snap_at.partition_mode, model::redpanda_storage_mode::tiered);
+    ASSERT_EQ_CORO(snap_at.writes_disabled, stm_t::writes_disabled::no);
+}
+
+TEST_F_CORO(partition_properties_stm_fixture, test_partition_mode_recovery) {
+    co_await initialize_state_machines();
+    co_await set_partition_mode(model::redpanda_storage_mode::tiered);
+    [[maybe_unused]] auto _ignored = co_await replicate_random_batches();
+    co_await set_partition_mode(model::redpanda_storage_mode::cloud);
+    co_await assert_partition_mode(model::redpanda_storage_mode::cloud);
+    auto last_applied = get_leader_stm()->last_applied_offset();
+
+    // restart preserving data: recover from local (kvstore) snapshot + replay
+    co_await restart_nodes();
+    co_await wait_for_leader(10s);
+    co_await assert_partition_mode(model::redpanda_storage_mode::cloud);
+    co_await wait_for_committed_offset(last_applied, 10s);
+    co_await check_partition_mode_consistent(
+      model::redpanda_storage_mode::cloud);
+
+    // take a raft snapshot on every node, then restart with one node's data
+    // dropped: that node recovers partition_mode from the raft snapshot.
+    for (auto& [_, node] : nodes()) {
+        auto base_offset = co_await node->random_batch_base_offset(
+          node->raft()->committed_offset(), model::offset(1));
+        auto snapshot_offset = model::prev_offset(base_offset);
+        auto result = co_await node->raft()->stm_manager()->take_snapshot(
+          snapshot_offset);
+        co_await node->raft()->write_snapshot(
+          raft::write_snapshot_cfg(snapshot_offset, std::move(result.data)));
+    }
+    co_await restart_nodes({model::node_id(1)});
+    co_await wait_for_leader(10s);
+    co_await assert_partition_mode(model::redpanda_storage_mode::cloud);
+    co_await wait_for_committed_offset(last_applied, 10s);
+    co_await check_partition_mode_consistent(
+      model::redpanda_storage_mode::cloud);
+}
+
+// The change callback (used by partition to push partition_mode into
+// ntp_config) must fire when partition_mode changes, on each replica that
+// applies the change.
+TEST_F_CORO(
+  partition_properties_stm_fixture, test_partition_mode_change_callback) {
+    co_await initialize_state_machines();
+    co_await wait_for_leader(10s);
+
+    auto fired = ss::make_lw_shared<int>(0);
+    for (auto& [_, stm] : node_stms) {
+        stm->set_partition_mode_change_callback([fired] { ++(*fired); });
+    }
+
+    co_await set_partition_mode(model::redpanda_storage_mode::tiered);
+    RPTEST_REQUIRE_EVENTUALLY_CORO(5s, [fired] { return *fired >= 1; });
+    co_await check_partition_mode_consistent(
+      model::redpanda_storage_mode::tiered);
+
+    // an idempotent (no-op) update does not change state, so it does not fire
+    auto before = *fired;
+    co_await set_partition_mode(model::redpanda_storage_mode::tiered);
+    co_await check_partition_mode_consistent(
+      model::redpanda_storage_mode::tiered);
+    ASSERT_EQ_CORO(*fired, before);
 }
 
 } // namespace cluster

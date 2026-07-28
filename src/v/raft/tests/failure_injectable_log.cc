@@ -210,6 +210,12 @@ void failure_injectable_log::set_overrides(
     return _underlying_log->set_overrides(overrides);
 }
 
+void failure_injectable_log::set_partition_mode(
+  model::redpanda_storage_mode mode) {
+    mutable_config().set_partition_mode(mode);
+    return _underlying_log->set_partition_mode(mode);
+}
+
 bool failure_injectable_log::notify_compaction_update() {
     return _underlying_log->notify_compaction_update();
 }
