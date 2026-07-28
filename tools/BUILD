@@ -1,7 +1,9 @@
 load("@buildifier_prebuilt//:rules.bzl", "buildifier")
+load("@rules_cc//cc:defs.bzl", "fdo_profile")
 load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
 load("@rules_python//python:defs.bzl", "py_binary")
 load("@rules_shell//shell:sh_binary.bzl", "sh_binary")
+load("//tools:pgo_bolt/pgo.bzl", "pgo_instrumented_target")
 
 exports_files(["run-cov"])
 
@@ -90,7 +92,6 @@ pkg_tar(
 # for dev_cluster.py such that we can run dev_cluster from within train_pgo
 py_binary(
     name = "train_pgo",
-    testonly = True,
     srcs = [
         "pgo_bolt/train_pgo.py",
     ],
@@ -103,7 +104,6 @@ py_binary(
 
 genrule(
     name = "pgo_profile",
-    testonly = True,
     srcs = [
         "//bazel/thirdparty:omb_minimal",
         "//bazel/thirdparty:minio",
@@ -128,6 +128,20 @@ genrule(
     tools = [
         ":train_pgo",
     ],
+    visibility = ["//visibility:public"],
+)
+
+pgo_instrumented_target(
+    name = "pgo_profile_for_optimization",
+    tags = ["manual"],
+    target = ":pgo_profile",
+    visibility = ["//visibility:public"],
+)
+
+fdo_profile(
+    name = "redpanda_pgo_profile",
+    profile = ":pgo_profile_for_optimization",
+    tags = ["manual"],
     visibility = ["//visibility:public"],
 )
 

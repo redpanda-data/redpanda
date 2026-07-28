@@ -324,21 +324,10 @@ build:release --cxxopt=-D_LIBCPP_HARDENING_MODE=_LIBCPP_HARDENING_MODE_NONE
 build:release --host_cxxopt=-D_LIBCPP_HARDENING_MODE=_LIBCPP_HARDENING_MODE_NONE
 
 
-# Instrumentation/training step
-# /tmp is a dummy path as bazel expects an arg, we provide the actual path via
-# env var at run time
-build:pgo-instrument --config=lto --fdo_instrument=/tmp
-
-# Final/Optimization build step
-
-# We can't include this in here as bazel wants an absolute path (and we don't
-# really know that) as all the common dirs like /tmp are sandboxed so we can't
-# use them. We pass --fdo_optimize from task instead where the full path is known.
-# build:pgo-optimize --fdo_optimize=
-
 # bazel seems to pass -fprofile-correction unconditionally but that only exists
 # in gcc so need to make clang ignore it
-build:pgo-optimize --config=lto --copt -Wno-ignored-optimization-argument
+build:pgo --config=lto --copt -Wno-ignored-optimization-argument
+build:pgo --fdo_profile=//tools:redpanda_pgo_profile
 
 
 build:stamp --stamp --workspace_status_command=./bazel/stamp_vars.sh
