@@ -125,7 +125,7 @@ struct coordinator_assignment_data
 };
 
 template<class Key>
-static simple_batch_builder make_coordinator_assignment_batch(
+inline simple_batch_builder make_coordinator_assignment_batch(
   Key k,
   model::partition_id coordinator,
   coordinator_assignment_status status) {
@@ -183,7 +183,7 @@ struct kv_data_value
 };
 
 template<class Key, class Value>
-static simple_batch_builder
+inline simple_batch_builder
 make_kv_data_batch(absl::btree_map<Key, Value> kvs) {
     simple_batch_builder builder(
       model::record_batch_type::raft_data, model::offset(0));
@@ -201,7 +201,7 @@ make_kv_data_batch(absl::btree_map<Key, Value> kvs) {
 }
 
 template<class Key, class Value>
-static simple_batch_builder
+inline simple_batch_builder
 make_kv_data_batch_remove_all(absl::btree_set<Key> ks) {
     simple_batch_builder builder(
       model::record_batch_type::raft_data, model::offset(0));
