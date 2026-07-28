@@ -246,14 +246,6 @@ offset_metadata_value offset_metadata_value::decode(protocol::decoder& reader) {
 
 namespace {
 template<typename T>
-std::optional<T> read_optional_value(std::optional<protocol::decoder>& reader) {
-    if (!reader) {
-        return std::nullopt;
-    }
-    return T::decode(*reader);
-}
-
-template<typename T>
 iobuf metadata_to_iobuf(const T& t) {
     iobuf buffer;
     protocol::encoder writer(buffer);

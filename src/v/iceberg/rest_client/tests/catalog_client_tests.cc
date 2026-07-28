@@ -29,12 +29,6 @@ const r::credentials credentials{
   .client_secret = "secret",
   .oauth2_scope = "PRINCIPAL_ROLE:ALL"};
 
-template<typename Variant, typename Outer>
-void assert_type_and_value(Outer input, Variant expected) {
-    EXPECT_TRUE(std::holds_alternative<Variant>(input));
-    EXPECT_EQ(std::get<Variant>(input), expected);
-}
-
 } // namespace
 
 class mock_client : public http::abstract_client {

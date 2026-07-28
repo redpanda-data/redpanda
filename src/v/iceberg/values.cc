@@ -147,11 +147,6 @@ struct primitive_value_lt_visitor {
           fmt::format("Cannot evaluate {} < {}", t, u));
     }
     template<typename T>
-    requires requires(T t) { t.val->iobuf; }
-    bool operator()(const T& lhs, const T& rhs) const {
-        return lhs == rhs;
-    }
-    template<typename T>
     requires requires(T t) { t.val; }
     bool operator()(const T& lhs, const T& rhs) const {
         return lhs.val < rhs.val;

@@ -44,15 +44,6 @@ std::ostream& operator<<(std::ostream& os, const configuration& c) {
 }
 } // namespace kafka::client
 
-namespace {
-
-template<typename T>
-std::unique_ptr<T> clone_config(const T& t) {
-    return T{config::to_yaml(t), config::redact_secrets::no};
-}
-
-} // namespace
-
 FIXTURE_TEST(test_config_utils, redpanda_thread_fixture) {
     using namespace std::chrono_literals;
 
