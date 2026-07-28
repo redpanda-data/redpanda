@@ -990,6 +990,7 @@ class BogusTimestampTest(EndToEndTest):
             self.redpanda._installer.install(self.redpanda.nodes, version)
             self.redpanda.stop_node(self.redpanda.nodes[0])
             self.redpanda.start_node(self.redpanda.nodes[0])
+            self.redpanda._admin.await_active_version_settled()
 
         # broker_time_based_retention fixes this test case for new segments. (disable it to simulate a legacy condition)
         self.redpanda.set_feature_active(

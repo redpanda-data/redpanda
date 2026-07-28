@@ -260,6 +260,7 @@ class TxUpgradeCompactionTest(TxUpgradeTestBase, LogCompactionTxRemovalMixin):
             assert self._get_tx_id_mapping() == initial_mapping, (
                 "Mapping changed after full upgrade"
             )
+            self.redpanda._admin.await_active_version_settled()
             prev_version_str = ver_string(new_version)
 
         # Once we have upgraded to the newest version, enable tx batch removal.

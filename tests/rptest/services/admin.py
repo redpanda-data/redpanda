@@ -907,6 +907,28 @@ class Admin:
     def get_features(self, node: MaybeNode = None):
         return self._request("GET", "features", node=node).json()
 
+    def await_active_version_settled(
+        self,
+        node: MaybeNode = None,
+        timeout_sec: int = 60,
+        backoff_sec: int = 1,
+    ) -> None:
+        """
+        Wait until the cluster's active version has caught up to the
+        queried node's binary (cluster_version == node_latest_version).
+        """
+
+        def settled():
+            features = self.get_features(node=node)
+            return features["cluster_version"] == features["node_latest_version"]
+
+        wait_until(
+            settled,
+            timeout_sec=timeout_sec,
+            backoff_sec=backoff_sec,
+            err_msg="active version did not settle after upgrade",
+        )
+
     def get_cloud_storage_lifecycle_markers(self, node: MaybeNode = None):
         return self._request("GET", "cloud_storage/lifecycle", node=node).json()
 

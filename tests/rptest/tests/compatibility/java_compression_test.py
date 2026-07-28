@@ -186,6 +186,7 @@ class JavaCompressionTest(EndToEndTest):
             self.redpanda._installer.install(self.redpanda.nodes, version)
             self.redpanda.stop_node(self.redpanda.nodes[0])
             self.redpanda.start_node(self.redpanda.nodes[0])
+            self.redpanda._admin.await_active_version_settled()
         self.redpanda.stop_node(self.redpanda.nodes[0])
 
         # Delete all the compaction indices to force self compaction of segments.
