@@ -71,5 +71,6 @@ go_test(
         "@in_gopkg_yaml_v2//:yaml_v2",
         "@org_golang_google_protobuf//reflect/protoreflect",
         "@org_golang_google_protobuf//types/known/durationpb",
+        "@org_golang_google_protobuf//types/known/fieldmaskpb",
     ],
 )

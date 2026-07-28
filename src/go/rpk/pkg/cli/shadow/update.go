@@ -31,15 +31,37 @@ import (
 	"google.golang.org/protobuf/types/known/fieldmaskpb"
 )
 
+// redacted is the placeholder shown in place of a set password; the server
+// only reports whether a password is set, never its value.
+const redacted = "<redacted>"
+
+// cloudUpdateReplacePaths is the update mask covering every updatable field of
+// the cloud ShadowLinkUpdate message. The cloud API requires a mask, so
+// updates use this to replace the entire configuration.
+var cloudUpdateReplacePaths = []string{
+	"client_options",
+	"topic_metadata_sync_options",
+	"consumer_offset_sync_options",
+	"security_sync_options",
+	"schema_registry_sync_options",
+}
+
 func newUpdateCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "update [LINK_NAME]",
 		Short: "Update a Shadow Link",
-		Long: `Update a Shadow Link.
+		Long: `Updates a Shadow Link.
 
 This command opens your default editor with the current Shadow Link
 configuration. Update the fields you want to change, save the file, and close
-the editor. The command applies only the changed fields to the Shadow Link.
+the editor.
+
+The submitted configuration replaces the entire Shadow Link configuration:
+any field omitted is reset to its default value.
+
+Set passwords appear in the editor as the placeholder '<redacted>'; leave the
+placeholder untouched to keep the existing password, or replace it to set a
+new one.
 
 You cannot change the Shadow Link name. If you need to rename a Shadow Link,
 delete it and create a new one with the desired name.
@@ -48,7 +70,7 @@ The editor respects your EDITOR environment variable. If EDITOR is not set, the
 command uses 'vi' on Unix-like systems.
 `,
 		Example: `
-Update a Shadow Link configuration:
+Update a Shadow Link in your editor:
   rpk shadow update my-shadow-link
 `,
 		Args: cobra.ExactArgs(1),
@@ -58,11 +80,8 @@ Update a Shadow Link configuration:
 			prof := cfg.VirtualProfile()
 			config.CheckExitServerlessAdmin(prof)
 
-			// This commands retrieves the current ShadowLink configuration from
-			// 2 different sources depending on whether it's for Cloud or SH.
-			// The user will be prompted for changes in their editor of choice,
-			// and we calculate the diff from it. At the end, we need to call
-			// the appropriate API to submit the update.
+			// The editor is seeded with the current configuration; the
+			// submitted result replaces the entire configuration.
 			fromCloud := prof.CheckFromCloud()
 			linkName := args[0]
 			var (
@@ -86,10 +105,8 @@ Update a Shadow Link configuration:
 				out.MaybeDie(err, "unable to find Shadow Link %q", linkName)
 
 				cloudLinkID = link.GetId()
+				// Cloud uses secrets for passwords, no redaction needed.
 				originalCfg = cloudShadowLinkToConfig(link)
-
-				// Cloud uses secrets for passwords so we don't need to add the
-				// redacted string here.
 			} else {
 				adminClient, err = adminapi.NewClient(cmd.Context(), fs, prof)
 				out.MaybeDie(err, "unable to initialize admin client: %v", err)
@@ -105,7 +122,8 @@ Update a Shadow Link configuration:
 				addRedactedPasswordString(originalCfg, shadowLink)
 			}
 
-			// Second part: open editor and get updated configuration.
+			// Second part: open the editor and bail early when nothing
+			// changed.
 			updatedCfg, err := rpkos.EditTmpYAMLFile(cmd.Context(), fs, originalCfg)
 			out.MaybeDie(err, "unable to edit Shadow Link configuration: %v", err)
 
@@ -116,28 +134,25 @@ Update a Shadow Link configuration:
 				out.Die("shadow link name cannot be changed; if you need to rename, please delete and recreate the shadow link")
 			}
 
-			// Third part: calculate diff.
 			diff := diffConfigs(originalCfg, updatedCfg)
 			if diff == nil {
 				out.Exit("No changes detected")
 			}
+			zap.L().Sugar().Debugf("Detected changes in: %v", strings.Join(diff, ", "))
 
-			// Finally: submit the update request, for that we calculate the
-			// field mask from the diff.
+			// An untouched password placeholder means "keep the existing
+			// password"; the server preserves the stored password when
+			// the submitted one is empty and the username is set.
+			stripRedactedPasswords(updatedCfg)
+
 			if fromCloud {
+				err = validateCloudSecrets(cmd.Context(), prof, updatedCfg)
+				out.MaybeDie(err, "unable to validate cloud secrets: %v", err)
+
 				updatedSL := shadowLinkConfigToCloudUpdate(updatedCfg, cloudLinkID)
 
-				// Cloud proto doesn't have the "configurations" wrapper, so we
-				// need to strip it from the paths.
-				cloudDiff := make([]string, len(diff))
-				for i, path := range diff {
-					cloudDiff[i] = strings.TrimPrefix(path, "configurations.")
-				}
-
-				fm, err := fieldmaskpb.New(updatedSL, cloudDiff...)
+				fm, err := fieldmaskpb.New(updatedSL, cloudUpdateReplacePaths...) // The cloud API rejects an empty mask.
 				out.MaybeDie(err, "unrecognized changed fields: %v; please report this with Redpanda Support", err)
-
-				zap.L().Sugar().Debugf("Requesting configuration update for: %v", strings.Join(cloudDiff, ", "))
 				op, err := cloudClient.ShadowLink.UpdateShadowLink(cmd.Context(), connect.NewRequest(&controlplanev1.UpdateShadowLinkRequest{
 					ShadowLink: updatedSL,
 					UpdateMask: fm,
@@ -156,15 +171,10 @@ Update a Shadow Link configuration:
 				spinner.Success(fmt.Sprintf("Successfully updated shadow link %q", linkName))
 				os.Exit(0)
 			}
-			// Self-hosted path
-			updatedSL := shadowLinkConfigToProto(updatedCfg)
-			fm, err := fieldmaskpb.New(updatedSL, diff...)
-			out.MaybeDie(err, "unrecognized changed fields: %v; please report this with Redpanda Support", err)
 
-			zap.L().Sugar().Debugf("Requesting configuration update for: %v", strings.Join(diff, ", "))
+			zap.L().Sugar().Debug("Requesting full configuration replacement")
 			_, err = adminClient.ShadowLinkService().UpdateShadowLink(cmd.Context(), connect.NewRequest(&adminv2.UpdateShadowLinkRequest{
-				ShadowLink: updatedSL,
-				UpdateMask: fm,
+				ShadowLink: shadowLinkConfigToProto(updatedCfg),
 			}))
 			out.MaybeDie(err, "unable to update Shadow Link: %v", handleConnectError(err, "update", linkName))
 			fmt.Printf("Successfully updated shadow link %q.\n", linkName)
@@ -173,15 +183,41 @@ Update a Shadow Link configuration:
 	return cmd
 }
 
-// if the password is set, replace it with a redacted value so user can provide
-// a change easily instead of writing the full password field.
+// if a password is set, replace it with a redacted value so user can provide
+// a change easily instead of writing the full password field. The server only
+// reports whether a password is set, never its value.
 func addRedactedPasswordString(cfg *ShadowLinkConfig, link *adminv2.ShadowLink) {
-	isPassSet := link.GetConfigurations().GetClientOptions().GetAuthenticationConfiguration().GetScramConfiguration().GetPasswordSet()
-	if !isPassSet {
-		return
+	cfgs := link.GetConfigurations()
+	if cfgs.GetClientOptions().GetAuthenticationConfiguration().GetScramConfiguration().GetPasswordSet() {
+		if co := cfg.ClientOptions; co != nil {
+			if auth := co.AuthenticationConfiguration; auth != nil && auth.ScramConfiguration != nil {
+				auth.ScramConfiguration.Password = redacted
+			}
+		}
 	}
-	if auth := cfg.ClientOptions.AuthenticationConfiguration; auth != nil && auth.ScramConfiguration != nil {
-		auth.ScramConfiguration.Password = "<redacted>"
+
+	if cfgs.GetClientOptions().GetAuthenticationConfiguration().GetPlainConfiguration().GetPasswordSet() {
+		if co := cfg.ClientOptions; co != nil {
+			if auth := co.AuthenticationConfiguration; auth != nil && auth.PlainConfiguration != nil {
+				auth.PlainConfiguration.Password = redacted
+			}
+		}
+	}
+}
+
+// stripRedactedPasswords clears passwords still holding the editor-seeded
+// placeholder. An empty password with a username set tells the server to keep
+// the existing password.
+func stripRedactedPasswords(cfg *ShadowLinkConfig) {
+	if co := cfg.ClientOptions; co != nil {
+		if auth := co.AuthenticationConfiguration; auth != nil {
+			if scram := auth.ScramConfiguration; scram != nil && scram.Password == redacted {
+				scram.Password = ""
+			}
+			if plain := auth.PlainConfiguration; plain != nil && plain.Password == redacted {
+				plain.Password = ""
+			}
+		}
 	}
 }
 
