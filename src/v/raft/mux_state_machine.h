@@ -355,7 +355,7 @@ ss::future<std::error_code> mux_state_machine<T...>::replicate_and_wait(
 
 // return value only if state accepts given batch type
 template<typename State>
-static std::optional<State*>
+std::optional<State*>
 is_batch_applicable(State& s, const model::record_batch& batch) {
     if (s.is_batch_applicable(batch)) {
         return &s;
