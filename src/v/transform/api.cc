@@ -917,7 +917,7 @@ ss::future<std::error_code> service::patch_transform_metadata(
 
     transform->paused = patch.paused.value_or(transform->paused);
     if (patch.env.has_value()) {
-        std::exchange(transform->environment, std::move(patch.env).value());
+        transform->environment = std::move(patch.env).value();
     }
     transform->compression_mode = patch.compression_mode.value_or(
       transform->compression_mode);
