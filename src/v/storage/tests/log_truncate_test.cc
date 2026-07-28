@@ -20,7 +20,9 @@
 #include "storage/types.h"
 
 #include <seastar/util/defer.hh>
+#include <seastar/util/log.hh>
 
+#include <fmt/format.h>
 #include <gtest/gtest.h>
 
 #include <exception>
@@ -591,13 +593,15 @@ TEST_F(storage_test_fixture, test_concurrent_truncate_and_compaction) {
         f1.get();
     } catch (...) {
         housekeeping_eptr = std::current_exception();
-        SUCCEED() << "Housekeeping error: " << housekeeping_eptr;
+        SUCCEED() << "Housekeeping error: "
+                  << fmt::format("{}", ss::formattable(housekeeping_eptr));
     }
     try {
         f2.get();
     } catch (...) {
         truncation_eptr = std::current_exception();
-        SUCCEED() << "Truncation error: " << truncation_eptr;
+        SUCCEED() << "Truncation error: "
+                  << fmt::format("{}", ss::formattable(truncation_eptr));
     }
     if (housekeeping_eptr) {
         EXPECT_THROW(

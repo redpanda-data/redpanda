@@ -16,6 +16,9 @@
 
 #include <seastar/core/app-template.hh>
 #include <seastar/core/smp_options.hh>
+#include <seastar/util/log.hh>
+
+#include <fmt/format.h>
 
 #include <exception>
 
@@ -76,7 +79,9 @@ int main(int ac, char* av[]) {
             });
         });
     } catch (...) {
-        std::cerr << std::current_exception() << "\n";
+        std::cerr << fmt::format(
+          "{}", ss::formattable(std::current_exception()))
+                  << "\n";
         return 1;
     }
 }

@@ -91,7 +91,9 @@ redpanda_cc_gtest(
         "//src/v/kafka/server/tests:kafka_test_utils",
         "//src/v/test_utils:gtest",
         "//src/v/test_utils:scoped_config",
+        "@fmt",
         "@googletest//:gtest",
+        "@seastar",
     ],
 )
 

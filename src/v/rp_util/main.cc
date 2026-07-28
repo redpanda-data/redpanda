@@ -17,6 +17,9 @@
 #include "version/version.h"
 
 #include <seastar/core/app-template.hh>
+#include <seastar/util/log.hh>
+
+#include <fmt/format.h>
 
 #include <cerrno>
 #include <iostream>
@@ -37,7 +40,9 @@ int run_seastar(std::function<ss::future<int>()> main) {
     try {
         return app.run(args.size(), args.data(), std::move(main));
     } catch (...) {
-        std::cerr << std::current_exception() << "\n";
+        std::cerr << fmt::format(
+          "{}", ss::formattable(std::current_exception()))
+                  << "\n";
         return 1;
     }
 }
