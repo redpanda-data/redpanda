@@ -67,9 +67,12 @@ class ShadowLinkUnfinalizedUpgradeTest(ShadowLinkTestBase, UnfinalizedUpgradeMix
     (features active) providing topics, roles, and schemas to mirror.
 
     The lifecycle exercised end to end:
-      1. While unfinalized, the link's data plane works (topic mirroring) but the
-         v26.2 sync features are gated: configuring role sync or Schema Registry
-         API-mode sync is refused with FAILED_PRECONDITION.
+      1. While unfinalized, the link's data plane works (topic mirroring). If
+         the prior release predates the v26.2 sync features, they are gated:
+         configuring role sync or Schema Registry API-mode sync is refused with
+         FAILED_PRECONDITION. From a v26.2.1+ prior release the features are
+         active before the upgrade begins, so there is no gate to observe and
+         step 1 instead pins down that they stay active.
       2. The link's `link_configuration` -- written to the controller log by the
          HEAD binary -- survives a rollback to the prior release: the cluster
          comes back healthy and mirroring resumes, proving the record is
@@ -79,6 +82,10 @@ class ShadowLinkUnfinalizedUpgradeTest(ShadowLinkTestBase, UnfinalizedUpgradeMix
          actually sync real data: roles matching the filter appear on the target,
          and the source's schema appears in the target's Schema Registry.
     """
+
+    # The release that introduced the role-sync and SR API-mode sync features
+    # (shadow_link_role_sync, shadow_link_sr_api_sync) and their gates.
+    SYNC_FEATURES_MIN_RELEASE = (26, 2, 1)
 
     def __init__(self, test_context, *args, **kwargs):
         # Schema Registry on both clusters so SR API-mode sync can be exercised:
@@ -108,6 +115,11 @@ class ShadowLinkUnfinalizedUpgradeTest(ShadowLinkTestBase, UnfinalizedUpgradeMix
             f"features_auto_finalization backport {self.MIN_OLD_RELEASE}; cannot "
             "opt out before upgrade"
         )
+        # The sync features shipped in v26.2.1. When the old release predates
+        # them, an unfinalized upgrade holds them unavailable and their
+        # surfaces must refuse; from any newer old release they are active
+        # before the upgrade begins and there is no gate to observe.
+        self.sync_features_gated = self.old_release < self.SYNC_FEATURES_MIN_RELEASE
         self.logger.info(f"Target starts on old release {self.old_release}")
         self.installer.install(self.redpanda.nodes, self.old_release)
 
@@ -315,12 +327,29 @@ class ShadowLinkUnfinalizedUpgradeTest(ShadowLinkTestBase, UnfinalizedUpgradeMix
         else:
             raise AssertionError(f"{what} should be gated while unfinalized")
 
-    def _assert_v26_2_sync_gated(self):
-        """While unfinalized, both v26.2 sync surfaces must be refused on the
-        target with FAILED_PRECONDITION and the feature-specific message -- this
-        is what keeps a downgrade safe (no role/SR-API state can be written)."""
-        self._assert_gated(self._update_link_role_sync, ROLE_SYNC_GATE, "role sync")
-        self._assert_gated(self._update_link_sr_api, SR_API_GATE, "SR API-mode sync")
+    def _check_sync_gates_unfinalized(self):
+        """Pin down the state of the v26.2 sync surfaces while unfinalized.
+
+        When the old release predates the sync features, both surfaces must be
+        refused on the target with FAILED_PRECONDITION and the feature-specific
+        message -- this is what keeps a downgrade safe (no role/SR-API state
+        the old binary cannot read can be written). When the old release
+        already ships the features, they activated before the upgrade began
+        and any sync state is legible to the old binary; there is no gate to
+        observe, so instead assert the unfinalized upgrade did not regress them
+        to unavailable."""
+        if self.sync_features_gated:
+            self._assert_gated(self._update_link_role_sync, ROLE_SYNC_GATE, "role sync")
+            self._assert_gated(
+                self._update_link_sr_api, SR_API_GATE, "SR API-mode sync"
+            )
+        else:
+            for feature in ("shadow_link_role_sync", "shadow_link_sr_api_sync"):
+                state = self.redpanda.get_feature_state(feature)
+                assert state == "active", (
+                    f"{feature} was active on the old release and must stay "
+                    f"active while unfinalized, got {state}"
+                )
 
     def _verify_role_sync_works(self):
         """Post-finalize: configuring role sync is accepted and the migrator
@@ -406,8 +435,9 @@ class ShadowLinkUnfinalizedUpgradeTest(ShadowLinkTestBase, UnfinalizedUpgradeMix
         self._produce_source(MIRROR_TOPIC, MIRROR_RECORDS_PRE)
         self._wait_mirrored(MIRROR_TOPIC, MIRROR_RECORDS_PRE, "unfinalized")
 
-        # ...but the v26.2 sync features are gated off.
-        self._assert_v26_2_sync_gated()
+        # ...and the v26.2 sync surfaces are refused or active depending on
+        # whether the old release predates them.
+        self._check_sync_gates_unfinalized()
 
         # Roll the target back to the old release WITHOUT finalizing. The v1
         # link_configuration written by HEAD must replay on the old binary: the
@@ -453,9 +483,10 @@ class ShadowLinkUnfinalizedUpgradeTest(ShadowLinkTestBase, UnfinalizedUpgradeMix
         record the upgraded binary wrote.
 
         Lifecycle:
-          1. Unfinalized on HEAD: API-mode is refused (gated) while topic-mode is
-             accepted (ungated) -- the gate distinguishes the two modes. The
-             accepted config is read back through the controller.
+          1. Unfinalized on HEAD: topic-mode is accepted and read back through
+             the controller. When the prior release predates the v26.2 sync
+             features, API-mode is additionally refused (gated) -- the gate
+             distinguishes the two modes.
           2. Roll back to the prior release without finalizing: the cluster
              returns healthy (the populated v1 record replayed on the old binary)
              and the link's data plane keeps mirroring.
@@ -483,10 +514,17 @@ class ShadowLinkUnfinalizedUpgradeTest(ShadowLinkTestBase, UnfinalizedUpgradeMix
         self._produce_source(MIRROR_TOPIC, MIRROR_RECORDS_PRE)
         self._wait_mirrored(MIRROR_TOPIC, MIRROR_RECORDS_PRE, "unfinalized")
 
-        # The gate distinguishes the SR sync modes: API-mode is refused...
-        self._assert_gated(self._update_link_sr_api, SR_API_GATE, "SR API-mode sync")
-        # ...but topic-mode (pre-v26.2, ungated) is accepted and persisted as a
-        # populated schema_registry_sync_config in the controller log.
+        # When the old release predates the sync features, the gate
+        # distinguishes the SR sync modes: API-mode is refused while topic-mode
+        # (pre-v26.2, ungated) is accepted. From a v26.2.1+ old release there
+        # is no gate to observe on API-mode; the persistence round trip below
+        # is regime-independent.
+        if self.sync_features_gated:
+            self._assert_gated(
+                self._update_link_sr_api, SR_API_GATE, "SR API-mode sync"
+            )
+        # Topic-mode is accepted and persisted as a populated
+        # schema_registry_sync_config in the controller log.
         self._update_link_sr_topic()
         self._assert_sr_sync_mode("shadow_schema_registry_topic", "unfinalized")
 

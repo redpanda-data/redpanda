@@ -55,7 +55,6 @@ from rptest.services.redpanda import (
     SecurityConfig,
 )
 from rptest.services.redpanda_installer import (
-    RedpandaInstaller,
     wait_for_num_versions,
 )
 from rptest.services.redpanda_types import SaslCredentials
@@ -11882,14 +11881,14 @@ class SchemaRegistryTransportCompatTest(RedpandaTest):
             for i in range(num_subjects)
         ]
 
-        self.installer.install(self.redpanda.nodes, RedpandaInstaller.HEAD)
-        self.redpanda.rolling_restart_nodes(self.redpanda.nodes)
-        wait_for_num_versions(self.redpanda, 1)
-
         # api::start picks the transport once at process start; rolling-
-        # restart re-runs it now that the active version is past the
+        # restart re-runs it once the active version is past the
         # v26.2.1 gate.
-        self.redpanda.rolling_restart_nodes(self.redpanda.nodes)
+        for version in self.installer.upgrade_path_to_head(self.initial_version):
+            self.installer.install(self.redpanda.nodes, version)
+            self.redpanda.rolling_restart_nodes(self.redpanda.nodes)
+            wait_for_num_versions(self.redpanda, 1)
+            self.redpanda._admin.await_active_version_settled()
 
         for node in self.redpanda.nodes:
             wait_until(
