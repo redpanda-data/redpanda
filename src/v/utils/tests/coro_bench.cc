@@ -144,7 +144,7 @@ struct large_object {
 ss::future<> nested_after_yield() {
     using T = small_object;
     T t{};
-    return yield().then([t = t]() mutable {
+    return ss::yield().then([t = t]() mutable {
         return do_work(t)
           .then([](T t) { return do_work(t); })
           .then([](T t) { return do_work(t); })
@@ -157,7 +157,7 @@ ss::future<> nested_after_yield() {
 ss::future<> chained_after_yield() {
     using T = small_object;
     T t{};
-    return yield()
+    return ss::yield()
       .then([t = t]() mutable { return do_work(t); })
       .then([](T t) { return do_work(t); })
       .then([](T t) { return do_work(t); })
@@ -170,7 +170,7 @@ ss::future<> chained_after_yield() {
 
 ss::future<> coro_after_yield() {
     small_object t{};
-    co_await yield();
+    co_await ss::yield();
 
     t = co_await do_work(t);
     t = co_await do_work(t);
