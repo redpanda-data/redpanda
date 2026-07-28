@@ -553,7 +553,12 @@ class RBACTest(RBACTestBase):
         # TODO: Add testing for filtering once v2 list_current_user_roles supports it
         # self.logger.debug("Test '?filter' parameter")
 
-        bogus_admin = AdminV2RoleWrapper(AdminV2(self.redpanda, auth=("bob", "1234")))
+        # The password must be at least 14 bytes long. In FIPS mode the broker
+        # rejects a shorter password before it ever looks the user up, and admin
+        # v2 reports that as an internal error rather than unauthenticated.
+        bogus_admin = AdminV2RoleWrapper(
+            AdminV2(self.redpanda, auth=("bob", "bogus_password0"))
+        )
         with expect_role_error(ConnectErrorCode.UNAUTHENTICATED):
             bogus_admin.list_current_user_roles()
 
