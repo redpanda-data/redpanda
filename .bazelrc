@@ -264,6 +264,17 @@ build:debug --copt=-O1
 build:fuzz --config=debug
 build:fuzz --copt=-fsanitize=fuzzer-no-link
 
+# Uncomment to exempt seastar from coverage instrumentation: fewer
+# scheduling-dependent edges credited to whichever input happened to yield,
+# and fewer counters for libFuzzer to clear on every execution. Not a
+# complete cure, seastar calls into other instrumented libraries; the same
+# mechanism can exempt those too.
+#build:fuzz --per_file_copt=external/.*seastar.*@-fno-sanitize-coverage=inline-8bit-counters
+#build:fuzz --per_file_copt=external/.*seastar.*@-fno-sanitize-coverage=pc-table
+#build:fuzz --per_file_copt=external/.*seastar.*@-fno-sanitize-coverage=trace-cmp
+#build:fuzz --per_file_copt=external/.*seastar.*@-fno-sanitize-coverage=indirect-calls
+#build:fuzz --per_file_copt=external/.*seastar.*@-fno-sanitize-coverage=stack-depth
+
 # =================================
 # ODR Finder
 # =================================
