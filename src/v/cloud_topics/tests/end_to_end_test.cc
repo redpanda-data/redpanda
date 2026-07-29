@@ -11,6 +11,8 @@
 #include "cloud_io/tests/s3_imposter.h"
 #include "cloud_topics/level_zero/stm/ctp_stm.h"
 #include "container/chunked_vector.h"
+#include "kafka/data/partition_proxy.h"
+#include "kafka/server/tests/delete_records_utils.h"
 #include "kafka/server/tests/list_offsets_utils.h"
 #include "kafka/server/tests/produce_consume_utils.h"
 #include "model/batch_builder.h"
@@ -82,6 +84,16 @@ public:
     tests::kafka_list_offsets_transport* make_list_offsets_client() {
         auto transport = std::make_unique<tests::kafka_list_offsets_transport>(
           make_kafka_client().get());
+        transport->start().get();
+        auto* t = transport.get();
+        cleanup.emplace_back([t = std::move(transport)] { t->stop().get(); });
+        return t;
+    }
+
+    tests::kafka_delete_records_transport* make_delete_records_client() {
+        auto transport
+          = std::make_unique<tests::kafka_delete_records_transport>(
+            make_kafka_client().get());
         transport->start().get();
         auto* t = transport.get();
         cleanup.emplace_back([t = std::move(transport)] { t->stop().get(); });
@@ -391,4 +403,154 @@ TEST_F(e2e_fixture, test_tailing_consumer_no_l0_downloads) {
       << " unexpected S3 GetObject request(s) during tailing consume. "
          "This indicates a race between replicate() and cache_put() "
          "in the cloud topics write path.";
+}
+
+// A ListOffsets-by-timestamp answer must never be below the partition's
+// Kafka start offset. Kafka guarantees the offset returned by
+// offsetsForTimes is fetchable; if it is below the start offset the client's
+// own fetch is rejected with OFFSET_OUT_OF_RANGE and auto.offset.reset fires.
+//
+// Setup: 20 single-record batches reconciled into a single L1 extent
+// [0, 20), then DeleteRecords(10). The surviving log is [10, 20). A query
+// for a timestamp older than every record must answer 10, not 0.
+TEST_F(e2e_fixture, timequery_after_delete_records_respects_start_offset_l1) {
+    // Hold reconciliation off while producing so that all of the records land
+    // in a single L1 extent -- DeleteRecords must fall strictly inside an
+    // extent, otherwise the metastore prunes the whole extent and the
+    // straddling case is never exercised.
+    test_local_cfg.get("cloud_topics_disable_reconciliation_loop")
+      .set_value(true);
+
+    constexpr int num_records = 20;
+    constexpr int delete_up_to = 10;
+
+    auto now = model::timestamp::now();
+    // Every record is in the past, oldest first: record i has
+    // ts = now - (num_records - i) seconds.
+    auto ts_for = [now](int i) {
+        return model::timestamp{now() - (num_records - i) * 1000};
+    };
+
+    auto* producer = make_producer();
+    for (int i = 0; i < num_records; ++i) {
+        producer
+          ->produce_to_partition(
+            topic_name,
+            model::partition_id(0),
+            std::vector<kv_t>{{ssx::sformat("k{}", i), ssx::sformat("v{}", i)}},
+            ts_for(i))
+          .get();
+    }
+
+    // Let a single reconciliation round move everything into L1.
+    test_local_cfg.get("cloud_topics_disable_reconciliation_loop")
+      .set_value(false);
+
+    auto partition = app.partition_manager.local().get(ntp);
+    ASSERT_NE(partition, nullptr);
+    auto stm = partition->raft()->stm_manager()->get<cloud_topics::ctp_stm>();
+    ASSERT_TRUE(stm != nullptr);
+    RPTEST_REQUIRE_EVENTUALLY(30s, [stm]() {
+        auto lro = stm->state().get_last_reconciled_offset();
+        return lro.has_value() && *lro == kafka::offset(num_records - 1);
+    });
+
+    auto* deleter = make_delete_records_client();
+    deleter
+      ->delete_records_from_partition(
+        topic_name,
+        model::partition_id(0),
+        model::offset(delete_up_to),
+        std::chrono::seconds(10))
+      .get();
+
+    // A timestamp older than every record. The oldest *surviving* record is
+    // at offset 10, so that is the only Kafka-correct answer.
+    auto* client = make_list_offsets_client();
+    auto query_ts = model::timestamp{now() - (num_records + 10) * 1000};
+    auto answer = client->timequery(ntp.tp, query_ts).get();
+    vlog(
+      e2e_test_log.info,
+      "timequery({}) answered {} (kafka start offset {})",
+      query_ts,
+      answer,
+      delete_up_to);
+    EXPECT_EQ(answer, kafka::offset(delete_up_to))
+      << "timequery answered " << answer << " rather than the Kafka start "
+      << "offset " << delete_up_to << "; a client seeking below the start "
+      << "offset gets OFFSET_OUT_OF_RANGE";
+
+    // Kafka's contract for offsetsForTimes: the returned offset is fetchable.
+    auto proxy = kafka::make_partition_proxy(partition);
+    auto fetch_ec = proxy
+                      .validate_fetch_offset(
+                        model::offset(answer()),
+                        false,
+                        model::timeout_clock::now() + 30s)
+                      .get();
+    EXPECT_EQ(fetch_ec, kafka::error_code::none)
+      << "a fetch at the offset timequery answered (" << answer
+      << ") was rejected with " << fetch_ec;
+}
+
+// Same invariant, but the coarse candidate comes from the local log:
+// DeleteRecords lands in the middle of a placeholder batch, so the local
+// reader hands refine_timequery_result a batch whose base offset is below
+// the Kafka start offset.
+TEST_F(e2e_fixture, timequery_after_delete_records_respects_start_offset_l0) {
+    // Keep everything in L0 so l1_timequery finds nothing and the L0
+    // candidate is the one that gets refined.
+    test_local_cfg.get("cloud_topics_disable_reconciliation_loop")
+      .set_value(true);
+
+    constexpr int records_per_batch = 5;
+    constexpr int num_batches = 4;
+    constexpr int num_records = records_per_batch * num_batches;
+    // Strictly inside the first batch [0, 4].
+    constexpr int delete_up_to = 3;
+
+    auto now = model::timestamp::now();
+    auto* producer = make_producer();
+    for (int b = 0; b < num_batches; ++b) {
+        std::vector<kv_t> records;
+        for (int i = 0; i < records_per_batch; ++i) {
+            int n = b * records_per_batch + i;
+            records.emplace_back(
+              ssx::sformat("k{}", n), ssx::sformat("v{}", n));
+        }
+        producer
+          ->produce_to_partition(
+            topic_name,
+            model::partition_id(0),
+            std::move(records),
+            model::timestamp{now() - (num_batches - b) * 1000})
+          .get();
+    }
+
+    auto* deleter = make_delete_records_client();
+    deleter
+      ->delete_records_from_partition(
+        topic_name,
+        model::partition_id(0),
+        model::offset(delete_up_to),
+        std::chrono::seconds(10))
+      .get();
+
+    auto* client = make_list_offsets_client();
+    auto hwm
+      = client->high_watermark_for_partition(topic_name, model::partition_id(0))
+          .get();
+    ASSERT_EQ(hwm, model::offset(num_records));
+
+    auto query_ts = model::timestamp{now() - (num_batches + 10) * 1000};
+    auto answer = client->timequery(ntp.tp, query_ts).get();
+    vlog(
+      e2e_test_log.info,
+      "L0 timequery({}) answered {} (kafka start offset {})",
+      query_ts,
+      answer,
+      delete_up_to);
+    EXPECT_EQ(answer, kafka::offset(delete_up_to))
+      << "timequery answered " << answer << " rather than the Kafka start "
+      << "offset " << delete_up_to;
 }
