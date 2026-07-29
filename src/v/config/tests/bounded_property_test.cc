@@ -79,7 +79,7 @@ struct test_config : public config::config_store {
           {.min = 5ms})
       , minmax_bounded_opt_ms(
           *this,
-          "bounded_opt_ms",
+          "minmax_bounded_opt_ms",
           "An optional duration",
           {},
           std::nullopt,
