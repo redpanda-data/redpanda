@@ -80,7 +80,7 @@ class role_store {
       detail::role_member_eq>;
     using role_accessor = std::pair<
       role_name_view, /* role_name */
-      ss::noncopyable_function<const members_store_type&(void)>>;
+      ss::noncopyable_function<const members_store_type&()>>;
     using range_query_container_type = chunked_vector<role_name_view>;
 
 public:

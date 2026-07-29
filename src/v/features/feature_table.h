@@ -667,7 +667,7 @@ public:
      * If the feature never activates (i.e. if shutting down while waiting),
      * the given function is not run.
      */
-    ss::future<> await_feature_then(feature f, std::function<void(void)> fn);
+    ss::future<> await_feature_then(feature f, std::function<void()> fn);
 
     ss::future<> await_feature_preparing(feature f, ss::abort_source& as);
 
