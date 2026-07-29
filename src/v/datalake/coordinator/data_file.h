@@ -83,4 +83,17 @@ struct data_file
     friend bool operator==(const data_file&, const data_file&) = default;
 };
 
+// Estimated in-memory footprint of a pending data file.
+inline size_t estimated_memory_bytes(const data_file& f) {
+    size_t bytes = sizeof(data_file) + f.remote_path.size();
+    for (const auto& k : f.partition_key) {
+        bytes += sizeof(std::optional<::bytes>)
+                 + (k.has_value() ? k->size() : 0);
+    }
+    for (const auto& s : f.column_stats) {
+        bytes += estimated_memory_bytes(s);
+    }
+    return bytes;
+}
+
 } // namespace datalake::coordinator

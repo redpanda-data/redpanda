@@ -154,6 +154,20 @@ redpanda_cc_gtest(
 )
 
 redpanda_cc_gtest(
+    name = "data_file_test",
+    timeout = "short",
+    srcs = ["data_file_test.cc"],
+    deps = [
+        "//src/v/bytes",
+        "//src/v/datalake:base_types",
+        "//src/v/datalake/coordinator:data_file",
+        "//src/v/datalake/coordinator:translated_offset_range",
+        "//src/v/test_utils:gtest",
+        "@googletest//:gtest",
+    ],
+)
+
+redpanda_cc_gtest(
     name = "state_machine_test",
     timeout = "short",
     srcs = [
