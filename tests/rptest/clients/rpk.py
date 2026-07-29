@@ -1599,6 +1599,37 @@ class RpkTool:
         )
         return f"{rp_install_path_root}/bin/rpk"
 
+    def _cluster_brokers(self, subcommand, node, wait, wait_timeout, timeout):
+        node_id = (
+            self._redpanda.node_id(node) if isinstance(node, ClusterNode) else node
+        )
+        cmd = [
+            self._rpk_binary(),
+            "--api-urls",
+            self._admin_host(),
+            "cluster",
+            "brokers",
+            subcommand,
+            str(node_id),
+        ]
+        if wait:
+            cmd.append("--wait")
+        if wait_timeout is not None:
+            cmd += ["--wait-timeout", wait_timeout]
+        return self._execute(cmd, timeout=timeout)
+
+    def cluster_decommission_broker(
+        self, node, wait=False, wait_timeout=None, timeout=None
+    ):
+        return self._cluster_brokers("decommission", node, wait, wait_timeout, timeout)
+
+    def cluster_decommission_status(
+        self, node, wait=False, wait_timeout=None, timeout=None
+    ):
+        return self._cluster_brokers(
+            "decommission-status", node, wait, wait_timeout, timeout
+        )
+
     def cluster_maintenance_enable(self, node, wait=False):
         node_id = (
             self._redpanda.node_id(node) if isinstance(node, ClusterNode) else node

@@ -18,7 +18,7 @@ from ducktape.utils.util import wait_until
 from ducktape.cluster.cluster import ClusterNode
 from rptest.clients.default import DefaultClient
 from rptest.clients.kafka_cat import KafkaCat
-from rptest.clients.rpk import RpkTool
+from rptest.clients.rpk import RpkException, RpkTool
 from rptest.clients.types import TopicSpec
 from rptest.services.admin import Admin
 from rptest.services.cluster import cluster
@@ -1383,6 +1383,137 @@ class NodeDecommissionFailureReportingTest(RedpandaTest):
             self.redpanda, to_decommission_id, self.logger, progress_timeout=60
         )
         waiter.wait_for_removal()
+
+
+class NodeDecommissionWaitTest(RedpandaTest):
+    """Covers 'rpk cluster brokers decommission --wait': blocking until a
+    decommission completes, and returning a reasonable error instead of
+    hanging when a decommission can never make progress."""
+
+    def __init__(self, *args, **kwargs):
+        # Three brokers. The stuck case uses a topic with RF equal to the broker
+        # count (RF must be odd, so 3), which cannot be re-replicated onto the
+        # two survivors. The success case uses an RF=1 topic, which can.
+        super().__init__(*args, num_brokers=3, **kwargs)
+
+    def _expect_wait_timeout(self, wait_call):
+        # rpk's own --wait-timeout must fire well before the subprocess timeout
+        # so we exercise rpk's timeout handling rather than a hard process kill.
+        try:
+            wait_call(wait=True, wait_timeout="10s", timeout=60)
+            assert False, "expected rpk to exit non-zero on a stuck decommission"
+        except RpkException as e:
+            assert e.returncode not in (
+                0,
+                None,
+            ), f"expected a non-zero rpk exit, got returncode {e.returncode}"
+            combined = f"{e.msg}\n{e.stdout}\n{e.stderr}"
+            assert "timed out" in combined or "decommission-status" in combined, (
+                f"rpk output did not explain the stuck decommission: {combined}"
+            )
+
+    @cluster(num_nodes=3, log_allow_list=RESTART_LOG_ALLOW_LIST)
+    def test_wait_times_out_when_stuck(self):
+        # A topic whose replication factor equals the broker count cannot be
+        # re-replicated once a broker is removed: decommissioning any node
+        # leaves too few nodes to host a replica. The decommission therefore
+        # never completes, deterministically.
+        spec = TopicSpec(partition_count=1, replication_factor=3)
+        self.client().create_topic(spec)
+
+        admin = Admin(self.redpanda)
+        node = self.redpanda.node_id(self.redpanda.nodes[-1])
+        rpk = RpkTool(self.redpanda)
+
+        # 'decommission --wait' issues the decommission and waits; when it times
+        # out it leaves the decommission in progress on the cluster, so
+        # 'decommission-status --wait' then watches that same stuck decommission.
+        self._expect_wait_timeout(
+            lambda **kw: rpk.cluster_decommission_broker(node, **kw)
+        )
+        self._expect_wait_timeout(
+            lambda **kw: rpk.cluster_decommission_status(node, **kw)
+        )
+
+        # The one-shot status (no --wait) should still succeed and print a
+        # reasonable snapshot of the in-progress, stuck decommission.
+        status = rpk.cluster_decommission_status(node)
+        assert "DECOMMISSION PROGRESS" in status, status
+
+        # Recommission so the cluster tears down cleanly.
+        admin.recommission_broker(node)
+
+    @cluster(num_nodes=3, log_allow_list=RESTART_LOG_ALLOW_LIST)
+    def test_wait_succeeds(self):
+        # An RF=1 topic can be re-replicated onto the survivors after a broker
+        # is removed, so the decommission completes and --wait blocks only until
+        # it is finished and then reports success.
+        spec = TopicSpec(partition_count=3, replication_factor=1)
+        self.client().create_topic(spec)
+
+        admin = Admin(self.redpanda)
+        node = self.redpanda.node_id(self.redpanda.nodes[-1])
+        rpk = RpkTool(self.redpanda)
+
+        out = rpk.cluster_decommission_broker(
+            node, wait=True, wait_timeout="120s", timeout=180
+        )
+        assert "decommissioned successfully" in out, out
+
+        # --wait returns once data movement reports finished; the broker's
+        # removal from cluster membership follows shortly after, so allow a
+        # brief window for it to disappear from the broker list.
+        def broker_removed():
+            return node not in [b["node_id"] for b in admin.get_brokers()]
+
+        wait_until(
+            broker_removed,
+            timeout_sec=30,
+            backoff_sec=1,
+            err_msg=f"broker {node} still present after a successful decommission --wait",
+        )
+
+    @cluster(num_nodes=3, log_allow_list=RESTART_LOG_ALLOW_LIST)
+    def test_wait_returns_when_recommissioned(self):
+        # An RF == broker count topic keeps the decommission from ever
+        # completing, giving a stable in-progress state to abort. Once the
+        # broker is recommissioned mid-wait, --wait should observe that it is
+        # no longer decommissioning and return promptly.
+        spec = TopicSpec(partition_count=1, replication_factor=3)
+        self.client().create_topic(spec)
+
+        admin = Admin(self.redpanda)
+        node = self.redpanda.node_id(self.redpanda.nodes[-1])
+        rpk = RpkTool(self.redpanda)
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+            fut = executor.submit(
+                lambda: rpk.cluster_decommission_broker(node, wait=True, timeout=60)
+            )
+
+            def draining():
+                for b in admin.get_brokers():
+                    if b["node_id"] == node:
+                        return b["membership_status"] == "draining"
+                return False
+
+            wait_until(
+                draining,
+                timeout_sec=30,
+                backoff_sec=1,
+                err_msg=f"broker {node} never entered the draining state",
+            )
+            admin.recommission_broker(node)
+
+            # The wait cannot complete once aborted, so rpk exits non-zero with
+            # a reason. A hang would raise a TimeoutError from fut.result.
+            try:
+                out = fut.result(timeout=30)
+            except RpkException as e:
+                out = f"{e.msg}\n{e.stdout}\n{e.stderr}"
+
+        assert "decommissioned successfully" not in out, out
+        assert "not decommissioning" in out, out
 
 
 class NodeDecommissionSpaceManagementTest(RedpandaTest):

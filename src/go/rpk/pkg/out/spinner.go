@@ -62,8 +62,8 @@ func WithElapsedTime() SpinnerOption {
 	}
 }
 
-// isTerminal checks if the given writer is a terminal.
-func isTerminal(w io.Writer) bool {
+// IsTerminal reports whether the given writer is a terminal.
+func IsTerminal(w io.Writer) bool {
 	if f, ok := w.(*os.File); ok {
 		return isatty.IsTerminal(f.Fd()) || isatty.IsCygwinTerminal(f.Fd())
 	}
@@ -94,7 +94,7 @@ func NewSpinner(ctx context.Context, message string, opts ...SpinnerOption) *Spi
 
 	s := &Spinner{
 		output:      cfg.output,
-		isTTY:       isTerminal(cfg.output),
+		isTTY:       IsTerminal(cfg.output),
 		startTime:   time.Now(),
 		showElapsed: cfg.showElapsed,
 		message:     message,
