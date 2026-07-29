@@ -401,3 +401,12 @@ test --test_env=REDPANDA_RNG_SEEDING_MODE
 test --test_env=REDPANDA_DEBUG_TEST_HOOKS
 
 try-import %workspace%/user.bazelrc
+
+# DNM (CORE-16940 experiment, arm A = default 60s --remote_timeout).
+# No-op compiler + linker flags whose only purpose is to change the action key
+# so every C++ compile and link re-executes and must upload its outputs to the
+# remote cache. This exercises the multi-GB CAS upload path that silently fails
+# under the 60s deadline. Unused define / unused absolute symbol: no codegen
+# effect beyond the command line hash.
+build --copt=-DRP_CACHE_PROBE_A=1
+build --linkopt=-Wl,--defsym=rp_cache_probe_a=0
