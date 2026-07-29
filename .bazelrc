@@ -114,13 +114,17 @@ build --per_file_copt=.*\\.pb\\.cc@-Wno-deprecated-declarations
 build --per_file_copt=external/protobuf.*@-Wno-deprecated-declarations
 build --host_per_file_copt=external/protobuf.*@-Wno-deprecated-declarations
 
-# Suppress -Wunused-variable in all external modules: we don't control their
+# Suppress unused diagnostics in all external modules: we don't control their
 # sources, and the noise crowds out warnings from our own code. host_per_file_copt
 # covers exec-config (tool) builds like ragel.
 build --per_file_copt=external/.*@-Wno-unused-variable
 build --host_per_file_copt=external/.*@-Wno-unused-variable
 build --per_file_copt=external/.*@-Wno-unused-but-set-variable
 build --host_per_file_copt=external/.*@-Wno-unused-but-set-variable
+# New warning in clang-23 which is fairly aggressive and issues lots of warnings
+# in old/not-updated libraries
+build --per_file_copt=external/.*@-Wno-unused-template
+build --host_per_file_copt=external/.*@-Wno-unused-template
 
 # ragel/colm: assert(false) at end of non-void function (e.g. lookup.cc:50) — UB under NDEBUG but unreachable in practice; unfixed upstream
 build --per_file_copt=external/ragel.*@-Wno-return-type
