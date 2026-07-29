@@ -16,9 +16,13 @@
 #include "model/fundamental.h"
 #include "serde/envelope.h"
 
+#include <seastar/util/bool_class.hh>
+
 #include <deque>
 
 namespace datalake::coordinator {
+
+using drift_detected = ss::bool_class<struct drift_detected_tag>;
 
 // Represents the state to be managed by the datalake coordinator's replicated
 // state machine.
@@ -168,6 +172,29 @@ struct topics_state
     // Returns the state for the given partition.
     std::optional<std::reference_wrapper<const partition_state>>
     partition_state(const model::topic_partition&) const;
+
+    size_t pending_files() const { return pending_files_; }
+    size_t pending_bytes() const { return pending_bytes_; }
+
+    void note_added(const translated_offset_range&);
+    // Reports drift if the totals were already too low to cover the removal,
+    // in which case the caller must recompute them once the entries are gone.
+    [[nodiscard]] drift_detected note_removed(const translated_offset_range&);
+
+    std::pair<size_t, size_t> compute_pending() const;
+
+    // Rebuild the totals from topic_to_state, which a snapshot install restores
+    // without them.
+    void recompute_pending();
+
+    // Crashes debug builds if an update changed pending entries without
+    // note_added() or note_removed().
+    void dassert_pending_totals() const;
+
+    // Running totals across all topics. Derived from topic_to_state, so left
+    // out of serde_fields(): a cache, not replicated state.
+    size_t pending_files_ = 0;
+    size_t pending_bytes_ = 0;
 };
 
 } // namespace datalake::coordinator
