@@ -628,7 +628,10 @@ class RBACTest(RBACTestBase):
             f"Unexpected roles list {roles_list}"
         )
 
-        bogus_admin = Admin(self.redpanda, auth=("bob", "1234"))
+        # The password must be at least 14 bytes long. In FIPS mode the broker
+        # rejects a shorter password before it ever looks the user up, which
+        # answers 400 instead of the 401 this test is checking for.
+        bogus_admin = Admin(self.redpanda, auth=("bob", "bogus_password0"))
 
         with expect_http_error(401):
             bogus_admin.list_user_roles()
