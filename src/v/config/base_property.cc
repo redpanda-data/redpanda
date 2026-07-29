@@ -46,11 +46,16 @@ base_property::base_property(
   base_property::metadata meta)
   : _meta(intern_metadata(name, desc, std::move(meta)))
   , _conf(&conf) {
-    conf._properties.emplace(_meta->name, this);
+    auto inserted = conf._properties.emplace(_meta->name, this).second;
+    vassert(
+      inserted,
+      "Two properties tried to register the same name {}",
+      _meta->name);
     for (const auto& alias : _meta->aliases) {
-        auto [_, inserted] = conf._aliases.emplace(alias, this);
+        auto alias_inserted = conf._aliases.emplace(alias, this).second;
 
-        vassert(inserted, "Two properties tried to register the same alias");
+        vassert(
+          alias_inserted, "Two properties tried to register the same alias");
     }
 }
 
