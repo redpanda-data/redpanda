@@ -8,7 +8,7 @@
 # by the Apache License, Version 2.0
 
 import time
-from typing import Callable
+from typing import Callable, Iterable
 
 from connectrpc.errors import ConnectError, ConnectErrorCode
 
@@ -57,6 +57,20 @@ def _group(name: str) -> security_pb2.RoleMember:
     return security_pb2.RoleMember(group=security_pb2.RoleGroup(name=name))
 
 
+def _flatten_member_names(members: Iterable[security_pb2.RoleMember]) -> set[str]:
+    """Flatten RoleMember oneofs down to their bare names."""
+    result: set[str] = set()
+    for m in members:
+        match m.WhichOneof("member"):
+            case "user":
+                result.add(m.user.name)
+            case "group":
+                result.add(m.group.name)
+            case other:
+                raise AssertionError(f"unexpected role member type {other!r}")
+    return result
+
+
 class RoleSyncTestBase(ShadowLinkTestBase):
     """Shared helpers for shadow-link role-sync tests. Holds no test methods so
     concrete subclasses with different topologies can reuse it without
@@ -101,18 +115,7 @@ class RoleSyncTestBase(ShadowLinkTestBase):
                 f"unexpected error fetching role {role!r}: {e}"
             )
             return set()
-        result: set[str] = set()
-        for m in members:
-            match m.WhichOneof("member"):
-                case "user":
-                    result.add(m.user.name)
-                case "group":
-                    result.add(m.group.name)
-                case other:
-                    raise AssertionError(
-                        f"unexpected role member type {other!r} in role {role!r}"
-                    )
-        return result
+        return _flatten_member_names(members)
 
     def _set_role_sync_paused(self, paused: bool) -> None:
         link = self.get_link(self.LINK)
@@ -593,21 +596,48 @@ class ShadowLinkRoleSyncScaleTest(RoleSyncTestBase):
         assert last is not None
         raise last
 
-    def _seed_source_roles(self, num_roles: int, members_per_role: int) -> set[str]:
+    def _seed_source_roles(
+        self, num_roles: int, members_per_role: int
+    ) -> dict[str, set[str]]:
         """Create num_roles in-scope roles on the source, each with
-        members_per_role distinct user members; return the role names. Members
-        are free-form principal names that need no backing user accounts -- the
-        migrator mirrors them as data."""
-        names: set[str] = set()
+        members_per_role distinct user members; return the created
+        {role name -> member names} map. Members are free-form principal names
+        that need no backing user accounts -- the migrator mirrors them as
+        data."""
+        created: dict[str, set[str]] = {}
         for i in range(num_roles):
             name = f"{self.PREFIX}role-{i}"
-            members = [_user(f"u-{i}-{m}") for m in range(members_per_role)]
-            self._retry_transient(self._src.create_role, role=name, members=members)
-            names.add(name)
-        return names
+            member_names = {f"u-{i}-{m}" for m in range(members_per_role)}
+            self._retry_transient(
+                self._src.create_role,
+                role=name,
+                members=[_user(n) for n in member_names],
+            )
+            created[name] = member_names
+        return created
 
-    def _synced_role_names(self) -> set[str]:
-        return {n for n in self._dst.list_role_names() if n.startswith(self.PREFIX)}
+    def _dst_roles_converged(self, phase: str, want: dict[str, set[str]]) -> bool:
+        """One poll of the destination: true iff the synced-role map equals
+        want."""
+        got = {
+            r.name: _flatten_member_names(r.members)
+            for r in self._dst.list_roles()
+            if r.name.startswith(self.PREFIX)
+        }
+        if got == want:
+            return True
+        missing_roles = want.keys() - got.keys()
+        unexpected_roles = got.keys() - want.keys()
+        roles_with_wrong_members = {
+            role for role in want.keys() & got.keys() if got[role] != want[role]
+        }
+        self.logger.debug(
+            f"role convergence ({phase}): "
+            f"missing_roles={len(missing_roles)}, "
+            f"unexpected_roles={len(unexpected_roles)}, "
+            f"roles_with_wrong_members={len(roles_with_wrong_members)}"
+        )
+        return False
 
     @cluster(num_nodes=6)
     @parametrize(num_roles=5000, members_per_role=1)
@@ -625,8 +655,6 @@ class ShadowLinkRoleSyncScaleTest(RoleSyncTestBase):
             max_controller_records
         )
 
-        first = f"{self.PREFIX}role-0"
-        last = f"{self.PREFIX}role-{num_roles - 1}"
         mirror_timeout_sec = 240
 
         # CREATE: seed the source, then mirror it to the destination.
@@ -639,7 +667,7 @@ class ShadowLinkRoleSyncScaleTest(RoleSyncTestBase):
         create_start = time.time()
         self._create_link_with_role_sync()
         wait_until(
-            lambda: self._synced_role_names() >= expected,
+            lambda: self._dst_roles_converged("create", expected),
             timeout_sec=mirror_timeout_sec,
             backoff_sec=2,
             err_msg=f"{num_roles} roles did not fully mirror within "
@@ -648,14 +676,6 @@ class ShadowLinkRoleSyncScaleTest(RoleSyncTestBase):
         self.logger.info(
             f"role sync created {num_roles} roles in {time.time() - create_start:.1f}s"
         )
-        # Membership integrity at the range ends (a full per-role check would add
-        # num_roles RPCs); the first and last seeded roles bound the range.
-        for i in sorted({0, num_roles - 1}):
-            name = f"{self.PREFIX}role-{i}"
-            want = {f"u-{i}-{m}" for m in range(members_per_role)}
-            assert self._dst_role_members(name) == want, (
-                f"membership mismatch for {name} after create"
-            )
 
         # UPDATE: change every role's membership -- drop one member from each --
         # so all num_roles roles flow through the update apply loop.
@@ -666,11 +686,12 @@ class ShadowLinkRoleSyncScaleTest(RoleSyncTestBase):
                 role=f"{self.PREFIX}role-{i}",
                 members=[_user(f"u-{i}-0")],
             )
+        updated = {
+            f"{self.PREFIX}role-{i}": {f"u-{i}-{m}" for m in range(1, members_per_role)}
+            for i in range(num_roles)
+        }
         wait_until(
-            lambda: (
-                "u-0-0" not in self._dst_role_members(first)
-                and f"u-{num_roles - 1}-0" not in self._dst_role_members(last)
-            ),
+            lambda: self._dst_roles_converged("update", updated),
             timeout_sec=mirror_timeout_sec,
             backoff_sec=2,
             err_msg=f"membership update did not mirror for {num_roles} roles",
@@ -684,7 +705,7 @@ class ShadowLinkRoleSyncScaleTest(RoleSyncTestBase):
         for name in expected:
             self._retry_transient(self._src.delete_role, name, delete_acls=False)
         wait_until(
-            lambda: len(self._synced_role_names()) == 0,
+            lambda: self._dst_roles_converged("delete", {}),
             timeout_sec=mirror_timeout_sec,
             backoff_sec=2,
             err_msg=f"{num_roles} roles were not pruned from the destination",
