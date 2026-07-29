@@ -1718,7 +1718,7 @@ ss::future<> disk_log_impl::rewrite_segment_with_offset_map(
       tmpname);
 
     auto rdr_holder = co_await _readers_cache->evict_segment_readers(seg);
-    auto write_lock = co_await seg->write_lock();
+    auto write_lock = co_await seg->write_lock(*cfg.asrc);
     if (initial_generation_id != seg->get_generation_id()) {
         throw std::runtime_error(
           fmt::format(

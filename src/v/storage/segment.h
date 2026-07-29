@@ -259,6 +259,8 @@ public:
     ss::future<ss::rwlock::holder> write_lock(
       ss::semaphore::time_point timeout = ss::semaphore::time_point::max());
 
+    ss::future<ss::rwlock::holder> write_lock(ss::abort_source& as);
+
     /*
      * return an estimate of how much data on disk is associated with this
      * segment (e.g. the data file, indices, etc...).
@@ -556,6 +558,10 @@ inline ss::future<ss::rwlock::holder> segment::read_lock(ss::abort_source& as) {
 inline ss::future<ss::rwlock::holder>
 segment::write_lock(ss::semaphore::time_point timeout) {
     return _destructive_ops.hold_write_lock(timeout);
+}
+inline ss::future<ss::rwlock::holder>
+segment::write_lock(ss::abort_source& as) {
+    return _destructive_ops.hold_write_lock(as);
 }
 inline void segment::tombstone() { _flags |= bitflags::mark_tombstone; }
 inline bool segment::has_outstanding_locks() const {
