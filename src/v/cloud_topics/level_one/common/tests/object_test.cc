@@ -172,19 +172,25 @@ TEST(L1ObjectsIndex, TimestampSearch) {
       .last_offset = 65_o,
       .max_timestamp = 3000_t,
     });
+    // Each entry's max_timestamp is a running max that includes the batch at
+    // the entry's own file position, so the first batch matching a target may
+    // sit in the unindexed gap before the first entry whose max reaches the
+    // target. The seek must return the predecessor entry: e.g. all batches up
+    // to and including fp 100 have ts <= 1000, so the first match for 1001 is
+    // in (100, 200] and the scan must start at fp 100.
     std::map<model::timestamp, footer::seek_result> timequery_to_file_position
       = {
         {999_t, {.file_position = 0, .length = 600}},
         {1000_t, {.file_position = 0, .length = 600}},
-        {1001_t, {.file_position = 200, .length = 400}},
-        {1499_t, {.file_position = 200, .length = 400}},
-        {1500_t, {.file_position = 200, .length = 400}},
-        {1501_t, {.file_position = 300, .length = 300}},
-        {1999_t, {.file_position = 300, .length = 300}},
-        {2000_t, {.file_position = 300, .length = 300}},
-        {2001_t, {.file_position = 400, .length = 200}},
-        {2499_t, {.file_position = 400, .length = 200}},
-        {2500_t, {.file_position = 400, .length = 200}},
+        {1001_t, {.file_position = 100, .length = 500}},
+        {1499_t, {.file_position = 100, .length = 500}},
+        {1500_t, {.file_position = 100, .length = 500}},
+        {1501_t, {.file_position = 200, .length = 400}},
+        {1999_t, {.file_position = 200, .length = 400}},
+        {2000_t, {.file_position = 200, .length = 400}},
+        {2001_t, {.file_position = 300, .length = 300}},
+        {2499_t, {.file_position = 300, .length = 300}},
+        {2500_t, {.file_position = 300, .length = 300}},
         {2501_t, {.file_position = 500, .length = 100}},
         {2999_t, {.file_position = 500, .length = 100}},
         {3000_t, {.file_position = 500, .length = 100}},
@@ -373,14 +379,17 @@ TEST(L1Objects, TimestampSearch) {
     auto tidp = model::topic_id_partition(
       test_topic_id, model::partition_id(0));
 
+    // The seek answers the predecessor index entry (the last one whose
+    // running max is below the target), so a forward scan cannot miss a match
+    // in the unindexed gap before the entry that reached the target.
     std::map<model::timestamp, kafka::offset> timequery_to_batch_start = {
       {900_t, 0_o},
       {1000_t, 0_o},
       {1001_t, 0_o},
       {1500_t, 0_o},
-      {1501_t, 20_o},
-      {2200_t, 20_o},
-      {2500_t, 20_o},
+      {1501_t, 10_o},
+      {2200_t, 10_o},
+      {2500_t, 10_o},
     };
 
     for (const auto& [seek, expected] : timequery_to_batch_start) {
@@ -401,7 +410,18 @@ TEST(L1Objects, TimestampSearch) {
 
     tidp.partition = model::partition_id(1);
 
-    timequery_to_batch_start = {};
+    // Partition 1 is split across two chunks in the object; targets above the
+    // first chunk's max timestamp must resolve against the second chunk.
+    timequery_to_batch_start = {
+      {900_t, 0_o},
+      {1000_t, 0_o},
+      {2000_t, 0_o},
+      {2001_t, 10_o},
+      {3000_t, 10_o},
+      {3001_t, 40_o},
+      {4500_t, 40_o},
+      {5000_t, 40_o},
+    };
 
     for (const auto& [seek, expected] : timequery_to_batch_start) {
         auto pos = index_one.index.file_position_before_max_timestamp(
@@ -418,6 +438,190 @@ TEST(L1Objects, TimestampSearch) {
     EXPECT_EQ(
       footer::npos,
       index_one.index.file_position_before_max_timestamp(tidp, 5001_t));
+}
+
+namespace {
+
+struct built_object {
+    object_builder::object_info info;
+    iobuf data;
+    // File position of every batch, in write order.
+    std::vector<size_t> batch_positions;
+};
+
+// Like make_object, but for a single partition and recording where each batch
+// landed in the file so a seek result can be compared against it.
+built_object make_single_partition_object(
+  model::topic_id_partition tidp,
+  const std::vector<batch_spec>& specs,
+  object_builder::options opts) {
+    iobuf output;
+    std::vector<size_t> positions;
+    auto builder = object_builder::create(
+      make_iobuf_ref_output_stream(output), opts);
+    auto _ = ss::defer([&builder] { builder->close().get(); });
+    builder->start_partition(tidp).get();
+    for (const auto& spec : specs) {
+        positions.push_back(builder->file_size());
+        builder->add_batch(make_batch(spec)).get();
+    }
+    auto info = builder->finish().get();
+    return built_object{
+      .info = std::move(info),
+      .data = std::move(output),
+      .batch_positions = std::move(positions),
+    };
+}
+
+// Mirrors what a timequery does with a seek result: open the object at the
+// returned position and scan forward for the first batch whose max_timestamp
+// is at or after the target. Returns nullopt if no such batch is reachable.
+std::optional<kafka::offset> scan_forward_for_timestamp(
+  iobuf& buf, footer::seek_result seek, model::timestamp target) {
+    auto reader = object_reader::create(
+      make_iobuf_input_stream(buf.share(seek.file_position, seek.length)));
+    auto _ = ss::defer([&reader] { reader->close().get(); });
+    while (true) {
+        auto res = reader->read_next().get();
+        if (std::holds_alternative<model::record_batch>(res)) {
+            const auto& batch = std::get<model::record_batch>(res);
+            if (batch.header().max_timestamp >= target) {
+                return model::offset_cast(batch.base_offset());
+            }
+            continue;
+        }
+        if (std::holds_alternative<model::topic_id_partition>(res)) {
+            continue;
+        }
+        return std::nullopt;
+    }
+}
+
+} // namespace
+
+// A timestamp seek must never land after the first batch whose max_timestamp
+// is at or after the target: the reader only scans forward from the returned
+// position, so a matching batch before it can never be found.
+//
+// The index is deliberately sparse relative to the batch size so that several
+// batches sit in the unindexed gap between two consecutive index entries.
+TEST(L1Objects, TimestampSearchSparseIndexDoesNotSkipMatchingBatches) {
+    auto tidp = model::topic_id_partition(
+      model::topic_id(uuid_t::create()), model::partition_id(0));
+
+    constexpr int num_batches = 24;
+    constexpr int64_t ts_step = 100;
+    constexpr int64_t first_ts = 1000;
+
+    std::vector<batch_spec> specs;
+    specs.reserve(num_batches);
+    for (int i = 0; i < num_batches; ++i) {
+        specs.push_back(
+          batch_spec{
+            .base_offset = kafka::offset{i * 2},
+            .last_offset = kafka::offset{(i * 2) + 1},
+            .max_timestamp = model::timestamp{first_ts + (i * ts_step)},
+          });
+    }
+
+    auto object = make_single_partition_object(
+      tidp, specs, {.indexing_interval = 4_KiB});
+    const auto& index = object.info.index;
+
+    // Sanity: the index must actually be sparse, otherwise this test proves
+    // nothing.
+    const auto& partition = index.partitions.find(tidp)->second;
+    ASSERT_LT(partition.indexes.size(), specs.size() - 1)
+      << "index is not sparse: " << partition.indexes.size() << " entries for "
+      << specs.size() << " batches";
+
+    for (int i = 0; i < num_batches; ++i) {
+        // Two probes that both have batch i as the first match: the batch's
+        // own timestamp, and a timestamp strictly between batch i-1 and batch
+        // i.
+        std::vector<model::timestamp> targets{specs[i].max_timestamp};
+        if (i > 0) {
+            targets.push_back(
+              model::timestamp{specs[i].max_timestamp() - (ts_step / 2)});
+        }
+        for (auto target : targets) {
+            auto seek = index.file_position_before_max_timestamp(tidp, target);
+            ASSERT_NE(seek, footer::npos)
+              << "no seek result for timestamp " << target
+              << " (first matching batch is base_offset "
+              << specs[i].base_offset << ")";
+            EXPECT_LE(seek.file_position, object.batch_positions[i])
+              << "seek for timestamp " << target << " starts at file position "
+              << seek.file_position
+              << ", past the first matching batch (base_offset "
+              << specs[i].base_offset << ") which starts at file position "
+              << object.batch_positions[i];
+            auto found = scan_forward_for_timestamp(object.data, seek, target);
+            ASSERT_TRUE(found.has_value())
+              << "forward scan from " << seek.file_position
+              << " found no batch with max_timestamp >= " << target;
+            EXPECT_EQ(*found, specs[i].base_offset)
+              << "forward scan from file position " << seek.file_position
+              << " for timestamp " << target << " answered base_offset "
+              << *found << " instead of " << specs[i].base_offset;
+        }
+    }
+}
+
+// Stronger consequence of the same property: when the batch that pushes an
+// index entry's running max over the target sits in the unindexed gap BEFORE
+// that entry, and no batch at or after the entry reaches the target, a seek
+// landing on the entry itself would make the forward scan find nothing at
+// all. A timequery would then answer "no offset for this timestamp" for a
+// timestamp that exists in the object.
+TEST(L1Objects, TimestampSearchSparseIndexFindsOutOfOrderTimestamp) {
+    auto tidp = model::topic_id_partition(
+      model::topic_id(uuid_t::create()), model::partition_id(0));
+
+    constexpr int num_batches = 24;
+    // Batch 12 lands in the gap between the two index entries produced at a
+    // 4KiB interval by this batch size.
+    constexpr int spike_batch = 12;
+    constexpr auto spike_ts = model::timestamp{9000};
+
+    std::vector<batch_spec> specs;
+    specs.reserve(num_batches);
+    for (int i = 0; i < num_batches; ++i) {
+        specs.push_back(
+          batch_spec{
+            .base_offset = kafka::offset{i * 2},
+            .last_offset = kafka::offset{(i * 2) + 1},
+            .max_timestamp = i == spike_batch
+                               ? spike_ts
+                               : model::timestamp{1000 + (i * 100)},
+          });
+    }
+
+    auto object = make_single_partition_object(
+      tidp, specs, {.indexing_interval = 4_KiB});
+    const auto& index = object.info.index;
+    const auto& partition = index.partitions.find(tidp)->second;
+    ASSERT_LT(partition.indexes.size(), specs.size() - 1)
+      << "index is not sparse: " << partition.indexes.size() << " entries for "
+      << specs.size() << " batches";
+    // The spike must not itself be an index entry, otherwise the gap argument
+    // does not apply.
+    for (const auto& entry : partition.indexes) {
+        ASSERT_NE(entry.file_position, object.batch_positions[spike_batch])
+          << "spike batch is indexed; pick a different batch";
+    }
+
+    auto seek = index.file_position_before_max_timestamp(tidp, spike_ts);
+    ASSERT_NE(seek, footer::npos)
+      << "timestamp " << spike_ts << " exists in the object";
+    auto found = scan_forward_for_timestamp(object.data, seek, spike_ts);
+    ASSERT_TRUE(found.has_value())
+      << "forward scan from file position " << seek.file_position
+      << " found no batch with max_timestamp >= " << spike_ts
+      << ", but batch base_offset " << specs[spike_batch].base_offset
+      << " at file position " << object.batch_positions[spike_batch]
+      << " matches";
+    EXPECT_EQ(*found, specs[spike_batch].base_offset);
 }
 
 namespace {
