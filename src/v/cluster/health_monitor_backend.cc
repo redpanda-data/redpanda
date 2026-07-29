@@ -355,7 +355,7 @@ health_monitor_backend::refresh_cluster_health_cache(force_refresh force) {
     vlog(clusterlog.debug, "refreshing health cache");
 
     _refresh_request = ss::make_lw_shared<abortable_refresh_request>(
-      std::move(holder), std ::move(units));
+      std::move(holder), std::move(units));
 
     co_return co_await _refresh_request->abortable_await(
       collect_cluster_health());

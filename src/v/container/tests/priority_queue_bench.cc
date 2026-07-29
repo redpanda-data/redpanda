@@ -310,8 +310,7 @@ struct BoundedPriorityQueueBenchTest
 #define BOUNDED_PRIORITY_QUEUE_PERF_TEST(                                                \
   container, element, input_size, capacity)                                              \
     class                                                                                \
-      BoundedPriorityQueueBenchTest_##container##_##element##_##input_size##_##          \
-      capacity                                                                           \
+      BoundedPriorityQueueBenchTest_##container##_##element##_##input_size##_##capacity  \
       : public BoundedPriorityQueueBenchTest<                                            \
           container<element>,                                                            \
           input_size,                                                                    \

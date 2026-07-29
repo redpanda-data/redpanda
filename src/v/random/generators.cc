@@ -110,7 +110,9 @@ rng::rng(seed_type seed) noexcept
   : gen_(seed_to_seq(seed))
   , initial_seed_(seed) {}
 
-rng with_random_seed() { return rng{random_seed_tag{}}; }
+rng with_random_seed() {
+    return rng{random_seed_tag{}};
+}
 
 fmt::iterator rng::format_to(fmt::iterator it) const {
     it = fmt::format_to(

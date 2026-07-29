@@ -226,7 +226,7 @@ FIXTURE_TEST(offset_commit_and_fetch_request, consumer_offsets_fixture) {
          {
            {topic_no_auth, {{model::partition_id{0}, model::offset{12}}}},
          }},
-      };
+    };
 
     for (const auto& topic : {topic_foo, topic_bar, topic_no_auth}) {
         add_topic({model::kafka_namespace, topic}, 3).get();

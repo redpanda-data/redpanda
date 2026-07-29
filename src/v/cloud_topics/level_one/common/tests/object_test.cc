@@ -189,7 +189,7 @@ TEST(L1ObjectsIndex, TimestampSearch) {
         {2999_t, {.file_position = 500, .length = 100}},
         {3000_t, {.file_position = 500, .length = 100}},
         {3001_t, footer::npos},
-      };
+    };
     for (const auto& [seek, expected] : timequery_to_file_position) {
         auto seek_result = index.file_position_before_max_timestamp(
           index.partitions.begin()->first, seek);
@@ -279,7 +279,7 @@ TEST(L1Objects, OffsetSearch) {
         {115_o, 110_o},
         {1200_o, 1200_o},
         {1201_o, 1200_o},
-      };
+    };
 
     for (const auto& [seek, expected] : offset_lookup_to_batch_start) {
         auto pos = index_one.index.file_position_before_kafka_offset(

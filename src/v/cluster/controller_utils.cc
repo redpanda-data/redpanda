@@ -217,7 +217,7 @@ partition_raft_state get_partition_raft_state(consensus_ptr ptr) {
           = partition_raft_state::follower_recovery_state{
             .is_active = frs->is_active(),
             .pending_offset_count = frs->pending_offset_count(),
-          };
+        };
     }
 
     return raft_state;

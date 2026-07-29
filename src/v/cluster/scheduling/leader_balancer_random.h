@@ -131,13 +131,13 @@ public:
               typename Impl::reassignment_score;
               {
                   impl.get_reassignment_score(reassignment)
-              } -> std::same_as<
-                std::optional<typename Impl::reassignment_score>>;
+              }
+              -> std::same_as<std::optional<typename Impl::reassignment_score>>;
               {
                   impl.generate_reassignment()
-              } -> std::same_as<std::optional<leader_balancer_types::reassignment>>;
-          },
-          "Impl must satisfy the climbing strategy interface");
+              } -> std::same_as<
+                std::optional<leader_balancer_types::reassignment>>;
+          }, "Impl must satisfy the climbing strategy interface");
         if (preference_idx) {
             _pinning_constr.emplace(
               *_group2topic, std::move(preference_idx.value()));
