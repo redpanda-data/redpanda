@@ -23,7 +23,6 @@ import (
 	"connectrpc.com/connect"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/adminapi"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
-	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/oauth/providers/auth0"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/out"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/publicapi"
 	"github.com/spf13/afero"
@@ -96,12 +95,7 @@ Create a Shadow Link without confirmation prompt:
 
 			successMsgTmpl := "Successfully created shadow link %q with ID %q. To query the status, run:\n  'rpk shadow status %[1]v'"
 			if prof.CheckFromCloud() {
-				cloudClient, err := publicapi.NewValidatedCloudClientSet(
-					cfg.DevOverrides().PublicAPIURL,
-					prof.CurrentAuth().AuthToken,
-					auth0.NewClient(cfg.DevOverrides()).Audience(),
-					[]string{prof.CurrentAuth().ClientID},
-				)
+				cloudClient, err := newCloudClientSet(cfg, prof)
 				out.MaybeDieErr(err)
 
 				err = validateCloudSecrets(cmd.Context(), prof, slCfg)
