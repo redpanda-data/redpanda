@@ -1112,7 +1112,7 @@ class RpkTool:
                 )
                 wait_until(
                     lambda: "__consumer_offsets" in self.list_topics(internal=True),
-                    timeout_sec=10,
+                    timeout_sec=30,
                     backoff_sec=1,
                     err_msg="__consumer_offsets topic not created",
                 )

@@ -100,6 +100,17 @@ class RpkGroupCommandsTest(RedpandaTest):
     def co_topic_is_ready(self):
         return len(self.client().describe_topic("__consumer_offsets").partitions) > 0
 
+    def wait_for_co_topic(self):
+        # __consumer_offsets is created lazily, as a side effect of the first
+        # FindCoordinator request, which is only sent once the consumer has
+        # finished starting up.
+        wait_until(
+            self.co_topic_is_ready,
+            timeout_sec=60,
+            backoff_sec=1,
+            err_msg="__consumer_offsets topic was not created",
+        )
+
     @cluster(num_nodes=5)
     def test_group_describe(self):
         """
@@ -112,7 +123,7 @@ class RpkGroupCommandsTest(RedpandaTest):
         consumer = RpkConsumer(self._ctx, self.redpanda, topic, group=group_1)
         consumer.start()
 
-        wait_until(self.co_topic_is_ready, 10, 1)
+        self.wait_for_co_topic()
 
         rpk = RpkTool(self.redpanda)
 

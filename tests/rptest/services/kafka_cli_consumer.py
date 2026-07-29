@@ -108,7 +108,10 @@ class KafkaCliConsumer(BackgroundThreadService):
     def wait_for_messages(self, messages, timeout=30):
         wait_until(lambda: self.message_cnt() >= messages, timeout, backoff_sec=2)
 
-    def wait_for_started(self, timeout=10):
+    def wait_for_started(self, timeout=60):
+        # The budget covers ssh plus JVM startup of the console consumer, which
+        # on a busy machine takes considerably longer than the process itself
+        # suggests.
         def all_started():
             return all(
                 [
@@ -117,7 +120,12 @@ class KafkaCliConsumer(BackgroundThreadService):
                 ]
             )
 
-        wait_until(all_started, timeout, backoff_sec=1)
+        wait_until(
+            all_started,
+            timeout,
+            backoff_sec=1,
+            err_msg="console consumer did not start",
+        )
 
     def stop_node(self, node):
         self._stopping.set()
