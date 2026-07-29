@@ -46,7 +46,7 @@ configuration::configuration()
       *this,
       "schema_registry_replication_factor",
       "Replication factor for internal `_schemas` topic.  If unset, defaults "
-      "to `default_topic_replication`.",
+      "to `default_topic_replications`.",
       {},
       std::nullopt)
   , api_doc_dir(
