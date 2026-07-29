@@ -77,12 +77,16 @@ def _run_tidy(
     # start args passed to the compiler
     args.add("--")
 
+    compiler_args = ctx.actions.args()
+    compiler_args.add_all(flags)
+    compiler_args.use_param_file("@%s", use_always = True)
+
     ctx.actions.run(
         inputs = inputs,
         outputs = [outfile],
         tools = [py_toolchain.py3_runtime.interpreter],
         executable = wrapper,
-        arguments = [args] + flags,
+        arguments = [args, compiler_args],
         mnemonic = "ClangTidy",
         use_default_shell_env = True,
         progress_message = "Run clang-tidy on {}".format(infile.short_path),
