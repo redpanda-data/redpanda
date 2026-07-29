@@ -61,6 +61,7 @@ model::record_batch encode_placeholder_batch(
     ph.header().max_timestamp = header.max_timestamp;
     ph.header().attrs.set_timestamp_type(model::timestamp_type::append_time);
     ph.header().base_sequence = header.base_sequence;
+    ph.header().last_offset_delta = header.last_offset_delta;
     ph.header().reset_size_checksum_metadata(ph.data());
     return ph;
 }
