@@ -23,6 +23,7 @@
 #include "storage/version.h"
 #include "utils/functional.h"
 
+#include <seastar/core/abort_source.hh>
 #include <seastar/core/file.hh>
 #include <seastar/core/gate.hh>
 #include <seastar/core/rwlock.hh>
@@ -252,6 +253,8 @@ public:
 
     ss::future<ss::rwlock::holder> read_lock(
       ss::semaphore::time_point timeout = ss::semaphore::time_point::max());
+
+    ss::future<ss::rwlock::holder> read_lock(ss::abort_source& as);
 
     ss::future<ss::rwlock::holder> write_lock(
       ss::semaphore::time_point timeout = ss::semaphore::time_point::max());
@@ -546,6 +549,9 @@ inline std::optional<ss::rwlock::holder> segment::try_hold_write_lock() {
 inline ss::future<ss::rwlock::holder>
 segment::read_lock(ss::semaphore::time_point timeout) {
     return _destructive_ops.hold_read_lock(timeout);
+}
+inline ss::future<ss::rwlock::holder> segment::read_lock(ss::abort_source& as) {
+    return _destructive_ops.hold_read_lock(as);
 }
 inline ss::future<ss::rwlock::holder>
 segment::write_lock(ss::semaphore::time_point timeout) {

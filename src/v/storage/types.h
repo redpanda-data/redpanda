@@ -461,7 +461,8 @@ struct local_log_reader_config {
     /// `timestamp > batch.header().max_timestamp`.
     std::optional<model::timestamp> timestamp;
 
-    /// abort source for read operations
+    /// abort source for read operations. aborts the segment range lock
+    /// acquisition in make_reader and ends the stream of an existing reader.
     model::opt_abort_source_t abort_source;
 
     model::opt_client_address_t client_address;
