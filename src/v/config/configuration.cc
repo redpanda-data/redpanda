@@ -3556,7 +3556,7 @@ configuration::configuration()
       5min)
   , leader_balancer_node_mute_timeout(
       *this,
-      "leader_balancer_mute_timeout",
+      "leader_balancer_node_mute_timeout",
       "Leadership rebalancing node mute timeout.",
       {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
       20s)
