@@ -540,6 +540,44 @@ TEST(CopyBoundedTest, IsDownwardClosedAcrossPartitions) {
     EXPECT_EQ(p1.front().added_pending_at, model::offset{11});
 }
 
+// The running totals on topics_state must match a from-scratch recompute
+// after each kind of apply.
+TEST(StateUpdateTest, PendingTotalsTrackAddAndCommit) {
+    const model::topic topic{"t"};
+    const model::partition_id pid{0};
+    const model::topic_partition tp{topic, pid};
+    const model::revision_id rev{1};
+
+    topics_state state;
+    state.topic_to_state[topic].revision = rev;
+
+    EXPECT_EQ(state.pending_files(), 0u);
+    EXPECT_EQ(state.pending_bytes(), 0u);
+
+    auto add = add_files_update::build(
+      state, tp, rev, make_pending_files({{0, 100}, {101, 200}}, true));
+    ASSERT_FALSE(add.has_error());
+    ASSERT_FALSE(add.value().apply(state, model::offset{10}).has_error());
+
+    EXPECT_EQ(state.pending_files(), 2u);
+    EXPECT_GT(state.pending_bytes(), 0u);
+
+    // Totals must equal a fresh recompute.
+    auto files_after_add = state.pending_files();
+    auto bytes_after_add = state.pending_bytes();
+    state.recompute_pending();
+    EXPECT_EQ(state.pending_files(), files_after_add);
+    EXPECT_EQ(state.pending_bytes(), bytes_after_add);
+
+    auto commit = mark_files_committed_update::build(
+      state, tp, rev, kafka::offset{200}, 0UL);
+    ASSERT_FALSE(commit.has_error());
+    ASSERT_FALSE(commit.value().apply(state).has_error());
+
+    EXPECT_EQ(state.pending_files(), 0u);
+    EXPECT_EQ(state.pending_bytes(), 0u);
+}
+
 // A single control-offset batch is committed all-or-nothing: splitting it would
 // leave same-offset entries below the watermark, which the dedup would drop.
 TEST(CopyBoundedTest, IncludesWholeBatchEvenWhenOverLimit) {

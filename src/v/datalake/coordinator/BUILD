@@ -311,9 +311,11 @@ redpanda_cc_library(
         "//src/v/base",
         "//src/v/container:chunked_hash_map",
         "//src/v/container:chunked_vector",
+        "//src/v/datalake:logger",
         "//src/v/iceberg:manifest_entry",
         "//src/v/model",
         "//src/v/serde",
+        "@seastar",
     ],
 )
 
