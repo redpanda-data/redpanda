@@ -345,6 +345,120 @@ TEST_CORO(batcher_test, expired_write_request) {
     }
 }
 
+namespace {
+
+// A single-batch write request whose payload contains `marker` verbatim so
+// that the position of the request's data inside the uploaded L0 object can
+// be recovered from the object payload.
+chunked_vector<model::record_batch>
+make_marked_batches(std::string_view marker) {
+    storage::record_batch_builder builder(
+      model::record_batch_type::raft_data, model::offset(0));
+    builder.add_raw_kv(
+      iobuf::from(std::string(marker)), iobuf::from(std::string(marker)));
+    chunked_vector<model::record_batch> v;
+    v.push_back(std::move(builder).build());
+    return v;
+}
+
+std::optional<size_t> find_marker(const bytes& payload, std::string_view m) {
+    std::string_view haystack(
+      reinterpret_cast<const char*>(payload.data()), payload.size()); // NOLINT
+    auto pos = haystack.find(m);
+    if (pos == std::string_view::npos) {
+        return std::nullopt;
+    }
+    return pos;
+}
+
+} // namespace
+
+// Two write requests for the SAME ntp are submitted in order (first, second)
+// and aggregated into a single L0 object. Kafka's per-partition ordering
+// requires that whatever downstream stage consumes these requests observes
+// them in submission order, so:
+//  * the aggregated object payload must hold `first`'s data before
+//    `second`'s data, and
+//  * the write-request promises must be resolved first-then-second, because
+//    that resolution order is what schedules the raft replicate calls.
+TEST_CORO(batcher_test, aggregation_preserves_submission_order) {
+    remote_mock mock;
+    mock.expect_upload_object_repeatedly();
+    cloud_storage_clients::bucket_name bucket("foo");
+    cloud_topics::l0::write_pipeline<ss::manual_clock> pipeline;
+    static_cluster_services cluster_services;
+    cloud_topics::l0::batcher<ss::manual_clock> batcher(
+      pipeline.register_write_pipeline_stage(),
+      bucket,
+      mock,
+      &cluster_services);
+    cloud_topics::l0::batcher_accessor batcher_accessor{
+      .batcher = &batcher,
+    };
+    cloud_topics::l0::write_pipeline_accessor pipeline_accessor{
+      .pipeline = &pipeline,
+    };
+
+    const auto timeout = 10s;
+    auto deadline = ss::manual_clock::now() + timeout;
+
+    // Order in which the write requests are acked by the aggregator.
+    std::vector<int> ack_order;
+
+    auto fut1 = pipeline
+                  .write_and_debounce(
+                    model::controller_ntp,
+                    min_epoch,
+                    make_marked_batches("FIRSTREQUESTMARKER"),
+                    deadline)
+                  .then([&ack_order](auto res) {
+                      ack_order.push_back(1);
+                      return res;
+                  });
+    auto fut2 = pipeline
+                  .write_and_debounce(
+                    model::controller_ntp,
+                    min_epoch,
+                    make_marked_batches("SECONDREQUESTMARKER"),
+                    deadline)
+                  .then([&ack_order](auto res) {
+                      ack_order.push_back(2);
+                      return res;
+                  });
+
+    // Both requests must be in the pipeline before the batcher runs so that
+    // they land in one L0 object.
+    co_await sleep_until(
+      10ms, [&] { return pipeline_accessor.write_requests_pending(2); });
+
+    auto res = co_await batcher_accessor.run_once();
+    ASSERT_TRUE_CORO(res.has_value());
+
+    auto res1 = co_await std::move(fut1);
+    auto res2 = co_await std::move(fut2);
+    ASSERT_TRUE_CORO(res1.has_value());
+    ASSERT_TRUE_CORO(res2.has_value());
+
+    // Exactly one L0 object holding both requests.
+    ASSERT_EQ_CORO(mock.payloads.size(), 1);
+    const auto& payload = mock.payloads.front();
+    auto pos1 = find_marker(payload, "FIRSTREQUESTMARKER");
+    auto pos2 = find_marker(payload, "SECONDREQUESTMARKER");
+    ASSERT_TRUE_CORO(pos1.has_value());
+    ASSERT_TRUE_CORO(pos2.has_value());
+
+    EXPECT_LT(*pos1, *pos2)
+      << "the first submitted request's data must precede the second's "
+         "inside the aggregated L0 object (first at byte "
+      << *pos1 << ", second at byte " << *pos2 << ")";
+
+    ASSERT_EQ_CORO(ack_order.size(), 2);
+    EXPECT_EQ(ack_order[0], 1)
+      << "the first submitted request must be acked first; ack order was ["
+      << ack_order[0] << ", " << ack_order[1] << "]";
+    EXPECT_EQ(ack_order[1], 2);
+}
+
 TEST_CORO(batcher_test, chunk_splitting_balances_upload_sizes) {
     scoped_config cfg;
     // Use a small threshold so test data splits into multiple chunks.

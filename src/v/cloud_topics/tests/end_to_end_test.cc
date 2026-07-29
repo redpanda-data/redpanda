@@ -9,7 +9,12 @@
  */
 
 #include "cloud_io/tests/s3_imposter.h"
+#include "cloud_topics/level_one/metastore/metastore.h"
 #include "cloud_topics/level_zero/stm/ctp_stm.h"
+#include "cloud_topics/level_zero/stm/ctp_stm_api.h"
+#include "features/feature_table.h"
+#include "kafka/data/partition_proxy.h"
+#include "kafka/server/tests/delete_records_utils.h"
 #include "kafka/server/tests/list_offsets_utils.h"
 #include "kafka/server/tests/produce_consume_utils.h"
 #include "model/batch_builder.h"
@@ -87,6 +92,16 @@ public:
         return t;
     }
 
+    tests::kafka_delete_records_transport* make_delete_records_client() {
+        auto transport
+          = std::make_unique<tests::kafka_delete_records_transport>(
+            make_kafka_client().get());
+        transport->start().get();
+        auto* t = transport.get();
+        cleanup.emplace_back([t = std::move(transport)] { t->stop().get(); });
+        return t;
+    }
+
     std::vector<ss::noncopyable_function<void()>> cleanup;
     scoped_config test_local_cfg;
     const model::topic topic_name{"tapioca"};
@@ -98,6 +113,84 @@ TEST_F(e2e_fixture, test_create_cloud_topic) {
     ASSERT_TRUE(
       partition->raft()->stm_manager()->get<cloud_topics::ctp_stm>()
       != nullptr);
+}
+
+// A non-idempotent client (no producer id) with max.in.flight > 1 may have
+// two produce requests for the same partition on the wire at once: the kafka
+// connection only waits for a request's `dispatched` stage before reading the
+// next request. Kafka still requires that the records of that one producer be
+// appended in send order.
+//
+// Two produce requests are pipelined on one connection here (the test client
+// serializes only the wire write, not the response), each carrying one
+// identifiable record.
+TEST_F(e2e_fixture, pipelined_non_idempotent_produce_preserves_order) {
+    test_local_cfg.get("cloud_topics_disable_reconciliation_loop")
+      .set_value(true);
+
+    auto* producer = make_producer();
+
+    std::vector<kv_t> first{{"k0", "val-sent-first"}};
+    std::vector<kv_t> second{{"k1", "val-sent-second"}};
+
+    auto fut1 = producer->produce_to_partition(
+      topic_name, model::partition_id(0), first);
+    auto fut2 = producer->produce_to_partition(
+      topic_name, model::partition_id(0), second);
+    auto offsets = ss::when_all_succeed(std::move(fut1), std::move(fut2)).get();
+    auto off_first = std::get<0>(offsets);
+    auto off_second = std::get<1>(offsets);
+
+    EXPECT_LT(off_first, off_second)
+      << "the record sent first must get the lower offset, got first="
+      << off_first << " second=" << off_second;
+
+    auto* consumer = make_consumer();
+    auto consumed = consumer
+                      ->consume_from_partition(
+                        topic_name, model::partition_id(0), model::offset(0))
+                      .get();
+    ASSERT_EQ(consumed.size(), 2u);
+    EXPECT_EQ(consumed[0].val, "val-sent-first")
+      << "consumer saw '" << consumed[0].val.value_or("<none>")
+      << "' at offset 0";
+    EXPECT_EQ(consumed[1].val, "val-sent-second");
+}
+
+// Control for the test above on a plain (storage.mode=local) topic: the same
+// client, the same pipelining, no cloud topics write path.
+TEST_F(e2e_fixture, pipelined_non_idempotent_produce_preserves_order_local) {
+    const model::topic local_topic{"local_control"};
+    cluster::topic_properties props;
+    props.storage_mode = model::redpanda_storage_mode::local;
+    add_topic({model::kafka_namespace, local_topic}, 1, props).get();
+    wait_for_leader(model::ntp{model::kafka_namespace, local_topic, 0}).get();
+
+    auto* producer = make_producer();
+
+    std::vector<kv_t> first{{"k0", "val-sent-first"}};
+    std::vector<kv_t> second{{"k1", "val-sent-second"}};
+
+    auto fut1 = producer->produce_to_partition(
+      local_topic, model::partition_id(0), first);
+    auto fut2 = producer->produce_to_partition(
+      local_topic, model::partition_id(0), second);
+    auto offsets = ss::when_all_succeed(std::move(fut1), std::move(fut2)).get();
+    auto off_first = std::get<0>(offsets);
+    auto off_second = std::get<1>(offsets);
+
+    EXPECT_LT(off_first, off_second)
+      << "the record sent first must get the lower offset, got first="
+      << off_first << " second=" << off_second;
+
+    auto* consumer = make_consumer();
+    auto consumed = consumer
+                      ->consume_from_partition(
+                        local_topic, model::partition_id(0), model::offset(0))
+                      .get();
+    ASSERT_EQ(consumed.size(), 2u);
+    EXPECT_EQ(consumed[0].val, "val-sent-first");
+    EXPECT_EQ(consumed[1].val, "val-sent-second");
 }
 
 TEST_F(e2e_fixture, test_l0_path) {
@@ -334,4 +427,369 @@ TEST_F(e2e_fixture, test_tailing_consumer_no_l0_downloads) {
       << " unexpected S3 GetObject request(s) during tailing consume. "
          "This indicates a race between replicate() and cache_put() "
          "in the cloud topics write path.";
+}
+
+// L1RT-2: a ListOffsets-by-timestamp answer must never be below the
+// partition's Kafka start offset. Kafka guarantees the offset returned by
+// offsetsForTimes is fetchable; if it is below the start offset the client's
+// own fetch is rejected with OFFSET_OUT_OF_RANGE and auto.offset.reset fires.
+//
+// Setup: 20 single-record batches reconciled into a single L1 extent
+// [0, 20), then DeleteRecords(10). The surviving log is [10, 20). A query for
+// a timestamp older than every record must answer 10, not 0.
+TEST_F(e2e_fixture, timequery_after_delete_records_respects_start_offset_l1) {
+    // Hold reconciliation off while producing so that all of the records land
+    // in a single L1 extent -- DeleteRecords must fall strictly inside an
+    // extent, otherwise the metastore prunes the whole extent and the
+    // straddling case is never exercised.
+    test_local_cfg.get("cloud_topics_disable_reconciliation_loop")
+      .set_value(true);
+
+    constexpr int num_records = 20;
+    constexpr int delete_up_to = 10;
+
+    auto now = model::timestamp::now();
+    // Every record is in the past, oldest first: record i has
+    // ts = now - (num_records - i) seconds.
+    auto ts_for = [now](int i) {
+        return model::timestamp{now() - (num_records - i) * 1000};
+    };
+
+    auto* producer = make_producer();
+    for (int i = 0; i < num_records; ++i) {
+        producer
+          ->produce_to_partition(
+            topic_name,
+            model::partition_id(0),
+            std::vector<kv_t>{{ssx::sformat("k{}", i), ssx::sformat("v{}", i)}},
+            ts_for(i))
+          .get();
+    }
+
+    // Let a single reconciliation round move everything into L1.
+    test_local_cfg.get("cloud_topics_disable_reconciliation_loop")
+      .set_value(false);
+
+    auto partition = app.partition_manager.local().get(ntp);
+    ASSERT_NE(partition, nullptr);
+    auto state = partition->get_cloud_topics_state();
+    ASSERT_NE(state, nullptr);
+    auto topic_id = partition->get_topic_config()->get().tp_id;
+    ASSERT_NE(topic_id, std::nullopt);
+    model::topic_id_partition tidp{*topic_id, ntp.tp.partition};
+
+    auto* metastore = state->local().get_l1_metastore();
+    RPTEST_REQUIRE_EVENTUALLY(30s, [metastore, tidp]() {
+        return metastore->get_offsets(tidp).then([](auto res) {
+            return res.has_value()
+                   && res.value().next_offset == kafka::offset(num_records);
+        });
+    });
+
+    auto* deleter = make_delete_records_client();
+    auto lwm = deleter
+                 ->delete_records_from_partition(
+                   topic_name,
+                   model::partition_id(0),
+                   model::offset(delete_up_to),
+                   std::chrono::seconds(10))
+                 .get();
+    ASSERT_EQ(lwm, model::offset(delete_up_to));
+
+    auto* client = make_list_offsets_client();
+    auto start_offset
+      = client->start_offset_for_partition(topic_name, model::partition_id(0))
+          .get();
+    ASSERT_EQ(start_offset, model::offset(delete_up_to));
+
+    // Precondition for the finding: the coarse L1 candidate the frontend uses
+    // still starts below the Kafka start offset (the extent straddles it).
+    auto coarse = metastore
+                    ->get_first_ge(
+                      tidp,
+                      kafka::offset(delete_up_to),
+                      model::timestamp{now() - (num_records + 10) * 1000})
+                    .get();
+    ASSERT_TRUE(coarse.has_value());
+    e2e_test_log.info(
+      "coarse L1 candidate for timequery: [{}, {}], kafka start offset {}",
+      coarse.value().first_offset,
+      coarse.value().last_offset,
+      start_offset);
+
+    // A timestamp older than every record. The oldest *surviving* record is at
+    // offset 10, so that is the only Kafka-correct answer.
+    auto query_ts = model::timestamp{now() - (num_records + 10) * 1000};
+    auto answer = client->timequery(ntp.tp, query_ts).get();
+    e2e_test_log.info(
+      "timequery({}) answered {} (kafka start offset {})",
+      query_ts,
+      answer,
+      start_offset);
+    EXPECT_GE(answer, kafka::offset(delete_up_to))
+      << "timequery answered " << answer << " which is below the Kafka start "
+      << "offset " << start_offset << "; a client seeking there gets "
+      << "OFFSET_OUT_OF_RANGE";
+    EXPECT_EQ(answer, kafka::offset(delete_up_to));
+
+    // Kafka's contract for offsetsForTimes: the returned offset is fetchable.
+    auto proxy = kafka::make_partition_proxy(partition);
+    auto fetch_ec = proxy
+                      .validate_fetch_offset(
+                        model::offset(answer()),
+                        false,
+                        model::timeout_clock::now() + 30s)
+                      .get();
+    EXPECT_EQ(fetch_ec, kafka::error_code::none)
+      << "a fetch at the offset timequery answered (" << answer
+      << ") was rejected with " << fetch_ec;
+}
+
+// L1RT-2, L0 branch: same invariant, but the coarse candidate comes from the
+// local log. DeleteRecords lands in the middle of a placeholder batch, so the
+// local reader hands refine_timequery_result a batch whose base offset is
+// below the Kafka start offset.
+TEST_F(e2e_fixture, timequery_after_delete_records_respects_start_offset_l0) {
+    // Keep everything in L0 so l1_timequery finds nothing and the L0 candidate
+    // is the one that gets refined.
+    test_local_cfg.get("cloud_topics_disable_reconciliation_loop")
+      .set_value(true);
+
+    constexpr int records_per_batch = 5;
+    constexpr int num_batches = 4;
+    constexpr int num_records = records_per_batch * num_batches;
+    // Strictly inside the first batch [0, 4].
+    constexpr int delete_up_to = 3;
+
+    auto now = model::timestamp::now();
+    auto* producer = make_producer();
+    for (int b = 0; b < num_batches; ++b) {
+        std::vector<kv_t> records;
+        for (int i = 0; i < records_per_batch; ++i) {
+            int n = b * records_per_batch + i;
+            records.emplace_back(
+              ssx::sformat("k{}", n), ssx::sformat("v{}", n));
+        }
+        producer
+          ->produce_to_partition(
+            topic_name,
+            model::partition_id(0),
+            std::move(records),
+            model::timestamp{now() - (num_batches - b) * 1000})
+          .get();
+    }
+
+    auto* deleter = make_delete_records_client();
+    auto lwm = deleter
+                 ->delete_records_from_partition(
+                   topic_name,
+                   model::partition_id(0),
+                   model::offset(delete_up_to),
+                   std::chrono::seconds(10))
+                 .get();
+    ASSERT_EQ(lwm, model::offset(delete_up_to));
+
+    auto* client = make_list_offsets_client();
+    auto start_offset
+      = client->start_offset_for_partition(topic_name, model::partition_id(0))
+          .get();
+    ASSERT_EQ(start_offset, model::offset(delete_up_to));
+    auto hwm
+      = client->high_watermark_for_partition(topic_name, model::partition_id(0))
+          .get();
+    ASSERT_EQ(hwm, model::offset(num_records));
+
+    auto query_ts = model::timestamp{now() - (num_batches + 10) * 1000};
+    auto answer = client->timequery(ntp.tp, query_ts).get();
+    e2e_test_log.info(
+      "L0 timequery({}) answered {} (kafka start offset {})",
+      query_ts,
+      answer,
+      start_offset);
+    EXPECT_GE(answer, kafka::offset(delete_up_to))
+      << "timequery answered " << answer << " which is below the Kafka start "
+      << "offset " << start_offset;
+    EXPECT_EQ(answer, kafka::offset(delete_up_to));
+}
+
+// Validation test for audit finding guard-asymmetry:GA-1.
+//
+// The postcondition the reconciler's commit path states for itself
+// (reconciliation_source.cc:101-127) is that after a successful round the
+// local-read floor covers the range just reconciled:
+//   min_allowed_local_threshold == min(next(LRO), next(placeholder_hwm))
+// Every offset in this topic is placeholder-backed (storage.mode=cloud), so
+// next(placeholder_hwm) == next(LRO) and the floor must equal next(LRO).
+//
+// If the floor lags the LRO, offsets in the gap are still routed to the local
+// log after a flip to storage.mode=tiered_cloud, where their placeholders
+// point at L0 objects that L0 GC is free to delete.
+TEST_F(e2e_fixture, reconciliation_advances_local_read_floor) {
+    ASSERT_TRUE(app.controller->get_feature_table().local().is_active(
+      features::feature::tiered_cloud_topics))
+      << "tiered_cloud_topics must be active for the reconciler to report a "
+         "placeholder observation at all";
+
+    auto* producer = make_producer();
+    const size_t num_batches = 20;
+    const size_t records_per_batch = 5;
+    for (size_t i = 0; i < num_batches; ++i) {
+        std::vector<kv_t> batch;
+        for (size_t j = 0; j < records_per_batch; ++j) {
+            batch.emplace_back(
+              ssx::sformat("key{}", i * records_per_batch + j),
+              ssx::sformat("val{}", i * records_per_batch + j));
+        }
+        producer
+          ->produce_to_partition(topic_name, model::partition_id(0), batch)
+          .get();
+    }
+    const auto total_records = static_cast<int64_t>(
+      num_batches * records_per_batch);
+
+    auto partition = app.partition_manager.local().get(ntp);
+    ASSERT_NE(partition, nullptr);
+    auto stm = partition->raft()->stm_manager()->get<cloud_topics::ctp_stm>();
+    ASSERT_TRUE(stm != nullptr);
+    cloud_topics::ctp_stm_api api(stm);
+
+    // Wait for the reconciler to commit an LRO covering everything produced.
+    RPTEST_REQUIRE_EVENTUALLY(60s, [&] {
+        auto lro = api.get_last_reconciled_offset();
+        vlog(
+          e2e_test_log.info,
+          "LRO {}, floor {}",
+          lro,
+          api.get_min_allowed_local_threshold());
+        return lro >= kafka::offset(total_records - 1);
+    });
+
+    auto lro = api.get_last_reconciled_offset();
+    auto floor = api.get_min_allowed_local_threshold();
+    vlog(
+      e2e_test_log.info,
+      "GA-1: after reconciliation LRO={} min_allowed_local_threshold={} "
+      "(expected {})",
+      lro,
+      floor,
+      kafka::next_offset(lro));
+    EXPECT_EQ(floor, kafka::next_offset(lro)) << fmt::format(
+      "local-read floor {} does not cover the reconciled range [0, {}]; "
+      "offsets ({}, {}] would still be routed to local placeholders",
+      floor,
+      lro,
+      floor,
+      lro);
+}
+
+// Control for GA-1: with the batch cache disabled the reconciler is forced
+// down the fetch_metadata path, which is the only path that records the
+// placeholder observation. If this passes while the test above fails, the
+// batch-cache fast path is the cause.
+TEST_F(e2e_fixture, reconciliation_advances_local_read_floor_no_batch_cache) {
+    test_local_cfg.get("disable_batch_cache").set_value(true);
+
+    auto* producer = make_producer();
+    const size_t num_batches = 20;
+    const size_t records_per_batch = 5;
+    for (size_t i = 0; i < num_batches; ++i) {
+        std::vector<kv_t> batch;
+        for (size_t j = 0; j < records_per_batch; ++j) {
+            batch.emplace_back(
+              ssx::sformat("key{}", i * records_per_batch + j),
+              ssx::sformat("val{}", i * records_per_batch + j));
+        }
+        producer
+          ->produce_to_partition(topic_name, model::partition_id(0), batch)
+          .get();
+    }
+    const auto total_records = static_cast<int64_t>(
+      num_batches * records_per_batch);
+
+    auto partition = app.partition_manager.local().get(ntp);
+    ASSERT_NE(partition, nullptr);
+    auto stm = partition->raft()->stm_manager()->get<cloud_topics::ctp_stm>();
+    ASSERT_TRUE(stm != nullptr);
+    cloud_topics::ctp_stm_api api(stm);
+
+    RPTEST_REQUIRE_EVENTUALLY(60s, [&] {
+        return api.get_last_reconciled_offset()
+               >= kafka::offset(total_records - 1);
+    });
+
+    auto lro = api.get_last_reconciled_offset();
+    auto floor = api.get_min_allowed_local_threshold();
+    vlog(
+      e2e_test_log.info,
+      "GA-1 control (no batch cache): LRO={} min_allowed_local_threshold={}",
+      lro,
+      floor);
+    EXPECT_EQ(floor, kafka::next_offset(lro));
+}
+
+// Severity probe for GA-1: is the missed floor advance a permanently skipped
+// range, or does it heal on the next round that misses the batch cache?
+//
+// The floor is a single monotone watermark, so a later log-served round could
+// in principle jump it past the earlier gap. This test creates a gap with the
+// cache on, then turns the cache off, produces more, and records where the
+// floor ends up.
+TEST_F(e2e_fixture, local_read_floor_gap_heals_on_cache_miss_round) {
+    auto produce_batches = [&](size_t n, size_t base) {
+        auto* producer = make_producer();
+        for (size_t i = 0; i < n; ++i) {
+            std::vector<kv_t> batch;
+            for (size_t j = 0; j < 5; ++j) {
+                batch.emplace_back(
+                  ssx::sformat("key{}", base + i * 5 + j),
+                  ssx::sformat("val{}", base + i * 5 + j));
+            }
+            producer
+              ->produce_to_partition(topic_name, model::partition_id(0), batch)
+              .get();
+        }
+    };
+
+    auto partition = app.partition_manager.local().get(ntp);
+    ASSERT_TRUE(partition != nullptr);
+    auto stm = partition->raft()->stm_manager()->get<cloud_topics::ctp_stm>();
+    ASSERT_TRUE(stm != nullptr);
+    cloud_topics::ctp_stm_api api(stm);
+
+    // Phase 1: batch cache on (default) -> reconciler takes the fast path.
+    produce_batches(20, 0);
+    RPTEST_REQUIRE_EVENTUALLY(60s, [&] {
+        return api.get_last_reconciled_offset() >= kafka::offset(99);
+    });
+    auto lro1 = api.get_last_reconciled_offset();
+    auto floor1 = api.get_min_allowed_local_threshold();
+    vlog(
+      e2e_test_log.info,
+      "GA-1 phase 1 (cache on): LRO={} floor={}",
+      lro1,
+      floor1);
+
+    // Phase 2: batch cache off -> reconciler must go through fetch_metadata.
+    test_local_cfg.get("disable_batch_cache").set_value(true);
+    produce_batches(20, 100);
+    RPTEST_REQUIRE_EVENTUALLY(60s, [&] {
+        return api.get_last_reconciled_offset() >= kafka::offset(199);
+    });
+    auto lro2 = api.get_last_reconciled_offset();
+    auto floor2 = api.get_min_allowed_local_threshold();
+    vlog(
+      e2e_test_log.info,
+      "GA-1 phase 2 (cache off): LRO={} floor={}",
+      lro2,
+      floor2);
+
+    // Whichever way this goes it is informative: if floor2 == next(lro2) the
+    // gap healed and GA-1 is a transient lag; if it only covers the second
+    // range the gap is permanent.
+    EXPECT_EQ(floor2, kafka::next_offset(lro2)) << fmt::format(
+      "phase-1 floor {} (LRO {}), phase-2 floor {} (LRO {})",
+      floor1,
+      lro1,
+      floor2,
+      lro2);
 }

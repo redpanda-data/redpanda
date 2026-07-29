@@ -10,10 +10,12 @@
 
 #include "cloud_storage/remote_label.h"
 #include "cloud_topics/level_one/metastore/domain_uuid.h"
+#include "cloud_topics/level_one/metastore/leader_router.h"
 #include "cloud_topics/level_one/metastore/manifest_io.h"
 #include "cloud_topics/level_one/metastore/metastore_manifest.h"
 #include "cloud_topics/level_one/metastore/replicated_metastore.h"
 #include "cloud_topics/level_one/metastore/tests/state_utils.h"
+#include "cloud_topics/logger.h"
 #include "cloud_topics/tests/cluster_fixture.h"
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
@@ -22,6 +24,7 @@
 #include "lsm/lsm.h"
 #include "model/fundamental.h"
 #include "model/namespace.h"
+#include "test_utils/async.h"
 
 using namespace cloud_topics::l1;
 
@@ -1392,6 +1395,116 @@ TEST_P(ReplicatedMetastoreTest, TestGetLevelingInfo) {
 
         EXPECT_THAT(res.ranges, ::testing::ElementsAreArray(c.expected_ranges))
           << c.name;
+    }
+}
+
+// Encodes the contract that one unhealthy metastore partition must not stop
+// the healthy ones from persisting: replicated_metastore::flush() walks
+// pid = 0..num_partitions-1 sequentially and returns at the first partition
+// that does not reply ok, so every higher-numbered partition is skipped for
+// the whole pass. Since max_persisted_seqno is the L1 GC's hard gate
+// (lsm/garbage_collector.cc:98-102, :136-141), the skipped domains delete
+// nothing.
+//
+// The unhealthy partition here has no domain manager on its leader, which is
+// exactly what leader_router::do_flush_domain turns into rpc::errc::not_leader
+// (leader_router.cc:211-219) and exactly the state a metastore partition is in
+// mid-election or while its leader has no quorum.
+TEST_P(ReplicatedMetastoreTest, TestFlushSkipsHealthyHigherPartitions) {
+    if (GetParam() == metastore_backend::simple) {
+        GTEST_SKIP() << "Flush not supported with simple backend";
+    }
+    auto& app = get_ct_app(model::node_id{0});
+    auto& meta = app.get_sharded_replicated_metastore()->local();
+    auto num_partitions = app.get_sharded_l1_metastore_router()
+                            ->local()
+                            .num_metastore_partitions();
+    ASSERT_TRUE(num_partitions.has_value());
+    ASSERT_GE(*num_partitions, 3) << "test needs at least 3 metastore "
+                                     "partitions";
+
+    auto persisted_seqno =
+      [this](int pid) -> std::optional<lsm::sequence_number> {
+        auto stm = get_l1_lsm_stm(model::partition_id(pid));
+        if (!stm) {
+            return std::nullopt;
+        }
+        const auto& pm = stm->state().persisted_manifest;
+        if (!pm.has_value()) {
+            return std::nullopt;
+        }
+        return pm->get_last_seqno();
+    };
+
+    // Seed every metastore partition and take one clean flush, so each domain
+    // has a persisted manifest to compare against.
+    ASSERT_NO_FATAL_FAILURE(add_initial_objects(meta, 100, 99).get());
+    auto clean_res = meta.flush().get();
+    ASSERT_TRUE(clean_res.has_value()) << fmt::to_string(clean_res.error());
+    std::vector<std::optional<lsm::sequence_number>> before;
+    for (int pid = 0; pid < *num_partitions; ++pid) {
+        before.push_back(persisted_seqno(pid));
+        ASSERT_TRUE(before.back().has_value())
+          << "partition " << pid << " never persisted a manifest";
+    }
+
+    // More writes, so every partition has something new to persist.
+    ASSERT_NO_FATAL_FAILURE(add_objects_for_topics(meta, 60, 99).get());
+
+    // Take away the domain manager of metastore partition 1.
+    auto unhealthy_pid = model::partition_id(1);
+    auto unhealthy_ntp = model::ntp{
+      model::kafka_internal_namespace,
+      model::l1_metastore_topic,
+      unhealthy_pid};
+    auto [leader_fx, leader_p] = get_leader(unhealthy_ntp);
+    ASSERT_NE(leader_fx, nullptr);
+    auto* sup
+      = leader_fx->app.cloud_topics_app->get_sharded_l1_domain_supervisor();
+    sup
+      ->invoke_on_all([&unhealthy_ntp](cloud_topics::l1::domain_supervisor& s) {
+          s.on_domain_leadership_change(unhealthy_ntp, {});
+      })
+      .get();
+    RPTEST_REQUIRE_EVENTUALLY(10s, [&] {
+        return sup
+          ->map_reduce0(
+            [&unhealthy_ntp](cloud_topics::l1::domain_supervisor& s) {
+                return s.get(unhealthy_ntp) == nullptr;
+            },
+            true,
+            std::logical_and<>{})
+          .get();
+    });
+
+    // The pass fails because of partition 1.
+    auto res = meta.flush().get();
+    EXPECT_FALSE(res.has_value())
+      << "expected the flush pass to report the unhealthy partition";
+
+    std::vector<std::optional<lsm::sequence_number>> after;
+    for (int pid = 0; pid < *num_partitions; ++pid) {
+        after.push_back(persisted_seqno(pid));
+    }
+    for (int pid = 0; pid < *num_partitions; ++pid) {
+        vlog(
+          cloud_topics::cd_log.info,
+          "metastore partition {}: persisted seqno {} -> {}",
+          pid,
+          before[pid],
+          after[pid]);
+    }
+
+    // Partition 0 is below the unhealthy one, so it is flushed.
+    EXPECT_GT(after[0], before[0]) << "partition 0 should have been flushed";
+
+    // Correct behaviour: the partitions above the unhealthy one are healthy and
+    // must be persisted too, otherwise their L1 GC stays gated on a stale
+    // max_persisted_seqno for as long as partition 1 is unhealthy.
+    for (int pid = 2; pid < *num_partitions; ++pid) {
+        EXPECT_GT(after[pid], before[pid])
+          << "healthy partition " << pid
+          << " was skipped because partition 1 failed";
     }
 }
 

@@ -37,6 +37,46 @@ redpanda_cc_gtest(
 )
 
 redpanda_cc_gtest(
+    name = "placeholder_test",
+    timeout = "short",
+    srcs = [
+        "placeholder_test.cc",
+    ],
+    deps = [
+        "//src/v/bytes:iobuf",
+        "//src/v/cloud_topics:types",
+        "//src/v/cloud_topics/level_zero/common:extent_meta",
+        "//src/v/cloud_topics/level_zero/stm:placeholder",
+        "//src/v/cluster:rm_stm_types",
+        "//src/v/container:chunked_vector",
+        "//src/v/model",
+        "//src/v/test_utils:gtest",
+        "//src/v/utils:uuid",
+        "@googletest//:gtest",
+        "@seastar",
+    ],
+)
+
+redpanda_cc_gtest(
+    name = "placeholder_zero_record_test",
+    timeout = "short",
+    srcs = [
+        "placeholder_zero_record_test.cc",
+    ],
+    deps = [
+        "//src/v/bytes:iobuf",
+        "//src/v/cloud_topics:types",
+        "//src/v/cloud_topics/level_zero/common:extent_meta",
+        "//src/v/cloud_topics/level_zero/stm:placeholder",
+        "//src/v/model",
+        "//src/v/test_utils:gtest",
+        "//src/v/utils:uuid",
+        "@googletest//:gtest",
+        "@seastar",
+    ],
+)
+
+redpanda_cc_gtest(
     name = "ctp_stm_test",
     timeout = "short",
     srcs = [
