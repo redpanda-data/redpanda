@@ -95,6 +95,12 @@ public:
       model::record_batch batch,
       raft::replicate_options);
 
+    /// Staged variant of the bulk replicate above: request_enqueued resolves
+    /// once raft fixed the batches' position in the log relative to later
+    /// replicate calls. Bypasses rm_stm, like the bulk replicate.
+    kafka_stages replicate_in_stages(
+      chunked_vector<model::record_batch> batches, raft::replicate_options);
+
     /**
      * The reader is modified such that the max offset is configured to be
      * the minimum of the max offset requested and the committed index of the

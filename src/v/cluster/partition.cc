@@ -449,6 +449,29 @@ kafka_stages partition::replicate_in_stages(
       });
 }
 
+kafka_stages partition::replicate_in_stages(
+  chunked_vector<model::record_batch> batches, raft::replicate_options opts) {
+    using ret_t = result<kafka_result>;
+    return stages_with_units(
+      hold_writes_enabled(),
+      [this, batches = std::move(batches), opts = std::move(opts)]() mutable {
+          auto res = _raft->replicate_in_stages(std::move(batches), opts);
+          auto replicate_finished = res.replicate_finished.then(
+            [this](result<raft::replicate_result> r) {
+                if (!r) {
+                    return ret_t(r.error());
+                }
+                auto old_offset = r.value().last_offset;
+                auto term = r.value().last_term;
+                auto new_offset = kafka::offset(
+                  log()->from_log_offset(old_offset)());
+                return ret_t(kafka_result{new_offset, term});
+            });
+          return kafka_stages(
+            std::move(res.request_enqueued), std::move(replicate_finished));
+      });
+}
+
 raft::group_id partition::group() const { return _raft->group(); }
 
 ss::future<> partition::start(
