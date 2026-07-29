@@ -142,14 +142,11 @@ func buildHealthResponses(hov *rpadmin.ClusterHealthOverview, brokers []rpadmin.
 	if len(nodesInRecoveryMode) == 0 {
 		nodesInRecoveryMode = []int{}
 	}
-	var nodesInMaintenance []int
+	nodesInMaintenance := []int{}
 	for _, b := range brokers {
 		if b.Maintenance != nil && b.Maintenance.Draining {
 			nodesInMaintenance = append(nodesInMaintenance, b.NodeID)
 		}
-	}
-	if len(nodesInMaintenance) == 0 {
-		nodesInMaintenance = []int{}
 	}
 	return healthResponse{
 		ClusterUUID:               clusterUUID,
