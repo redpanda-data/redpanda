@@ -428,13 +428,19 @@ frontend::timequery(storage::timequery_config cfg) {
       "metadata timequery for L1: {}, for L0: {}",
       l1_result,
       l0_result);
+    auto min_offset = model::offset_cast(cfg.min_offset);
     if (l1_result) {
-        co_return co_await refine_timequery_result(
-          *l1_result, cfg.abort_source);
+        auto refined = co_await refine_timequery_result(
+          *l1_result, min_offset, cfg.abort_source);
+        // The L1 candidate can be clamped away entirely (its whole range is
+        // below the kafka start offset); the L0 candidate may still answer.
+        if (refined.has_value()) {
+            co_return refined;
+        }
     }
     if (l0_result) {
         co_return co_await refine_timequery_result(
-          *l0_result, cfg.abort_source);
+          *l0_result, min_offset, cfg.abort_source);
     }
     co_return std::nullopt;
 }
@@ -475,12 +481,23 @@ frontend::l1_timequery(storage::timequery_config cfg) {
 
 ss::future<std::optional<frontend::coarse_grained_timequery_result>>
 frontend::l0_timequery(storage::timequery_config cfg) {
+    // The query bounds are kafka offsets while the local reader operates on
+    // log offsets. Clamp the lower bound to the local log start first, then
+    // translate into log offset space. Data below the local log start has been
+    // reconciled and is answered by the L1 query.
+    auto ot_state = _partition->get_offset_translator_state();
+    auto local_start_offset = ot_state->from_log_offset(
+      _partition->raft_start_offset());
+    auto min_offset = std::max(cfg.min_offset, local_start_offset);
+    if (min_offset > cfg.max_offset) {
+        co_return std::nullopt;
+    }
     // Read L0 metadata to find the right batch. We can't use
     // _partition->timequery because it will filter for only data batches, not
     // placeholder batches.
     auto reader = co_await _partition->make_local_reader({
-      /*start_offset=*/cfg.min_offset,
-      /*max_offset=*/cfg.max_offset,
+      /*start_offset=*/ot_state->to_log_offset(min_offset),
+      /*max_offset=*/ot_state->to_log_offset(cfg.max_offset),
       /*max_bytes=*/std::numeric_limits<size_t>::max(),
       /*type_filter=*/std::nullopt,
       /*time=*/cfg.time,
@@ -533,14 +550,21 @@ frontend::l0_timequery(storage::timequery_config cfg) {
 ss::future<std::optional<storage::timequery_result>>
 frontend::refine_timequery_result(
   coarse_grained_timequery_result input,
+  kafka::offset min_offset,
   model::opt_abort_source_t abort_source) {
+    // Clamp the scan in offset space so records below the start offset can
+    // never answer the query
+    auto clamped_start = std::max(input.start_offset, min_offset);
+    if (clamped_start > input.last_offset) {
+        co_return std::nullopt;
+    }
     // Pass the timestamp so the L1 reader can use the footer's timestamp
     // index to seek directly to the relevant position, avoiding unnecessary
     // cloud IO. In the case of L0, we should only need to materialize a
     // single batch here, because the local log is correct to the granularity of
     // a batch (but not within a batch due to placeholders).
     cloud_topic_log_reader_config reader_cfg(
-      /*start_offset=*/input.start_offset,
+      /*start_offset=*/clamped_start,
       /*max_offset=*/input.last_offset,
       /*first_timestamp=*/input.time,
       /*as=*/abort_source,
@@ -576,7 +600,7 @@ frontend::refine_timequery_result(
         }
     };
 
-    auto start_offset = kafka::offset_cast(input.start_offset);
+    auto start_offset = kafka::offset_cast(clamped_start);
     auto last_offset = kafka::offset_cast(input.last_offset);
     co_return co_await std::move(reader.reader)
       .consume(

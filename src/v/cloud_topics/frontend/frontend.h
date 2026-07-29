@@ -200,10 +200,14 @@ private:
     ss::future<std::optional<coarse_grained_timequery_result>>
     l1_timequery(storage::timequery_config cfg);
 
-    // Create a reader to find the exact offset for a timequery.
+    // Create a reader to find the exact offset for a timequery. The result
+    // is clamped to `min_offset` (the kafka start offset). Returns nullopt if
+    // the whole candidate lies below `min_offset`.
     ss::future<std::optional<storage::timequery_result>>
-      refine_timequery_result(
-        coarse_grained_timequery_result, model::opt_abort_source_t);
+    refine_timequery_result(
+      coarse_grained_timequery_result,
+      kafka::offset min_offset,
+      model::opt_abort_source_t);
 
     raft::replicate_stages upload_and_replicate(
       model::batch_identity batch_id,
