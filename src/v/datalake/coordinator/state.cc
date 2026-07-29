@@ -47,17 +47,19 @@ topic_state topic_state::copy() const {
     return result;
 }
 
-topic_state
-topic_state::copy_bounded(size_t max_files, bool& was_bounded) const {
+topic_state topic_state::copy_bounded(
+  size_t max_files, size_t max_bytes, bool& was_bounded) const {
     was_bounded = false;
     // Fast path: if every pending file already fits within the limit, there is
     // nothing to bound, so skip building the merge below and copy as-is.
-    bool is_within_bound = [this, max_files] {
+    bool is_within_bound = [this, max_files, max_bytes] {
         size_t total_files = 0;
+        size_t total_bytes = 0;
         for (const auto& [_, p_state] : pid_to_pending_files) {
             for (const auto& e : p_state.pending_entries) {
                 total_files += e.data.files.size() + e.data.dlq_files.size();
-                if (total_files > max_files) {
+                total_bytes += estimated_memory_bytes(e.data);
+                if (total_files > max_files || total_bytes > max_bytes) {
                     return false;
                 }
             }
@@ -102,22 +104,25 @@ topic_state::copy_bounded(size_t max_files, bool& was_bounded) const {
     }
     std::optional<model::offset> accepted_up_to;
     size_t files = 0;
+    size_t bytes = 0;
     while (!fronts.empty()) {
         auto cur = fronts.top();
         const auto& cur_entry = *cur.iter;
         const size_t entry_files = cur_entry.data.files.size()
                                    + cur_entry.data.dlq_files.size();
+        const size_t entry_bytes = estimated_memory_bytes(cur_entry.data);
         if (
           accepted_up_to.has_value()
           // Make sure we add all files added at `accepted_up_to` (ensuring if
           // there were multiple added in the same offset we get them all),
-          // even if that means going above the file limit.
+          // even if that means going above our limits.
           && cur_entry.added_pending_at != *accepted_up_to
-          && files + entry_files > max_files) {
+          && (files + entry_files > max_files || bytes + entry_bytes > max_bytes)) {
             break;
         }
         fronts.pop();
         files += entry_files;
+        bytes += entry_bytes;
         accepted_up_to = cur_entry.added_pending_at;
         auto& p_result = result.pid_to_pending_files[cur.pid];
         p_result.last_committed = cur.p->last_committed;
