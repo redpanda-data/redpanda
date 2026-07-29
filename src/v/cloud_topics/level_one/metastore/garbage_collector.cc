@@ -31,7 +31,7 @@ garbage_collector::remove_unreferenced_objects(ss::abort_source* as) {
     // remove on the state that has been persisted to cloud.
     const auto& s = stm_->state();
 
-    chunked_vector<object_id> to_remove;
+    chunked_vector<object_location> to_remove;
     for (const auto& [oid, obj_entry] : s.objects) {
         if (obj_entry.is_preregistration) {
             continue;
@@ -42,17 +42,42 @@ garbage_collector::remove_unreferenced_objects(ss::abort_source* as) {
 
         // TODO: split these into multiple updates in case we've got a lot of
         // objects to remove.
-        to_remove.emplace_back(oid);
+        to_remove.push_back(
+          object_location{
+            .id = oid,
+            .ts_path = obj_entry.imported_ts_location.transform(
+              [](const imported_ts_object_location& loc) {
+                  return loc.ts_path;
+              })});
         vlog(cd_log.debug, "Deleting L1 object: {}", oid);
     }
     if (to_remove.empty()) {
         co_return std::expected<void, error>{};
     }
+    co_return co_await remove_objects(std::move(to_remove), as);
+}
+
+ss::future<std::expected<void, garbage_collector::error>>
+garbage_collector::remove_objects(
+  chunked_vector<object_location> to_remove, ss::abort_source* as) {
+    if (to_remove.empty()) {
+        co_return std::expected<void, error>{};
+    }
+    auto sync_res = co_await stm_->sync(10s);
+    if (!sync_res.has_value()) {
+        co_return std::unexpected(error{"sync error"});
+    }
     auto del_res = co_await io_->delete_objects(to_remove.copy(), as);
     if (!del_res.has_value()) {
         co_return std::unexpected(error{"io error"});
     }
-    auto update_res = remove_objects_update::build(s, std::move(to_remove));
+    chunked_vector<object_id> remove_ids;
+    remove_ids.reserve(to_remove.size());
+    for (const auto& ext : to_remove) {
+        remove_ids.emplace_back(ext.id);
+    }
+    auto update_res = remove_objects_update::build(
+      stm_->state(), std::move(remove_ids));
     if (!update_res.has_value()) {
         co_return std::unexpected(error{"logic error"});
     }

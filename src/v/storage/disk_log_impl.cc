@@ -3799,6 +3799,10 @@ void disk_log_impl::set_overrides(ntp_config::default_overrides o) {
     mutable_config().set_overrides(o);
 }
 
+void disk_log_impl::set_partition_mode(model::redpanda_storage_mode m) {
+    mutable_config().set_partition_mode(m);
+}
+
 /**
  * We express compaction backlog as the size of data that has to be read to
  * perform full compaction.

@@ -10,8 +10,10 @@
 
 #include "cloud_topics/level_one/common/fake_io.h"
 
+#include "base/vassert.h"
 #include "bytes/iostream.h"
 #include "cloud_storage_clients/multipart_upload.h"
+#include "cloud_topics/level_one/common/object.h"
 #include "cloud_topics/level_one/common/object_id.h"
 
 namespace cloud_topics::l1 {
@@ -116,8 +118,27 @@ fake_io::read_object(
   ss::abort_source*,
   [[maybe_unused]] cloud_io::group_id gid,
   // fake_io keeps everything in memory and never caches, so it is always
-  // effectively a streaming read regardless of this flag.
-  [[maybe_unused]] bool skip_cache) {
+  // effectively a streaming read regardless of this flag. It is still recorded
+  // so tests can assert how open_object chunks a read and whether it bypasses
+  // the cache.
+  bool skip_cache) {
+    _read_object_calls.push_back(
+      read_object_call{
+        .position = extent.position,
+        .size = extent.size,
+        .skip_cache = skip_cache,
+        .imported = extent.imported.has_value()});
+    // An imported extent reads its bytes from the injected TS segment at
+    // ts_path; a native extent reads the object stored under its id.
+    // read_object is uniform over both, matching file_io.
+    if (extent.imported.has_value()) {
+        auto it = _ts_storage.find(extent.imported->ts_path);
+        if (it == _ts_storage.end()) {
+            co_return std::unexpected(io::errc::cloud_missing_object);
+        }
+        co_return make_iobuf_input_stream(
+          it->second.bytes.share(extent.position, extent.size));
+    }
     co_return get_object(extent.id)
       .transform(
         [&extent](
@@ -128,12 +149,67 @@ fake_io::read_object(
       .value_or(std::unexpected(io::errc::cloud_missing_object));
 }
 
-ss::future<std::expected<void, io::errc>>
-fake_io::delete_objects(chunked_vector<object_id> oids, ss::abort_source*) {
-    for (const auto& oid : oids) {
-        remove_object(oid);
+void fake_io::put_ts_segment(
+  ts_segment_path ts_path,
+  iobuf segment_bytes,
+  aborted_transactions aborted,
+  std::optional<iobuf> index_bytes) {
+    _ts_storage.insert_or_assign(
+      std::move(ts_path),
+      ts_segment_fixture{
+        .bytes = std::move(segment_bytes),
+        .aborted = std::move(aborted),
+        .index_bytes = std::move(index_bytes),
+      });
+}
+
+ss::future<std::expected<iobuf, io::errc>>
+fake_io::fetch_ts_index(object_extent extent, ss::abort_source*) {
+    vassert(
+      extent.imported.has_value(),
+      "fetch_ts_index requires an imported extent");
+    auto it = _ts_storage.find(extent.imported->ts_path);
+    if (it == _ts_storage.end() || !it->second.index_bytes.has_value()) {
+        // No injected .index: mirror file_io's notfound so open_object falls
+        // back to a full-segment scan with an empty index.
+        co_return std::unexpected(io::errc::cloud_missing_object);
+    }
+    co_return it->second.index_bytes->copy();
+}
+
+ss::future<std::expected<chunked_vector<model::tx_range>, io::errc>>
+fake_io::fetch_ts_tx(object_extent extent, ss::abort_source*) {
+    vassert(
+      extent.imported.has_value(), "fetch_ts_tx requires an imported extent");
+    auto it = _ts_storage.find(extent.imported->ts_path);
+    if (it == _ts_storage.end()) {
+        co_return std::unexpected(io::errc::cloud_missing_object);
+    }
+    // Return the injected aborted ranges as file_io would after parsing the .tx
+    // manifest; open_object collects them into the aborted set.
+    chunked_vector<model::tx_range> ranges;
+    for (const auto& r : it->second.aborted) {
+        ranges.push_back(r);
+    }
+    co_return std::move(ranges);
+}
+
+ss::future<std::expected<void, io::errc>> fake_io::delete_objects(
+  chunked_vector<object_location> objects, ss::abort_source*) {
+    for (const auto& obj : objects) {
+        if (obj.ts_path.has_value()) {
+            // Imported object: its backing segment is addressed by ts_path
+            // (mirrors file_io's path routing).
+            _ts_storage.erase(*obj.ts_path);
+        } else {
+            remove_object(obj.id);
+        }
     }
     co_return std::expected<void, io::errc>{};
+}
+
+bool fake_io::has_ts_segment(const ts_segment_path& ts_path) const {
+    return _ts_storage.contains(ts_path);
 }
 
 std::optional<iobuf> fake_io::get_object(object_id id) {

@@ -14,6 +14,7 @@
 #include "cloud_topics/level_one/metastore/leveling_range_builder.h"
 #include "cloud_topics/level_one/metastore/metastore_manifest.h"
 #include "cloud_topics/level_one/metastore/offset_interval_set.h"
+#include "cloud_topics/level_one/metastore/state.h"
 #include "container/chunked_hash_map.h"
 #include "container/chunked_vector.h"
 #include "model/fundamental.h"
@@ -84,6 +85,11 @@ public:
             model::timestamp max_timestamp;
             size_t pos;
             size_t size;
+            // Set when this extent is an imported tiered-storage segment (the
+            // TS->CT migration mirror): the segment descriptor (path + delta +
+            // term). The extent's Kafka offset bounds come from
+            // base_offset/last_offset above. nullopt for a native L1 extent.
+            std::optional<imported_ts_info> imported;
         };
         using ntp_metas_list_t = chunked_vector<ntp_metadata>;
 
@@ -146,6 +152,17 @@ public:
         virtual std::expected<void, error>
           add(object_id, object_metadata::ntp_metadata) = 0;
 
+        // Registers a single imported tiered-storage segment as a finished,
+        // single-extent object (the TS->CT migration mirror). Unlike the
+        // native path there is no L1 write to reserve, so the object is not
+        // pre-registered: this creates the object id, records it as finished,
+        // and returns it. `meta.imported` must be set. The object is added to
+        // the metastore by a subsequent add_objects() (which adopts a migrating
+        // partition's log at a non-zero start and skips the pre-registration
+        // check for imported objects).
+        virtual std::expected<object_id, error>
+          add_imported(object_metadata::ntp_metadata) = 0;
+
         // Tracks the given object as finished. Further calls to
         // get_or_create_object_for() will not return the finished object ID.
         virtual std::expected<void, error>
@@ -161,6 +178,9 @@ public:
     struct offsets_response {
         kafka::offset start_offset;
         kafka::offset next_offset;
+        // True while mid tiered->cloud migration; for offline/remote consumers.
+        // false for a native cloud topic.
+        bool migrating{};
     };
     virtual ss::future<
       std::expected<std::unique_ptr<object_metadata_builder>, errc>>
@@ -218,6 +238,12 @@ public:
     // Moves the start offset of the given partition's log to the given offset.
     virtual ss::future<std::expected<void, errc>>
     set_start_offset(const model::topic_id_partition&, kafka::offset) = 0;
+
+    // Sets the partition's migration phase. Monotonic (none -> migrating ->
+    // complete) and idempotent; a backward transition is rejected. Creates the
+    // partition's metastore entry if absent.
+    virtual ss::future<std::expected<void, errc>>
+    set_migrating(const model::topic_id_partition&, bool) = 0;
 
     struct topic_removal_response {
         // Topic IDs that were not removed from the metastore and still have

@@ -18,6 +18,8 @@
 #include "container/chunked_vector.h"
 #include "model/fundamental.h"
 
+#include <map>
+
 namespace cloud_topics::l1 {
 
 namespace {
@@ -33,6 +35,7 @@ term_state_update_t make_terms_update(const metastore::term_offset_map_t& m) {
     }
     return ret;
 }
+
 } // namespace
 
 ss::future<std::expected<object_id, simple_object_builder::error>>
@@ -93,6 +96,35 @@ simple_object_builder::add(
     return {};
 }
 
+std::expected<object_id, metastore::object_metadata_builder::error>
+simple_object_builder::add_imported(
+  metastore::object_metadata::ntp_metadata ntp_meta) {
+    if (ntp_meta.base_offset > ntp_meta.last_offset) {
+        return std::unexpected(
+          error{fmt::format(
+            "Imported metadata has inverted offsets for partition {}: "
+            "base_offset {} > last_offset {}",
+            ntp_meta.tidp,
+            ntp_meta.base_offset,
+            ntp_meta.last_offset)});
+    }
+    // Imported objects reference an existing tiered-storage segment -- there is
+    // no L1 write to reserve -- so the id is created directly (no
+    // pre-registration) and recorded as a finished single-extent object.
+    auto oid = create_object_id();
+    auto object_size = ntp_meta.size;
+    metastore::object_metadata::ntp_metas_list_t metas;
+    metas.emplace_back(std::move(ntp_meta));
+    finished_objects_.emplace_back(
+      metastore::object_metadata{
+        .oid = oid,
+        .footer_pos = 0,
+        .object_size = object_size,
+        .ntp_metas = std::move(metas),
+      });
+    return oid;
+}
+
 std::expected<void, metastore::object_metadata_builder::error>
 simple_object_builder::finish(
   object_id oid, size_t footer_pos, size_t object_size) {
@@ -137,13 +169,21 @@ new_object make_new_object(const metastore::object_metadata& o) {
     };
     for (const auto& c : o.ntp_metas) {
         auto& extents = new_o.extent_metas[c.tidp.topic_id];
-        extents[c.tidp.partition] = new_object::metadata{
+        auto meta = new_object::metadata{
           .base_offset = c.base_offset,
           .last_offset = c.last_offset,
           .max_timestamp = c.max_timestamp,
           .filepos = c.pos,
           .len = c.size,
         };
+        if (c.imported.has_value()) {
+            // Split the imported descriptor onto the storage rows: the segment
+            // delta/term on the extent, the ts_path on the object (an imported
+            // object is single-extent, so its location is this extent's).
+            meta.imported_ts_info = to_segment_info(*c.imported);
+            new_o.imported_ts_location = to_object_location(*c.imported);
+        }
+        extents[c.tidp.partition] = std::move(meta);
     }
     return new_o;
 }
@@ -189,6 +229,7 @@ simple_metastore::get_offsets(
     return offsets_response{
       .start_offset = prt.start_offset,
       .next_offset = prt.next_offset,
+      .migrating = prt.migrating,
     };
 }
 
@@ -302,6 +343,22 @@ simple_metastore::set_start_offset(
     auto update_res = set_start_offset_update::build(state_, tp, requested_o);
     if (!update_res.has_value()) {
         vlog(cd_log.debug, "Set start offset failed: {}", update_res.error());
+        co_return std::unexpected(metastore::errc::invalid_request);
+    }
+    auto apply_res = update_res->apply(state_);
+    vassert(
+      apply_res.has_value(),
+      "Apply must succeed if can_apply() is true: {}",
+      apply_res.error());
+    co_return std::expected<void, metastore::errc>{};
+}
+
+ss::future<std::expected<void, metastore::errc>>
+simple_metastore::set_migrating(
+  const model::topic_id_partition& tp, bool migrating) {
+    auto update_res = set_migrating_update::build(state_, tp, migrating);
+    if (!update_res.has_value()) {
+        vlog(cd_log.debug, "set_migrating failed: {}", update_res.error());
         co_return std::unexpected(metastore::errc::invalid_request);
     }
     auto apply_res = update_res->apply(state_);

@@ -30,6 +30,7 @@
 #include "raft/consensus_utils.h"
 #include "raft/fundamental.h"
 #include "ssx/async-clear.h"
+#include "ssx/future-util.h"
 
 #include <seastar/core/lowres_clock.hh>
 #include <seastar/core/shared_ptr.hh>
@@ -73,6 +74,12 @@ partition_manager::partition_manager(
                 if (a) {
                     a.value().get().notify_leadership(leader_id);
                 }
+                // Sync the partition's durable storage mode to its topic
+                // config on becoming leader (no-op when not leader or already
+                // in sync). The shared_ptr keeps the partition alive across
+                // the async write.
+                ssx::spawn_with_gate(
+                  _gate, [p] { return p->maybe_sync_partition_mode(); });
             }
         });
     _shutdown_watchdog.set_callback(
@@ -100,7 +107,32 @@ partition_manager::get_topic_partition_table(
 
 ss::future<> partition_manager::start() {
     maybe_arm_shutdown_watchdog();
+    // Sync partition_mode once the migration feature activates. The
+    // leadership-notification sync (maybe_sync_partition_mode) is gated on the
+    // feature being active, so a partition that became leader while the
+    // feature was inactive is left with partition_mode == unset. Re-run the
+    // sync on every current leader when the feature turns active; partitions
+    // that gain leadership after activation are covered by the leadership
+    // notification.
+    ssx::spawn_with_gate(
+      _gate, [this] { return sync_partition_mode_on_migration_feature(); });
     co_return;
+}
+
+ss::future<> partition_manager::sync_partition_mode_on_migration_feature() {
+    try {
+        co_await _feature_table.local().await_feature(
+          features::feature::topic_mode_migration, _as);
+    } catch (...) {
+        // Aborted on shutdown before the feature activated.
+        co_return;
+    }
+    for (auto& [_, p] : _ntp_table) {
+        if (p->is_leader()) {
+            ssx::spawn_with_gate(
+              _gate, [p] { return p->maybe_sync_partition_mode(); });
+        }
+    }
 }
 
 ss::future<consensus_ptr> partition_manager::manage(

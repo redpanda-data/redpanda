@@ -37,6 +37,8 @@ public:
     std::expected<void, error> remove_pending_object(object_id) override;
     std::expected<void, error>
       add(object_id, metastore::object_metadata::ntp_metadata) override;
+    std::expected<object_id, error>
+      add_imported(metastore::object_metadata::ntp_metadata) override;
     std::expected<void, error>
     finish(object_id, size_t footer_pos, size_t object_size) override;
     bool is_empty() const override;
@@ -77,6 +79,9 @@ public:
 
     ss::future<std::expected<void, errc>>
     set_start_offset(const model::topic_id_partition&, kafka::offset) override;
+
+    ss::future<std::expected<void, errc>>
+    set_migrating(const model::topic_id_partition&, bool) override;
 
     ss::future<std::expected<topic_removal_response, errc>>
     remove_topics(const chunked_vector<model::topic_id>&) override;

@@ -38,9 +38,10 @@ db_update_error wrap_read_err(
     }
 }
 
-// Checks that each new object is pre-registered (exists with
-// is_preregistration=true), then collects extents and committed object
-// entries into the output maps.
+// Checks that each new native object is pre-registered (exists with
+// is_preregistration=true) -- imported objects reference an existing
+// tiered-storage segment and skip that check -- then collects extents and
+// committed object entries into the output maps.
 ss::future<std::expected<void, db_update_error>>
 validate_preregistered_and_collect(
   const chunked_vector<new_object>& new_objects,
@@ -48,16 +49,22 @@ validate_preregistered_and_collect(
   sorted_extents_by_tidp_t& out_extents,
   chunked_hash_map<object_id, object_entry>& out_objects) {
     for (const auto& o : new_objects) {
-        auto object_res = co_await state.get_object(o.oid);
-        if (!object_res.has_value()) {
-            co_return std::unexpected(db_update_error(
-              invalid_update, fmt::format("Error getting object {}", o.oid)));
-        }
-        if (
-          !object_res->has_value() || !object_res->value().is_preregistration) {
-            co_return std::unexpected(db_update_error(
-              invalid_update,
-              fmt::format("object {} not pre-registered", o.oid)));
+        if (!o.imported_ts_location.has_value()) {
+            // Native objects must be pre-registered, but we allow imported
+            // objects to skip that step as it isn't useful.
+            auto object_res = co_await state.get_object(o.oid);
+            if (!object_res.has_value()) {
+                co_return std::unexpected(db_update_error(
+                  invalid_update,
+                  fmt::format("Error getting object {}", o.oid)));
+            }
+            if (
+              !object_res->has_value()
+              || !object_res->value().is_preregistration) {
+                co_return std::unexpected(db_update_error(
+                  invalid_update,
+                  fmt::format("object {} not pre-registered", o.oid)));
+            }
         }
         auto data_size = o.collect_extents_by_tidp(&out_extents);
         out_objects.emplace(
@@ -69,6 +76,7 @@ validate_preregistered_and_collect(
             .object_size = o.object_size,
             .last_updated = model::timestamp::now(),
             .is_preregistration = false,
+            .imported_ts_location = o.imported_ts_location,
           });
     }
     co_return std::expected<void, db_update_error>{};
@@ -660,8 +668,6 @@ add_objects_db_update::build_rows(
     chunked_hash_map<model::topic_id_partition, metadata_row_value>
       verified_meta_vals;
     for (const auto& [tidp, extents] : new_extents_by_tp) {
-        // TODO: maybe we need some mount operation that adopts a partition log
-        // and allows it to start a specific offset.
         auto meta_res = co_await state.get_metadata(tidp);
         if (!meta_res.has_value()) {
             co_return std::unexpected(wrap_read_err(
@@ -670,7 +676,21 @@ add_objects_db_update::build_rows(
               tidp));
         }
         auto opt = meta_res.value();
-        auto expected_next = opt ? opt->next_offset : kafka::offset{0};
+        // An empty partition marked migrating (via set_migrating) adopts its
+        // log at the first incoming extent's base, allowing a non-zero start.
+        // Note, this may happen more than once if, during the migration
+        // process, segments happen to be gc'd past the latest point so far
+        // mirrored once more emptying the partition.  In such a case, we want
+        // to still set expected_next based on the first new extent as there
+        // might be a gap.
+        //
+        // A brand-new (untracked) partition starts at 0; an existing non-empty
+        // one continues from its next_offset.
+        const bool fresh_migrating_mount = opt && opt->migrating
+                                           && opt->num_extents == 0;
+        auto expected_next = fresh_migrating_mount
+                               ? extents.begin()->base_offset
+                               : (opt ? opt->next_offset : kafka::offset{0});
 
         if (extents.begin()->base_offset != expected_next) {
             // If the start of the new extents for this partition aren't
@@ -689,12 +709,15 @@ add_objects_db_update::build_rows(
             extent_size_sum += extent.len;
         }
         verified_meta_vals[tidp] = metadata_row_value{
-          .start_offset = opt ? opt->start_offset : kafka::offset{0},
+          .start_offset = fresh_migrating_mount
+                            ? extents.begin()->base_offset
+                            : (opt ? opt->start_offset : kafka::offset{0}),
           .next_offset = kafka::next_offset(extents.rbegin()->last_offset),
           .compaction_epoch = opt ? opt->compaction_epoch
                                   : partition_state::compaction_epoch_t{0},
           .size = (opt ? opt->size : 0) + extent_size_sum,
           .num_extents = (opt ? opt->num_extents : 0) + extents.size(),
+          .migrating = opt ? opt->migrating : false,
         };
     }
     // Now that we've validated the offsets of our extents, validate the terms
@@ -785,6 +808,7 @@ add_objects_db_update::build_rows(
                     .filepos = entry.filepos,
                     .len = entry.len,
                     .oid = entry.oid,
+                    .imported_ts_info = entry.imported_ts_info,
                   }),
               });
         }
@@ -1396,6 +1420,7 @@ set_start_offset_db_update::build_rows(
             .num_extents
             = metadata.num_extents
               - std::min(metadata.num_extents, extent_keys_to_delete.size()),
+            .migrating = metadata.migrating,
           }),
       });
 
@@ -1453,6 +1478,50 @@ set_start_offset_db_update::discover_truncated_object_ids(
         }
     }
     co_return discovered_oids;
+}
+
+ss::future<std::expected<void, db_update_error>>
+set_migrating_db_update::build_rows(
+  state_reader& reader,
+  chunked_vector<write_batch_row>& out,
+  bool* is_no_op) const {
+    auto meta_res = co_await reader.get_metadata(tp);
+    if (!meta_res.has_value()) {
+        co_return std::unexpected(wrap_read_err(
+          std::move(meta_res.error()), "Error reading metadata for {}", tp));
+    }
+    // Migrating may be set on an absent partition, in which case it creates its
+    // metadata row. num_extents == 0 causes add_objects to recognize the
+    // partition as a fresh migrating mount and adopt the log at the first
+    // imported extent's (possibly non-zero) base. The offsets are overwritten
+    // by that first import.
+    metadata_row_value updated
+      = meta_res->has_value()
+          ? **meta_res
+          : metadata_row_value{
+              .start_offset = kafka::offset{0},
+              .next_offset = kafka::offset{0},
+              .compaction_epoch = partition_state::compaction_epoch_t{0},
+              .size = 0,
+              .num_extents = 0,
+              .migrating = false,
+            };
+    const auto current = updated.migrating;
+
+    if (migrating == current) {
+        if (is_no_op) {
+            *is_no_op = true;
+        }
+        co_return std::expected<void, db_update_error>{};
+    }
+
+    updated.migrating = migrating;
+    out.emplace_back(
+      write_batch_row{
+        .key = metadata_row_key::encode(tp),
+        .value = serde::to_iobuf(updated),
+      });
+    co_return std::expected<void, db_update_error>{};
 }
 
 ss::future<std::expected<void, db_update_error>>

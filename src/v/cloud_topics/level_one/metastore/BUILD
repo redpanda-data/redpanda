@@ -109,6 +109,8 @@ redpanda_cc_library(
     visibility = ["//visibility:public"],
     deps = [
         "//src/v/base",
+        "//src/v/cloud_topics/level_one/common:object_id",
+        "//src/v/container:chunked_vector",
         "//src/v/utils:named_type",
         "@seastar",
     ],
@@ -165,6 +167,7 @@ redpanda_cc_library(
         ":leveling_range_builder",
         ":metastore_manifest",
         ":offset_interval_set",
+        ":state",
         "//src/v/base",
         "//src/v/cloud_topics/level_one/common:object_id",
         "//src/v/container:chunked_hash_map",
@@ -206,6 +209,7 @@ redpanda_cc_library(
         ":rpc_types",
         ":state_update",
         "//src/v/cloud_topics:logger",
+        "//src/v/cloud_topics/level_one/common:object_id",
     ],
     visibility = ["//visibility:public"],
     deps = [
@@ -307,6 +311,7 @@ redpanda_cc_library(
         "//src/v/container:chunked_hash_map",
         "//src/v/model",
         "//src/v/serde",
+        "//src/v/serde:enum",
         "//src/v/serde:map",
         "//src/v/serde:named_type",
         "//src/v/serde:optional",

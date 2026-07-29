@@ -15,8 +15,11 @@
 #include "cluster/state_machine_registry.h"
 #include "container/chunked_vector.h"
 #include "model/fundamental.h"
+#include "model/metadata.h"
 #include "raft/persisted_stm.h"
 #include "serde/envelope.h"
+
+#include <seastar/util/noncopyable_function.hh>
 
 namespace cluster {
 
@@ -50,6 +53,26 @@ public:
     // Returns a current value of the writes disabled property.
     writes_disabled are_writes_disabled() const;
 
+    // Updates the persistent, partition-local storage mode; returns the offset
+    // of the update message. This is the partition's own durable record of its
+    // storage mode, decoupled from the topic config (see partition_mode()).
+    ss::future<result<model::offset>>
+      set_partition_mode(model::redpanda_storage_mode);
+    // Waits for the state to be up to date and returns the partition mode; only
+    // intended to be called on the current leader.
+    ss::future<result<model::redpanda_storage_mode>> sync_partition_mode();
+    // Returns the current partition mode. `unset` means "not yet bootstrapped";
+    // callers (ntp_config) fall back to the topic-config-derived mode.
+    model::redpanda_storage_mode partition_mode() const;
+
+    // Registers a callback invoked on this shard whenever partition_mode may
+    // have changed (on apply and on raft-snapshot restore), so the owner can
+    // re-read partition_mode() and propagate it (e.g. into ntp_config).
+    void
+    set_partition_mode_change_callback(ss::noncopyable_function<void()> cb) {
+        _partition_mode_change_cb = std::move(cb);
+    }
+
     raft::stm_initial_recovery_policy
     get_initial_recovery_policy() const final {
         return raft::stm_initial_recovery_policy::skip_to_end;
@@ -80,19 +103,43 @@ private:
           const update_writes_disabled_cmd&) = default;
     };
 
+    struct update_partition_mode_cmd
+      : serde::envelope<
+          update_partition_mode_cmd,
+          serde::version<0>,
+          serde::compat_version<0>> {
+        model::redpanda_storage_mode partition_mode
+          = model::redpanda_storage_mode::unset;
+
+        auto serde_fields() { return std::tie(partition_mode); }
+        fmt::iterator format_to(fmt::iterator it) const;
+        friend bool operator==(
+          const update_partition_mode_cmd&,
+          const update_partition_mode_cmd&) = default;
+    };
+
     struct state_snapshot
       : serde::envelope<
           state_snapshot,
-          serde::version<1>,
+          serde::version<2>,
           serde::compat_version<0>> {
         // todo: in a major release we can change it to use a local_snapshot +
         // update_offset
         writes_disabled writes_disabled;
         model::offset update_offset;
         model::revision_id writes_revision_id;
+        // serde v2; absent in older snapshots -> defaults to `unset`, which the
+        // partition_mode() accessor / ntp_config treats as "fall back to the
+        // topic-config-derived mode" (bootstrap fallback).
+        model::redpanda_storage_mode partition_mode
+          = model::redpanda_storage_mode::unset;
 
         auto serde_fields() {
-            return std::tie(writes_disabled, update_offset, writes_revision_id);
+            return std::tie(
+              writes_disabled,
+              update_offset,
+              writes_revision_id,
+              partition_mode);
         }
         fmt::iterator format_to(fmt::iterator it) const;
         friend bool
@@ -101,12 +148,15 @@ private:
 
     struct raft_snapshot
       : serde::
-          envelope<raft_snapshot, serde::version<1>, serde::compat_version<0>> {
+          envelope<raft_snapshot, serde::version<2>, serde::compat_version<0>> {
         writes_disabled writes_disabled = writes_disabled::no;
         model::revision_id writes_revision_id;
+        model::redpanda_storage_mode partition_mode
+          = model::redpanda_storage_mode::unset;
 
         auto serde_fields() {
-            return std::tie(writes_disabled, writes_revision_id);
+            return std::tie(
+              writes_disabled, writes_revision_id, partition_mode);
         }
         fmt::iterator format_to(fmt::iterator it) const;
 
@@ -134,6 +184,7 @@ private:
 
     enum class operation_type {
         update_writes_disabled = 0,
+        update_partition_mode = 1,
     };
 
     ss::future<> do_apply(const model::record_batch&) final;
@@ -142,10 +193,15 @@ private:
 
     static model::record_batch
       make_update_partitions_batch(update_writes_disabled_cmd);
+    static model::record_batch
+      make_update_partition_mode_batch(update_partition_mode_cmd);
 
     ss::future<result<model::offset>> replicate_properties_update(
       model::timeout_clock::duration timeout,
       update_writes_disabled_cmd command);
+    ss::future<result<model::offset>> replicate_partition_mode_update(
+      model::timeout_clock::duration timeout,
+      update_partition_mode_cmd command);
 
     config::binding<std::chrono::milliseconds> _sync_timeout;
 
@@ -158,6 +214,9 @@ private:
 
     // For linearizing access to writes_disabled state on the leader
     ssx::mutex _writes_mutex{"c/partition_properties_stm::writes_mutex"};
+
+    void notify_partition_mode_change();
+    ss::noncopyable_function<void()> _partition_mode_change_cb;
 };
 
 class partition_properties_stm_factory : public state_machine_factory {

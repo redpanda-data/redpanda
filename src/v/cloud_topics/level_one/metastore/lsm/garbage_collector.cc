@@ -117,7 +117,7 @@ db_garbage_collector::remove_unreferenced_batch(
           std::move(object_range_res.error()), "Error getting object range"));
     }
     auto object_gen = object_range_res.value().get_rows();
-    chunked_vector<object_id> to_remove;
+    chunked_vector<object_location> to_remove;
     size_t batch_expire_count = 0;
     std::optional<object_id> next_batch_start{std::nullopt};
     while (auto obj_ref_opt = co_await object_gen()) {
@@ -178,7 +178,13 @@ db_garbage_collector::remove_unreferenced_batch(
           obj_entry.removed_data_size == obj_entry.total_data_size
           && obj_entry.last_updated <= deletion_delay_cutoff) {
             vlog(cd_log.debug, "Deleting L1 object: {}", oid);
-            to_remove.emplace_back(oid);
+            to_remove.push_back(
+              object_location{
+                .id = oid,
+                .ts_path = obj_entry.imported_ts_location.transform(
+                  [](const imported_ts_object_location& loc) {
+                      return loc.ts_path;
+                  })});
             if (to_remove.size() + batch_expire_count == batch_size) {
                 // Set an explicit next starting object if we had more than one
                 // batch of objects so we can make incremental progress.
@@ -199,6 +205,21 @@ db_garbage_collector::remove_unreferenced_batch(
         co_return next_batch_start;
     }
 
+    auto remove_res = co_await remove_objects(db, std::move(to_remove), as);
+    if (!remove_res.has_value()) {
+        co_return std::unexpected(std::move(remove_res.error()));
+    }
+    co_return next_batch_start;
+}
+
+ss::future<std::expected<void, db_garbage_collector::error>>
+db_garbage_collector::remove_objects(
+  replicated_database* db,
+  chunked_vector<object_location> to_remove,
+  ss::abort_source* as) {
+    if (to_remove.empty()) {
+        co_return std::expected<void, error>{};
+    }
     auto num_to_remove = to_remove.size();
     auto del_res = co_await io_->delete_objects(to_remove.copy(), as);
     if (!del_res.has_value()) {
@@ -206,7 +227,12 @@ db_garbage_collector::remove_unreferenced_batch(
           error(errc::io_error, "Error deleting objects: {}", del_res.error()));
     }
     probe_->gc_objects_deleted(num_to_remove);
-    remove_objects_db_update update{std::move(to_remove)};
+    chunked_vector<object_id> remove_ids;
+    remove_ids.reserve(to_remove.size());
+    for (const auto& ext : to_remove) {
+        remove_ids.emplace_back(ext.id);
+    }
+    remove_objects_db_update update{std::move(remove_ids)};
     chunked_vector<write_batch_row> rows;
     auto build_res = co_await update.build_rows(rows);
     if (!build_res.has_value()) {
@@ -223,7 +249,7 @@ db_garbage_collector::remove_unreferenced_batch(
         }
     }
     probe_->gc_object_deletions_replicated(num_to_remove);
-    co_return next_batch_start;
+    co_return std::expected<void, error>{};
 }
 
 ss::future<
