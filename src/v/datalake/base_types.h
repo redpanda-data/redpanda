@@ -55,6 +55,13 @@ struct per_column_stats
     operator==(const per_column_stats&, const per_column_stats&) = default;
 };
 
+/// Estimated heap footprint of these column stats.
+inline size_t estimated_memory_bytes(const per_column_stats& s) {
+    return sizeof(per_column_stats)
+           + (s.lower_bound.has_value() ? s.lower_bound->size() : 0)
+           + (s.upper_bound.has_value() ? s.upper_bound->size() : 0);
+}
+
 /**
  * Simple type describing local parquet file metadata with its path and basic
  * statistics
