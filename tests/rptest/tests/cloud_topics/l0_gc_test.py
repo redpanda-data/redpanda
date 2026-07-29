@@ -32,6 +32,7 @@ from rptest.clients.rpk import RpkTool
 from rptest.clients.types import TopicSpec
 from rptest.services.cluster import cluster
 from rptest.services.redpanda import (
+    LoggingConfig,
     SISettings,
     get_cloud_storage_type,
 )
@@ -1274,3 +1275,130 @@ class CloudTopicsL0GCAllTopicsDeletedTest(CloudTopicsL0GCAdminBase):
             ),
         )
         self.logger.info("All L0 objects cleaned up after topic deletion")
+
+
+class CloudTopicsL0GCReadReplicaTest(CloudTopicsL0GCTestBase):
+    """A read-replica cloud topic must not stall L0 GC for the whole cluster.
+
+    Read replicas have no ctp_stm and therefore no cluster epoch, by design.
+    But epoch_source_impl::get_partitions filters the topic table on
+    is_cloud_topic() alone (level_zero_gc.cc:399-403), which tests storage_mode
+    and ignores read_replica, so a read-replica cloud topic enters the epoch
+    snapshot. The join then requires every topic in the snapshot to have
+    reported an epoch and fails the whole round otherwise
+    (level_zero_gc.cc:399-404), so one such topic stops collection for every
+    other cloud topic on the cluster.
+
+    Two sibling call sites over the same topic set do exclude read replicas
+    explicitly: cloud_topics/manager/manager.cc:92 and
+    read_replica/metadata_manager.cc:101.
+    """
+
+    def __init__(self, test_context: TestContext):
+        super().__init__(test_context=test_context)
+        # The epoch-join failure is logged at debug only, so at the default
+        # level a stalled round is indistinguishable from an idle one.
+        assert self.redpanda
+        self.redpanda._log_config = LoggingConfig("info", {"cloud_topics": "debug"})
+
+    @cluster(num_nodes=5)
+    def test_read_replica_topic_does_not_stall_gc(self):
+        rpk = RpkTool(self.redpanda)
+
+        # A local cloud topic, so the cluster has L0 objects worth collecting,
+        # and a donor whose topic manifest the read replica will adopt.
+        local = TopicSpec(name="gc_local_topic", partition_count=2)
+        donor = TopicSpec(name="gc_donor_topic", partition_count=1)
+        self.topics = [local, donor]
+        self.create_topics(self.topics)
+        self.produce_some(topics=[local.name, donor.name])
+
+        # Control: producing and waiting lets GC collect while no read replica
+        # exists. If this fails the fixture is wrong, not the code.
+        wait_until(
+            lambda: self.get_num_objects_deleted() > 0,
+            timeout_sec=90,
+            backoff_sec=5,
+            retry_on_exc=True,
+            err_msg="control failed: GC deleted nothing before a read replica existed",
+        )
+        self.logger.info(f"control passed, deleted={self.get_num_objects_deleted()}")
+
+        bucket = self.si_settings.cloud_storage_bucket
+
+        def donor_manifest_present() -> bool:
+            return any(
+                "topic_manifest" in o.key and donor.name in o.key
+                for o in self.redpanda.cloud_storage_client.list_objects(bucket)
+            )
+
+        wait_until(
+            donor_manifest_present,
+            timeout_sec=60,
+            backoff_sec=2,
+            err_msg=f"no topic manifest was uploaded for {donor.name}",
+        )
+
+        # Drop the donor so the read replica can take its name. The manifest
+        # outlives the topic, which is a separate defect this relies on.
+        rpk.delete_topic(donor.name)
+        assert donor_manifest_present(), (
+            "donor manifest disappeared with the topic; this test needs it to survive"
+        )
+
+        # The read replica must ALSO be a cloud topic: is_cloud_topic() tests
+        # storage_mode only, and that is what puts the topic into the GC epoch
+        # snapshot. The combination is permitted -- storage_mode_properties.h
+        # allows topic_property_read_replica with the cloud masks. Setting only
+        # redpanda.remote.readreplica yields a topic GC never looks at, so the
+        # test would pass without exercising anything.
+        rpk.create_topic(
+            donor.name,
+            config={
+                "redpanda.remote.readreplica": bucket,
+                TopicSpec.PROPERTY_STORAGE_MODE: TopicSpec.STORAGE_MODE_CLOUD,
+            },
+        )
+
+        def rr_has_leader() -> bool:
+            parts = list(rpk.describe_topic(donor.name, tolerant=True))
+            return len(parts) > 0 and all(p.leader != -1 for p in parts)
+
+        wait_until(
+            rr_has_leader,
+            timeout_sec=60,
+            backoff_sec=5,
+            retry_on_exc=True,
+            err_msg="read replica never got a leader",
+        )
+        cfgs = rpk.describe_topic_configs(donor.name)
+        self.logger.info(f"read replica config: {cfgs}")
+
+        deleted_before = self.get_num_objects_deleted()
+
+        # Produce again so the epoch watermark advances and there is eligible
+        # work. Without this, "GC made no progress" is the expected steady
+        # state and the assertion below would prove nothing -- an earlier
+        # version of this test failed for exactly that reason.
+        self.produce_some(topics=[local.name])
+
+        # Assert the mechanism directly. A deletion counter is too blunt here:
+        # a round already in flight when the read replica landed can still
+        # report one deletion afterwards and satisfy a "> before" check while
+        # every subsequent round aborts.
+        stall_msg = "has no reported max GC epoch"
+        assert not self.redpanda.search_log_any(stall_msg), (
+            "the epoch join rejected the whole GC round because a read-replica "
+            "cloud topic is in the snapshot and can never report an epoch; "
+            f"brokers logged {stall_msg!r}. is_cloud_topic() tests storage_mode "
+            "only and admits read replicas, unlike manager.cc:92 and "
+            "metadata_manager.cc:101 which exclude them explicitly"
+        )
+
+        # And that collection actually continues.
+        assert self.get_num_objects_deleted() > deleted_before, (
+            "L0 GC made no progress after a read-replica cloud topic was "
+            f"created: objects_deleted stuck at {self.get_num_objects_deleted()} "
+            f"(was {deleted_before}), though the control collected under the "
+            "same load"
+        )

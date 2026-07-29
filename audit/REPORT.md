@@ -7,7 +7,7 @@ otherwise skip records without saying so. One read-replica topic stops L0 garbag
 entire cluster, and object storage then grows without bound for every cloud topic on it.
 
 We audited all 406 classes in `src/v/cloud_topics` at `4a4ddbc338`, raised 73 candidate defects,
-confirmed 42 after adversarial review, and tested 25. Three are proven on a real cluster. Severity is
+confirmed 42 after adversarial review, and tested 26. Four are proven on a real cluster. Severity is
 our judgement except where the "Proven by" column says otherwise.
 
 ## Defects, ranked
@@ -17,7 +17,7 @@ our judgement except where the "Proven by" column says otherwise.
 | 1 | Timestamp seek returns the index entry *at* the target, not the last one before it | `level_one/common/object.cc:271` | unit; wrong on 14/47 probes | ListOffsets-by-timestamp skips up to one indexing interval (4 MiB default) of records. Unrecoverable — reads are forward-only. Also answered −1 for a timestamp that has records. |
 | 2 | A client control batch becomes a placeholder with its record key stripped; the STM applicator then retries for ever without advancing | `level_zero/stm/placeholder.cc:32` | unit + caller chain | Partition stops applying. Durably committed, so every restart replays it. The produce handler does not reject `isControl`, so any client can send it. |
 | 3 | Timestamp lookup after `DeleteRecords` builds a local-log reader at a Kafka offset below the local log's start | `frontend/frontend.cc:572`, `:509` | **6-node cluster**; 60 throws per run, and a no-trim control passes | Broker throws `std::runtime_error (Reader cannot read before start of the log 1000 < 7518)` and drops the connection. ListOffsets-by-timestamp does not answer at all. Deterministic. |
-| 4 | A cloud **read-replica** topic joins the GC epoch snapshot but can never report an epoch — read replicas get no `ctp_stm`, and the join is fail-closed | `level_zero/gc/level_zero_gc.cc:471` | reading only | Every L0 GC round on every shard fails for as long as the read replica exists. Object storage grows without bound for all cloud topics in the cluster. |
+| 4 | The GC epoch snapshot filters on `is_cloud_topic()`, which tests `storage_mode` only and so admits a **read-replica** cloud topic. Read replicas have no `ctp_stm` and no epoch by design, and the join is fail-closed | `level_zero/gc/level_zero_gc.cc:471` | **6-node cluster**; 37 join failures naming the topic, all 3 brokers | Every L0 GC round is rejected for as long as the read replica exists — one broker completed no successful round at all. Object storage grows without bound for every cloud topic in the cluster. Needs `readreplica` **and** `storage.mode=cloud`, a combination `storage_mode_properties.h` permits. |
 | 5 | Placeholder derives `last_offset_delta` from `record_count` instead of copying it | `level_zero/stm/placeholder.cc:17` | unit | Delivers a batch declaring a shorter offset span than it contains, with valid CRCs. Redpanda's own compaction produces such batches; cluster linking routes them here. |
 | 6 | `DeleteRecords` to the high watermark stops reconciliation while the partition is idle | `reconciler/reconciliation_source.cc:179` | **6-node cluster**, both storage modes | Local log pinned, L1 retention blocked, cluster-wide L0 GC held. Clears on the next produce. Logs nothing above debug. |
 | 7 | Deleting a cloud topic never removes its topic manifest | `metastore/topic_purger.cc:83` | **6-node cluster + bucket** | Keys are revision-scoped, so each creation of a name leaves one object behind for ever. A read replica of a recreated name resolves against the stale manifest. |
@@ -40,8 +40,13 @@ The **severity** claims are weaker. Every correction during validation landed th
 "permanent" claims that we tested self-healed. Read the Consequence column as our best current
 reading, not as measured.
 
-Seventeen of the 42 confirmed defects have no test. #2 and #11 cannot be driven by a stock client —
+Sixteen of the 42 confirmed defects have no test. #2 and #11 cannot be driven by a stock client —
 both need a deliberately malformed batch — so they stay at unit level.
+
+**One open question, not a filed defect.** Creating a read replica with `readreplica` alone and no
+`storage.mode` yields `read_replica=true` with the default storage mode, even when the only manifest for
+that name is a cloud-topic manifest. So a tiered-storage read replica is created against cloud-topics
+metadata, silently. It may be unable to serve reads. Unexamined.
 
 ## Three fixes that break each other
 
@@ -80,7 +85,7 @@ Worse than no test, and they cluster in the best-covered code. Four of seven; th
 5. Build a `cloud → tiered_cloud` mode-flip fixture. Four defects cannot be checked without it,
    including #13's real severity.
 
-Failing reproducers for #1, #2, #3, #5, #6, #7, #8, #9, #10, #11 and #12 are committed in this
+Failing reproducers for #1, #2, #3, #4, #5, #6, #7, #8, #9, #10, #11 and #12 are committed in this
 worktree. Run cluster tests with `./tools/dt run <symbol>`.
 
 ## Appendices
