@@ -1564,6 +1564,8 @@ db_domain_manager::get_extent_metadata(rpc::get_extent_metadata_request req) {
               .oid = extent.val.oid,
               .footer_pos = object.footer_pos,
               .object_size = object.object_size,
+              .imported = to_imported_ts_info(
+                object.imported_ts_location, extent.val.imported_ts_info),
             };
         }
         extents.push_back(std::move(em));

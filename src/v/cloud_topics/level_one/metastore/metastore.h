@@ -18,6 +18,7 @@
 #include "container/chunked_vector.h"
 #include "model/fundamental.h"
 #include "model/timestamp.h"
+#include "serde/rw/optional.h"
 
 #include <seastar/core/coroutine.hh>
 #include <seastar/core/future.hh>
@@ -100,6 +101,12 @@ public:
         // The last offset available in the object (inclusive).
         // This can be used to skip to the next offset.
         kafka::offset last_offset;
+        // Set for an imported tiered-storage segment; nullopt for native L1.
+        // Recomposed from the storage split for the read path: ts_path from the
+        // object row, segment_term from the extent row, and the Kafka offset
+        // bounds from the extent (see extent_object_info, which is the
+        // authoritative read-side carrier -- object_response relays it).
+        std::optional<imported_ts_info> imported;
     };
 
     // Interface to build object metadata for the L1 metastore. Meant to be
@@ -494,6 +501,8 @@ public:
         object_id oid;
         size_t footer_pos{0};
         size_t object_size{0};
+        // Set for an imported tiered-storage segment; nullopt for native L1.
+        std::optional<imported_ts_info> imported;
     };
 
     struct extent_metadata {
@@ -505,16 +514,21 @@ public:
 
         fmt::iterator format_to(fmt::iterator it) const {
             if (object_info.has_value()) {
-                return fmt::format_to(
+                it = fmt::format_to(
                   it,
                   "{{offsets:({}~{}), max_timestamp:{}, oid:{}, "
-                  "footer_pos:{}, object_size:{}}}",
+                  "footer_pos:{}, object_size:{}",
                   base_offset,
                   last_offset,
                   max_timestamp,
                   object_info->oid,
                   object_info->footer_pos,
                   object_info->object_size);
+                if (object_info->imported) {
+                    it = fmt::format_to(
+                      it, ", ts_path:{}", object_info->imported->ts_path);
+                }
+                return fmt::format_to(it, "}}");
             }
             return fmt::format_to(
               it,

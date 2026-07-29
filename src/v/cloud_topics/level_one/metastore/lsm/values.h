@@ -38,15 +38,17 @@ struct metadata_row_value
 
 struct extent_row_value
   : public serde::
-      envelope<extent_row_value, serde::version<0>, serde::compat_version<0>> {
+      envelope<extent_row_value, serde::version<1>, serde::compat_version<0>> {
     auto serde_fields() {
-        return std::tie(last_offset, max_timestamp, filepos, len, oid);
+        return std::tie(
+          last_offset, max_timestamp, filepos, len, oid, imported_ts_info);
     }
     kafka::offset last_offset;
     model::timestamp max_timestamp;
     size_t filepos{0};
     size_t len{0};
     object_id oid{};
+    std::optional<imported_ts_segment_info> imported_ts_info;
 };
 
 struct term_row_value
