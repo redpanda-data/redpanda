@@ -38,6 +38,7 @@ redpanda_cc_library(
         "//src/v/kafka/protocol",
         "//src/v/kafka/server:write_at_offset_stm",
         "//src/v/ssx:future_util",
+        "//src/v/ssx:mutex",
         "//src/v/storage:record_batch_builder",
     ],
     visibility = ["//visibility:public"],

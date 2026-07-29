@@ -39,6 +39,7 @@
 #include "raft/errc.h"
 #include "raft/replicate.h"
 #include "ssx/future-util.h"
+#include "ssx/mutex.h"
 #include "storage/log_reader.h"
 #include "storage/offset_translator_state.h"
 #include "storage/types.h"
@@ -817,6 +818,49 @@ ss::future<result<raft::replicate_result>> do_upload_and_replicate(
       placeholders.batches.size() == 1,
       "Expected single batch, got {}",
       placeholders.batches.size());
+
+    // Admit the epoch through the enqueue gate right before handing the
+    // batch to raft. The permit must be held until the request_enqueued
+    // stage resolves: that pins the batch's log position relative to later
+    // admissions, which is what makes the gate's ordering guarantee hold.
+    auto permit_fut = co_await ss::coroutine::as_future(
+      ctp_stm_api->admit_epoch_enqueue(fence->term, batch_epoch));
+    if (permit_fut.failed()) {
+        auto e = permit_fut.get_exception();
+        vlogl(
+          cd_log,
+          ssx::is_shutdown_exception(e) ? ss::log_level::debug
+                                        : ss::log_level::warn,
+          "Failed to admit epoch {} for enqueue for ntp {}, error: {}",
+          batch_epoch,
+          ntp,
+          e);
+        co_return default_errc;
+    }
+    auto permit = std::move(permit_fut.get());
+    if (!permit.has_value()) {
+        // The epoch is below the gate floor: batches carrying higher epochs
+        // are already ahead of this one in the log and landing it would
+        // violate the log epoch window. Invalidate the epoch on the upload
+        // shard so the batcher stops using it; the client retries against a
+        // fresh epoch.
+        auto upload_shard = upload_res.value().shard;
+        co_await ss::smp::submit_to(
+          upload_shard, [api, e = permit.error().window_min] {
+              return api->invalidate_epoch_below(e);
+          });
+        vlog(
+          cd_log.warn,
+          "Failed to admit epoch {} for enqueue for ntp {}, gate window is "
+          "[{}, {}]",
+          batch_epoch,
+          ntp,
+          permit.error().window_min,
+          permit.error().window_max);
+        co_return default_errc;
+    }
+    auto gate_units = std::move(permit.value());
+
     opts = update_replicate_options(opts, fence->term);
     auto replicate_stages = partition->replicate_in_stages(
       batch_id, std::move(placeholders.batches.front()), opts);
@@ -826,7 +870,8 @@ ss::future<result<raft::replicate_result>> do_upload_and_replicate(
     auto enqueued_fut = co_await ss::coroutine::as_future(
       std::move(replicate_stages.request_enqueued));
 
-    ticket.release(); // always release the ticket
+    ticket.release();        // always release the ticket
+    gate_units.return_all(); // the batch's log position is fixed
 
     if (enqueued_fut.failed()) {
         auto ex = enqueued_fut.get_exception();
@@ -1052,9 +1097,55 @@ ss::future<std::expected<kafka::offset, std::error_code>> frontend::replicate(
         placeholder_batches.push_back(std::move(batch));
     }
 
+    // Admit the epoch through the enqueue gate and hold the permit until
+    // the batches are enqueued in raft, pinning their log position relative
+    // to later admissions.
+    auto permit_fut = co_await ss::coroutine::as_future(
+      _ctp_stm_api->admit_epoch_enqueue(fence->term, batch_epoch));
+    if (permit_fut.failed()) {
+        auto e = permit_fut.get_exception();
+        vlogl(
+          cd_log,
+          ssx::is_shutdown_exception(e) ? ss::log_level::debug
+                                        : ss::log_level::warn,
+          "Failed to admit epoch {} for enqueue for ntp {}, error: {}",
+          batch_epoch,
+          ntp(),
+          e);
+        co_await ss::coroutine::return_exception_ptr(std::move(e));
+    }
+    auto permit = std::move(permit_fut.get());
+    if (!permit.has_value()) {
+        vlog(
+          cd_log.warn,
+          "Failed to admit epoch {} for enqueue for ntp {}, gate window is "
+          "[{}, {}]",
+          batch_epoch,
+          ntp(),
+          permit.error().window_min,
+          permit.error().window_max);
+        co_return std::unexpected(
+          kafka::make_error_code(kafka::error_code::request_timed_out));
+    }
+    auto gate_units = std::move(permit.value());
+
     opts = update_replicate_options(opts, fence->term);
-    auto result = co_await _partition->replicate(
+    auto stages = _partition->replicate_in_stages(
       std::move(placeholder_batches), opts);
+    auto enqueued_fut = co_await ss::coroutine::as_future(
+      std::move(stages.request_enqueued));
+    gate_units.return_all(); // the batches' log position is fixed
+    if (enqueued_fut.failed()) {
+        auto ex = enqueued_fut.get_exception();
+        vlog(
+          cd_log.trace,
+          "failed to enqueue replicate request into raft ({}): {}",
+          ntp(),
+          ex);
+        // fallthrough - we expect the finish command to throw if this one
+        // did and we don't want to abandon the replicate_finished future
+    }
+    auto result = co_await std::move(stages.replicate_finished);
 
     if (!result) {
         co_return std::unexpected(result.error());
@@ -1437,6 +1528,9 @@ ss::future<result<raft::replicate_result>> frontend::replicate_at_offset(
     batches.clear();
 
     chunked_vector<model::record_batch> placeholder_batches;
+    // Enqueue-gate permit for the placeholder epoch; held until the batches
+    // are enqueued in raft (control-only requests carry no epoch).
+    std::optional<ssx::mutex::units> gate_units;
 
     if (!data_batches.empty()) {
         auto min_epoch = cluster_epoch(_partition->get_topic_revision_id());
@@ -1525,6 +1619,34 @@ ss::future<result<raft::replicate_result>> frontend::replicate_at_offset(
             co_return raft::errc::not_leader;
         }
 
+        auto permit_fut = co_await ss::coroutine::as_future(
+          _ctp_stm_api->admit_epoch_enqueue(fence.value().term, batch_epoch));
+        if (permit_fut.failed()) {
+            auto e = permit_fut.get_exception();
+            vlogl(
+              cd_log,
+              ssx::is_shutdown_exception(e) ? ss::log_level::debug
+                                            : ss::log_level::warn,
+              "Failed to admit epoch {} for enqueue for ntp {}, error: {}",
+              batch_epoch,
+              ntp(),
+              e);
+            co_await ss::coroutine::return_exception_ptr(std::move(e));
+        }
+        auto permit = std::move(permit_fut.get());
+        if (!permit.has_value()) {
+            vlog(
+              cd_log.warn,
+              "Failed to admit epoch {} for enqueue for ntp {}, gate window "
+              "is [{}, {}]",
+              batch_epoch,
+              ntp(),
+              permit.error().window_min,
+              permit.error().window_max);
+            co_return raft::errc::not_leader;
+        }
+        gate_units = std::move(permit.value());
+
         auto placeholders = co_await convert_to_placeholders(
           res.value().extents, data_headers);
         placeholder_batches = chunked_vector<model::record_batch>(
@@ -1565,6 +1687,9 @@ ss::future<result<raft::replicate_result>> frontend::replicate_at_offset(
 
     auto enqueued_fut = co_await ss::coroutine::as_future(
       std::move(stages.request_enqueued));
+    if (gate_units.has_value()) {
+        gate_units->return_all(); // the batches' log position is fixed
+    }
     if (enqueued_fut.failed()) {
         auto ex = enqueued_fut.get_exception();
         vlogl(
