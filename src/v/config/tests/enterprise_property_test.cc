@@ -61,7 +61,7 @@ struct test_config : public config_store {
       , enterprise_enum(
           *this,
           std::vector<tls_version>{tls_version::v1_3},
-          "enterprise_str_enum",
+          "enterprise_enum",
           "An enterprise-only enum property",
           meta{.needs_restart = needs_restart::no},
           tls_version::v1_1,
