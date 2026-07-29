@@ -1,5 +1,7 @@
 load("@bazel_skylib//rules:native_binary.bzl", "native_binary")
 
+exports_files(["wasmtime_staticlib.rs"])
+
 native_binary(
     name = "minio",
     src = select({
