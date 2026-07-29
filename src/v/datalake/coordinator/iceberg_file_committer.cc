@@ -492,7 +492,7 @@ iceberg_file_committer::commit_topic_files_to_catalog(
     // report it so the caller can drain the remainder promptly.
     bool topic_has_more = false;
     auto tp_state = tp_it->second.copy_bounded(
-      max_files_per_commit_(), topic_has_more);
+      max_files_per_commit_(), max_bytes_per_commit_(), topic_has_more);
     auto topic_revision = tp_state.revision;
 
     // Main table (may not exist if all records so far were invalid and the

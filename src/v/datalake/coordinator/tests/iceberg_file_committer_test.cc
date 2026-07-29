@@ -101,7 +101,8 @@ public:
           catalog,
           manifest_io,
           config::mock_binding(false),
-          config::mock_binding<size_t>(10000)) {
+          config::mock_binding<size_t>(10000),
+          config::mock_binding<size_t>(1'000'000'000)) {
         feature_table
           .invoke_on_all(
             [](features::feature_table& f) { f.testing_activate_all(); })
@@ -574,7 +575,8 @@ TEST_F(FileCommitterTest, TestDontDeduplicateFromOtherCluster) {
       catalog,
       manifest_io,
       config::mock_binding(false),
-      config::mock_binding<size_t>(10000));
+      config::mock_binding<size_t>(10000),
+      config::mock_binding<size_t>(1'000'000'000));
     res = new_cluster_committer
             .commit_topic_files_to_catalog(topic, new_cluster_state)
             .get();
@@ -778,7 +780,8 @@ TEST_F(FileCommitterTest, TestChunkedCommitsAcrossPartitions) {
       catalog,
       manifest_io,
       config::mock_binding(false),
-      config::mock_binding<size_t>(chunk_files));
+      config::mock_binding<size_t>(chunk_files),
+      config::mock_binding<size_t>(1'000'000'000));
 
     // Drain the backlog in chunks.
     size_t passes = 0;
@@ -895,4 +898,63 @@ TEST_F(FileCommitterTest, TestColumnStatsInManifest) {
 
     ASSERT_NE(ifile.column_sizes->find(fid), ifile.column_sizes->end());
     EXPECT_EQ(4096, ifile.column_sizes->at(fid));
+}
+
+// With a byte-based commit limit, files carrying large column stats are split
+// across commit passes even though the file count stays under the file cap.
+TEST_F(FileCommitterTest, TestChunkedCommitsByBytes) {
+    create_table();
+
+    constexpr int num_files = 6;
+    topics_state state;
+    auto& tstate = state.topic_to_state[topic];
+    for (int i = 0; i < num_files; ++i) {
+        const int64_t begin = i * 100;
+        auto ranges = make_pending_files(
+          {{begin, begin + 99}}, /*with_file=*/true);
+        // Attach a chunky stat payload so each file is many KB.
+        datalake::per_column_stats cs;
+        cs.field_id = 1;
+        cs.lower_bound = bytes::from_string(std::string(8192, 'a'));
+        cs.upper_bound = bytes::from_string(std::string(8192, 'z'));
+        ranges[0].files[0].column_stats.push_back(std::move(cs));
+        tstate.pid_to_pending_files[model::partition_id{0}]
+          .pending_entries.emplace_back(
+            pending_entry{
+              .data = std::move(ranges[0]),
+              .added_pending_at = model::offset{i}});
+    }
+    // Entries were appended directly, so the totals need reconciling.
+    state.recompute_pending();
+
+    // File cap high; byte cap ~ one file, so each pass commits roughly one
+    // file.
+    iceberg_file_committer chunked_committer(
+      storage,
+      catalog,
+      manifest_io,
+      config::mock_binding(false),
+      config::mock_binding<size_t>(1'000'000),
+      config::mock_binding<size_t>(16 * 1024));
+
+    size_t passes = 0;
+    while (tstate.has_pending_entries()) {
+        ASSERT_LE(passes, static_cast<size_t>(num_files))
+          << "drain did not converge";
+        ++passes;
+        auto res
+          = chunked_committer.commit_topic_files_to_catalog(topic, state).get();
+        ASSERT_FALSE(res.has_error());
+        auto updates = std::move(res.value().updates);
+        ASSERT_FALSE(updates.empty()) << "a pass committed nothing";
+        for (auto& update : updates) {
+            ASSERT_FALSE(update.apply(state).has_error());
+        }
+    }
+
+    ASSERT_GT(passes, 1u) << "byte cap did not chunk the commit";
+
+    chunked_vector<ss::sstring> uris;
+    ASSERT_NO_FATAL_FAILURE(get_current_data_files(&uris));
+    ASSERT_EQ(uris.size(), static_cast<size_t>(num_files));
 }

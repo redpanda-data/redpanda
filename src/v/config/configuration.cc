@@ -4702,6 +4702,16 @@ configuration::configuration()
       {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
       10000,
       {.min = 1})
+  , datalake_coordinator_max_bytes_per_commit(
+      *this,
+      "datalake_coordinator_max_bytes_per_commit",
+      "Soft target for the in-memory metadata of the pending data files "
+      "committed to an Iceberg table in a single commit. A larger backlog is "
+      "committed across multiple passes to bound the memory used per commit. "
+      "Complements datalake_coordinator_max_files_per_commit.",
+      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
+      32ULL * 1024 * 1024,
+      {.min = 1})
   , datalake_coordinator_max_pending_files(
       *this,
       "datalake_coordinator_max_pending_files",

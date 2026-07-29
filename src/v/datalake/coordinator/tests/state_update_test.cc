@@ -494,16 +494,18 @@ TEST(CopyBoundedTest, TruncatesByControlOffsetWatermark) {
     // Fewer than available: truncated to a downward-closed prefix, metadata
     // preserved, and reported as bounded.
     bool bounded = false;
-    auto chunk = ts.copy_bounded(3, bounded);
+    auto chunk = ts.copy_bounded(3, 1'000'000'000, bounded);
     EXPECT_EQ(total_pending_entries(chunk), 3);
     EXPECT_TRUE(bounded);
     EXPECT_EQ(chunk.revision, rev);
 
     // Exactly the limit, and more than available (equivalent to copy()): not
     // bounded, nothing left out.
-    EXPECT_EQ(total_pending_entries(ts.copy_bounded(5, bounded)), 5);
+    EXPECT_EQ(
+      total_pending_entries(ts.copy_bounded(5, 1'000'000'000, bounded)), 5);
     EXPECT_FALSE(bounded);
-    EXPECT_EQ(total_pending_entries(ts.copy_bounded(100, bounded)), 5);
+    EXPECT_EQ(
+      total_pending_entries(ts.copy_bounded(100, 1'000'000'000, bounded)), 5);
     EXPECT_FALSE(bounded);
 }
 
@@ -527,7 +529,7 @@ TEST(CopyBoundedTest, IsDownwardClosedAcrossPartitions) {
     // ignored offset ordering would instead keep both of one partition's
     // entries (including offset 12) while dropping the other's offset-11 entry.
     bool bounded = false;
-    auto chunk = ts.copy_bounded(2, bounded);
+    auto chunk = ts.copy_bounded(2, 1'000'000'000, bounded);
     EXPECT_TRUE(bounded);
     ASSERT_EQ(total_pending_entries(chunk), 2);
     ASSERT_TRUE(chunk.pid_to_pending_files.contains(pid0));
@@ -587,7 +589,8 @@ TEST(CopyBoundedTest, IncludesWholeBatchEvenWhenOverLimit) {
         add_entry(ts, pid, i * 10, i * 10 + 9, model::offset{1000});
     }
     bool bounded = false;
-    EXPECT_EQ(total_pending_entries(ts.copy_bounded(1, bounded)), 5);
+    EXPECT_EQ(
+      total_pending_entries(ts.copy_bounded(1, 1'000'000'000, bounded)), 5);
     // The whole same-offset batch is included, so nothing is left over and the
     // copy is not reported as bounded.
     EXPECT_FALSE(bounded);

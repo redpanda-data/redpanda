@@ -780,6 +780,7 @@ struct configuration final : public config_store {
     bounded_property<std::chrono::milliseconds> iceberg_target_lag_ms;
     property<bool> iceberg_disable_snapshot_tagging;
     bounded_property<size_t> datalake_coordinator_max_files_per_commit;
+    bounded_property<size_t> datalake_coordinator_max_bytes_per_commit;
     bounded_property<size_t> datalake_coordinator_max_pending_files;
     bounded_property<size_t> datalake_coordinator_max_pending_bytes;
     property<bool> iceberg_disable_automatic_snapshot_expiry;

@@ -148,10 +148,14 @@ struct topic_state
     // This is required for Iceberg commit dedup, which uses the coordinator
     // offset as a cursor.
     //
+    // The copy also stops once the copied entries' estimated in-memory bytes
+    // exceed `max_bytes`, whichever cap is hit first.
+    //
     // `was_bounded` is set to true if the limit left some pending entries out
     // of the copy, so the caller knows a subsequent copy is needed to drain the
     // remainder.
-    topic_state copy_bounded(size_t max_files, bool& was_bounded) const;
+    topic_state
+    copy_bounded(size_t max_files, size_t max_bytes, bool& was_bounded) const;
 
     // TODO: add table-wide metadata like Kafka schema id, Iceberg table uuid,
     // etc.
