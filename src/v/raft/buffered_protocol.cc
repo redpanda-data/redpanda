@@ -99,7 +99,7 @@ ss::future<result<append_entries_reply>> buffered_protocol::append_entries(
   model::node_id target_node,
   append_entries_request req,
   rpc::client_opts opts) {
-    return try_with_gate(
+    return ss::try_with_gate(
       _gate,
       [this,
        target_node,
