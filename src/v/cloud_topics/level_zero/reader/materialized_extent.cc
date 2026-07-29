@@ -102,14 +102,9 @@ model::record_batch make_raft_data_batch(materialized_extent ext) {
       size() - model::packed_record_batch_header_size);
     auto header = storage::batch_header_from_disk_iobuf(
       std::move(header_bytes));
-    // NOTE: the serialized raft_data batch doesn't have the offset set
-    // so we need to populate it from the placeholder batch. We also need
-    // to make sure that crc is correct.
+
+    // base_offset comes from the placeholder; the serialized batch has none.
     header.base_offset = kafka::offset_cast(ext.meta.base_offset);
-    header.crc = model::crc_record_batch(header, records_bytes);
-    crc::crc32c crc;
-    model::crc_record_batch_header(crc, header);
-    header.header_crc = crc.value();
     model::record_batch batch(
       header,
       std::move(records_bytes),
