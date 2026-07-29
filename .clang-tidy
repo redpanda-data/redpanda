@@ -5,14 +5,12 @@ Checks: >-
   clang-analyzer-*,
   cert-*,
   cppcoreguidelines-*,
-  hicpp-*,
   modernize-*,
   performance-*,
   misc-*,
   bugprone-*,
   -modernize-use-trailing-return-type,
   -modernize-use-nodiscard,
-  -hicpp-named-parameter,
   -misc-include-cleaner,
   -clang-analyzer-optin.core.EnumCastOutOfRange,
   -cppcoreguidelines-avoid-reference-coroutine-parameters
@@ -62,8 +60,6 @@ CheckOptions:
     value:           ^(it|a|b)$
   - key:             readability-uppercase-literal-suffix.NewSuffixes
     value:           KiB;MiB;GiB;TiB
-  - key:             hicpp-uppercase-literal-suffix.NewSuffixes
-    value:           KiB;MiB;GiB;TiB
   - key:             performance-unnecessary-value-param.AllowedTypes
     value:           seastar::shared_ptr;seastar::lw_shared_ptr;
   - key:             bugprone-unused-local-non-trivial-variable.IncludeTypes
@@ -71,4 +67,3 @@ CheckOptions:
   - key:             performance-move-const-arg.CheckTriviallyCopyableMove
     value:           0
 ...
-
