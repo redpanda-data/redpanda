@@ -322,7 +322,8 @@ segment_upload::compute_upload_parameters(
               storage::log::offset_range_size_requirements_t{
                 .target_size = range.max_size,
                 .min_size = range.min_size,
-              });
+              },
+              deadline);
         }
         if (!sz.has_value()) {
             // This means that there is not enough data in the log

@@ -2796,7 +2796,9 @@ disk_log_impl::offset_range_size(
 
 ss::future<std::optional<log::offset_range_size_result_t>>
 disk_log_impl::offset_range_size(
-  model::offset first, offset_range_size_requirements_t target) {
+  model::offset first,
+  offset_range_size_requirements_t target,
+  ss::semaphore::time_point deadline) {
     vlog(
       stlog.debug,
       "Offset range size, first: {}, target size: {}/{}, lstat: {}",
@@ -2848,7 +2850,7 @@ disk_log_impl::offset_range_size(
         model::offset last_locked_offset;
         for (auto& s : _segs) {
             locked_range_size += s->size_bytes();
-            f_locks.emplace_back(s->read_lock());
+            f_locks.emplace_back(s->read_lock(deadline));
             segments.emplace_back(s);
             last_locked_offset = s->offsets().get_committed_offset();
             if (locked_range_size > (target.target_size + first_segment_size)) {

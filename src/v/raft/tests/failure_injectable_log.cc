@@ -184,8 +184,10 @@ failure_injectable_log::offset_range_size(
 
 ss::future<std::optional<failure_injectable_log::offset_range_size_result_t>>
 failure_injectable_log::offset_range_size(
-  model::offset first, offset_range_size_requirements_t target) {
-    return _underlying_log->offset_range_size(first, target);
+  model::offset first,
+  offset_range_size_requirements_t target,
+  ss::semaphore::time_point deadline) {
+    return _underlying_log->offset_range_size(first, target, deadline);
 }
 
 bool failure_injectable_log::is_compacted(
