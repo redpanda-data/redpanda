@@ -28,12 +28,15 @@ from ducktape.cluster.cluster import ClusterNode
 from ducktape.errors import TimeoutError
 from ducktape.tests.test import TestContext
 from rptest.archival.s3_client import S3Client
-from rptest.clients.rpk import RpkTool
+from rptest.clients.kafka_cli_tools import KafkaCliTools
+from rptest.clients.rpk import RpkException, RpkTool
 from rptest.clients.types import TopicSpec
 from rptest.services.cluster import cluster
 from rptest.services.redpanda import (
+    RedpandaService,
     SISettings,
     get_cloud_storage_type,
+    make_redpanda_service,
     CLOUD_TOPICS_CONFIG_STR,
 )
 from rptest.tests.redpanda_test import RedpandaTest
@@ -47,6 +50,7 @@ class CloudTopicsL0GCTestBase(RedpandaTest):
         test_context: TestContext,
         housekeeping_interval_ms: int | None = None,
         extra_rp_conf_overrides: dict[str, int | bool] | None = None,
+        num_brokers: int | None = None,
     ):
         self.test_context = test_context
         si_settings = SISettings(
@@ -77,6 +81,7 @@ class CloudTopicsL0GCTestBase(RedpandaTest):
         ]
         super().__init__(
             test_context=test_context,
+            num_brokers=num_brokers,
             extra_rp_conf=extra_rp_conf,
             si_settings=si_settings,
         )
@@ -1276,3 +1281,129 @@ class CloudTopicsL0GCAllTopicsDeletedTest(CloudTopicsL0GCAdminBase):
             ),
         )
         self.logger.info("All L0 objects cleaned up after topic deletion")
+
+
+class CloudTopicsL0GCReadReplicaTest(CloudTopicsL0GCTestBase):
+    """
+    Regression test for a bug where a cloud topic read replica would prevent L0
+    garbage collection from proceeding.
+    """
+
+    SOURCE_TOPIC = "l0_gc_read_replica_source"
+    READ_REPLICA_PROPERTY = "redpanda.remote.readreplica"
+
+    # NOTE: this test has two clusters, one source cluster and one RRR cluster.
+    # The test's main cluster is the RRR cluster.
+    def __init__(self, test_context: TestContext):
+        super().__init__(
+            test_context=test_context,
+            num_brokers=1,
+            # Drop GC properties so GC is expected to happen quickly.
+            extra_rp_conf_overrides={
+                "cloud_topics_short_term_gc_minimum_object_age": 2000,
+                "cloud_topics_short_term_gc_backoff_interval": 2000,
+                "cloud_topics_epoch_service_epoch_increment_interval": 2000,
+                "cloud_topics_epoch_service_local_epoch_cache_duration": 2000,
+            },
+        )
+        self.source_si_settings = SISettings(
+            test_context=test_context,
+            cloud_storage_max_connections=5,
+            cloud_storage_enable_remote_read=False,
+            cloud_storage_enable_remote_write=False,
+            fast_uploads=True,
+        )
+        self.source_cluster: RedpandaService | None = None
+
+    def _start_source_cluster(self):
+        self.source_cluster = make_redpanda_service(
+            self.test_context,
+            num_brokers=1,
+            si_settings=self.source_si_settings,
+            extra_rp_conf={
+                CLOUD_TOPICS_CONFIG_STR: True,
+                # Flush the metastore promptly so the replica has something to
+                # sync.
+                "cloud_topics_long_term_flush_interval": 1000,
+            },
+        )
+        self.source_cluster.start()
+
+        source_bucket = self.source_si_settings.cloud_storage_bucket
+        assert source_bucket != self.si_settings.cloud_storage_bucket, (
+            "Source and replica clusters must not share a bucket, otherwise "
+            f"the replica cluster's GC collects the source's objects: {source_bucket}"
+        )
+
+        rpk = RpkTool(self.source_cluster)
+        rpk.create_topic(
+            self.SOURCE_TOPIC,
+            partitions=1,
+            replicas=1,
+            config={TopicSpec.PROPERTY_STORAGE_MODE: TopicSpec.STORAGE_MODE_CLOUD},
+        )
+        return source_bucket
+
+    def _create_read_replica(self, source_bucket: str):
+        """Create a read replica of the source cluster's cloud topic in the
+        cluster under test, and wait for its partition to get a leader."""
+        rpk = RpkTool(self.redpanda)
+
+        def created() -> bool:
+            try:
+                rpk.create_topic(
+                    self.SOURCE_TOPIC,
+                    config={self.READ_REPLICA_PROPERTY: source_bucket},
+                )
+                return True
+            except RpkException as e:
+                self.logger.debug(f"Read replica not creatable yet: {e}")
+                return False
+
+        wait_until(
+            created,
+            timeout_sec=30,
+            backoff_sec=2,
+            err_msg="Could not create read replica of the source cloud topic",
+        )
+
+        def has_leader() -> bool:
+            partitions = list(rpk.describe_topic(self.SOURCE_TOPIC, tolerant=True))
+            return len(partitions) > 0 and all(p.leader != -1 for p in partitions)
+
+        wait_until(
+            has_leader,
+            timeout_sec=30,
+            backoff_sec=2,
+            err_msg="Read replica partition never got a leader",
+        )
+
+        configs = rpk.describe_topic_configs(self.SOURCE_TOPIC)
+        storage_mode = configs.get(TopicSpec.PROPERTY_STORAGE_MODE)
+        assert (
+            storage_mode is not None and storage_mode[0] == TopicSpec.STORAGE_MODE_CLOUD
+        ), f"Read replica is not a cloud topic: {configs}"
+
+    @cluster(num_nodes=2)
+    @matrix(
+        cloud_storage_type=get_cloud_storage_type(applies_only_on=[CloudStorageType.S3])
+    )
+    def test_read_replica_does_not_stall_gc(self, cloud_storage_type: CloudStorageType):
+        source_bucket = self._start_source_cluster()
+        self._create_read_replica(source_bucket)
+
+        topic = TopicSpec(partition_count=1, replication_factor=1)
+        self.topics = [topic]
+        self.create_topics(self.topics)
+
+        # Write some records for us to immediately GC.
+        KafkaCliTools(self.redpanda).produce(
+            topic.name, num_records=2000, record_size=1024
+        )
+        wait_until(
+            lambda: self.get_num_objects_deleted() > 0,
+            timeout_sec=30,
+            backoff_sec=1,
+            retry_on_exc=True,
+            err_msg="L0 GC deleted nothing: the read replica is stalling the epoch join",
+        )
