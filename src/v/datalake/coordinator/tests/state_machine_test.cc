@@ -54,6 +54,10 @@ struct coordinator_stm_fixture : stm_raft_fixture<stm> {
         return config::mock_binding<size_t>(100000);
     }
 
+    config::binding<size_t> max_pending_bytes() const {
+        return config::mock_binding<size_t>(32ULL * 1024 * 1024);
+    }
+
     stm_shptrs_t create_stms(
       state_machine_manager_builder& builder,
       raft_node_instance& node) override {
@@ -79,7 +83,8 @@ struct coordinator_stm_fixture : stm_raft_fixture<stm> {
                 commit_interval(),
                 default_partition_spec(),
                 disable_snapshot_expiry(),
-                max_pending_files());
+                max_pending_files(),
+                max_pending_bytes());
             coordinators[node.get_vnode()]->start();
             return ss::now();
         });

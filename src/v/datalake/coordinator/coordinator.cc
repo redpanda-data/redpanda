@@ -576,28 +576,21 @@ coordinator::sync_ensure_dlq_table_exists(
     co_return notify_waiters_and_erase(key, in_flight_dlq_, res_fut.get());
 }
 
-bool coordinator::has_too_many_pending_files() {
+bool coordinator::should_shed_load() {
     auto now = ss::lowres_clock::now();
     if (
-      backpressured_as_of_.has_value()
-      && now - *backpressured_as_of_ < commit_interval_()) {
+      shedding_since_.has_value()
+      && now - *shedding_since_ < commit_interval_()) {
         return true;
     }
-    const auto threshold = max_pending_files_();
-    size_t pending = 0;
-    for (const auto& [_, tp_state] : stm_->state().topic_to_state) {
-        for (const auto& [pid, p_state] : tp_state.pid_to_pending_files) {
-            for (const auto& entry : p_state.pending_entries) {
-                pending += entry.data.files.size()
-                           + entry.data.dlq_files.size();
-                if (pending >= threshold) {
-                    backpressured_as_of_ = now;
-                    return true;
-                }
-            }
-        }
+    const auto& state = stm_->state();
+    if (
+      state.pending_files() >= max_pending_files_()
+      || state.pending_bytes() >= max_pending_bytes_()) {
+        shedding_since_ = now;
+        return true;
     }
-    backpressured_as_of_ = std::nullopt;
+    shedding_since_.reset();
     return false;
 }
 
@@ -614,11 +607,14 @@ coordinator::sync_add_files(
     if (gate.has_error()) {
         co_return gate.error();
     }
-    if (has_too_many_pending_files()) {
+    if (should_shed_load()) {
         vlog(
           datalake_log.debug,
-          "Rejecting request to add files for {}: too many pending files",
-          tp);
+          "Rejecting request to add files for {}: {} pending files, {} pending "
+          "bytes",
+          tp,
+          stm_->state().pending_files(),
+          stm_->state().pending_bytes());
         probe_.increment_add_files_backpressure();
         co_return errc::failed;
     }
@@ -713,13 +709,15 @@ coordinator::sync_get_last_added_offsets(
     if (sync_res.has_error()) {
         co_return convert_stm_errc(sync_res.error());
     }
-    const bool backpressure = has_too_many_pending_files();
+    const bool backpressure = should_shed_load();
     if (backpressure) {
         vlog(
           datalake_log.debug,
-          "Signaling backpressure for offsets request for {}: too many pending "
-          "files",
-          tp);
+          "Signaling backpressure for offsets request for {}: {} pending "
+          "files, {} pending bytes",
+          tp,
+          stm_->state().pending_files(),
+          stm_->state().pending_bytes());
         // Fall through to actually return offsets, even if we're under load.
         // Returning a valid response despite backpressure allows translators
         // to report lag.
