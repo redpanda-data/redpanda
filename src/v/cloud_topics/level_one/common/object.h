@@ -182,9 +182,16 @@ struct footer
     seek_result file_position_before_kafka_offset(
       const model::topic_id_partition&, kafka::offset) const;
 
-    // Return the file position of the latest record batch that has a
-    // max_timestamp at or before the given timestamp. If the timestamp is
-    // greater than all timestamps in this file, then `npos` is returned.
+    // Return a file position at or before the first record batch containing a
+    // record with a timestamp at or after the given timestamp, i.e. a safe
+    // starting position for a forward scan answering a timestamp query. If
+    // the timestamp is greater than all timestamps in this file, then `npos`
+    // is returned.
+    //
+    // Each index entry stores the running max timestamp *including* the batch
+    // at its own file position, so the seek returns the position of the last
+    // entry whose running max is below the target: the first matching batch
+    // may sit in the unindexed gap after that entry.
     //
     // Example:
     //
@@ -193,10 +200,10 @@ struct footer
     //
     // 3, 10, 10, 10, 40
     //
-    // Searching for timestamp 5 or 10 would yield the position of the batch[1],
-    // the timestamp 1 would yield the position of batch[0].
-    // While a search for timestamp 25 or 40 would yield batch[4] and the
-    // timestamp 50 would yield `npos`.
+    // Searching for timestamp 5 or 10 would yield the position of batch[0]
+    // (a record newer than 3 may appear anywhere after it), while the
+    // timestamp 1 would yield the file beginning. A search for timestamp 25
+    // or 40 would yield batch[3] and the timestamp 50 would yield `npos`.
     seek_result file_position_before_max_timestamp(
       const model::topic_id_partition&, model::timestamp) const;
 
