@@ -23,6 +23,28 @@ namespace kafka {
 
 namespace {
 
+// Validates the batch attributes a client is permitted to set.
+//
+// Client-generated control batches in Kafka are disallowed[1], and in Redpanda
+// they would be mishandled by various subsystems (e.g. rm_stm expects control
+// batches to be Redpanda-generated).
+//
+// [1]
+// https://github.com/apache/kafka/blob/07e1f099acad26200b2681411e05616bd3fe7879/storage/src/main/java/org/apache/kafka/storage/internals/log/LogValidator.java#L474-L477
+std::optional<error_code_and_msg> validate_batch_attributes(
+  const model::record_batch_header& header, const model::ntp& ntp) {
+    if (header.attrs.is_control()) {
+        return error_code_and_msg{
+          .err = error_code::invalid_record,
+          .msg = ssx::sformat(
+            "Clients are not allowed to write control records in topic "
+            "partition {}",
+            ntp)};
+    }
+
+    return std::nullopt;
+}
+
 // Validates the input timestamp using the broker time and the allowable
 // `log.message.timestamp.{before/after}.max.ms` drift.
 //
@@ -418,7 +440,7 @@ std::optional<error_code_and_msg> validate_batch(
         // 1. Iterate over records and set max_timestamp. It is guaranteed that
         // a batch will have a `max_timestamp` set in `strict` mode.
         // 2. Check record timestamps.
-        // TODO: validate offsets, control batches, versioning, etc.
+        // TODO: validate offsets, versioning, etc.
         // See checks present here:
         // github.com/apache/kafka/blob/trunk/storage/src/main/java/org/apache/kafka/storage/internals/log/LogValidator.java#L438
 
@@ -457,6 +479,14 @@ std::optional<error_code_and_msg> validate_batch(
 } // namespace
 
 ss::future<validation_result> validate_batch(const validation_args& args) {
+    // Attributes bound what the protocol accepts at all, so they are checked
+    // ahead of the mode-specific record validation rather than as part of it.
+    if (
+      auto err = validate_batch_attributes(args.batch.header(), args.ntp);
+      err) {
+        co_return validation_result{.error = std::move(err)};
+    }
+
     const auto& validation_mode
       = config::shard_local_cfg().kafka_produce_batch_validation();
 

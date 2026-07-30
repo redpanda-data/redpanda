@@ -121,3 +121,32 @@ FIXTURE_TEST(test_handling_message_with_truncated_batch, test_fixture) {
     BOOST_REQUIRE_THROW(
       resp_f.get(), kafka::client::kafka_request_disconnected_exception);
 };
+
+// A client may not author a control batch, matching Kafka's validation.
+FIXTURE_TEST(test_handling_client_produced_control_batch, test_fixture) {
+    wait_for_controller_leadership().get();
+    start();
+    auto deferred_close = ss::defer([this] { producer->stop().get(); });
+
+    auto hw_before = high_watermark();
+
+    storage::record_batch_builder builder(
+      model::record_batch_type::raft_data, model::offset(0));
+    builder.set_control_type();
+    builder.add_raw_kv(iobuf{}, iobuf{});
+
+    chunked_vector<kafka::produce_request::partition> batches;
+    batches.push_back(
+      kafka::produce_request::partition{
+        .partition_index = model::partition_id(0),
+        .records = kafka::produce_request_record_data{
+          std::move(builder).build()}});
+
+    auto resp = produce_batch(std::move(batches)).get();
+    BOOST_REQUIRE_EQUAL(resp.data.responses.size(), 1);
+    BOOST_REQUIRE_EQUAL(resp.data.responses[0].partitions.size(), 1);
+    BOOST_REQUIRE_EQUAL(
+      resp.data.responses[0].partitions[0].error_code,
+      kafka::error_code::invalid_record);
+    BOOST_REQUIRE_EQUAL(high_watermark(), hw_before);
+};
