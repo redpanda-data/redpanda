@@ -23,11 +23,14 @@ base_property::base_property(
   : _name(name)
   , _desc(desc)
   , _meta(std::move(meta)) {
-    conf._properties.emplace(name, this);
+    auto inserted = conf._properties.emplace(name, this).second;
+    vassert(
+      inserted, "Two properties tried to register the same name {}", name);
     for (const auto& alias : _meta.aliases) {
-        auto [_, inserted] = conf._aliases.emplace(alias, this);
+        auto alias_inserted = conf._aliases.emplace(alias, this).second;
 
-        vassert(inserted, "Two properties tried to register the same alias");
+        vassert(
+          alias_inserted, "Two properties tried to register the same alias");
     }
 }
 

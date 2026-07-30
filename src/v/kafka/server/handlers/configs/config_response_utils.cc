@@ -1264,11 +1264,11 @@ config_response_container_t make_broker_configs(
       config_keys,
       result,
       "default.replication.factor",
-      config::shard_local_cfg().default_topic_replication,
+      config::shard_local_cfg().default_topic_replications,
       include_synonyms,
       maybe_make_documentation(
         include_documentation,
-        config::shard_local_cfg().default_topic_replication.desc()),
+        config::shard_local_cfg().default_topic_replications.desc()),
       &describe_as_string<int16_t>);
 
     add_broker_config_if_requested(
