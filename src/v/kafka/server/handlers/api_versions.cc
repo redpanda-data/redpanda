@@ -10,6 +10,7 @@
 #include "features/feature_table.h"
 #include "kafka/protocol/describe_redpanda_roles.h"
 #include "kafka/protocol/types.h"
+#include "kafka/server/handlers/details/consumer_group_protocol.h"
 #include "kafka/server/handlers/handlers.h"
 #include "kafka/server/request_context.h"
 #include "kafka/server/response.h"
@@ -124,6 +125,22 @@ void remove_unavailable_reserved_apis(
     r.data.api_keys.erase_to_end(to_remove.begin());
 }
 
+void remove_unavailable_consumer_group_apis(
+  api_versions_response& r, const features::feature_table& ft) {
+    if (details::consumer_group_protocol_enabled(ft)) {
+        return;
+    }
+
+    auto to_remove = std::ranges::remove_if(
+      r.data.api_keys,
+      [](api_key::type key) {
+          return key == consumer_group_heartbeat_api::key
+                 || key == consumer_group_describe_api::key;
+      },
+      &api_versions_response_key::api_key);
+    r.data.api_keys.erase_to_end(to_remove.begin());
+}
+
 api_versions_response api_versions_handler::handle_raw(request_context& ctx) {
     // Unlike other request types, we handle ApiVersion requests
     // with higher versions than supported. We treat such a request
@@ -169,6 +186,7 @@ api_versions_response api_versions_handler::handle_raw(request_context& ctx) {
         }
 
         remove_unavailable_reserved_apis(r, features);
+        remove_unavailable_consumer_group_apis(r, features);
     }
 
     return r;

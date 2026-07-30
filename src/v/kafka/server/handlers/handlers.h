@@ -18,6 +18,8 @@
 #include "kafka/server/handlers/alter_partition_reassignments.h"
 #include "kafka/server/handlers/alter_user_scram_credentials.h"
 #include "kafka/server/handlers/api_versions.h"
+#include "kafka/server/handlers/consumer_group_describe.h"
+#include "kafka/server/handlers/consumer_group_heartbeat.h"
 #include "kafka/server/handlers/create_acls.h"
 #include "kafka/server/handlers/create_partitions.h"
 #include "kafka/server/handlers/create_topics.h"
@@ -115,7 +117,9 @@ using handler_request_types = make_handler_request_types<
   describe_client_quotas_handler,
   describe_cluster_handler,
   describe_user_scram_credentials_handler,
-  alter_user_scram_credentials_handler>;
+  alter_user_scram_credentials_handler,
+  consumer_group_heartbeat_handler,
+  consumer_group_describe_handler>;
 
 // Handler counterparts of kafka::redpanda_request_types (the reserved-range
 // APIs). Feeds the reserved region of the dispatch LUT.
