@@ -106,10 +106,25 @@ public:
 
     int64_t null_count() const { return _null_count; }
 
+    // Byte-array bounds are retained untruncated.
+    int64_t memory_usage() const {
+        return bound_bytes(_min) + bound_bytes(_max);
+    }
+
     bound_ref_type min() { return normalize(_min, true); }
     bound_ref_type max() { return normalize(_max, false); }
 
 private:
+    static int64_t bound_bytes(const std::optional<value_type>& bound) {
+        if constexpr (std::is_trivially_copyable_v<value_type>) {
+            return 0;
+        } else {
+            return bound.has_value()
+                     ? static_cast<int64_t>(bound->val.size_bytes())
+                     : 0;
+        }
+    }
+
     bound_ref_type normalize(bound_ref_type v, bool min) {
         if constexpr (std::is_floating_point_v<decltype(v->val)>) {
             // min floats are always written as -0 and max as 0

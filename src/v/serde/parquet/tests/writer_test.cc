@@ -259,6 +259,19 @@ TEST(ParquetWriter, FlushesRowGroupWhenSizeExceeded) {
     w.close().get();
 }
 
+TEST(ParquetWriter, BufferedMemoryZeroAfterFlush) {
+    iobuf file;
+    writer w({.schema = simple_schema()}, make_iobuf_ref_output_stream(file));
+    w.init().get();
+    for (size_t i = 0; i < 3; ++i) {
+        w.write_row(make_row(/*data_size=*/64)).get();
+    }
+    EXPECT_GT(w.stats().buffered_size, 0);
+    w.flush_row_group().get();
+    EXPECT_EQ(w.stats().buffered_size, 0);
+    w.close().get();
+}
+
 TEST(ParquetWriter, ColumnMemoryEstimateCoversActual) {
 #ifdef SEASTAR_DEFAULT_ALLOCATOR
     GTEST_SKIP() << "memory::stats() reports fixed values under the system "
