@@ -644,6 +644,21 @@ public:
 
     template<typename C, typename ElementWriter>
     requires requires(
+      ElementWriter writer, encoder& rw, const typename C::value_type& elem) {
+        requires SizedContainer<C>;
+        { writer(elem, rw) } -> std::same_as<void>;
+    }
+    uint32_t write_flex_array(const C& v, ElementWriter&& writer) {
+        auto start_size = uint32_t(_out->size_bytes());
+        write_unsigned_varint(v.size() + 1);
+        for (const auto& elem : v) {
+            writer(elem, *this);
+        }
+        return _out->size_bytes() - start_size;
+    }
+
+    template<typename C, typename ElementWriter>
+    requires requires(
       ElementWriter writer, encoder& rw, typename C::value_type& elem) {
         { writer(elem, rw) } -> std::same_as<void>;
     }
