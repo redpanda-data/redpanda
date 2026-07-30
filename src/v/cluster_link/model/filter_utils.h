@@ -30,6 +30,23 @@ bool select_topic(
   ::model::topic_view topic,
   const chunked_vector<resource_name_filter_pattern>& patterns);
 
+/**
+ * @brief Determines whether a topic is in scope for a default-include filter
+ *
+ * Unlike select_topic (opt-in: a topic is only selected if some include
+ * pattern matches it), this uses default-include semantics: the topic is
+ * in scope unless an exclude pattern matches it, and, when include patterns
+ * are present, at least one of them also matches. An empty pattern list
+ * scopes every topic. An exclude match always wins over an include match.
+ *
+ * @param topic The name of the topic to evaluate
+ * @param patterns The list of include/exclude filter patterns
+ * @return True if the topic is in scope; false otherwise
+ */
+bool select_topic_default_include(
+  ::model::topic_view topic,
+  const chunked_vector<resource_name_filter_pattern>& patterns);
+
 bool select_group(
   const kafka::group_id& group_id,
   const chunked_vector<resource_name_filter_pattern>& patterns);
