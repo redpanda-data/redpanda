@@ -61,6 +61,7 @@ using proto::admin::shadow_link_status;
 using proto::admin::shadow_link_task_status;
 using proto::admin::shadow_topic;
 using proto::admin::shadow_topic_status;
+using proto::admin::shadow_topic_storage_mode;
 using proto::admin::task_state;
 using proto::admin::topic_metadata_sync_options;
 using proto::admin::topic_metadata_sync_options_earliest_offset;
@@ -199,6 +200,22 @@ create_topic_metadata_mirroring_config(
       });
 
     config.is_enabled = cluster_link::model::enabled_t{!options.get_paused()};
+
+    switch (options.get_shadow_topic_storage_mode()) {
+    case shadow_topic_storage_mode::cloud:
+        config.storage_mode_override = model::redpanda_storage_mode::cloud;
+        break;
+    case shadow_topic_storage_mode::tiered_v2:
+        config.storage_mode_override
+          = model::redpanda_storage_mode::tiered_cloud;
+        break;
+    default:
+        // unspecified — inherit from source (no override)
+        break;
+    }
+
+    config.storage_mode_override_filters = to_filter_patterns(
+      options.get_shadow_topic_storage_mode_filters());
 
     return config;
 }
@@ -1271,6 +1288,24 @@ topic_metadata_sync_options create_topic_metadata_sync_options(
 
     options.set_paused(!bool(cfg.is_enabled));
 
+    if (cfg.storage_mode_override.has_value()) {
+        switch (*cfg.storage_mode_override) {
+        case model::redpanda_storage_mode::cloud:
+            options.set_shadow_topic_storage_mode(
+              shadow_topic_storage_mode::cloud);
+            break;
+        case model::redpanda_storage_mode::tiered_cloud:
+            options.set_shadow_topic_storage_mode(
+              shadow_topic_storage_mode::tiered_v2);
+            break;
+        default:
+            break;
+        }
+    }
+
+    options.set_shadow_topic_storage_mode_filters(
+      to_name_filters(cfg.storage_mode_override_filters));
+
     return options;
 }
 
@@ -1965,6 +2000,18 @@ create_update_cluster_link_config_cmd(
     merge_input_only_fields(*current_metadata, current_sl);
     try {
         auto updated_md = shadow_link_to_metadata(std::move(current_sl));
+
+        // storage_mode_override is immutable after link creation, so carry the
+        // existing value forward rather than taking whatever the request
+        // carried: a coarse field mask that does not set
+        // shadow_topic_storage_mode resends it as UNSPECIFIED, which must not
+        // be read as a request to clear the override (and it cannot be changed
+        // anyway). Mirrors merge_input_only_fields above; the scope filters are
+        // intentionally left mutable.
+        updated_md.configuration.topic_metadata_mirroring_cfg
+          .storage_mode_override
+          = current_metadata->configuration.topic_metadata_mirroring_cfg
+              .storage_mode_override;
 
         merge_output_only_fields(*current_metadata, updated_md);
         update_timestamps(*current_metadata, updated_md);

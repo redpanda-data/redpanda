@@ -736,7 +736,8 @@ errc frontend::validator::validate_mutation(const cluster_link_cmd& cmd) const {
               }
 
               return validate_metadata_mirroring_config(
-                cmd.value.configuration.topic_metadata_mirroring_cfg);
+                cmd.value.configuration.topic_metadata_mirroring_cfg,
+                /*is_create=*/false);
           }
           // New item!
           if (cmd.value.name().empty()) {
@@ -790,7 +791,8 @@ errc frontend::validator::validate_mutation(const cluster_link_cmd& cmd) const {
           }
 
           return validate_metadata_mirroring_config(
-            cmd.value.configuration.topic_metadata_mirroring_cfg);
+            cmd.value.configuration.topic_metadata_mirroring_cfg,
+            /*is_create=*/true);
       },
       [this](const cluster::cluster_link_remove_cmd& cmd) {
           auto meta = _table->find_link_by_name(cmd.value.link_name);
@@ -1046,7 +1048,8 @@ errc frontend::validator::validate_mutation(const cluster_link_cmd& cmd) const {
           }
 
           ec = validate_metadata_mirroring_config(
-            cmd.value.link_config.topic_metadata_mirroring_cfg);
+            cmd.value.link_config.topic_metadata_mirroring_cfg,
+            /*is_create=*/false);
           if (ec != errc::success) {
               return ec;
           }
@@ -1121,7 +1124,8 @@ errc frontend::validator::validate_connection_config(
 }
 
 errc frontend::validator::validate_metadata_mirroring_config(
-  const ::cluster_link::model::topic_metadata_mirroring_config& config) const {
+  const ::cluster_link::model::topic_metadata_mirroring_config& config,
+  bool is_create) const {
     // Validates that the pattern:
     // - is not empty
     // - does not contain the wildcard character '*' unless it is the only
@@ -1202,6 +1206,44 @@ errc frontend::validator::validate_metadata_mirroring_config(
               "Topic property '{}' is excluded from mirroring",
               prop);
             return errc::topic_property_excluded_from_mirroring;
+        }
+    }
+
+    // The override is immutable, so only validate it at create time; on update
+    // it is carried forward unchanged (see converter.cc), and re-checking it
+    // would reject unrelated updates if cloud storage is later disabled.
+    if (is_create && config.storage_mode_override.has_value()) {
+        // The converter only maps CLOUD/TIERED_V2 to cloud/tiered_cloud
+        // (UNSPECIFIED leaves the override unset), so any other value here is a
+        // logic error, not user input.
+        auto mode = *config.storage_mode_override;
+        vassert(
+          mode == ::model::redpanda_storage_mode::cloud
+            || mode == ::model::redpanda_storage_mode::tiered_cloud,
+          "Invalid storage mode override {}: only cloud and tiered_v2 are "
+          "supported",
+          mode);
+        if (!config::shard_local_cfg().cloud_storage_enabled()) {
+            vlog(
+              cluster::clusterlog.warn,
+              "Cannot create shadow link with storage mode override: "
+              "cloud storage is not enabled");
+            return errc::feature_disabled;
+        }
+    }
+
+    if (!config.storage_mode_override_filters.empty()) {
+        if (!config.storage_mode_override.has_value()) {
+            vlog(
+              cluster::clusterlog.warn,
+              "shadow_topic_storage_mode_filters set without a storage mode "
+              "override");
+            return errc::invalid_create;
+        }
+        if (
+          std::ranges::any_of(
+            config.storage_mode_override_filters, check_filter_pattern)) {
+            return errc::topic_filter_invalid;
         }
     }
 

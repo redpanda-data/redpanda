@@ -981,6 +981,79 @@ TEST(converter_test, metadata_to_shadow_link_topic_mirroring_cfg) {
       schema_registry_sync_options.has_shadow_schema_registry_topic());
 }
 
+TEST(converter_test, shadow_topic_storage_mode_filters_round_trip) {
+    const auto name = "test-link";
+    proto::admin::shadow_link shadow_link;
+    proto::admin::create_shadow_link_request req;
+    proto::admin::shadow_link_configurations shadow_link_configurations;
+    proto::admin::shadow_link_client_options shadow_link_client_options;
+    proto::admin::topic_metadata_sync_options topic_metadata_sync_options;
+
+    chunked_vector<proto::admin::name_filter> filters;
+    filters.emplace_back(create_name_filter(
+      proto::admin::pattern_type::prefix,
+      proto::admin::filter_type::include,
+      "app-"));
+    filters.emplace_back(create_name_filter(
+      proto::admin::pattern_type::literal,
+      proto::admin::filter_type::exclude,
+      "app-debug"));
+    topic_metadata_sync_options.set_shadow_topic_storage_mode_filters(
+      std::move(filters));
+
+    shadow_link_client_options.set_bootstrap_servers({"localhost:9092"});
+    shadow_link_configurations.set_client_options(
+      std::move(shadow_link_client_options));
+    shadow_link_configurations.set_topic_metadata_sync_options(
+      std::move(topic_metadata_sync_options));
+
+    shadow_link.set_configurations(std::move(shadow_link_configurations));
+    shadow_link.set_name(ss::sstring{name});
+    req.set_shadow_link(std::move(shadow_link));
+
+    auto md = ss::make_lw_shared<cluster_link::model::metadata>(
+      admin::convert_create_to_metadata(std::move(req)));
+
+    const auto& model_filters = md->configuration.topic_metadata_mirroring_cfg
+                                  .storage_mode_override_filters;
+    ASSERT_EQ(model_filters.size(), 2);
+    EXPECT_EQ(
+      model_filters[0].pattern_type,
+      cluster_link::model::filter_pattern_type::prefix);
+    EXPECT_EQ(
+      model_filters[0].filter, cluster_link::model::filter_type::include);
+    EXPECT_EQ(model_filters[0].pattern, "app-");
+    EXPECT_EQ(
+      model_filters[1].pattern_type,
+      cluster_link::model::filter_pattern_type::literal);
+    EXPECT_EQ(
+      model_filters[1].filter, cluster_link::model::filter_type::exclude);
+    EXPECT_EQ(model_filters[1].pattern, "app-debug");
+
+    auto sl = admin::metadata_to_shadow_link(std::move(md), {});
+
+    const auto& round_tripped_filters
+      = sl.get_configurations()
+          .get_topic_metadata_sync_options()
+          .get_shadow_topic_storage_mode_filters();
+
+    ASSERT_EQ(round_tripped_filters.size(), 2);
+    EXPECT_EQ(
+      round_tripped_filters[0].get_pattern_type(),
+      proto::admin::pattern_type::prefix);
+    EXPECT_EQ(
+      round_tripped_filters[0].get_filter_type(),
+      proto::admin::filter_type::include);
+    EXPECT_EQ(round_tripped_filters[0].get_name(), "app-");
+    EXPECT_EQ(
+      round_tripped_filters[1].get_pattern_type(),
+      proto::admin::pattern_type::literal);
+    EXPECT_EQ(
+      round_tripped_filters[1].get_filter_type(),
+      proto::admin::filter_type::exclude);
+    EXPECT_EQ(round_tripped_filters[1].get_name(), "app-debug");
+}
+
 proto::admin::shadow_topic
 create_shadow_topic(ss::sstring name, proto::admin::shadow_topic_state state) {
     proto::admin::shadow_topic st;
@@ -1067,6 +1140,53 @@ TEST(converter_test, update_shadow_link_add_field) {
 
     EXPECT_EQ(update_cmd.connection, current_md.connection);
     EXPECT_NE(update_cmd.link_config, current_md.configuration);
+    EXPECT_EQ(
+      update_cmd.link_config.topic_metadata_mirroring_cfg.get_task_interval(),
+      300s);
+}
+
+TEST(converter_test, update_preserves_immutable_storage_mode_override) {
+    // A coarse field mask that names the whole topic_metadata_sync_options
+    // sub-message resends shadow_topic_storage_mode as UNSPECIFIED. The
+    // override is immutable, so the update must carry the existing value
+    // forward -- not clear it, and not reject the whole (otherwise valid)
+    // update.
+    cluster_link::model::metadata current_md;
+    current_md.name = cluster_link::model::name_t{"test-link"};
+    current_md.uuid = cluster_link::model::uuid_t{uuid_t::create()};
+    current_md.connection.bootstrap_servers = {
+      net::unresolved_address("localhost", 9092)};
+    current_md.configuration.topic_metadata_mirroring_cfg.storage_mode_override
+      = ::model::redpanda_storage_mode::cloud;
+    admin::set_client_id(current_md);
+
+    // Update an unrelated field (interval) with a coarse mask on the parent
+    // sub-message; the request does not set shadow_topic_storage_mode.
+    proto::admin::update_shadow_link_request req;
+    req.get_shadow_link()
+      .get_configurations()
+      .get_topic_metadata_sync_options()
+      .set_interval(absl::Seconds(300));
+    serde::pb::field_mask mask;
+    mask.paths.emplace_back(
+      serde::pb::field_mask::path{
+        "configurations", "topic_metadata_sync_options"});
+    req.set_update_mask(std::move(mask));
+
+    auto update_cmd = admin::create_update_cluster_link_config_cmd(
+      std::move(req),
+      ss::make_lw_shared<cluster_link::model::metadata>({
+        .name = current_md.name,
+        .uuid = current_md.uuid,
+        .connection = current_md.connection,
+        .configuration = current_md.configuration.copy(),
+      }));
+
+    // The immutable override survived the coarse update.
+    EXPECT_EQ(
+      update_cmd.link_config.topic_metadata_mirroring_cfg.storage_mode_override,
+      ::model::redpanda_storage_mode::cloud);
+    // The unrelated field was still applied.
     EXPECT_EQ(
       update_cmd.link_config.topic_metadata_mirroring_cfg.get_task_interval(),
       300s);

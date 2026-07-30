@@ -95,6 +95,7 @@ redpanda_cc_gtest(
         "//src/v/model",
         "//src/v/raft",
         "//src/v/test_utils:gtest",
+        "//src/v/test_utils:scoped_config",
         "//src/v/utils:unresolved_address",
         "//src/v/utils:uuid",
         "@abseil-cpp//absl/container:flat_hash_map",

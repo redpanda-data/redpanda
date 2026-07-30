@@ -155,6 +155,8 @@ topic_metadata_mirroring_config topic_metadata_mirroring_config::copy() const {
     copy.topic_properties_to_mirror = topic_properties_to_mirror;
     copy.exclude_default = exclude_default;
     copy.starting_offset = starting_offset;
+    copy.storage_mode_override = storage_mode_override;
+    copy.storage_mode_override_filters = storage_mode_override_filters.copy();
 
     return copy;
 }
@@ -741,13 +743,18 @@ auto fmt::formatter<cluster_link::model::topic_metadata_mirroring_config>::
       ctx.out(),
       "{{is_enabled: {}, task_interval: {}, filters: {}, "
       "topic_properties_to_mirror: {}, exclude_default: {}, "
-      "starting_offset: {}}}",
+      "starting_offset: {}, storage_mode_override: {}, "
+      "storage_mode_override_filters: {}}}",
       m.is_enabled,
       m.task_interval,
       m.topic_name_filters,
       m.topic_properties_to_mirror,
       m.exclude_default,
-      m.starting_offset);
+      m.starting_offset,
+      m.storage_mode_override.has_value()
+        ? fmt::format("{}", *m.storage_mode_override)
+        : std::string{"none"},
+      m.storage_mode_override_filters);
 }
 
 auto fmt::formatter<cluster_link::model::consumer_groups_mirroring_config>::
