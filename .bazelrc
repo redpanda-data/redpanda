@@ -5,6 +5,9 @@ common --extra_toolchains=@current_llvm_toolchain//:all
 common --experimental_repository_downloader_retries=15
 common --http_connector_attempts=24
 
+# Multi-GB CAS uploads don't fit in the 60s default deadline: CORE-16940.
+build --remote_timeout=600
+
 # Bazel 9 removes native C++ rule symbols. Autoload them for external rulesets
 # that have not migrated all generated BUILD/Starlark files to explicit loads.
 common --incompatible_autoload_externally=+@rules_cc
