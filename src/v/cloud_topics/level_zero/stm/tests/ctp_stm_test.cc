@@ -1069,27 +1069,24 @@ TEST_F_CORO(
       << "change, allowing an epoch that is below the applied window [7, 8].";
 }
 
-TEST_F_CORO(
-  ctp_stm_fixture, test_failed_epoch_bump_replicate_poisons_seen_window) {
-    // Bug reproduction (Antithesis ct_stress crash): a fence-time epoch bump
-    // whose batch never lands in the log leaves a phantom lower bound in the
-    // seen window, admitting a stale epoch that the log-content invariant
-    // forbids.
+TEST_F_CORO(ctp_stm_fixture, test_stale_epoch_after_failed_bump_cannot_land) {
+    // Layered admission for the original Antithesis ct_stress crash: a
+    // fence-time epoch bump whose batch never lands leaves a phantom lower
+    // bound in the seen window.
     //
     // Scenario, all within one term on one leader:
-    // 1. A writer fences epoch 132 (first fence in the term, seen window
-    //    becomes [132, 132]) but its replicate fails - nothing lands in the
-    //    log and the fence guard is dropped.
-    // 2. A writer fences epoch 141 (seen window [132, 141]) and replicates.
-    //    The log's first epoch-bearing batch carries 141, so the
-    //    epoch_window_checker window collapses to [141, 141] and the applied
-    //    state treats epochs <= 140 as inactive (their L0 objects become
-    //    eligible for GC).
-    // 3. A writer fences epoch 132 again. This must be rejected: admitting it
-    //    lands an epoch-132 placeholder after the 141 batch, and every
-    //    replica that applies the batch dies in
-    //    epoch_window_checker::check_epoch with "epoch 132 at N is outside of
-    //    sliding window [141, 141]".
+    // 1. A writer fences epoch 132 (seen window [132, 132]) but its
+    //    replicate fails - nothing lands and the guard is dropped.
+    // 2. A writer fences epoch 141 and replicates. The log's first
+    //    epoch-bearing batch carries 141, so the epoch_window_checker window
+    //    collapses to [141, 141]; the enqueue admission of 141 raises the
+    //    shared admission floor accordingly.
+    // 3. A writer fences epoch 132 again. It must not be able to reach the
+    //    log: landing an epoch-132 placeholder after the 141 batch would
+    //    fire the checker vassert "epoch 132 at N is outside of sliding
+    //    window [141, 141]" on every replica. The fence and the enqueue
+    //    admission share one window, so the fence already rejects it; if a
+    //    looser fence ever admits it, the enqueue admission must reject.
     co_await start();
     co_await wait_for_leader(raft::default_timeout());
 
@@ -1111,32 +1108,27 @@ TEST_F_CORO(
       leader, ct::cluster_epoch{141}, model::offset{0}, 0);
     ASSERT_TRUE_CORO(ok);
 
-    // Step 3: epoch 132 is now below the log window and must be rejected.
+    // Step 3: epoch 132 is rejected before it can reach the log.
     auto stale_fence = co_await leader_api.fence_epoch(ct::cluster_epoch{132});
-    EXPECT_FALSE(stale_fence.has_value())
-      << "fence_epoch admitted epoch 132 although the log's first epoch "
-         "entry is 141: the seen-window lower bound came from a bump whose "
-         "batch never landed in the log";
-
     if (stale_fence.has_value()) {
-        // Under the bug, replicating with the granted fence reproduces the
-        // crash: apply trips the epoch_window_checker vassert on every
-        // replica.
-        auto guard = std::move(stale_fence.value());
-        auto batch = make_record_batch(
-          ct::cluster_epoch{132}, model::offset{1}, 1);
-        auto res = co_await replicate_record_batch(leader, std::move(batch));
-        ASSERT_TRUE_CORO(res.has_value());
+        auto rejected = co_await leader_api.admit_epoch_enqueue(
+          stale_fence.value().term, ct::cluster_epoch{132});
+        ASSERT_FALSE_CORO(rejected.has_value())
+          << "epoch 132 admitted for enqueue although the log's first epoch "
+             "entry is 141: replicating it would fire the "
+             "epoch_window_checker vassert on every replica";
+        ASSERT_EQ_CORO(rejected.error().window_min, ct::cluster_epoch{141});
     }
 }
 
-TEST_F_CORO(ctp_stm_fixture, test_below_max_fence_rejected_without_batches) {
-    // Companion to test_failed_epoch_bump_replicate_poisons_seen_window
-    // covering the concurrent variant: the max-seen epoch's batch is not in
-    // the log yet (here it is never replicated at all - the same state the
-    // fence observes while that batch is still mid-replication). With no
-    // epoch batch applied there is no evidence that anything precedes the
-    // max epoch's first batch, so a below-max fence must be rejected.
+TEST_F_CORO(
+  ctp_stm_fixture, test_below_max_admitted_without_batches_lands_safely) {
+    // Companion to test_stale_epoch_after_failed_bump_rejected_at_gate: the
+    // max-seen epoch's batch is not in the log (here it is never replicated
+    // at all). A below-max writer is admitted by the fence (the seen window
+    // is a best-effort filter) and by the gate (no epoch above it has been
+    // submitted for replication), and its batch lands legally as the log's
+    // first epoch entry.
     co_await start();
     co_await wait_for_leader(raft::default_timeout());
 
@@ -1153,9 +1145,16 @@ TEST_F_CORO(ctp_stm_fixture, test_below_max_fence_rejected_without_batches) {
         ASSERT_TRUE_CORO(fence.has_value());
     }
 
-    auto stale_fence = co_await leader_api.fence_epoch(ct::cluster_epoch{132});
-    ASSERT_FALSE_CORO(stale_fence.has_value())
-      << "below-max epoch admitted while no epoch batch has been applied";
+    // The full write path (fence, gate, replicate, apply) succeeds: no
+    // epoch-141 batch exists or will ever exist, so an epoch-132 first
+    // entry collapses the checker window to [132, 132] legally.
+    ASSERT_TRUE_CORO(
+      co_await replicate_with_epoch(
+        leader, ct::cluster_epoch{132}, model::offset{0}, 0));
+
+    // Below the seen window is still rejected at the fence.
+    auto below_window = co_await leader_api.fence_epoch(ct::cluster_epoch{131});
+    ASSERT_FALSE_CORO(below_window.has_value());
 }
 
 TEST_F_CORO(ctp_stm_fixture, test_below_max_fence_allowed_after_epoch_landed) {
