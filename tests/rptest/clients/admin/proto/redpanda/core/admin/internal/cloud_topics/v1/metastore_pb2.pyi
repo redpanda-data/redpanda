@@ -410,16 +410,19 @@ class MetadataValue(google.protobuf.message.Message):
     COMPACTION_EPOCH_FIELD_NUMBER: builtins.int
     SIZE_FIELD_NUMBER: builtins.int
     NUM_EXTENTS_FIELD_NUMBER: builtins.int
+    MIGRATING_FIELD_NUMBER: builtins.int
     start_offset: builtins.int
     next_offset: builtins.int
     compaction_epoch: builtins.int
     size: builtins.int
     num_extents: builtins.int
+    migrating: builtins.bool
+    'True while the partition is mid tiered->cloud migration.'
 
-    def __init__(self, *, start_offset: builtins.int=..., next_offset: builtins.int=..., compaction_epoch: builtins.int=..., size: builtins.int=..., num_extents: builtins.int=...) -> None:
+    def __init__(self, *, start_offset: builtins.int=..., next_offset: builtins.int=..., compaction_epoch: builtins.int=..., size: builtins.int=..., num_extents: builtins.int=..., migrating: builtins.bool=...) -> None:
         ...
 
-    def ClearField(self, field_name: typing.Literal['compaction_epoch', b'compaction_epoch', 'next_offset', b'next_offset', 'num_extents', b'num_extents', 'size', b'size', 'start_offset', b'start_offset']) -> None:
+    def ClearField(self, field_name: typing.Literal['compaction_epoch', b'compaction_epoch', 'migrating', b'migrating', 'next_offset', b'next_offset', 'num_extents', b'num_extents', 'size', b'size', 'start_offset', b'start_offset']) -> None:
         ...
 Global___MetadataValue: typing_extensions.TypeAlias = MetadataValue
 

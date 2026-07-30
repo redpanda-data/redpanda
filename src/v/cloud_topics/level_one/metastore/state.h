@@ -17,6 +17,7 @@
 #include "model/fundamental.h"
 #include "model/timestamp.h"
 #include "serde/envelope.h"
+#include "serde/rw/enum.h"
 #include "serde/rw/envelope.h"
 #include "serde/rw/optional.h"
 #include "serde/rw/set.h"
@@ -286,7 +287,7 @@ public:
 // no overlaps and no gaps in order to ensure there is no data loss.
 struct partition_state
   : public serde::
-      envelope<partition_state, serde::version<0>, serde::compat_version<0>> {
+      envelope<partition_state, serde::version<1>, serde::compat_version<0>> {
     friend bool
     operator==(const partition_state&, const partition_state&) = default;
     auto serde_fields() {
@@ -296,7 +297,8 @@ struct partition_state
           next_offset,
           compaction_state,
           compaction_epoch,
-          term_starts);
+          term_starts,
+          migrating);
     }
 
     partition_state copy() const;
@@ -356,6 +358,12 @@ struct partition_state
     // has been prefix truncated to be empty. I.e. this list should never be
     // empty once there has been data in the log.
     absl::btree_set<term_start> term_starts;
+
+    // True while the partition is mid tiered->cloud migration. For
+    // offline/remote consumers (cluster recovery, read-replica) that cannot
+    // observe the live archival-STM routing signal. Defaults to false, so a
+    // snapshot predating this field restores as a native cloud topic.
+    bool migrating{};
 };
 
 // Tracks the state managed for each partition of a Kafka topic.

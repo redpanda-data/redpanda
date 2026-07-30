@@ -203,12 +203,15 @@ struct get_first_offset_for_bytes_request
 
 struct get_offsets_reply
   : serde::
-      envelope<get_offsets_reply, serde::version<0>, serde::compat_version<0>> {
-    auto serde_fields() { return std::tie(ec, start_offset, next_offset); }
+      envelope<get_offsets_reply, serde::version<1>, serde::compat_version<0>> {
+    auto serde_fields() {
+        return std::tie(ec, start_offset, next_offset, migrating);
+    }
 
     errc ec;
     kafka::offset start_offset;
     kafka::offset next_offset;
+    bool migrating{};
 };
 struct get_offsets_request
   : serde::envelope<
@@ -374,6 +377,27 @@ struct set_start_offset_request
 
     model::topic_id_partition tp;
     kafka::offset start_offset;
+};
+
+struct set_migrating_reply
+  : serde::envelope<
+      set_migrating_reply,
+      serde::version<0>,
+      serde::compat_version<0>> {
+    auto serde_fields() { return std::tie(ec); }
+
+    errc ec;
+};
+struct set_migrating_request
+  : serde::envelope<
+      set_migrating_request,
+      serde::version<0>,
+      serde::compat_version<0>> {
+    using resp_t = set_migrating_reply;
+    auto serde_fields() { return std::tie(tp, migrating); }
+
+    model::topic_id_partition tp;
+    bool migrating{};
 };
 
 struct remove_topics_reply

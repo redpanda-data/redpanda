@@ -695,6 +695,7 @@ add_objects_db_update::build_rows(
                                   : partition_state::compaction_epoch_t{0},
           .size = (opt ? opt->size : 0) + extent_size_sum,
           .num_extents = (opt ? opt->num_extents : 0) + extents.size(),
+          .migrating = opt ? opt->migrating : false,
         };
     }
     // Now that we've validated the offsets of our extents, validate the terms
@@ -1396,6 +1397,7 @@ set_start_offset_db_update::build_rows(
             .num_extents
             = metadata.num_extents
               - std::min(metadata.num_extents, extent_keys_to_delete.size()),
+            .migrating = metadata.migrating,
           }),
       });
 
@@ -1453,6 +1455,50 @@ set_start_offset_db_update::discover_truncated_object_ids(
         }
     }
     co_return discovered_oids;
+}
+
+ss::future<std::expected<void, db_update_error>>
+set_migrating_db_update::build_rows(
+  state_reader& reader,
+  chunked_vector<write_batch_row>& out,
+  bool* is_no_op) const {
+    auto meta_res = co_await reader.get_metadata(tp);
+    if (!meta_res.has_value()) {
+        co_return std::unexpected(wrap_read_err(
+          std::move(meta_res.error()), "Error reading metadata for {}", tp));
+    }
+    // Migrating may be set on an absent partition, in which case it creates its
+    // metadata row. num_extents == 0 causes add_objects to recognize the
+    // partition as a fresh migrating mount and adopt the log at the first
+    // imported extent's (possibly non-zero) base. The offsets are overwritten
+    // by that first import.
+    metadata_row_value updated
+      = meta_res->has_value()
+          ? **meta_res
+          : metadata_row_value{
+              .start_offset = kafka::offset{0},
+              .next_offset = kafka::offset{0},
+              .compaction_epoch = partition_state::compaction_epoch_t{0},
+              .size = 0,
+              .num_extents = 0,
+              .migrating = false,
+            };
+    const auto current = updated.migrating;
+
+    if (migrating == current) {
+        if (is_no_op) {
+            *is_no_op = true;
+        }
+        co_return std::expected<void, db_update_error>{};
+    }
+
+    updated.migrating = migrating;
+    out.emplace_back(
+      write_batch_row{
+        .key = metadata_row_key::encode(tp),
+        .value = serde::to_iobuf(updated),
+      });
+    co_return std::expected<void, db_update_error>{};
 }
 
 ss::future<std::expected<void, db_update_error>>

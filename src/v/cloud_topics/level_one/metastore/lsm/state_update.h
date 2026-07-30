@@ -121,6 +121,19 @@ struct set_start_offset_db_update {
     kafka::offset new_start_offset;
 };
 
+// Sets the partition's `migrating` flag on its metadata row. Setting the
+// current value is a no-op. Creates the metadata row (with default offsets) if
+// the partition has none yet.
+struct set_migrating_db_update {
+    ss::future<std::expected<void, db_update_error>> build_rows(
+      state_reader&,
+      chunked_vector<write_batch_row>&,
+      bool* is_no_op = nullptr) const;
+
+    model::topic_id_partition tp;
+    bool migrating{};
+};
+
 struct remove_topics_db_update {
     ss::future<std::expected<void, db_update_error>>
     build_rows(state_reader&, chunked_vector<write_batch_row>&) const;

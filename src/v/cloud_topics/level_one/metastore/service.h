@@ -38,6 +38,9 @@ public:
     ss::future<set_start_offset_reply> set_start_offset(
       set_start_offset_request, ::rpc::streaming_context&) override;
 
+    ss::future<set_migrating_reply>
+    set_migrating(set_migrating_request, ::rpc::streaming_context&) override;
+
     ss::future<remove_topics_reply>
     remove_topics(remove_topics_request, ::rpc::streaming_context&) override;
 
