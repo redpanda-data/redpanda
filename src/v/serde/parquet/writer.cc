@@ -282,4 +282,8 @@ chunked_vector<writer::file_column_stats> writer::column_file_stats() {
     return _impl->column_file_stats();
 }
 
+size_t writer::estimated_memory(size_t num_leaf_columns) {
+    return sizeof(impl) + num_leaf_columns * estimated_column_memory();
+}
+
 } // namespace serde::parquet

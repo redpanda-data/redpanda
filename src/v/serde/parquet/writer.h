@@ -142,6 +142,11 @@ public:
     // The resulting future must be awaited before destroying this object.
     ss::future<file_metadata> close();
 
+    // Estimated resident memory of an idle writer with `num_leaf_columns` leaf
+    // columns. Excludes buffered row data, accounted as it is written, and the
+    // caller-owned output stream buffer.
+    static size_t estimated_memory(size_t num_leaf_columns);
+
 private:
     class impl;
     std::unique_ptr<impl> _impl;
