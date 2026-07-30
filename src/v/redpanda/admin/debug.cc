@@ -41,6 +41,9 @@
 #include <seastar/http/httpd.hh>
 #include <seastar/json/json_elements.hh>
 
+#include <memory>
+#include <vector>
+
 namespace {
 ss::future<result<std::vector<cluster::partition_state>>>
 get_partition_state(model::ntp ntp, cluster::controller& controller) {
@@ -153,6 +156,25 @@ void trigger_crash(std::unique_ptr<ss::http::request> req) {
         // triggers integer overflow
         volatile int max_int = std::numeric_limits<int>::max(), one = 1, sink{};
         sink = max_int + one + sink;
+    } else if (crash_type == "oom") {
+#ifdef SEASTAR_DEFAULT_ALLOCATOR
+        // With the system allocator (e.g. debug builds) there is no
+        // per-process seastar memory limit: allocating without bound would
+        // exhaust host memory and invite the kernel OOM killer, so refuse.
+        throw ss::httpd::bad_request_exception(
+          "oom crash type requires the seastar allocator");
+#else
+        vlog(adminlog.info, "Triggering out-of-memory from /trigger_crash API");
+        // Allocate until the seastar allocator runs out of memory: tests
+        // always run with --abort-on-seastar-bad-alloc, so the failing
+        // allocation dumps the memory diagnostics and aborts the process.
+        // Chunks are small enough to avoid oversized allocation warnings.
+        std::vector<std::unique_ptr<char[]>> sink;
+        while (true) {
+            constexpr size_t chunk_size = 32 * 1024;
+            sink.push_back(std::make_unique<char[]>(chunk_size));
+        }
+#endif
     } else {
         throw ss::httpd::bad_request_exception(
           fmt::format("invalid crash type: {}", crash_type));
