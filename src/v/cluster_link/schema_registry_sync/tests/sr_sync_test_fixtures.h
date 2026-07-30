@@ -13,6 +13,7 @@
 
 #include "cluster_link/schema_registry_sync/reconciler.h"
 #include "cluster_link/schema_registry_sync/source_reader.h"
+#include "cluster_link/schema_registry_sync/tail_reader.h"
 #include "container/chunked_hash_map.h"
 #include "container/chunked_vector.h"
 #include "pandaproxy/schema_registry/error.h"
@@ -24,9 +25,12 @@
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/coroutine.hh>
 #include <seastar/core/future.hh>
+#include <seastar/core/shared_future.hh>
 #include <seastar/util/noncopyable_function.hh>
 
+#include <deque>
 #include <memory>
+#include <ranges>
 #include <vector>
 
 // Test fakes and helpers shared by the reconciler unit tests
@@ -122,6 +126,12 @@ struct fake_source_state {
       list_versions_errors;
     // read_subject_version call count, keyed by (subject, version).
     chunked_hash_map<ppsr::subject_version, uint32_t> read_counts;
+    // Total list_subject_versions calls, so a test can assert a sync did no
+    // source discovery at all.
+    size_t list_versions_calls{0};
+    // Total list_contexts calls, so a test can assert a tail tick did not
+    // re-read the source's contexts when its batch reported none.
+    size_t list_contexts_calls{0};
     // Forces read_subject_version to fail for specific (subject, version)
     // nodes, letting a test inject a mid-run source fault (e.g.
     // source_unavailable).
@@ -197,6 +207,31 @@ struct fake_source_state {
           next_id()));
     }
 
+    // Soft-deletes one version at the source, as DELETE
+    // /subjects/{sub}/versions/{v} does: the version keeps existing but drops
+    // out of the active listing.
+    void soft_delete(const ppsr::context_subject& sub, int32_t version) {
+        for (auto& stored : schemas) {
+            if (
+              stored.schema.sub() == sub
+              && stored.version == ppsr::schema_version{version}) {
+                stored.deleted = ppsr::is_deleted::yes;
+            }
+        }
+    }
+
+    // Drops every version of `sub`, as a source-side hard delete of the whole
+    // subject does: its listings then report it absent.
+    void remove_subject(const ppsr::context_subject& sub) {
+        schemas = schemas
+                  | std::views::filter(
+                    [&sub](const ppsr::stored_schema& stored) {
+                        return stored.schema.sub() != sub;
+                    })
+                  | std::views::as_rvalue
+                  | std::ranges::to<chunked_vector<ppsr::stored_schema>>();
+    }
+
     // A globally-unique schema id, matching SR's per-context id namespace where
     // distinct subjects never share an id.
     ppsr::schema_id next_id() {
@@ -217,6 +252,7 @@ public:
 
     ss::future<srs::source_result<chunked_vector<ppsr::context>>>
     list_contexts(ss::abort_source&) override {
+        ++_state->list_contexts_calls;
         if (_state->list_contexts_error.has_value()) {
             co_return std::unexpected(*_state->list_contexts_error);
         }
@@ -246,6 +282,7 @@ public:
       ppsr::context_subject sub,
       ppsr::include_deleted include_deleted,
       ss::abort_source&) override {
+        ++_state->list_versions_calls;
         if (
           auto it = _state->list_versions_errors.find(sub);
           it != _state->list_versions_errors.end()) {
@@ -368,6 +405,120 @@ public:
 
 private:
     fake_source_state* _state;
+};
+
+// Scripted tail reader: `batches` are handed to successive polls, so a test
+// stages the changes a tick should see. An exhausted queue polls empty, which
+// is what an idle source does.
+struct fake_tail_state {
+    // Makes arm() throw rather than report unavailable, which the tail_reader
+    // contract forbids -- so a reader that breaks it must not take the full
+    // sync down with it.
+    bool arm_throws{false};
+    std::optional<srs::source_error> poll_error;
+    std::deque<srs::tail_batch> batches;
+    size_t arms{0};
+    size_t polls{0};
+    /// Batches the task handed back for a later tick to replay.
+    size_t rewinds{0};
+    /// The batch the last poll reported, which a rewind puts back.
+    std::optional<srs::tail_batch> replayable;
+    /// Reported by every poll instead of draining `batches`, so a state the
+    /// batch induces holds rather than lasting a single tick -- which a test
+    /// would otherwise have one tail interval to observe.
+    std::optional<srs::tail_batch> sticky;
+    // While unresolved, parks poll() and with it the whole tail tick, so a test
+    // can observe the in-progress sync's reported type. Resolve it to let the
+    // tick proceed; polls after that are not delayed.
+    std::unique_ptr<ss::shared_promise<>> poll_gate;
+
+    void open_poll_gate() {
+        poll_gate = std::make_unique<ss::shared_promise<>>();
+    }
+
+    /// Element-wise because a tail_batch is move-only.
+    static srs::tail_batch copy_of(const srs::tail_batch& batch) {
+        srs::tail_batch copy;
+        for (const auto& subject : batch.subjects) {
+            copy.subjects.insert(subject);
+        }
+        for (const auto& target : batch.mode_configs) {
+            copy.mode_configs.insert(target);
+        }
+        for (const auto& ctx : batch.contexts) {
+            copy.contexts.insert(ctx);
+        }
+        copy.truncated = batch.truncated;
+        return copy;
+    }
+
+    /// Keeps what a poll reported, as a real reader's position does, so a
+    /// rewind can hand it back.
+    void keep_for_rewind(const srs::tail_batch& batch) {
+        replayable = copy_of(batch);
+    }
+    void release_poll_gate() { poll_gate->set_value(); }
+};
+
+class fake_tail_reader final : public srs::tail_reader {
+public:
+    explicit fake_tail_reader(fake_tail_state* state)
+      : _state(state) {}
+
+    ss::future<srs::tail_availability> arm(ss::abort_source&) override {
+        ++_state->arms;
+        if (_state->arm_throws) {
+            throw std::runtime_error("tail arm failed");
+        }
+        co_return srs::tail_availability::available;
+    }
+
+    ss::future<srs::source_result<srs::tail_batch>>
+    poll(ss::abort_source&) override {
+        ++_state->polls;
+        if (_state->poll_gate) {
+            co_await _state->poll_gate->get_shared_future();
+        }
+        if (_state->poll_error.has_value()) {
+            co_return std::unexpected(*_state->poll_error);
+        }
+        if (_state->sticky.has_value()) {
+            co_return fake_tail_state::copy_of(*_state->sticky);
+        }
+        if (_state->batches.empty()) {
+            co_return srs::tail_batch{};
+        }
+        auto batch = std::move(_state->batches.front());
+        _state->batches.pop_front();
+        _state->keep_for_rewind(batch);
+        co_return batch;
+    }
+
+    ss::future<> rewind() override {
+        ++_state->rewinds;
+        // Puts the batch back at the front, as a real reader's position does.
+        if (_state->replayable.has_value()) {
+            _state->batches.push_front(std::move(*_state->replayable));
+            _state->replayable.reset();
+        }
+        co_return;
+    }
+
+private:
+    fake_tail_state* _state;
+};
+
+class fake_tail_reader_factory final : public srs::tail_reader_factory {
+public:
+    explicit fake_tail_reader_factory(fake_tail_state* state)
+      : _state(state) {}
+
+    std::unique_ptr<srs::tail_reader> create(cluster_link::link*) override {
+        return std::make_unique<fake_tail_reader>(_state);
+    }
+
+private:
+    fake_tail_state* _state;
 };
 
 // Holds the pieces a standalone reconcile test needs: a source state + reader,
@@ -503,6 +654,26 @@ public:
 
 protected:
     schema::registry* _inner;
+};
+
+// Counts destination inventory scans, so a test can assert a sync did not scan
+// at all rather than inferring it from the counters a scan would leave
+// unchanged. list_subject_versions over the whole in-scope set is what a scan
+// is (see scan_destination_inventory).
+class scan_counting_registry final : public delegating_registry {
+public:
+    using delegating_registry::delegating_registry;
+
+    ss::future<chunked_vector<ppsr::subject_version_deleted>>
+    list_subject_versions(
+      ss::noncopyable_function<bool(const ppsr::context_subject&)> filter,
+      ppsr::include_deleted inc) const override {
+        ++scans;
+        return delegating_registry::list_subject_versions(
+          std::move(filter), inc);
+    }
+
+    mutable size_t scans{0};
 };
 
 // Wraps a destination registry, suspending `import_schema` on an abortable wait

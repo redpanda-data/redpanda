@@ -14,6 +14,7 @@
 #include "cluster_link/schema_registry_sync/probe.h"
 #include "cluster_link/schema_registry_sync/reconciler.h"
 #include "cluster_link/schema_registry_sync/source_reader.h"
+#include "cluster_link/schema_registry_sync/tail_reader.h"
 #include "cluster_link/task.h"
 #include "container/chunked_hash_map.h"
 #include "schema/registry.h"
@@ -66,7 +67,8 @@ public:
       link* link,
       const model::metadata& link_metadata,
       schema::registry* destination,
-      source_reader_factory* source_factory);
+      source_reader_factory* source_factory,
+      tail_reader_factory* tail_factory);
     mirroring_task(const mirroring_task&) = delete;
     mirroring_task(mirroring_task&&) = delete;
     mirroring_task& operator=(const mirroring_task&) = delete;
@@ -93,9 +95,10 @@ protected:
 private:
     bool leads_schema_registry_partition() const;
 
-    /// Rebuilds the source reader from the current API-mode config, releasing
-    /// the previous reader's transport first. Called on a config change so a
-    /// new source URL, auth, or TLS setting takes effect on the next run.
+    /// Rebuilds the source and tail readers from the current API-mode config,
+    /// releasing the previous readers' transports first. Called on a config
+    /// change so a new source URL, auth, or TLS setting takes effect on the
+    /// next run.
     ss::future<> reset_reader();
 
     /// Clears the in-memory sync state (status counters, destination inventory,
@@ -132,6 +135,84 @@ private:
       const ss::noncopyable_function<bool(const ppsr::context_subject&)>&
         in_scope);
 
+    /// Maps a source failure onto the run's outcome: an unreachable source
+    /// parks the link, while a reachable-but-failed call is a counted per-item
+    /// error that leaves the rest of the run standing.
+    state_transition on_source_error(const source_error& error);
+
+    /// As on_source_error, but for a tail tick, which holds a batch it may not
+    /// have applied: a source that went unavailable gets the batch put back so
+    /// a later tick can retry it.
+    ss::future<state_transition>
+    on_tail_source_error(const source_error& error);
+
+    /// Incremental sync: applies the changes the tail reader recorded since the
+    /// last poll, through the same per-subject path a full sync uses, so a
+    /// replayed change is a no-op.
+    ///
+    /// Returns without touching the destination -- the common case -- when
+    /// nothing changed, and never advances the full-sync timer: it sees only
+    /// the subjects its batch named, so it is no substitute for the full scan.
+    ss::future<state_transition> tail_sync(
+      ss::abort_source&,
+      model::schema_registry_sync_config::unsupported_feature_policy
+        feature_policy,
+      const ss::noncopyable_function<bool(const ppsr::context_subject&)>&
+        in_scope);
+
+    struct batch_sync_stats {
+        reconcile_stats reconciled;
+        uint64_t purged{0};
+    };
+
+    /// Replicates the subjects a tail batch named, through the same discover ->
+    /// import -> purge path a full sync runs over the whole selected source.
+    ss::future<source_result<batch_sync_stats>> sync_batch_subjects(
+      const tail_batch& batch,
+      const chunked_vector<ppsr::context_subject>& subjects,
+      model::schema_registry_sync_config::unsupported_feature_policy
+        feature_policy,
+      const ss::noncopyable_function<bool(const ppsr::context_subject&)>&
+        in_scope,
+      reconciler::limits limits,
+      ss::abort_source& as);
+
+    /// The source (subject, version) nodes a discovery pass found, split by
+    /// their soft-delete state at the source.
+    struct discovered_versions {
+        chunked_hash_set<ppsr::subject_version> active;
+        chunked_hash_set<ppsr::subject_version> deleted;
+    };
+
+    /// Diffs the discovered source nodes against the retained destination
+    /// inventory into the versions to import, propagating source soft-deletes.
+    /// Versions the source no longer has at all are hard-deleted instead, see
+    /// `collect_purge_targets`.
+    work_set build_work_set(const discovered_versions& discovered) const;
+
+    /// Imports `work` referent-first, then folds the reconcile's counters into
+    /// the in-progress sync summary and the task totals and returns them.
+    /// Leaves them unfolded on the error path, where the caller abandons the
+    /// sync.
+    ss::future<source_result<reconcile_stats>> run_reconcile(
+      work_set work,
+      model::schema_registry_sync_config::unsupported_feature_policy
+        feature_policy,
+      const ss::noncopyable_function<bool(const ppsr::context_subject&)>&
+        in_scope,
+      reconciler::limits limits,
+      ss::abort_source& as);
+
+    /// Replicates each target's source mode and compatibility config onto the
+    /// destination with bounded concurrency. Returns the first
+    /// source_unavailable seen, if any, for the caller to back off on.
+    ss::future<std::optional<source_error>> sync_mode_configs(
+      const chunked_vector<ppsr::context_subject>& targets,
+      model::schema_registry_sync_config::unsupported_feature_policy
+        feature_policy,
+      reconciler::limits limits,
+      ss::abort_source& as);
+
     /// Lists one subject's versions, classifying each into `source_active` or
     /// `source_deleted`. The source listing returns bare version numbers, so
     /// two calls recover the per-version deleted state: include_deleted::no
@@ -143,8 +224,7 @@ private:
     ss::future<> list_one_subject(
       const ppsr::context_subject& subject,
       ss::abort_source& as,
-      chunked_hash_set<ppsr::subject_version>& source_active,
-      chunked_hash_set<ppsr::subject_version>& source_deleted,
+      discovered_versions& discovered,
       chunked_hash_set<ppsr::context_subject>& failed_subjects,
       std::optional<source_error>& unavailable);
 
@@ -166,6 +246,17 @@ private:
         ppsr::subject_version node;
         bool was_active;
     };
+
+    /// Selects the destination versions to hard-delete. `in_purge_scope` bounds
+    /// the sweep to the subjects the caller discovered from the source this
+    /// run: a caller that refreshed only some subjects must accept only those,
+    /// or every subject it did not look at would read as source-absent.
+    chunked_vector<purge_target> collect_purge_targets(
+      const ss::noncopyable_function<bool(const ppsr::context_subject&)>&
+        in_purge_scope,
+      const discovered_versions& discovered,
+      const chunked_hash_set<ppsr::context>& failed_contexts,
+      const chunked_hash_set<ppsr::context_subject>& failed_subjects) const;
 
     /// Hard-deletes the source-absent destination versions in `targets`. A
     /// version still referenced by another not-yet-purged version cannot be
@@ -200,6 +291,16 @@ private:
     /// overrides untouched.
     ss::future<> delete_source_absent_contexts(
       const chunked_hash_set<ppsr::context>& contexts,
+      const ss::noncopyable_function<bool(const ppsr::context_subject&)>&
+        in_scope,
+      ss::abort_source& as);
+
+    /// The tail's context-deletion phase: re-lists the source's contexts for
+    /// delete_source_absent_contexts, because deletion is decided against the
+    /// source's whole set and a batch's own contexts would delete every context
+    /// it did not name. Returns the listing's error for the caller to back off
+    /// on.
+    ss::future<std::optional<source_error>> sync_absent_contexts(
       const ss::noncopyable_function<bool(const ppsr::context_subject&)>&
         in_scope,
       ss::abort_source& as);
@@ -251,10 +352,12 @@ private:
     schema::registry* _destination;
     source_reader_factory* _source_factory;
     std::unique_ptr<source_reader> _reader;
-    // Serializes stopping and replacing _reader. stop() (reader-first, while
-    // run_impl is still live) and reset_reader() (run by run_impl on a config
-    // change) both stop the reader and then free it via reassignment; without
-    // serialization one can free the reader while the other's stop() is
+    tail_reader_factory* _tail_factory;
+    std::unique_ptr<tail_reader> _tail;
+    // Serializes stopping and replacing _reader/_tail. stop() (readers-first,
+    // while run_impl is still live) and reset_reader() (run by run_impl on a
+    // config change) both stop the readers and then free them via reassignment;
+    // without serialization one can free a reader while the other's stop() is
     // suspended mid-shutdown, a use-after-free. Held only around the
     // stop+reassign, never across the run-fiber join, so it cannot deadlock
     // with task::stop().
@@ -275,9 +378,12 @@ private:
 class mirroring_task_factory : public task_factory {
 public:
     mirroring_task_factory(
-      schema::registry* destination, source_reader_factory* source_factory)
+      schema::registry* destination,
+      source_reader_factory* source_factory,
+      tail_reader_factory* tail_factory)
       : _destination(destination)
-      , _source_factory(source_factory) {}
+      , _source_factory(source_factory)
+      , _tail_factory(tail_factory) {}
 
     std::string_view created_task_name() const noexcept override;
 
@@ -286,6 +392,7 @@ public:
 private:
     schema::registry* _destination;
     source_reader_factory* _source_factory;
+    tail_reader_factory* _tail_factory;
 };
 
 } // namespace cluster_link::schema_registry_sync

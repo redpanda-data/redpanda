@@ -133,6 +133,7 @@ redpanda_cc_library(
     visibility = ["//visibility:public"],
     deps = [
         ":source_reader",
+        ":tail_reader",
         "//src/v/cluster_link:impl",
         "//src/v/cluster_link/model",
         "//src/v/metrics",

@@ -15,6 +15,7 @@ redpanda_cc_gtest(
         "//src/v/cluster_link/model",
         "//src/v/cluster_link/schema_registry_sync:mirroring_task",
         "//src/v/cluster_link/schema_registry_sync:source_reader",
+        "//src/v/cluster_link/schema_registry_sync:tail_reader",
         "//src/v/cluster_link/tests:test_deps",
         "//src/v/container:chunked_hash_map",
         "//src/v/container:chunked_vector",
@@ -25,6 +26,7 @@ redpanda_cc_gtest(
         "//src/v/schema/tests:fake_registry",
         "//src/v/test_utils:gtest",
         "//src/v/test_utils:metrics",
+        "//src/v/test_utils:scoped_config",
         "@googletest//:gtest",
         "@seastar",
     ],
@@ -37,6 +39,7 @@ redpanda_test_cc_library(
     deps = [
         "//src/v/cluster_link/schema_registry_sync:mirroring_task",
         "//src/v/cluster_link/schema_registry_sync:source_reader",
+        "//src/v/cluster_link/schema_registry_sync:tail_reader",
         "//src/v/container:chunked_hash_map",
         "//src/v/container:chunked_vector",
         "//src/v/pandaproxy/schema_registry:types",
