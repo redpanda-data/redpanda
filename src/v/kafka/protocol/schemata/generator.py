@@ -949,19 +949,46 @@ class StructType(FieldType):
         """Format string for output operator"""
         return " ".join(map(lambda f: f"{f.name}={{}}", self.fields))
 
+    def shape(self):
+        """
+        Everything the generated definition of this struct depends on. Two
+        structs sharing a generated name must agree on it to share a type.
+        """
+        return [
+            (f.name, f.type_name, f.nullable(), f.tag())
+            for f in self.fields + self.tags
+        ]
+
     def structs(self):
         """
-        Return all struct types reachable from this struct.
+        Return all struct types reachable from this struct, innermost first and
+        each named type once.
+
+        Callers render one C++ definition per element, so two fields carrying
+        the same struct type must collapse to a single entry (e.g.
+        ConsumerGroupDescribeResponse's Assignment and TargetAssignment).
+        Keeping the first occurrence preserves the innermost-first order that
+        makes each definition precede its uses.
         """
         res = []
+        seen = {}
         all_fields = self.fields + self.tags
         for field in all_fields:
             t = field.type()
             if isinstance(t, ArrayType):
                 t = t.value_type()  # unwrap value type
             if isinstance(t, StructType):
-                res += t.structs()
-                res.append(t)
+                for s in t.structs() + [t]:
+                    if s.name not in seen:
+                        seen[s.name] = s
+                        res.append(s)
+                    else:
+                        # The name is taken. Same struct: drop the duplicate.
+                        # Different struct: only the first would be rendered,
+                        # so rename one via struct_renames.
+                        assert seen[s.name].shape() == s.shape(), (
+                            f"conflicting definitions for struct '{s.name}'"
+                        )
         return res
 
     def headers(self, which):
