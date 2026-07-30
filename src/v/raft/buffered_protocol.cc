@@ -30,27 +30,20 @@
 namespace raft {
 
 namespace {
-template<typename Func, typename Ret>
-ss::future<result<Ret>> try_with_gate(ss::gate& gate, Func&& f) {
-    if (gate.is_closed()) {
-        return ss::make_ready_future<result<Ret>>(raft::errc::shutting_down);
-    }
-    return ss::with_gate(gate, std::forward<Func>(f));
-}
-
 template<typename Req, typename Resp>
 using client_f = ss::future<result<Resp>> (consensus_client_protocol::*)(
   model::node_id, Req, rpc::client_opts);
 
 template<typename Req, typename Ret>
 ss::future<result<Ret>> apply_with_gate(
+  ss::abort_source& as,
   ss::gate& gate,
   consensus_client_protocol& proto,
   model::node_id target_node,
   Req req,
   rpc::client_opts opts,
   client_f<Req, Ret> f) {
-    if (gate.is_closed()) {
+    if (as.abort_requested()) {
         return ss::make_ready_future<result<Ret>>(raft::errc::shutting_down);
     }
 
@@ -95,6 +88,7 @@ ss::future<> buffered_protocol::reset_backoff(model::node_id node_id) {
 ss::future<result<vote_reply>> buffered_protocol::vote(
   model::node_id target_node, vote_request req, rpc::client_opts opts) {
     return apply_with_gate(
+      _as,
       _gate,
       _base_protocol,
       target_node,
@@ -107,7 +101,11 @@ ss::future<result<append_entries_reply>> buffered_protocol::append_entries(
   model::node_id target_node,
   append_entries_request req,
   rpc::client_opts opts) {
-    return try_with_gate(
+    if (_as.abort_requested()) {
+        return ss::make_ready_future<result<append_entries_reply>>(
+          raft::errc::shutting_down);
+    }
+    return ss::with_gate(
       _gate,
       [this,
        target_node,
@@ -136,6 +134,7 @@ ss::future<result<append_entries_reply>> buffered_protocol::append_entries(
 ss::future<result<heartbeat_reply_v2>> buffered_protocol::heartbeat_v2(
   model::node_id target_node, heartbeat_request_v2 req, rpc::client_opts opts) {
     return apply_with_gate(
+      _as,
       _gate,
       _base_protocol,
       target_node,
@@ -149,6 +148,7 @@ ss::future<result<install_snapshot_reply>> buffered_protocol::install_snapshot(
   install_snapshot_request req,
   rpc::client_opts opts) {
     return apply_with_gate(
+      _as,
       _gate,
       _base_protocol,
       target_node,
@@ -160,6 +160,7 @@ ss::future<result<install_snapshot_reply>> buffered_protocol::install_snapshot(
 ss::future<result<timeout_now_reply>> buffered_protocol::timeout_now(
   model::node_id target_node, timeout_now_request req, rpc::client_opts opts) {
     return apply_with_gate(
+      _as,
       _gate,
       _base_protocol,
       target_node,
@@ -174,6 +175,7 @@ buffered_protocol::get_compaction_mcco(
   get_compaction_mcco_request req,
   rpc::client_opts opts) {
     return apply_with_gate(
+      _as,
       _gate,
       _base_protocol,
       target_node,
@@ -188,6 +190,7 @@ buffered_protocol::distribute_compaction_mtro(
   distribute_compaction_mtro_request req,
   rpc::client_opts opts) {
     return apply_with_gate(
+      _as,
       _gate,
       _base_protocol,
       target_node,
@@ -199,6 +202,7 @@ buffered_protocol::distribute_compaction_mtro(
 ss::future<> buffered_protocol::stop() {
     vlog(raftlog.debug, "stopping buffered protocol");
     _gc_timer.cancel();
+    _as.request_abort();
     auto f = _gate.close();
     co_await ss::parallel_for_each(
       _append_entries_queues,
@@ -333,6 +337,11 @@ ss::future<result<append_entries_reply>> append_entries_queue::append_entries(
     auto holder = _gate.hold();
     return _dispatched.wait([this, sz] { return can_buffer_next_request(sz); })
       .then([this, r = std::move(r), opts = std::move(opts)]() mutable {
+          if (_as.abort_requested()) {
+              // stop() could have occurred during the yield, recheck abort
+              return ss::make_ready_future<result<append_entries_reply>>(
+                raft::errc::shutting_down);
+          }
           /// consensus is no longer responsible for tracking memory usage and
           /// dispatch ordering after this point
           opts.resource_units.reset();
@@ -346,6 +355,7 @@ ss::future<result<append_entries_reply>> append_entries_queue::append_entries(
 }
 ss::future<> append_entries_queue::stop() {
     vlog(_logger.debug, "stopping append entries queue");
+    _as.request_abort();
     _new_requests.broken();
     _dispatched.broken();
     _inflight_requests_sem.broken();

@@ -20,6 +20,7 @@
 #include "ssx/semaphore.h"
 #include "utils/prefix_logger.h"
 
+#include <seastar/core/abort_source.hh>
 #include <seastar/core/chunked_fifo.hh>
 #include <seastar/core/future.hh>
 #include <seastar/core/gate.hh>
@@ -85,6 +86,7 @@ private:
 
     ss::chunked_fifo<request_entry> _requests;
     ss::gate _gate;
+    ss::abort_source _as;
     ss::condition_variable _new_requests;
     ss::condition_variable _dispatched;
 
@@ -171,6 +173,7 @@ private:
     config::binding<size_t> _max_inflight_requests;
     config::binding<size_t> _max_buffered_bytes;
     ss::gate _gate;
+    ss::abort_source _as;
     ss::timer<> _gc_timer;
 };
 } // namespace raft
