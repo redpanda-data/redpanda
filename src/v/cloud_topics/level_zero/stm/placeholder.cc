@@ -31,9 +31,12 @@ model::record_batch encode_placeholder_batch(
       model::record_batch_type::ctp_placeholder, header.base_offset);
 
     builder.set_producer_identity(header.producer_id, header.producer_epoch);
-    if (header.attrs.is_control()) {
-        builder.set_control_type();
-    }
+    // Control batches should not be encoded as placeholders, as this
+    // replication path is specifically for user-provided data.
+    vassert(
+      !header.attrs.is_control(),
+      "Cannot encode control batch as a placeholder: {}",
+      header);
     if (header.attrs.is_transactional()) {
         builder.set_transactional_type();
     }
