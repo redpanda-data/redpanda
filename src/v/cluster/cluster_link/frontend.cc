@@ -1247,6 +1247,16 @@ errc frontend::validator::validate_metadata_mirroring_config(
         }
     }
 
+    if (
+      config.promote_to_tiered_cloud_on_failover
+      && (!config.storage_mode_override.has_value() || *config.storage_mode_override != ::model::redpanda_storage_mode::cloud)) {
+        vlog(
+          cluster::clusterlog.warn,
+          "promote_to_tiered_v2_on_failover requires a cloud storage mode "
+          "override");
+        return errc::invalid_create;
+    }
+
     return errc::success;
 }
 

@@ -217,6 +217,9 @@ create_topic_metadata_mirroring_config(
     config.storage_mode_override_filters = to_filter_patterns(
       options.get_shadow_topic_storage_mode_filters());
 
+    config.promote_to_tiered_cloud_on_failover
+      = options.get_promote_to_tiered_v2_on_failover();
+
     return config;
 }
 
@@ -1305,6 +1308,9 @@ topic_metadata_sync_options create_topic_metadata_sync_options(
 
     options.set_shadow_topic_storage_mode_filters(
       to_name_filters(cfg.storage_mode_override_filters));
+
+    options.set_promote_to_tiered_v2_on_failover(
+      cfg.promote_to_tiered_cloud_on_failover);
 
     return options;
 }
