@@ -30,14 +30,6 @@
 namespace raft {
 
 namespace {
-template<typename Func, typename Ret>
-ss::future<result<Ret>> try_with_gate(ss::gate& gate, Func&& f) {
-    if (gate.is_closed()) {
-        return ss::make_ready_future<result<Ret>>(raft::errc::shutting_down);
-    }
-    return ss::with_gate(gate, std::forward<Func>(f));
-}
-
 template<typename Req, typename Resp>
 using client_f = ss::future<result<Resp>> (consensus_client_protocol::*)(
   model::node_id, Req, rpc::client_opts);
@@ -107,7 +99,7 @@ ss::future<result<append_entries_reply>> buffered_protocol::append_entries(
   model::node_id target_node,
   append_entries_request req,
   rpc::client_opts opts) {
-    return try_with_gate(
+    return ss::try_with_gate(
       _gate,
       [this,
        target_node,

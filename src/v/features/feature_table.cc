@@ -682,7 +682,7 @@ ss::future<> feature_table::await_feature(feature f, ss::abort_source& as) {
 }
 
 ss::future<>
-feature_table::await_feature_then(feature f, std::function<void(void)> fn) {
+feature_table::await_feature_then(feature f, std::function<void()> fn) {
     try {
         co_await await_feature(f);
         fn();

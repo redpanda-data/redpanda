@@ -72,7 +72,7 @@ public:
              protobuf_test_messages::editions::TestAllTypesEdition2023::
                descriptor()
                  ->file()},
-          };
+        };
         for (const auto& [name, file] : global_protos) {
             auto comment = fmt::format("# proto-file: {}", name);
             if (txtpb.find(comment) == std::string_view::npos) {

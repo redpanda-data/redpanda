@@ -169,7 +169,7 @@ SEASTAR_THREAD_TEST_CASE(test_consume_to_store_3rdparty) {
           pps::context_subject::unqualified("subject_0"),
           pps::default_to_global::yes)
         .get(),
-      pps ::mode::read_only);
+      pps::mode::read_only);
 
     // test mode READWRITE
     BOOST_REQUIRE_NO_THROW(

@@ -31,7 +31,7 @@ cc_binary(
         "redpanda_tidy_module.cc",
     ],
     copts = redpanda_copts() + [
-        "-Iexternal/toolchains_llvm++llvm+current_llvm_toolchain_llvm/include",
+        "-isystemexternal/toolchains_llvm++llvm+current_llvm_toolchain_llvm/include",
         "-Wno-deprecated-declarations",
         "-Wno-unused-parameter",
     ],

@@ -55,7 +55,7 @@ static const std::vector<
     {name(ppjfmt::json_v2),
      {ppjfmt::binary_v2, ppjfmt::none},
      ppjfmt::unsupported},
-  };
+};
 
 BOOST_DATA_TEST_CASE(
   parse_serialization_format_success, bdata::make(success_samples), sample) {

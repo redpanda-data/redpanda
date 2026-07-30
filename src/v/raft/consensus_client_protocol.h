@@ -148,8 +148,7 @@ private:
 };
 
 template<typename Impl, typename... Args>
-static consensus_client_protocol
-make_consensus_client_protocol(Args&&... args) {
+consensus_client_protocol make_consensus_client_protocol(Args&&... args) {
     return consensus_client_protocol(
       ss::make_shared<Impl>(std::forward<Args>(args)...));
 }

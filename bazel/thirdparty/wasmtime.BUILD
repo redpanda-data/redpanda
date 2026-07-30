@@ -1,6 +1,7 @@
 # This file is injected into the crate BUILD file
 load("@bazel_skylib//rules:expand_template.bzl", "expand_template")
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
+load("@rules_rust//rust:defs.bzl", "rust_static_library")
 
 expand_template(
     name = "gen_conf",
@@ -32,9 +33,19 @@ expand_template(
     template = "include/wasmtime/conf.h.in",
 )
 
+# Finalize Wasmtime here so Rust's profiler runtime cannot shadow Clang's.
+rust_static_library(
+    name = "wasmtime_c_static",
+    srcs = ["@@//bazel/thirdparty:wasmtime_staticlib.rs"],
+    crate_name = "wasmtime",
+    crate_root = "@@//bazel/thirdparty:wasmtime_staticlib.rs",
+    edition = "2024",
+    deps = [":wasmtime_c_api"],
+)
+
 cc_library(
     name = "wasmtime_c",
     hdrs = glob(["include/**"]) + [":gen_conf"],
     strip_include_prefix = "include",
-    deps = [":wasmtime_c_api"],
+    deps = [":wasmtime_c_static"],
 )

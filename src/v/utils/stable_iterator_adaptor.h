@@ -13,12 +13,10 @@
 #include "base/seastarx.h"
 #include "utils/exceptions.h"
 
-#include <seastar/util/noncopyable_function.hh>
-
 #include <boost/iterator/iterator_adaptor.hpp>
 #include <fmt/format.h>
 
-#include <version>
+#include <functional>
 
 class iterator_stability_violation final
   : public concurrent_modification_error {
@@ -45,13 +43,7 @@ class stable_iterator
 private:
     using type = stable_iterator<BaseIt, RevisionType>;
     using base = boost::iterator_adaptor<type, BaseIt>;
-#ifdef _LIBCPP_VERSION
-    using stability_func = ss::noncopyable_function<RevisionType()>;
-#else
-    // Some iterator algorithms in libstdc++ requires an iterator
-    // to be copy-constructible.
     using stability_func = std::function<RevisionType()>;
-#endif
 
 public:
     explicit stable_iterator(stability_func&& func, BaseIt base)

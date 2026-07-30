@@ -1,0 +1,17 @@
+diff --git a/lang/c++/impl/Node.cc b/lang/c++/impl/Node.cc
+index f15cdda6c..b310ca26e 100644
+--- a/lang/c++/impl/Node.cc
++++ b/lang/c++/impl/Node.cc
+@@ -19,3 +19,4 @@
+ #include <algorithm>
+ #include <cmath>
+ #include <unordered_set>
++#include <vector>
+diff --git a/lang/c++/impl/Stream.cc b/lang/c++/impl/Stream.cc
+index 43cb7c6b5..f0632828b 100644
+--- a/lang/c++/impl/Stream.cc
++++ b/lang/c++/impl/Stream.cc
+@@ -20,2 +20,3 @@
+ #include "Stream.hh"
++#include <iterator>
+ #include <vector>

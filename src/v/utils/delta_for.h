@@ -441,7 +441,9 @@ public:
     // Only one transaction at a time is supported but this
     // is not enforced. Abandoning tx_state object is ok (this
     // is equivalent for aborting the transaction).
-    tx_state tx_start() { return tx_state{deltafor_encoder{this}}; }
+    tx_state tx_start() {
+        return tx_state{deltafor_encoder{this}};
+    }
 
     // Commit changes done to tx_state.
     // This operation does not throw.

@@ -113,8 +113,8 @@ public:
 // NOLINTBEGIN(*-macro-*)
 #define INT_KEY_MAP_PERF_TEST(                                                        \
   container, key, value, fill_factor, key_set_size)                                   \
-    class IntMapBenchTest_##container##_##key##_##value##_##fill_factor##_##          \
-      key_set_size                                                                    \
+    class                                                                             \
+      IntMapBenchTest_##container##_##key##_##value##_##fill_factor##_##key_set_size  \
       : public MapBenchTest<                                                          \
           container<key, value>,                                                      \
           key_set_size,                                                               \

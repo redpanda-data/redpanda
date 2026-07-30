@@ -48,17 +48,17 @@ enum class record_batch_type : int8_t {
     plugin_update = 26,              // Wasm plugin update
     tx_registry = 27,                // tx_registry_batch_type
     cluster_recovery_cmd = 28,       // cluster recovery command
-    compaction_placeholder
-    = 29, // place holder for last batch in a segment that was aborted
-    role_management_cmd = 30, // role management command
-    client_quota = 31,        // client quota command
-    data_migration_cmd = 32,  // data migration manipulation command
-    group_fence_tx = 33,      // fence batch in group transactions
-    partition_properties_update
-    = 34, // special batch type used to update partition properties
-    datalake_coordinator = 35, // datalake::coordinator::*
-    ctp_placeholder = 36,      // placeholder batch type used by cloud topics
-    ctp_stm_command = 37,      // ctp_stm command batch
+    compaction_placeholder = 29,     // place holder for last batch in a segment
+                                     // that was aborted
+    role_management_cmd = 30,        // role management command
+    client_quota = 31,               // client quota command
+    data_migration_cmd = 32,         // data migration manipulation command
+    group_fence_tx = 33,             // fence batch in group transactions
+    partition_properties_update = 34, // special batch type used to update
+                                      // partition properties
+    datalake_coordinator = 35,        // datalake::coordinator::*
+    ctp_placeholder = 36, // placeholder batch type used by cloud topics
+    ctp_stm_command = 37, // ctp_stm command batch
     datalake_translation_state = 38, // maintains state for translation progress
     cluster_link = 39,               // cluster link update batches
     group_block = 40, // (un)blocks group names in a consumer offsets partition

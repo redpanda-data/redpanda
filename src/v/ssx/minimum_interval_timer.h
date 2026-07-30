@@ -249,7 +249,7 @@ class minimum_interval_timer : private minimum_interval_timer_base<Clock> {
     using base = minimum_interval_timer_base<Clock>;
 
 private: // type aliases
-    using callback_t = ss::noncopyable_function<void(void)>;
+    using callback_t = ss::noncopyable_function<void()>;
     using async_callback_t = ss::noncopyable_function<ss::future<>()>;
 
 private: // internal only helper functions
@@ -315,7 +315,7 @@ public:
     }
 
     // set the callback of the timer
-    // accepts void(void) or ss::future<void>(void) callbacks
+    // accepts void() or ss::future<void>() callbacks
     // the caller is responsible for maintaining the lifetime guarantees of
     //     their own callbacks with regard to non-timer memory
     // namely, it is permissible to destroy the timer while a user callback is

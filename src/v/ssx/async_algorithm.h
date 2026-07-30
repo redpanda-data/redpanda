@@ -69,7 +69,7 @@ struct ref_counter {
 };
 
 template<typename Traits, typename C>
-static ssize_t remaining(const C& c) {
+ssize_t remaining(const C& c) {
     // amount of work we can do before yielding
     return std::max(Traits::interval - c.count, (ssize_t)0);
 }

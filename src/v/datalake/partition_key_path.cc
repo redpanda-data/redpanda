@@ -242,17 +242,6 @@ struct transform_value_formatting_visitor {
     const iceberg::primitive_value& value;
 };
 
-struct value_formatting_visitor {
-    checked<ss::sstring, partition_key_error>
-    operator()(const iceberg::primitive_value& v) {
-        return std::visit(primitive_formatting_visitor{}, v);
-    }
-    checked<ss::sstring, partition_key_error> operator()(const auto&) {
-        return partition_key_error(
-          "non primitive iceberg partition values are not supported");
-    }
-};
-
 checked<ss::sstring, partition_key_error> escape(std::string_view s) {
     if (!is_valid_utf8(s)) {
         return partition_key_error("Invalid UTF-8 string, unable to escape");

@@ -44,7 +44,8 @@ public class RESTCatalogServer {
 
   private RESTCatalogServer() {}
 
-  record CatalogContext(Catalog catalog, Map<String, String> configuration) {}
+  record CatalogContext(Catalog catalog, Map<String, String> configuration) {
+  }
 
   private static CatalogContext backendCatalog() throws IOException {
     // Translate environment variable to catalog properties

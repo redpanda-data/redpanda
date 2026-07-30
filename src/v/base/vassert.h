@@ -79,16 +79,14 @@ inline void assert_failed_thunk0(
 /// }
 
 // NOLINTNEXTLINE(cppcoreguidelines-macro-usage)
-#define vassert(x, msg, args...)                                               \
-    /* NOLINTNEXTLINE(cppcoreguidelines-avoid-do-while) */                     \
-    do {                                                                       \
-        /*The !(x) is not an error. see description above*/                    \
-        if (unlikely(!(x))) {                                                  \
-            ::detail::assert_failed_thunk0(                                    \
-              "(" __FILE__ ":" STR_VASSERT(__LINE__) ") '" #x "'",             \
-              msg,                                                             \
-              ##args);                                                         \
-        }                                                                      \
+#define vassert(x, msg, args...)                                                 \
+    /* NOLINTNEXTLINE(cppcoreguidelines-avoid-do-while) */                       \
+    do {                                                                         \
+        /*The !(x) is not an error. see description above*/                      \
+        if (unlikely(!(x))) {                                                    \
+            ::detail::assert_failed_thunk0(                                      \
+              "(" __FILE__ ":" STR_VASSERT(__LINE__) ") '" #x "'", msg, ##args); \
+        }                                                                        \
     } while (0)
 
 /// Debug-only assertion that is compiled out in release builds.

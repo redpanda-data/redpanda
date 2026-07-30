@@ -32,7 +32,7 @@ struct large_struct {
 
 template<typename ValueT>
 [[gnu::noinline]]
-static ValueT make_value() {
+ValueT make_value() {
     if constexpr (std::is_same_v<ValueT, int64_t>) {
         return 42;
     } else if constexpr (std::is_same_v<ValueT, ss::sstring>) {

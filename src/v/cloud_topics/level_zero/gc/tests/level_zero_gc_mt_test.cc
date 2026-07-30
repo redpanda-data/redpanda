@@ -215,7 +215,7 @@ struct level_zero_gc_mt_test : public seastar_test {
     ss::future<> TearDownAsync() override {
         co_await gc_.invoke_on_all(&level_zero_gc::stop);
         co_await gc_.stop();
-        std::exchange(g_bucket_state, nullptr);
+        g_bucket_state = nullptr;
     }
 
     // Add objects with various prefixes (call from shard 0 context)

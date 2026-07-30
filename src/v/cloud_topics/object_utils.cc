@@ -314,7 +314,7 @@ chunked_vector<ss::sstring> trie::collect() const {
     return root->collect_prefixes();
 }
 
-void trie::clear() { std::exchange(root, std::make_unique<node>()); }
+void trie::clear() { root = std::make_unique<node>(); }
 
 fmt::iterator trie::format_to(fmt::iterator it) const {
     return fmt::format_to(it, "{}", *root);
