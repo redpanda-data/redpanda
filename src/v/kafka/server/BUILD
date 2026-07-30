@@ -269,6 +269,7 @@ redpanda_cc_library(
         "sasl_probe.h",
         "server.h",
         "snc_quota_manager.h",
+        "stages.h",
         "usage_aggregator.h",
         "usage_manager.h",
     ],

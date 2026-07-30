@@ -30,6 +30,7 @@
 #include "kafka/server/group_metadata.h"
 #include "kafka/server/group_probe.h"
 #include "kafka/server/member.h"
+#include "kafka/server/stages.h"
 #include "model/fundamental.h"
 #include "model/record.h"
 #include "model/timestamp.h"
@@ -150,27 +151,10 @@ public:
     static constexpr int8_t aborted_tx_record_version{0};
 
     template<typename Result>
-    struct stages {
-        using value_type = Result;
-
-        explicit stages(Result res)
-          : dispatched(ss::now())
-          , result(ss::make_ready_future<Result>(std::move(res))) {}
-
-        explicit stages(ss::future<Result> res)
-          : dispatched(ss::now())
-          , result(std::move(res)) {}
-
-        stages(ss::future<> dispatched, ss::future<Result> res)
-          : dispatched(std::move(dispatched))
-          , result(std::move(res)) {}
-
-        ss::future<> dispatched;
-        ss::future<Result> result;
-    };
-    using offset_commit_stages = stages<offset_commit_response>;
-    using join_group_stages = stages<join_group_response>;
-    using sync_group_stages = stages<sync_group_response>;
+    using stages = kafka::stages<Result>;
+    using offset_commit_stages = kafka::offset_commit_stages;
+    using join_group_stages = kafka::join_group_stages;
+    using sync_group_stages = kafka::sync_group_stages;
     /**
      * represents an offset that is to be stored as a part of transaction
      */
