@@ -1308,7 +1308,7 @@ ss::future<> service::maybe_start_manager() {
         *_schema_registry_dest, source_sr_prober::make_default()),
       &_controller->get_feature_table(),
       30s, // Temporary until we have a proper configuration for this
-      config::shard_local_cfg().default_topic_replication.bind(),
+      config::shard_local_cfg().default_topic_replications.bind(),
       _scheduling_group);
     co_await _manager->register_task_factory<source_topic_syncer_factory>();
     co_await _manager->register_task_factory<group_mirroring_task_factory>();
