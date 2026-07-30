@@ -53,8 +53,8 @@ static bool is_uuid(const ss::sstring& uuid) {
 static group get() {
     auto& conf = config::shard_local_cfg();
     conf.enable_consumer_group_metrics.set_value(std::vector<ss::sstring>{});
-    ss::sharded<cluster::tx_gateway_frontend> fr;
-    ss::sharded<features::feature_table> feature_table;
+    static ss::sharded<cluster::tx_gateway_frontend> fr;
+    static ss::sharded<features::feature_table> feature_table;
     return group(
       kafka::group_id("g"),
       group_state::empty,
