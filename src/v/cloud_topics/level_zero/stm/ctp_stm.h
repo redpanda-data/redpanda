@@ -87,6 +87,24 @@ public:
     fence_epoch(
       cluster_epoch e, model::timeout_clock::duration timeout = sync_timeout);
 
+    /// Admit an epoch-carrying batch for replication (the "enqueue gate").
+    ///
+    /// Raft preserves the submission order of appends within a term, so this
+    /// is the last point where a batch that would land below the log epoch
+    /// window can still be rejected. The admission window and its semantics
+    /// live in ctp_stm_state::admit_epoch_enqueue; this method contributes
+    /// the serialization that turns admission order into log order.
+    ///
+    /// \param term must come from a fence acquired in the current term (the
+    ///        fence's sync is what makes the applied window trustworthy).
+    /// \param epoch the epoch carried by the batch about to be replicated.
+    /// \return units that must be held until the raft request_enqueued stage
+    ///         of the batch resolves - this pins the batch's position in the
+    ///         log relative to later admissions - or the admission window if
+    ///         the epoch (or term) is stale.
+    ss::future<std::expected<ssx::mutex::units, stale_cluster_epoch>>
+    admit_epoch_enqueue(model::term_id term, cluster_epoch epoch);
+
     /// Return inactive epoch of the CTP
     ///
     /// The inactive epoch is any epoch which is no longer referenced
@@ -188,6 +206,10 @@ private:
     // is about the content of the log rather than the computed state. The state
     // is purely idempotent in terms of operations applied.
     epoch_window_checker _epoch_checker;
+
+    // Serializes epoch submissions to raft, see admit_epoch_enqueue(). The
+    // admission window itself lives in ctp_stm_state.
+    ssx::mutex _enqueue_gate_lock{"ctp_stm::enqueue_gate"};
 
     // An abort source to stop the prefix truncation loop on stop.
     ss::condition_variable _lro_advanced;

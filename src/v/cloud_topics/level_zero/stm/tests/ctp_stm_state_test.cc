@@ -341,6 +341,117 @@ TEST(ctp_stm_state_test, below_max_fence_allowed_with_applied_evidence) {
     EXPECT_FALSE(state.epoch_in_window(term, 131_epoch));
 }
 
+TEST(ctp_stm_state_test, admit_is_strict_until_first_epoch_applies) {
+    // Until the first epoch batch applies, the log epoch window does not
+    // exist: whichever admitted epoch lands first collapses it to [e, e],
+    // and raft may drop any enqueued item, so every admitted epoch becomes
+    // the admission floor.
+    ct::ctp_stm_state state;
+    model::term_id term(1);
+
+    ASSERT_TRUE(state.admit_epoch_enqueue(term, 14_epoch).has_value());
+    auto rejected = state.admit_epoch_enqueue(term, 12_epoch);
+    ASSERT_FALSE(rejected.has_value());
+    EXPECT_EQ(rejected.error().window_min, 14_epoch);
+    EXPECT_EQ(rejected.error().window_max, 14_epoch);
+    // Repeats at the floor keep flowing.
+    EXPECT_TRUE(state.admit_epoch_enqueue(term, 14_epoch).has_value());
+
+    // The first epoch batch applies: the window exists and the regular
+    // two-highest tracking resumes.
+    state.advance_epoch(14_epoch, model::offset{0});
+    EXPECT_TRUE(state.admit_epoch_enqueue(term, 15_epoch).has_value());
+    EXPECT_TRUE(state.admit_epoch_enqueue(term, 14_epoch).has_value());
+    EXPECT_FALSE(state.admit_epoch_enqueue(term, 13_epoch).has_value());
+}
+
+TEST(ctp_stm_state_test, admit_tracks_two_highest_submitted_epochs) {
+    // The admission floor is the runner-up among the distinct epochs
+    // submitted for replication: a single higher epoch cannot move the log
+    // window past a straggler, two can.
+    ct::ctp_stm_state state;
+    model::term_id term(1);
+
+    state.advance_max_seen_epoch(term, 1_epoch);
+    ASSERT_TRUE(state.admit_epoch_enqueue(term, 1_epoch).has_value());
+    state.advance_epoch(1_epoch, model::offset{0});
+
+    state.advance_max_seen_epoch(term, 5_epoch);
+    EXPECT_TRUE(state.admit_epoch_enqueue(term, 5_epoch).has_value());
+    // Interior epoch admitted, becomes the floor.
+    EXPECT_TRUE(state.admit_epoch_enqueue(term, 3_epoch).has_value());
+    {
+        auto rejected = state.admit_epoch_enqueue(term, 2_epoch);
+        ASSERT_FALSE(rejected.has_value());
+        EXPECT_EQ(rejected.error().window_min, 3_epoch);
+        EXPECT_EQ(rejected.error().window_max, 5_epoch);
+    }
+    // A new max promotes the previous max to the floor.
+    EXPECT_TRUE(state.admit_epoch_enqueue(term, 7_epoch).has_value());
+    EXPECT_FALSE(state.admit_epoch_enqueue(term, 4_epoch).has_value());
+    // Stragglers at the floor and at the max keep flowing.
+    EXPECT_TRUE(state.admit_epoch_enqueue(term, 5_epoch).has_value());
+    EXPECT_TRUE(state.admit_epoch_enqueue(term, 7_epoch).has_value());
+    // An interior epoch raises the floor.
+    EXPECT_TRUE(state.admit_epoch_enqueue(term, 6_epoch).has_value());
+    EXPECT_FALSE(state.admit_epoch_enqueue(term, 5_epoch).has_value());
+}
+
+TEST(ctp_stm_state_test, admit_raises_the_fence_floor) {
+    // The fence and the enqueue admission share one window: an interior
+    // admission raises the floor that epoch_in_window checks, so later
+    // fences below it are rejected early.
+    ct::ctp_stm_state state;
+    model::term_id term(1);
+
+    state.advance_max_seen_epoch(term, 2_epoch);
+    ASSERT_TRUE(state.admit_epoch_enqueue(term, 2_epoch).has_value());
+    state.advance_epoch(2_epoch, model::offset{0});
+    state.advance_max_seen_epoch(term, 8_epoch);
+
+    EXPECT_TRUE(state.epoch_in_window(term, 3_epoch));
+    ASSERT_TRUE(state.admit_epoch_enqueue(term, 5_epoch).has_value());
+    EXPECT_FALSE(state.epoch_in_window(term, 3_epoch));
+    EXPECT_TRUE(state.epoch_in_window(term, 5_epoch));
+}
+
+TEST(ctp_stm_state_test, admit_reseeds_from_applied_window_on_new_term) {
+    // A floor learned from submissions that never landed must not outlive
+    // the term: the first admission of a new term reseeds the window from
+    // the applied epochs.
+    ct::ctp_stm_state state;
+    model::term_id term(1);
+
+    state.advance_max_seen_epoch(term, 3_epoch);
+    ASSERT_TRUE(state.admit_epoch_enqueue(term, 3_epoch).has_value());
+    state.advance_epoch(3_epoch, model::offset{0});
+    state.advance_max_seen_epoch(term, 5_epoch);
+    ASSERT_TRUE(state.admit_epoch_enqueue(term, 5_epoch).has_value());
+    state.advance_epoch(5_epoch, model::offset{1});
+
+    // Submissions with no counterpart in the log push the window to [8, 9].
+    ASSERT_TRUE(state.admit_epoch_enqueue(term, 8_epoch).has_value());
+    ASSERT_TRUE(state.admit_epoch_enqueue(term, 9_epoch).has_value());
+    EXPECT_FALSE(state.admit_epoch_enqueue(term, 6_epoch).has_value());
+
+    // New term: the window reseeds from the applied [3, 5].
+    model::term_id term2(2);
+    auto rejected = state.admit_epoch_enqueue(term2, 2_epoch);
+    ASSERT_FALSE(rejected.has_value());
+    EXPECT_EQ(rejected.error().window_min, 3_epoch);
+    EXPECT_EQ(rejected.error().window_max, 5_epoch);
+    EXPECT_TRUE(state.admit_epoch_enqueue(term2, 6_epoch).has_value());
+}
+
+TEST(ctp_stm_state_test, admit_rejects_stale_term) {
+    ct::ctp_stm_state state;
+    model::term_id term(2);
+
+    ASSERT_TRUE(state.admit_epoch_enqueue(term, 5_epoch).has_value());
+    EXPECT_FALSE(
+      state.admit_epoch_enqueue(model::term_id(1), 6_epoch).has_value());
+}
+
 TEST(ctp_stm_state_test, l0_simulation) {
     struct uploaded_l0_file_batch {
         ct::cluster_epoch epoch;
@@ -364,6 +475,11 @@ TEST(ctp_stm_state_test, l0_simulation) {
         ss::chunked_fifo<placeholder_batch> log_placeholders;
         // hwm for the partition
         kafka::offset hwm = 0_offset;
+        // Mirror of the epoch_window_checker in ctp_stm: the log epoch
+        // window derived from apply order. A batch applying below the
+        // window min would fire the checker vassert on every replica.
+        std::optional<ct::cluster_epoch> checker_min;
+        std::optional<ct::cluster_epoch> checker_max;
 
         testing::AssertionResult validate() {
             // The main thing we want to validate is that there are no batches
@@ -471,6 +587,17 @@ TEST(ctp_stm_state_test, l0_simulation) {
                       fmt::format("rejected batch with epoch {}", batch.epoch));
                     return;
                 }
+                // The enqueue admission runs right before the batch is
+                // handed to raft; batches below the admission floor are
+                // rejected (the producer would retry with a fresh epoch).
+                if (!universe.stm.admit_epoch_enqueue(term, batch.epoch)
+                       .has_value()) {
+                    oplog.push_back(
+                      fmt::format(
+                        "batch with epoch {} rejected at the enqueue gate",
+                        batch.epoch));
+                    return;
+                }
                 placeholder_batch placeholder{
                   .epoch = batch.epoch, .offset = universe.hwm++};
                 universe.unapplied_placeholders.push_back(placeholder);
@@ -487,6 +614,17 @@ TEST(ctp_stm_state_test, l0_simulation) {
             possible_operations.emplace_back([&universe, &oplog] {
                 auto batch = universe.unapplied_placeholders.front();
                 universe.unapplied_placeholders.pop_front();
+                // Mirror epoch_window_checker::check_epoch: the batch must
+                // not apply below the log epoch window.
+                if (!universe.checker_max.has_value()) {
+                    universe.checker_min = batch.epoch;
+                    universe.checker_max = batch.epoch;
+                } else if (batch.epoch > *universe.checker_max) {
+                    universe.checker_min = universe.checker_max;
+                    universe.checker_max = batch.epoch;
+                }
+                ASSERT_GE(batch.epoch, universe.checker_min.value())
+                  << fmt::format("operations:\n{}", fmt::join(oplog, "\n"));
                 // Apply to the STM
                 universe.stm.advance_epoch(
                   batch.epoch, kafka::offset_cast(batch.offset));

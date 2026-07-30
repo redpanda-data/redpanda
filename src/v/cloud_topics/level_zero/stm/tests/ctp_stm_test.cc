@@ -118,9 +118,11 @@ public:
         co_return co_await accessor.replicated_apply(std::move(rb), as);
     }
 
-    /// Helper method that follows the producer pattern: fence → replicate
-    /// Fences the given epoch, and if successful, replicates a batch with that
-    /// epoch. Returns true if both operations succeeded.
+    /// Helper method that follows the producer pattern:
+    /// fence → enqueue gate → replicate.
+    /// Fences the given epoch, admits it through the enqueue gate and, if
+    /// both succeed, replicates a batch with that epoch. Returns true if all
+    /// operations succeeded.
     ss::future<bool> replicate_with_epoch(
       raft::raft_node_instance& node,
       ct::cluster_epoch epoch,
@@ -135,11 +137,18 @@ public:
         // Keep the fence guard alive during replication
         auto fence_guard = std::move(fence_result.value());
 
+        // Pass the enqueue gate like the production write path does.
+        auto permit = co_await api(node).admit_epoch_enqueue(
+          fence_guard.term, epoch);
+        if (!permit.has_value()) {
+            co_return false;
+        }
+
         // Then replicate with that epoch
         auto batch = make_record_batch(epoch, base_offset, seq);
         auto res = co_await replicate_record_batch(node, std::move(batch));
 
-        // fence_guard released here when it goes out of scope
+        // fence_guard and permit released here when they go out of scope
         co_return res.has_value();
     }
 
@@ -1172,6 +1181,302 @@ TEST_F_CORO(ctp_stm_fixture, test_below_max_fence_allowed_after_epoch_landed) {
     ok = co_await replicate_with_epoch(
       leader, ct::cluster_epoch{132}, model::offset{2}, 2);
     ASSERT_TRUE_CORO(ok);
+}
+
+TEST_F_CORO(ctp_stm_fixture, test_enqueue_gate_admits_two_highest_epochs) {
+    // The enqueue gate keeps the two highest distinct epochs submitted for
+    // replication in the current term; the runner-up is the admission floor.
+    // Stragglers at the runner-up epoch keep flowing (cross-shard epoch skew
+    // is routine), while anything below the floor is rejected: two higher
+    // epochs could land ahead of it in rising order and move the log epoch
+    // window past it, so applying it would fire the epoch_window_checker
+    // vassert.
+    co_await start();
+    co_await wait_for_leader(raft::default_timeout());
+    auto& leader = node(*get_leader());
+    auto leader_api = api(leader);
+
+    // Land epoch 1 so the log epoch window exists (the gate stays strict
+    // before that, see test_enqueue_gate_strict_before_first_epoch_applies).
+    ASSERT_TRUE_CORO(
+      co_await replicate_with_epoch(
+        leader, ct::cluster_epoch{1}, model::offset{0}, 0));
+
+    auto fence = co_await leader_api.fence_epoch(ct::cluster_epoch{5});
+    ASSERT_TRUE_CORO(fence.has_value());
+    auto term = fence.value().term;
+
+    {
+        auto permit = co_await leader_api.admit_epoch_enqueue(
+          term, ct::cluster_epoch{5});
+        ASSERT_TRUE_CORO(permit.has_value());
+    }
+    // A lower epoch is admitted while 5 is the highest distinct epoch
+    // submitted and 1 is the only landed one; it becomes the floor.
+    {
+        auto permit = co_await leader_api.admit_epoch_enqueue(
+          term, ct::cluster_epoch{3});
+        ASSERT_TRUE_CORO(permit.has_value());
+    }
+    // Below the floor: rejected, the error carries the gate window.
+    {
+        auto rejected = co_await leader_api.admit_epoch_enqueue(
+          term, ct::cluster_epoch{2});
+        ASSERT_FALSE_CORO(rejected.has_value());
+        ASSERT_EQ_CORO(rejected.error().window_min, ct::cluster_epoch{3});
+        ASSERT_EQ_CORO(rejected.error().window_max, ct::cluster_epoch{5});
+    }
+    // A new max promotes the previous max to the floor.
+    {
+        auto permit = co_await leader_api.admit_epoch_enqueue(
+          term, ct::cluster_epoch{7});
+        ASSERT_TRUE_CORO(permit.has_value());
+    }
+    {
+        auto rejected = co_await leader_api.admit_epoch_enqueue(
+          term, ct::cluster_epoch{4});
+        ASSERT_FALSE_CORO(rejected.has_value());
+        ASSERT_EQ_CORO(rejected.error().window_min, ct::cluster_epoch{5});
+        ASSERT_EQ_CORO(rejected.error().window_max, ct::cluster_epoch{7});
+    }
+    // Stragglers at the floor and at the max are both admitted.
+    {
+        auto permit = co_await leader_api.admit_epoch_enqueue(
+          term, ct::cluster_epoch{5});
+        ASSERT_TRUE_CORO(permit.has_value());
+    }
+    {
+        auto permit = co_await leader_api.admit_epoch_enqueue(
+          term, ct::cluster_epoch{7});
+        ASSERT_TRUE_CORO(permit.has_value());
+    }
+    // An interior epoch raises the floor.
+    {
+        auto permit = co_await leader_api.admit_epoch_enqueue(
+          term, ct::cluster_epoch{6});
+        ASSERT_TRUE_CORO(permit.has_value());
+    }
+    {
+        auto rejected = co_await leader_api.admit_epoch_enqueue(
+          term, ct::cluster_epoch{5});
+        ASSERT_FALSE_CORO(rejected.has_value());
+        ASSERT_EQ_CORO(rejected.error().window_min, ct::cluster_epoch{6});
+        ASSERT_EQ_CORO(rejected.error().window_max, ct::cluster_epoch{7});
+    }
+}
+
+TEST_F_CORO(
+  ctp_stm_fixture, test_enqueue_gate_strict_before_first_epoch_applies) {
+    // Until the first epoch-carrying batch applies, the log epoch window
+    // does not exist: whichever admitted epoch lands first collapses the
+    // epoch_window_checker window to [e, e] (a default cluster_epoch is the
+    // min sentinel). Raft may drop any enqueued item mid-term, so any
+    // admitted epoch could be that first-landed one - the gate must keep
+    // the floor at the highest submitted epoch until an epoch batch applies.
+    co_await start();
+    co_await wait_for_leader(raft::default_timeout());
+    auto& leader = node(*get_leader());
+    auto leader_api = api(leader);
+
+    auto fence = co_await leader_api.fence_epoch(ct::cluster_epoch{14});
+    ASSERT_TRUE_CORO(fence.has_value());
+    auto term = fence.value().term;
+
+    {
+        auto permit = co_await leader_api.admit_epoch_enqueue(
+          term, ct::cluster_epoch{14});
+        ASSERT_TRUE_CORO(permit.has_value());
+    }
+    // Nothing applied yet: if the epoch-14 batch lands first the checker
+    // window collapses to [14, 14] and a later epoch-12 batch would fire
+    // the vassert. Rejected.
+    {
+        auto rejected = co_await leader_api.admit_epoch_enqueue(
+          term, ct::cluster_epoch{12});
+        ASSERT_FALSE_CORO(rejected.has_value());
+        ASSERT_EQ_CORO(rejected.error().window_min, ct::cluster_epoch{14});
+        ASSERT_EQ_CORO(rejected.error().window_max, ct::cluster_epoch{14});
+    }
+    // Stragglers at the max keep flowing.
+    {
+        auto permit = co_await leader_api.admit_epoch_enqueue(
+          term, ct::cluster_epoch{14});
+        ASSERT_TRUE_CORO(permit.has_value());
+    }
+    // Land epoch 14: the checker window becomes [14, 14] and the regular
+    // two-highest tracking resumes.
+    ASSERT_TRUE_CORO(
+      co_await replicate_with_epoch(
+        leader, ct::cluster_epoch{14}, model::offset{0}, 0));
+    {
+        auto permit = co_await leader_api.admit_epoch_enqueue(
+          term, ct::cluster_epoch{15});
+        ASSERT_TRUE_CORO(permit.has_value());
+    }
+    {
+        auto permit = co_await leader_api.admit_epoch_enqueue(
+          term, ct::cluster_epoch{14});
+        ASSERT_TRUE_CORO(permit.has_value());
+    }
+    {
+        auto rejected = co_await leader_api.admit_epoch_enqueue(
+          term, ct::cluster_epoch{13});
+        ASSERT_FALSE_CORO(rejected.has_value());
+        ASSERT_EQ_CORO(rejected.error().window_min, ct::cluster_epoch{14});
+        ASSERT_EQ_CORO(rejected.error().window_max, ct::cluster_epoch{15});
+    }
+}
+
+TEST_F_CORO(ctp_stm_fixture, test_enqueue_gate_rejects_stale_term) {
+    // An admission request carrying a term older than one the gate has
+    // already seen is rejected: the caller fenced in a term that is gone
+    // and its batch would be dropped by raft anyway.
+    co_await start();
+    co_await wait_for_leader(raft::default_timeout());
+    auto& leader = node(*get_leader());
+    auto leader_api = api(leader);
+
+    auto fence = co_await leader_api.fence_epoch(ct::cluster_epoch{5});
+    ASSERT_TRUE_CORO(fence.has_value());
+    auto term = fence.value().term;
+
+    {
+        auto permit = co_await leader_api.admit_epoch_enqueue(
+          term, ct::cluster_epoch{5});
+        ASSERT_TRUE_CORO(permit.has_value());
+    }
+    auto rejected = co_await leader_api.admit_epoch_enqueue(
+      model::term_id{term - 1}, ct::cluster_epoch{6});
+    ASSERT_FALSE_CORO(rejected.has_value());
+}
+
+TEST_F_CORO(ctp_stm_fixture, test_enqueue_gate_reseeds_from_log_on_new_term) {
+    // A floor learned from admissions whose batches never landed must not
+    // outlive the term: on a term change the gate reseeds from the applied
+    // epoch window, i.e. from what actually survived into the log.
+    co_await start();
+    co_await wait_for_leader(raft::default_timeout());
+    auto node0_id = *get_leader();
+    auto& node0 = node(node0_id);
+
+    // Land epochs 3 and 5: the applied epoch window becomes [3, 5].
+    ASSERT_TRUE_CORO(
+      co_await replicate_with_epoch(
+        node0, ct::cluster_epoch{3}, model::offset{0}, 0));
+    ASSERT_TRUE_CORO(
+      co_await replicate_with_epoch(
+        node0, ct::cluster_epoch{5}, model::offset{1}, 1));
+
+    // Admit epochs 8 and 9 without replicating anything: the gate window
+    // becomes [8, 9] with no counterpart in the log.
+    for (auto epoch : {ct::cluster_epoch{8}, ct::cluster_epoch{9}}) {
+        auto fence = co_await api(node0).fence_epoch(epoch);
+        ASSERT_TRUE_CORO(fence.has_value());
+        auto permit = co_await api(node0).admit_epoch_enqueue(
+          fence.value().term, epoch);
+        ASSERT_TRUE_CORO(permit.has_value());
+    }
+    // Epoch 6 is below the gate floor now.
+    {
+        auto rejected = co_await api(node0).admit_epoch_enqueue(
+          node0.raft()->term(), ct::cluster_epoch{6});
+        ASSERT_FALSE_CORO(rejected.has_value());
+    }
+
+    // Bounce leadership away and back so node0 starts a new term with its
+    // stale in-memory gate window.
+    node0.raft()->block_new_leadership();
+    co_await node0.raft()->step_down("test_induced_failover");
+    co_await wait_for_leader(10s);
+    auto interim_id = *get_leader();
+    ASSERT_NE_CORO(interim_id, node0_id);
+    auto& interim = node(interim_id);
+    node0.raft()->unblock_new_leadership();
+    co_await wait_for_committed_offset(interim.raft()->committed_offset(), 10s);
+    auto final_id = model::node_id{};
+    for (int attempt = 0; attempt < 5; ++attempt) {
+        co_await interim.raft()->transfer_leadership(
+          raft::transfer_leadership_request{
+            .group = interim.raft()->group(),
+            .target = node0_id,
+            .timeout = 10s});
+        co_await wait_for_leader(10s);
+        final_id = *get_leader();
+        if (final_id == node0_id) {
+            break;
+        }
+    }
+    ASSERT_EQ_CORO(final_id, node0_id);
+
+    auto deadline = model::timeout_clock::now() + 10s;
+    ASSERT_TRUE_CORO(co_await api(node0).sync_in_term(deadline, as));
+    auto new_term = node0.raft()->term();
+
+    // The [8, 9] window from the old term is gone: the gate reseeded from
+    // the applied window [3, 5], so epoch 2 is rejected with exactly that
+    // window...
+    {
+        auto rejected = co_await api(node0).admit_epoch_enqueue(
+          new_term, ct::cluster_epoch{2});
+        ASSERT_FALSE_CORO(rejected.has_value());
+        ASSERT_EQ_CORO(rejected.error().window_min, ct::cluster_epoch{3});
+        ASSERT_EQ_CORO(rejected.error().window_max, ct::cluster_epoch{5});
+    }
+    // ...while epoch 6, rejected in the previous term, is admitted again.
+    {
+        auto permit = co_await api(node0).admit_epoch_enqueue(
+          new_term, ct::cluster_epoch{6});
+        ASSERT_TRUE_CORO(permit.has_value());
+    }
+}
+
+TEST_F_CORO(
+  ctp_stm_fixture, test_enqueue_gate_blocks_epoch_below_landed_window) {
+    // Sequential counterexample for the seen-window fence hole that the
+    // fence alone cannot close
+    // (test_failed_epoch_bump_replicate_poisons_seen_window covers the
+    // fence-time variant):
+    // 1. epoch 10 lands
+    // 2. a fence-time bump to 14 widens the seen window to [10, 14] but its
+    //    batch never lands
+    // 3. in-window epochs 12 and 13 land; the log epoch window ratchets to
+    //    [12, 13]
+    // 4. epoch 11 sits inside the seen window [10, 14] and applied evidence
+    //    exists, so the fence may admit it - but landing it fires the
+    //    epoch_window_checker vassert (11 < 12) on every replica. The
+    //    enqueue gate must reject it.
+    co_await start();
+    co_await wait_for_leader(raft::default_timeout());
+    auto& leader = node(*get_leader());
+    auto leader_api = api(leader);
+
+    ASSERT_TRUE_CORO(
+      co_await replicate_with_epoch(
+        leader, ct::cluster_epoch{10}, model::offset{0}, 0));
+    {
+        auto fence = co_await leader_api.fence_epoch(ct::cluster_epoch{14});
+        ASSERT_TRUE_CORO(fence.has_value());
+        // Guard dropped here; the bump batch never lands.
+    }
+    ASSERT_TRUE_CORO(
+      co_await replicate_with_epoch(
+        leader, ct::cluster_epoch{12}, model::offset{1}, 1));
+    ASSERT_TRUE_CORO(
+      co_await replicate_with_epoch(
+        leader, ct::cluster_epoch{13}, model::offset{2}, 2));
+
+    auto fence = co_await leader_api.fence_epoch(ct::cluster_epoch{11});
+    if (!fence.has_value()) {
+        // If the fence ever learns to reject this on its own the gate has
+        // nothing left to do.
+        co_return;
+    }
+    auto rejected = co_await leader_api.admit_epoch_enqueue(
+      fence.value().term, ct::cluster_epoch{11});
+    ASSERT_FALSE_CORO(rejected.has_value())
+      << "epoch 11 admitted for enqueue although epochs 12 and 13 already "
+         "landed after the discarded bump to 14; replicating it would fire "
+         "the epoch_window_checker vassert on every replica";
 }
 
 // Test for the combined advance_epoch + sync_to_next_placeholder functionality.

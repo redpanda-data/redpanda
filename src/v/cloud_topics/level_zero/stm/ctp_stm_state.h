@@ -12,9 +12,13 @@
 
 #include "base/format_to.h"
 #include "cloud_topics/level_zero/stm/size_estimator.h"
+#include "cloud_topics/level_zero/stm/types.h"
 #include "cloud_topics/types.h"
 #include "model/fundamental.h"
 #include "serde/envelope.h"
+
+#include <expected>
+#include <variant>
 
 namespace cloud_topics {
 
@@ -51,6 +55,28 @@ public:
     /// epoch value is even replicated.
     void
     advance_max_seen_epoch(model::term_id term, cluster_epoch epoch) noexcept;
+
+    /// Admit an epoch-carrying batch for submission to raft.
+    ///
+    /// The seen window doubles as the admission window: the floor
+    /// (_previous_seen_epoch) is raised by fence-time bumps, by interior
+    /// admissions and, until the first epoch batch applies, by every
+    /// admission (whichever admitted epoch lands first collapses the log
+    /// epoch window to [e, e]). Everything below the floor is rejected:
+    /// two distinct epochs above `e` may land ahead of it in rising order
+    /// and move the log epoch window past it, and applying `e` would then
+    /// fire the epoch_window_checker vassert on every replica. The floor is
+    /// the runner-up rather than the max because stragglers at the previous
+    /// epoch are routine when shards observe the cluster epoch at different
+    /// times, and a single epoch above `e` cannot move the log window past
+    /// it. On a term change the window reseeds from the applied epochs, so
+    /// a floor learned from submissions that never landed does not outlive
+    /// its term.
+    ///
+    /// The caller (ctp_stm) must serialize calls with the raft enqueue of
+    /// the admitted batch so that admission order equals log order.
+    std::expected<std::monostate, stale_cluster_epoch>
+    admit_epoch_enqueue(model::term_id term, cluster_epoch epoch) noexcept;
 
     // Set the new start offset for the partition.
     //
@@ -186,6 +212,10 @@ private:
     /// The previous epoch after the current in flight requests are applied.
     /// Requests with epochs below this value are fenced and not allowed to be
     /// applied to the STM.
+    ///
+    /// Doubles as the enqueue admission floor (see admit_epoch_enqueue):
+    /// besides fence-time bumps it is raised by admitted interior epochs and,
+    /// until the first epoch batch applies, by every admitted epoch.
     ///
     /// Not persisted with the snapshot because it reflects the state of
     /// in-flight requests.

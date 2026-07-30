@@ -34,7 +34,8 @@ ctp_stm_api::replicated_apply(
   model::record_batch&& batch,
   std::optional<model::term_id> expected_term,
   model::timeout_clock::time_point deadline,
-  ss::abort_source& as) {
+  ss::abort_source& as,
+  ssx::mutex::units gate_units) {
     model::term_id term = expected_term.value_or(_stm->_raft->term());
 
     vlog(_log.debug, "Replicating batch {} in term {}", batch.header(), term);
@@ -45,7 +46,17 @@ ctp_stm_api::replicated_apply(
       /*timeout=*/std::nullopt,
       as);
     opts.set_force_flush();
-    auto res = co_await _stm->_raft->replicate(std::move(batch), opts);
+    auto stages = _stm->_raft->replicate_in_stages(std::move(batch), opts);
+    auto enqueued = co_await ss::coroutine::as_future(
+      std::move(stages.request_enqueued));
+    gate_units.return_all(); // the batch's log position is fixed
+    if (enqueued.failed()) {
+        auto e = enqueued.get_exception();
+        vlog(_log.debug, "Failed to enqueue batch: {}", e);
+        // fallthrough - replicate_finished carries the error and must not
+        // be abandoned
+    }
+    auto res = co_await std::move(stages.replicate_finished);
 
     if (!res.has_value()) {
         vlog(_log.debug, "Failed to replicate batch: {}", res.error());
@@ -276,6 +287,33 @@ ctp_stm_api::advance_epoch(
         co_return std::unexpected{ctp_stm_api_errc::failure};
     }
 
+    auto permit_fut = co_await ss::coroutine::as_future(
+      _stm->admit_epoch_enqueue(fence.value().term, new_epoch));
+    if (permit_fut.failed()) {
+        auto e = permit_fut.get_exception();
+        vlogl(
+          _log,
+          ssx::is_shutdown_exception(e) ? ss::log_level::debug
+                                        : ss::log_level::warn,
+          "Failed to admit epoch {} for enqueue for ntp {}, error: {}",
+          new_epoch,
+          _stm->ntp(),
+          e);
+        co_return std::unexpected{ctp_stm_api_errc::failure};
+    }
+    auto permit = std::move(permit_fut.get());
+    if (!permit.has_value()) {
+        vlog(
+          _log.warn,
+          "Failed to admit epoch {} for enqueue for ntp {}, gate window is "
+          "[{}, {}]",
+          new_epoch,
+          _stm->ntp(),
+          permit.error().window_min,
+          permit.error().window_max);
+        co_return std::unexpected{ctp_stm_api_errc::failure};
+    }
+
     vlog(_log.debug, "Replicating ctp_stm_cmd::advance_epoch{{{}}}", new_epoch);
 
     storage::record_batch_builder builder(
@@ -287,7 +325,11 @@ ctp_stm_api::advance_epoch(
 
     auto batch = std::move(builder).build();
     auto apply_result = co_await replicated_apply(
-      std::move(batch), fence.value().term, deadline, as);
+      std::move(batch),
+      fence.value().term,
+      deadline,
+      as,
+      std::move(permit.value()));
 
     if (!apply_result.has_value()) {
         co_return std::unexpected(apply_result.error());
@@ -354,6 +396,11 @@ ctp_stm_api::fence_epoch(
       e,
       res.has_value() ? res->term : model::term_id{-1});
     co_return std::move(res);
+}
+
+ss::future<std::expected<ssx::mutex::units, stale_cluster_epoch>>
+ctp_stm_api::admit_epoch_enqueue(model::term_id term, cluster_epoch epoch) {
+    return _stm->admit_epoch_enqueue(term, epoch);
 }
 
 std::optional<cluster_epoch> ctp_stm_api::get_max_epoch() const {

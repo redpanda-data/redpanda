@@ -531,6 +531,23 @@ ctp_stm::fence_epoch(cluster_epoch e, model::timeout_clock::duration timeout) {
     }
 }
 
+ss::future<std::expected<ssx::mutex::units, stale_cluster_epoch>>
+ctp_stm::admit_epoch_enqueue(model::term_id term, cluster_epoch epoch) {
+    auto units = co_await _enqueue_gate_lock.get_units(_as);
+    auto admitted = _state.admit_epoch_enqueue(term, epoch);
+    if (!admitted.has_value()) {
+        vlog(
+          _log.warn,
+          "epoch {} rejected by the enqueue gate, admission window is "
+          "[{}, {}]",
+          epoch,
+          admitted.error().window_min,
+          admitted.error().window_max);
+        co_return std::unexpected(admitted.error());
+    }
+    co_return std::move(units);
+}
+
 model::offset ctp_stm::max_removable_local_log_offset() {
     // If there is an active reader, it holds back prefix truncation.
     if (!_active_readers.empty()) {

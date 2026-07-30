@@ -104,6 +104,7 @@ redpanda_cc_library(
     ],
     deps = [
         ":size_estimator",
+        ":types",
         "//src/v/base",
         "//src/v/cloud_topics:types",
         "//src/v/model",
@@ -164,6 +165,7 @@ redpanda_cc_library(
         "//src/v/cloud_topics/level_zero/common:producer_queue",
         "//src/v/model",
         "//src/v/ssx:future_util",
+        "//src/v/ssx:mutex",
         "//src/v/utils:retry_chain_node",
         "@seastar",
     ],

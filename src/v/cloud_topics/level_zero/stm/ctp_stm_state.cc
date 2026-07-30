@@ -29,6 +29,56 @@ void ctp_stm_state::advance_max_seen_epoch(
     }
 }
 
+std::expected<std::monostate, stale_cluster_epoch>
+ctp_stm_state::admit_epoch_enqueue(
+  model::term_id term, cluster_epoch epoch) noexcept {
+    auto make_stale = [this] {
+        return stale_cluster_epoch{
+          .window_min = _previous_seen_epoch
+                          .or_else([this] { return _previous_applied_epoch; })
+                          .value_or(cluster_epoch{-1}),
+          .window_max = _max_seen_epoch
+                          .or_else([this] { return _max_applied_epoch; })
+                          .value_or(cluster_epoch{-1}),
+        };
+    };
+    if (term < _seen_window_term) {
+        return std::unexpected(make_stale());
+    }
+    if (term > _seen_window_term) {
+        // First submission of the term: seed the window from the applied
+        // epochs. Everything that survived from earlier terms is applied
+        // before the caller's fence sync completed, and submissions that
+        // never landed must not constrain the new term.
+        _seen_window_term = term;
+        _previous_seen_epoch = _previous_applied_epoch;
+        _max_seen_epoch = _max_applied_epoch;
+    }
+    if (_previous_seen_epoch.has_value() && epoch < *_previous_seen_epoch) {
+        return std::unexpected(make_stale());
+    }
+    if (!_max_seen_epoch.has_value() || epoch > *_max_seen_epoch) {
+        // Normally the fence already bumped the seen window past the epoch;
+        // handle a direct submission the same way the bump would.
+        _previous_seen_epoch = _max_seen_epoch.value_or(epoch);
+        _max_seen_epoch = epoch;
+    } else if (
+      epoch < *_max_seen_epoch
+      && (!_previous_seen_epoch.has_value() || epoch > *_previous_seen_epoch)) {
+        // An admitted interior epoch becomes the floor: together with the
+        // max it forms the pair of distinct submitted epochs that could
+        // move the log window above anything below it.
+        _previous_seen_epoch = epoch;
+    }
+    if (!_max_applied_epoch.has_value()) {
+        // The log epoch window does not exist yet and whichever admitted
+        // epoch lands first collapses it to [e, e]: every admitted epoch
+        // becomes the floor until the window exists.
+        _previous_seen_epoch = epoch;
+    }
+    return std::monostate{};
+}
+
 std::optional<kafka::offset>
 ctp_stm_state::get_last_reconciled_offset() const noexcept {
     return _last_reconciled_offset;

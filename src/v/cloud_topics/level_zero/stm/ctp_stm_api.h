@@ -17,6 +17,7 @@
 #include "model/fundamental.h"
 #include "model/record.h"
 #include "model/timeout_clock.h"
+#include "ssx/mutex.h"
 
 #include <seastar/core/gate.hh>
 
@@ -154,6 +155,13 @@ public:
     static constexpr auto default_fence_epoch_timeout = std::chrono::seconds(
       10);
 
+    /// Admit an epoch-carrying batch for replication through the enqueue
+    /// gate (see ctp_stm::admit_epoch_enqueue). `term` must come from a
+    /// fence acquired in the current term. The returned units must be held
+    /// until the raft request_enqueued stage of the batch resolves.
+    ss::future<std::expected<ssx::mutex::units, stale_cluster_epoch>>
+    admit_epoch_enqueue(model::term_id term, cluster_epoch epoch);
+
     std::optional<cluster_epoch> get_max_epoch() const;
 
     std::optional<cluster_epoch> get_max_seen_epoch(model::term_id) const;
@@ -171,12 +179,15 @@ public:
 
 private:
     /// Replicate a record batch and wait for it to be applied to the ctp_stm.
-    /// Returns the offset at which the batch was applied.
+    /// Returns the offset at which the batch was applied. If `gate_units`
+    /// carries an enqueue-gate permit it is released once raft fixed the
+    /// batch's position in the log.
     ss::future<std::expected<model::offset, ctp_stm_api_errc>> replicated_apply(
       model::record_batch&& batch,
       std::optional<model::term_id> expected_term,
       model::timeout_clock::time_point deadline,
-      ss::abort_source&);
+      ss::abort_source&,
+      ssx::mutex::units gate_units = {});
 
 private:
     ss::shared_ptr<ctp_stm> _stm;
