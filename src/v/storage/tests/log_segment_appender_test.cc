@@ -721,3 +721,43 @@ TEST(log_segment_appender_test, test_idle_chunk_reclaimed_after_flush) {
     RPTEST_REQUIRE_EVENTUALLY(
       1s, [&] { return access(appender).head() == nullptr; });
 }
+
+/*
+ * truncate() rehydrates and retains a head chunk; the timer must reclaim
+ * it once the appender goes idle, and a later append must rehydrate the
+ * truncated tail page.
+ */
+TEST(log_segment_appender_test, test_idle_chunk_reclaimed_after_truncate) {
+    scoped_config cfg;
+    cfg.get("segment_appender_flush_timeout_ms").set_value(10ms);
+
+    auto f = open_file("test_sa_inactive_timer_after_truncate.log");
+    storage::storage_resources resources(config::mock_binding<size_t>(32_MiB));
+    resources.start().get();
+    auto appender = make_segment_appender(f, resources);
+    auto close = ss::defer([&appender, &resources] {
+        appender.close().get();
+        resources.stop().get();
+    });
+
+    auto data = make_random_data(1_KiB);
+    appender.append(data).get();
+    appender.flush().get();
+    appender.truncate(512).get();
+
+    RPTEST_REQUIRE_EVENTUALLY(
+      1s, [&] { return access(appender).head() == nullptr; });
+
+    // the appender remains usable after the reclaim
+    auto more = make_random_data(256);
+    appender.append(more).get();
+    appender.flush().get();
+    ASSERT_EQ(appender.file_byte_offset(), 512 + 256);
+
+    iobuf expected = data.share(0, 512);
+    expected.append(more.share(0, more.size_bytes()));
+    auto in = make_file_input_stream(f, 0);
+    iobuf result = read_iobuf_exactly(in, expected.size_bytes()).get();
+    EXPECT_EQ(result, expected);
+    in.close().get();
+}
