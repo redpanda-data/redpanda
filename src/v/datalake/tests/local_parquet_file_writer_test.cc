@@ -11,7 +11,9 @@
 #include "datalake/local_parquet_file_writer.h"
 #include "datalake/tests/test_data.h"
 #include "datalake/tests/test_data_writer.h"
+#include "iceberg/datatypes.h"
 #include "iceberg/tests/value_generator.h"
+#include "serde/parquet/writer.h"
 #include "test_utils/tmp_dir.h"
 
 #include <seastar/core/seastar.hh>
@@ -78,6 +80,71 @@ struct test_writer_factory : datalake::parquet_ostream_factory {
     size_t error_after_rows_;
     bool error_on_finish_;
 };
+
+struct recording_mem_tracker : datalake::writer_mem_tracker {
+    ss::future<datalake::reservation_error>
+    reserve_bytes(size_t n, ss::abort_source&) noexcept final {
+        last_reserved = n;
+        co_return datalake::reservation_error::ok;
+    }
+    ss::future<> free_bytes(size_t, ss::abort_source&) final {
+        return ss::now();
+    }
+    void release() final {}
+    datalake::writer_disk_tracker& disk() final { return disk_.disk(); }
+
+    size_t last_reserved{0};
+    datalake::noop_mem_tracker disk_;
+};
+
+iceberg::struct_type make_flat_int_schema(size_t n_fields) {
+    iceberg::struct_type schema;
+    for (size_t i = 0; i < n_fields; ++i) {
+        schema.fields.push_back(
+          iceberg::nested_field::create(
+            static_cast<int32_t>(i + 1),
+            fmt::format("f{}", i),
+            iceberg::field_required::no,
+            iceberg::int_type{}));
+    }
+    return schema;
+}
+
+// A struct of two ints, a list of int, and a map of int to int: five leaves
+// behind three top-level fields.
+iceberg::struct_type make_nested_schema() {
+    iceberg::struct_type inner;
+    inner.fields.push_back(
+      iceberg::nested_field::create(
+        10, "a", iceberg::field_required::no, iceberg::int_type{}));
+    inner.fields.push_back(
+      iceberg::nested_field::create(
+        11, "b", iceberg::field_required::no, iceberg::int_type{}));
+
+    iceberg::struct_type schema;
+    schema.fields.push_back(
+      iceberg::nested_field::create(
+        1, "s", iceberg::field_required::no, std::move(inner)));
+    schema.fields.push_back(
+      iceberg::nested_field::create(
+        2,
+        "l",
+        iceberg::field_required::no,
+        iceberg::list_type::create(
+          20, iceberg::field_required::no, iceberg::int_type{})));
+    schema.fields.push_back(
+      iceberg::nested_field::create(
+        3,
+        "m",
+        iceberg::field_required::no,
+        iceberg::map_type::create(
+          30,
+          iceberg::int_type{},
+          31,
+          iceberg::field_required::no,
+          iceberg::int_type{})));
+    return schema;
+}
 
 } // namespace
 
@@ -172,4 +239,42 @@ TEST_F(LocalFileWriterTest, TestErrorOnFinish) {
 
     // intermediate file should be removed
     ASSERT_FALSE(std::filesystem::exists(full_path));
+}
+
+TEST_F(LocalFileWriterTest, ReservationScalesWithLeafColumns) {
+    recording_mem_tracker tracker;
+    datalake::local_parquet_file_writer_factory factory(
+      datalake::local_path(tmp_dir.get_path()),
+      "test-prefix",
+      ss::make_shared<test_writer_factory>(),
+      tracker);
+
+    auto reserved_for = [&](size_t n_leaves) -> size_t {
+        tracker.last_reserved = 0;
+        auto res
+          = factory.create_writer(make_flat_int_schema(n_leaves), as).get();
+        EXPECT_FALSE(res.has_error());
+        // Close the writer's stream so its test_writer doesn't assert on drop.
+        std::move(res.value())->finish().get();
+        // NOTE: The memory reserved for the writer should include more than
+        // just the columns.
+        EXPECT_GE(
+          tracker.last_reserved,
+          serde::parquet::writer::estimated_memory(n_leaves));
+        return tracker.last_reserved;
+    };
+
+    auto r1 = reserved_for(1);
+    auto r2 = reserved_for(2);
+    auto r4 = reserved_for(4);
+
+    EXPECT_GT(r1, 0u);
+    EXPECT_GT(r2, r1);
+    EXPECT_GT(r4, r2);
+
+    tracker.last_reserved = 0;
+    auto nested_res = factory.create_writer(make_nested_schema(), as).get();
+    EXPECT_FALSE(nested_res.has_error());
+    std::move(nested_res.value())->finish().get();
+    EXPECT_EQ(tracker.last_reserved, reserved_for(5));
 }

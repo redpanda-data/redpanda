@@ -244,6 +244,7 @@ redpanda_cc_gtest(
         "//src/v/datalake/tests:test_data",
         "//src/v/iceberg:datatypes",
         "//src/v/iceberg/tests:value_generator",
+        "//src/v/serde/parquet:writer",
         "//src/v/test_utils:gtest",
         "@fmt",
         "@googletest//:gtest",

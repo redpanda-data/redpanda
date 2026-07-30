@@ -463,8 +463,10 @@ redpanda_cc_library(
         ":logger",
         ":writer",
         "//src/v/base",
+        "//src/v/container:chunked_vector",
         "//src/v/iceberg:datatypes",
         "//src/v/iceberg:values",
+        "//src/v/serde/parquet:writer",
         "@seastar",
     ],
 )
