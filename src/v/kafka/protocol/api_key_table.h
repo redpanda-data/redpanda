@@ -22,7 +22,7 @@ namespace kafka {
 // in the request schemata that messages.h includes. messages.h static_asserts
 // these against the live request type lists, so they cannot silently drift: add
 // an API past these bounds and messages.h fails to compile, pointing back here.
-inline constexpr std::size_t standard_api_key_table_size = 67;
+inline constexpr std::size_t standard_api_key_table_size = 70;
 inline constexpr std::size_t reserved_api_key_table_size = 1;
 
 /// Kafka-key-indexed dense table sized to the standard and reserved ranges.

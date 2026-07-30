@@ -448,6 +448,34 @@ path_type_map = {
     "AlterUserScramCredentialsResponseData": {
         "Results": {"User": ("kafka::scram_user_name", "string")},
     },
+    "ConsumerGroupHeartbeatRequestData": {
+        "TopicPartitions": {
+            "TopicId": ("model::topic_id", "uuid"),
+        },
+    },
+    "ConsumerGroupHeartbeatResponseData": {
+        "Assignment": {
+            "TopicPartitions": {
+                "TopicId": ("model::topic_id", "uuid"),
+            },
+        },
+    },
+    "ConsumerGroupDescribeResponseData": {
+        "Groups": {
+            "Members": {
+                "Assignment": {
+                    "TopicPartitions": {
+                        "TopicId": ("model::topic_id", "uuid"),
+                    },
+                },
+                "TargetAssignment": {
+                    "TopicPartitions": {
+                        "TopicId": ("model::topic_id", "uuid"),
+                    },
+                },
+            },
+        },
+    },
 }
 
 # a few kafka field types specify an entity type
@@ -549,6 +577,33 @@ struct_renames = {
 
     ("FetchResponseData", "Responses", "Partitions", "DivergingEpoch"):
         ("EpochEndOffset", "DivergingEpochEndOffset"),
+
+    # KIP-848 (api keys 68/69). Every generated struct lands in namespace kafka,
+    # so these short Kafka-side names need qualifying: TopicPartitions and
+    # Assignment recur across the three schemata with differing fields,
+    # DescribedGroup is taken by describe_groups_response, and Member is too
+    # generic. Describe's Assignment and TargetAssignment map to one name
+    # because they are one struct and must generate one type.
+    ("ConsumerGroupHeartbeatRequestData", "TopicPartitions"):
+        ("TopicPartitions", "ConsumerGroupHeartbeatRequestTopicPartitions"),
+
+    ("ConsumerGroupHeartbeatResponseData", "Assignment"):
+        ("Assignment", "ConsumerGroupHeartbeatResponseAssignment"),
+    ("ConsumerGroupHeartbeatResponseData", "Assignment", "TopicPartitions"):
+        ("TopicPartitions", "ConsumerGroupHeartbeatResponseTopicPartitions"),
+
+    ("ConsumerGroupDescribeResponseData", "Groups"):
+        ("DescribedGroup", "ConsumerGroupDescribeResponseDescribedGroup"),
+    ("ConsumerGroupDescribeResponseData", "Groups", "Members"):
+        ("Member", "ConsumerGroupDescribeResponseMember"),
+    ("ConsumerGroupDescribeResponseData", "Groups", "Members", "Assignment"):
+        ("Assignment", "ConsumerGroupDescribeResponseAssignment"),
+    ("ConsumerGroupDescribeResponseData", "Groups", "Members", "TargetAssignment"):
+        ("Assignment", "ConsumerGroupDescribeResponseAssignment"),
+    ("ConsumerGroupDescribeResponseData", "Groups", "Members", "Assignment", "TopicPartitions"):
+        ("TopicPartitions", "ConsumerGroupDescribeResponseTopicPartitions"),
+    ("ConsumerGroupDescribeResponseData", "Groups", "Members", "TargetAssignment", "TopicPartitions"):
+        ("TopicPartitions", "ConsumerGroupDescribeResponseTopicPartitions"),
 }
 
 # extra header per type name
@@ -644,6 +699,8 @@ STRUCT_TYPES = [
     "ListedGroup",
     "DescribedGroup",
     "DescribedGroupMember",
+    "Member",
+    "TopicPartitions",
     "CreatableTopic",
     "CreatableTopicResult",
     "CreatableReplicaAssignment",
@@ -733,7 +790,7 @@ STRUCT_TYPES = [
 ]
 
 # A list of StructTypes that are allowed to be not arrays in the schema.
-ALLOWED_SINGULAR_STRUCT_TYPES = ["EpochEndOffset"]
+ALLOWED_SINGULAR_STRUCT_TYPES = ["EpochEndOffset", "Assignment"]
 
 DROP_STREAM_OPERATOR = [
     "metadata_response_data",
@@ -760,7 +817,13 @@ TAGGED_WITH_FIELDS = []
 # respective types are correctly not prefixed with [].
 # They must not be treated as ArrayTypes
 # This list is the names after struct_renames have been applied.
-SINGULAR_STRUCT_TYPES = ["DivergingEpochEndOffset", "LeaderIdAndEpoch", "SnapshotId"]
+SINGULAR_STRUCT_TYPES = [
+    "DivergingEpochEndOffset",
+    "LeaderIdAndEpoch",
+    "SnapshotId",
+    "ConsumerGroupHeartbeatResponseAssignment",
+    "ConsumerGroupDescribeResponseAssignment",
+]
 
 SCALAR_TYPES = list(basic_type_map.keys())
 ENTITY_TYPES = list(entity_type_map.keys())

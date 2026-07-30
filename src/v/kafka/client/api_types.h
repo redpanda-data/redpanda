@@ -16,6 +16,8 @@
 #include "kafka/protocol/alter_partition_reassignments.h"
 #include "kafka/protocol/alter_user_scram_credentials.h"
 #include "kafka/protocol/api_versions.h"
+#include "kafka/protocol/consumer_group_describe.h"
+#include "kafka/protocol/consumer_group_heartbeat.h"
 #include "kafka/protocol/create_acls.h"
 #include "kafka/protocol/create_partitions.h"
 #include "kafka/protocol/create_topics.h"

@@ -14,6 +14,8 @@ MESSAGES = [
     "alter_partition_reassignments",
     "alter_user_scram_credentials",
     "api_versions",
+    "consumer_group_describe",
+    "consumer_group_heartbeat",
     "create_acls",
     "create_partitions",
     "create_topics",

@@ -88,6 +88,8 @@ redpanda_cc_library(
         "//src/v/kafka/protocol/schemata:alter_configs_request",
         "//src/v/kafka/protocol/schemata:alter_partition_reassignments_request",
         "//src/v/kafka/protocol/schemata:alter_user_scram_credentials_request",
+        "//src/v/kafka/protocol/schemata:consumer_group_describe_request",
+        "//src/v/kafka/protocol/schemata:consumer_group_heartbeat_request",
         "//src/v/kafka/protocol/schemata:create_acls_request",
         "//src/v/kafka/protocol/schemata:create_partitions_request",
         "//src/v/kafka/protocol/schemata:create_topics_request",

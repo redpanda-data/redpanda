@@ -33,6 +33,8 @@ redpanda_cc_library(
         "//src/v/kafka/protocol:alter_partition_reassignments",
         "//src/v/kafka/protocol:alter_user_scram_credentials",
         "//src/v/kafka/protocol:api_versions",
+        "//src/v/kafka/protocol:consumer_group_describe",
+        "//src/v/kafka/protocol:consumer_group_heartbeat",
         "//src/v/kafka/protocol:create_acls",
         "//src/v/kafka/protocol:create_partitions",
         "//src/v/kafka/protocol:create_topics",
