@@ -680,6 +680,7 @@ redpanda_cc_btest(
     deps = [
         "//src/v/bytes",
         "//src/v/cluster:fwd",
+        "//src/v/container:chunked_vector",
         "//src/v/kafka/protocol",
         "//src/v/kafka/server",
         "//src/v/model",
@@ -688,6 +689,7 @@ redpanda_cc_btest(
         "//src/v/storage:record_batch_builder",
         "//src/v/test_utils:random_bytes",
         "//src/v/test_utils:seastar_boost",
+        "//src/v/utils:uuid",
         "@boost//:range",
         "@boost//:test",
         "@seastar",
