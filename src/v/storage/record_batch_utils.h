@@ -13,6 +13,8 @@
 #include "bytes/iobuf.h"
 #include "model/record.h"
 
+#include <span>
+
 namespace storage {
 
 // Serializes the header to a buffer suitable to be stored on disk. Note that
@@ -21,5 +23,7 @@ namespace storage {
 // versions, etc.
 iobuf batch_header_to_disk_iobuf(const model::record_batch_header& h);
 model::record_batch_header batch_header_from_disk_iobuf(iobuf b);
+model::record_batch_header
+batch_header_from_disk_buf(std::span<const char> data);
 
 } // namespace storage

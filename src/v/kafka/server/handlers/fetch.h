@@ -24,8 +24,6 @@
 
 #include <seastar/core/smp.hh>
 
-#include <memory>
-
 namespace kafka {
 
 class fetch_read_coalescer;
@@ -279,7 +277,7 @@ struct ntp_fetch_config {
  * Simple type aggregating either data or an error
  */
 struct read_result {
-    using data_t = std::unique_ptr<iobuf>;
+    using data_t = std::optional<iobuf>;
 
     explicit read_result(error_code e)
       : start_offset(-1)
@@ -337,12 +335,23 @@ struct read_result {
       , preferred_replica(preferred_replica)
       , error(error_code::none) {}
 
-    bool has_data() const { return data != nullptr; }
+    bool has_data() const { return data.has_value(); }
 
     const iobuf& get_data() const { return *data; }
 
+    // share() only bumps fragment refcounts, leaving logical contents
+    // untouched, so the const_cast is safe; callers must not mutate the
+    // shared data.
+    data_t share_data() const {
+        if (!data.has_value()) {
+            return std::nullopt;
+        }
+        // NOLINTNEXTLINE(cppcoreguidelines-pro-type-const-cast)
+        return const_cast<iobuf&>(*data).share();
+    }
+
     size_t data_size_bytes() const {
-        return data == nullptr ? 0 : data->size_bytes();
+        return data.has_value() ? data->size_bytes() : 0;
     }
 
     iobuf release_data() && { return std::move(*data); }

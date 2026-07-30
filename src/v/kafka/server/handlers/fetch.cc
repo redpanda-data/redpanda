@@ -53,6 +53,7 @@
 
 #include <chrono>
 #include <exception>
+#include <memory>
 #include <ranges>
 
 namespace {
@@ -106,7 +107,7 @@ make_partition_response_error(model::partition_id p_id, error_code error) {
 static ss::future<read_result> read_from_partition(
   kafka::partition_proxy part,
   model::offset lso,
-  fetch_config config,
+  const fetch_config& config,
   std::optional<model::timeout_clock::time_point> deadline) {
     auto hw = part.high_watermark();
     auto start_o = part.start_offset();
@@ -131,7 +132,7 @@ static ss::future<read_result> read_from_partition(
 
     auto rdr = co_await part.make_reader(reader_config);
     std::exception_ptr e;
-    std::unique_ptr<iobuf> data;
+    std::optional<iobuf> data;
     std::vector<cluster::tx::tx_range> aborted_transactions;
     std::optional<std::chrono::milliseconds> delta_from_tip_ms;
     model::offset data_base_offset, data_last_offset;
@@ -140,7 +141,7 @@ static ss::future<read_result> read_from_partition(
     try {
         auto result = co_await rdr.reader.consume(
           kafka_batch_serializer(), deadline ? *deadline : model::no_timeout);
-        data = std::make_unique<iobuf>(std::move(result.data));
+        data = std::move(result.data);
         data_base_offset = result.base_offset;
         data_last_offset = result.last_offset;
         batch_count = result.batch_count;
@@ -218,7 +219,7 @@ static read_result clone_read_result(const read_result& src) {
           src.last_stable_offset);
     }
     return read_result(
-      src.has_data() ? std::make_unique<iobuf>(src.data->share()) : nullptr,
+      src.share_data(),
       src.start_offset,
       src.data_base_offset,
       src.data_last_offset,
@@ -268,7 +269,7 @@ static ss::future<read_result> do_read_from_ntp(
   cluster::partition_manager& cluster_pm,
   const cluster::metadata_cache& md_cache,
   const replica_selector& replica_selector,
-  ntp_fetch_config ntp_config,
+  ntp_fetch_config& ntp_config,
   std::optional<model::timeout_clock::time_point> deadline,
   const bool obligatory_batch_read,
   fetch_memory_units_manager& units_mgr,
@@ -406,11 +407,13 @@ ss::future<read_result> read_from_ntp(
   const bool obligatory_batch_read,
   fetch_memory_units_manager& units_mgr,
   fetch_read_coalescer& coalescer) {
-    return do_read_from_ntp(
+    ntp_fetch_config ntp_config{
+      {ktp.get_topic(), ktp.get_partition()}, std::move(config)};
+    co_return co_await do_read_from_ntp(
       cluster_pm,
       md_cache,
       replica_selector,
-      {{ktp.get_topic(), ktp.get_partition()}, std::move(config)},
+      ntp_config,
       deadline,
       obligatory_batch_read,
       units_mgr,
