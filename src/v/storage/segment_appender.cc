@@ -685,7 +685,6 @@ void segment_appender::dispatch_background_head_write() {
 
 ss::future<> segment_appender::flush() {
     ++_opts.shared_stats->flushes;
-    _inactive_timer.cancel();
 
     // dispatched write will drive flush completion
     if (_head && _head->bytes_pending()) {
