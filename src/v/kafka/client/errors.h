@@ -113,6 +113,13 @@ inline bool is_retriable_error(kafka::error_code ec) {
     case error_code::duplicate_resource:
     case error_code::unacceptable_credential:
     case error_code::transactional_id_not_found:
+    // This client speaks the classic protocol, so it never receives the
+    // KIP-848 errors; they are listed only to keep the switch exhaustive.
+    case error_code::fenced_member_epoch:
+    case error_code::unreleased_instance_id:
+    case error_code::unsupported_assignor:
+    case error_code::stale_member_epoch:
+    case error_code::invalid_regular_expression:
         return false;
     }
     // An arbitrary code off the wire might not be in our enum.

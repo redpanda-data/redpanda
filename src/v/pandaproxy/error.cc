@@ -264,6 +264,13 @@ std::error_condition make_error_condition(std::error_code ec) {
         case kec::resource_not_found:
         case kec::duplicate_resource:
         case kec::unacceptable_credential:
+        // The proxy's consumers use the classic protocol, so these never
+        // arrive; they are listed to keep the switch exhaustive.
+        case kec::fenced_member_epoch:
+        case kec::unreleased_instance_id:
+        case kec::unsupported_assignor:
+        case kec::stale_member_epoch:
+        case kec::invalid_regular_expression:
             return rec::kafka_bad_request;
         case kec::not_enough_replicas:
         case kec::coordinator_not_available:
