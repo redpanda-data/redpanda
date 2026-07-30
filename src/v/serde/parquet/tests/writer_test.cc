@@ -9,12 +9,17 @@
  * by the Apache License, Version 2.0
  */
 
+#include "base/vlog.h"
 #include "bytes/iostream.h"
 #include "serde/parquet/column_stats_collector.h"
+#include "serde/parquet/column_writer.h"
 #include "serde/parquet/encoding.h"
 #include "serde/parquet/schema.h"
 #include "serde/parquet/value.h"
 #include "serde/parquet/writer.h"
+
+#include <seastar/core/memory.hh>
+#include <seastar/util/log.hh>
 
 #include <gtest/gtest.h>
 
@@ -25,6 +30,8 @@
 
 namespace serde::parquet {
 namespace {
+
+ss::logger test_log("parquet_writer_test");
 
 schema_element leaf_node(
   ss::sstring name,
@@ -109,6 +116,28 @@ group_value make_string_row(std::string s) {
     chunked_vector<group_member> fields;
     fields.push_back(group_member{byte_array_value{iobuf::from(std::move(s))}});
     return fields;
+}
+
+schema_element n_byte_array_schema(size_t column_count) {
+    chunked_vector<schema_element> children;
+    for (size_t i = 0; i < column_count; ++i) {
+        children.push_back(leaf_node(
+          fmt::format("c{}", i),
+          field_repetition_type::required,
+          byte_array_type{}));
+    }
+    return {
+      .repetition_type = field_repetition_type::required,
+      .path = {"root"},
+      .children = std::move(children),
+    };
+}
+group_value n_byte_array_row(size_t column_count) {
+    chunked_vector<group_member> fields;
+    for (size_t i = 0; i < column_count; ++i) {
+        fields.push_back(group_member{byte_array_value{iobuf::from("x")}});
+    }
+    return group_value{std::move(fields)};
 }
 
 /// Writes `values` to a single-column parquet file and verifies that the
@@ -228,6 +257,48 @@ TEST(ParquetWriter, FlushesRowGroupWhenSizeExceeded) {
     EXPECT_LT(stats.buffered_size, row_group_size);
 
     w.close().get();
+}
+
+TEST(ParquetWriter, ColumnMemoryEstimateCoversActual) {
+#ifdef SEASTAR_DEFAULT_ALLOCATOR
+    GTEST_SKIP() << "memory::stats() reports fixed values under the system "
+                    "allocator, and the sanitizers that select it intercept "
+                    "malloc, so there is nothing truthful to measure";
+#endif
+    auto measure = [](size_t column_count) -> long {
+        auto before = seastar::memory::stats().allocated_memory();
+        iobuf file;
+        writer w(
+          {.schema = n_byte_array_schema(column_count)},
+          make_iobuf_ref_output_stream(file));
+        w.init().get();
+        w.write_row(n_byte_array_row(column_count)).get();
+        // Read before the writer goes out of scope and frees its buffers.
+        auto used = static_cast<long>(
+          seastar::memory::stats().allocated_memory() - before);
+        w.close().get();
+        return used;
+    };
+    // Warm up the allocator. This first call is discarded: growing the pools
+    // leaves spans checked out for good, which is not a column's cost.
+    measure(1000);
+
+    // Then take two measurements of different column counts, cutting out any
+    // fixed per-writer cost to just get a per column cost.
+    auto per_leaf = static_cast<size_t>((measure(2000) - measure(1000)) / 1000);
+    auto estimate = estimated_column_memory();
+    vlog(
+      test_log.info,
+      "estimated_column_memory() needs at least {} to cover a byte_array "
+      "column; it is {}",
+      per_leaf,
+      estimate);
+
+    EXPECT_GE(estimate, per_leaf)
+      << "estimate " << estimate << " < measured per-leaf " << per_leaf
+      << "; raise estimated_column_memory()";
+    EXPECT_LE(estimate, 2 * per_leaf)
+      << "estimate " << estimate << " >> measured per-leaf " << per_leaf;
 }
 
 TEST(ParquetWriter, NoEarlyFlushWhenUnderLimit) {

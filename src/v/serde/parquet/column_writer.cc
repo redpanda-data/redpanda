@@ -12,6 +12,7 @@
 #include "serde/parquet/column_writer.h"
 
 #include "absl/numeric/int128.h"
+#include "base/units.h"
 #include "bytes/iobuf_parser.h"
 #include "compression/compression.h"
 #include "container/chunked_vector.h"
@@ -26,6 +27,7 @@
 #include <seastar/core/coroutine.hh>
 #include <seastar/util/variant_utils.hh>
 
+#include <algorithm>
 #include <bit>
 #include <limits>
 #include <stdexcept>
@@ -514,6 +516,13 @@ ss::future<flushed_pages> column_writer::flush_pages() {
 
 statistics column_writer::file_column_stats() {
     return _impl->file_column_stats();
+}
+
+size_t estimated_column_memory() {
+    // Empirical: the column writer object, the chunks its containers take on
+    // the first row, the schema element and allocator rounding.
+    // ColumnMemoryEstimateCoversActual recalibrates it.
+    return 4_KiB;
 }
 
 } // namespace serde::parquet

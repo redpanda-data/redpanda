@@ -218,6 +218,7 @@ redpanda_cc_gtest(
     cpu = 1,
     memory = "64MiB",
     deps = [
+        "//src/v/base",
         "//src/v/bytes:iostream",
         "//src/v/serde/parquet:column_writer",
         "//src/v/serde/parquet:encoding",

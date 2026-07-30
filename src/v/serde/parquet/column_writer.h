@@ -108,4 +108,8 @@ private:
     std::unique_ptr<impl> _impl;
 };
 
+// Estimated resident memory of one idle column writer. Excludes buffered row
+// data, which is accounted separately as it is written.
+size_t estimated_column_memory();
+
 } // namespace serde::parquet
