@@ -1513,7 +1513,7 @@ admin_server::cancel_node_partition_moves(
           req, res.error(), model::controller_ntp, node_id);
     }
 
-    co_return ss::json::json_return_type(
+    co_return ss::json::stream_object(
       co_await map_partition_results(std::move(res.value())));
 }
 
@@ -2103,42 +2103,43 @@ void admin_server::register_cluster_config_routes() {
               [](cluster::config_manager& manager) {
                   return manager.get_projected_status();
               })
-            .then([local_node,
-                   local_pending = std::move(local_pending)](auto statuses) {
-                std::vector<
-                  ss::httpd::cluster_config_json::cluster_config_status>
-                  res;
+            .then(
+              [local_node, local_pending = std::move(local_pending)](
+                auto statuses) -> ss::json::json_return_type {
+                  std::vector<
+                    ss::httpd::cluster_config_json::cluster_config_status>
+                    res;
 
-                for (const auto& s : statuses) {
-                    vlog(adminlog.trace, "status: {}", s.second);
-                    auto& rs = res.emplace_back();
-                    rs.node_id = s.first;
-                    rs.restart = s.second.restart;
-                    rs.config_version = s.second.version;
+                  for (const auto& s : statuses) {
+                      vlog(adminlog.trace, "status: {}", s.second);
+                      auto& rs = res.emplace_back();
+                      rs.node_id = s.first;
+                      rs.restart = s.second.restart;
+                      rs.config_version = s.second.version;
 
-                    // Workaround: seastar json_list hides empty lists by
-                    // default.  This complicates API clients, so always push
-                    // in a dummy element to get _set=true on json_list (this
-                    // is then cleared in the subsequent operator=).
-                    rs.invalid.push(ss::sstring("hack"));
-                    rs.unknown.push(ss::sstring("hack"));
-                    rs.pending.push(ss::sstring("hack"));
+                      // Workaround: seastar json_list hides empty lists by
+                      // default.  This complicates API clients, so always push
+                      // in a dummy element to get _set=true on json_list (this
+                      // is then cleared in the subsequent operator=).
+                      rs.invalid.push(ss::sstring("hack"));
+                      rs.unknown.push(ss::sstring("hack"));
+                      rs.pending.push(ss::sstring("hack"));
 
-                    rs.invalid = s.second.invalid;
-                    rs.unknown = s.second.unknown;
+                      rs.invalid = s.second.invalid;
+                      rs.unknown = s.second.unknown;
 
-                    if (s.first == local_node) {
-                        rs.pending = local_pending;
-                    } else {
-                        // TODO: Pending state is local-only: extending
-                        // config_status (on-wire type) is needed to
-                        // propagate pending info from remote nodes.
-                        rs.pending = std::vector<ss::sstring>{};
-                    }
-                }
+                      if (s.first == local_node) {
+                          rs.pending = local_pending;
+                      } else {
+                          // TODO: Pending state is local-only: extending
+                          // config_status (on-wire type) is needed to
+                          // propagate pending info from remote nodes.
+                          rs.pending = std::vector<ss::sstring>{};
+                      }
+                  }
 
-                return ss::json::json_return_type(res);
-            });
+                  return ss::json::stream_object(std::move(res));
+              });
       });
 
     register_route<publik>(
@@ -2898,7 +2899,8 @@ admin_server::get_broker_uuids_handler() {
           }
           return ret;
       });
-    co_return ss::json::json_return_type(mappings);
+
+    co_return ss::json::stream_object(std::move(mappings));
 }
 
 ss::future<ss::json::json_return_type> admin_server::decomission_broker_handler(
@@ -3125,9 +3127,11 @@ void admin_server::register_broker_routes() {
       ss::httpd::broker_json::get_brokers,
       [this](std::unique_ptr<ss::http::request>) {
           return get_brokers(_controller)
-            .then([](std::vector<ss::httpd::broker_json::broker> brokers) {
-                return ss::json::json_return_type(brokers);
-            });
+            .then(
+              [](std::vector<ss::httpd::broker_json::broker> brokers)
+                -> ss::json::json_return_type {
+                  return ss::json::stream_object(std::move(brokers));
+              });
       });
     register_route<user>(
       ss::httpd::broker_json::get_broker_uuids,
@@ -3510,7 +3514,7 @@ admin_server::self_test_get_results_handler(
         }
         reports.push_back(nr);
     }
-    co_return ss::json::json_return_type(reports);
+    co_return ss::json::stream_object(std::move(reports));
 }
 
 void admin_server::register_self_test_routes() {
@@ -3732,7 +3736,7 @@ admin_server::cancel_all_partitions_reconfigs_handler(
         co_await throw_on_error(*req, res.error(), model::controller_ntp);
     }
 
-    co_return ss::json::json_return_type(
+    co_return ss::json::stream_object(
       co_await map_partition_results(std::move(res.value())));
 }
 
@@ -4397,7 +4401,7 @@ ss::json::json_return_type serialize_topic_recovery_status(
         status_log.push_back(map_status_to_json(entry));
     }
 
-    return status_log;
+    return ss::json::stream_object(std::move(status_log));
 }
 } // namespace
 

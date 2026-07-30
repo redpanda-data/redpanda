@@ -82,7 +82,7 @@ private:
 
 namespace {
 std::vector<kafka::usage>
-strip_window_data(const std::vector<kafka::usage_window>& v) {
+strip_window_data(const chunked_vector<kafka::usage_window>& v) {
     std::vector<kafka::usage> vv;
     std::transform(
       v.begin(),
@@ -92,7 +92,7 @@ strip_window_data(const std::vector<kafka::usage_window>& v) {
     return vv;
 }
 
-ss::sstring print_window_data(const std::vector<kafka::usage_window>& v) {
+ss::sstring print_window_data(const chunked_vector<kafka::usage_window>& v) {
     std::stringstream ss;
     ss << "\n[\n";
     for (const auto& vs : v) {
