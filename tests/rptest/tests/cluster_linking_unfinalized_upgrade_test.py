@@ -15,12 +15,11 @@ from connectrpc.errors import ConnectError, ConnectErrorCode
 from ducktape.utils.util import wait_until
 
 from rptest.clients.admin.proto.redpanda.core.admin.v2 import (
-    features_pb2,
     security_pb2,
     shadow_link_pb2,
 )
 from rptest.clients.admin.v2 import Admin as AdminV2
-from rptest.clients.rpk import RpkTool
+from rptest.clients.rpk import RpkTool, RpkUpgradeFinalizationState
 from rptest.services.admin import Admin
 from rptest.services.cluster import cluster
 from rptest.services.multi_cluster_services import SecondaryClusterArgs
@@ -421,10 +420,10 @@ class ShadowLinkUnfinalizedUpgradeTest(ShadowLinkTestBase, UnfinalizedUpgradeMix
         # active version is held at the old version: READY_TO_FINALIZE.
         self._restart_at_new(self.redpanda.nodes)
         status = self._wait_for_status_state(
-            features_pb2.FINALIZATION_STATE_READY_TO_FINALIZE
+            RpkUpgradeFinalizationState.READY_TO_FINALIZE
         )
         assert self.admin.get_features()["cluster_version"] == self.old_logical
-        assert not status.auto_finalization_enabled
+        assert not status["auto_finalization_enabled"]
 
         # The shadow_linking feature is v25.3, so the link machinery is fully
         # live even though the upgrade is unfinalized: create a topic-mirroring
@@ -453,13 +452,11 @@ class ShadowLinkUnfinalizedUpgradeTest(ShadowLinkTestBase, UnfinalizedUpgradeMix
         # Roll forward again and this time finalize: the active version advances
         # past the gate's require_version and the v26.2 features activate.
         self._restart_at_new(self.redpanda.nodes)
-        self._wait_for_status_state(features_pb2.FINALIZATION_STATE_READY_TO_FINALIZE)
+        self._wait_for_status_state(RpkUpgradeFinalizationState.READY_TO_FINALIZE)
         self._finalize()
         self._wait_for_version_everywhere(self.new_logical)
-        finalized = self._wait_for_status_state(
-            features_pb2.FINALIZATION_STATE_FINALIZED
-        )
-        assert finalized.active_version == self.new_logical
+        finalized = self._wait_for_status_state(RpkUpgradeFinalizationState.FINALIZED)
+        assert finalized["active_version"] == self.new_logical
 
         # Both gates are open now: the features must actually sync real data.
         self._verify_role_sync_works()
@@ -505,7 +502,7 @@ class ShadowLinkUnfinalizedUpgradeTest(ShadowLinkTestBase, UnfinalizedUpgradeMix
         # forward to HEAD with the active (downgrade-floor) version held back.
         self._disable_auto_finalization()
         self._restart_at_new(self.redpanda.nodes)
-        self._wait_for_status_state(features_pb2.FINALIZATION_STATE_READY_TO_FINALIZE)
+        self._wait_for_status_state(RpkUpgradeFinalizationState.READY_TO_FINALIZE)
         assert self.admin.get_features()["cluster_version"] == self.old_logical
 
         # shadow_linking is v25.3, so the link machinery is live while
@@ -540,5 +537,5 @@ class ShadowLinkUnfinalizedUpgradeTest(ShadowLinkTestBase, UnfinalizedUpgradeMix
 
         # Roll forward again: the topic-mode config survived the round trip.
         self._restart_at_new(self.redpanda.nodes)
-        self._wait_for_status_state(features_pb2.FINALIZATION_STATE_READY_TO_FINALIZE)
+        self._wait_for_status_state(RpkUpgradeFinalizationState.READY_TO_FINALIZE)
         self._assert_sr_sync_mode("shadow_schema_registry_topic", "re-upgraded")
