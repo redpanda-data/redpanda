@@ -314,7 +314,14 @@ public:
     }
 
     int64_t memory_usage() const override {
-        return _total_memory_usage + current_page_memory_usage();
+        // Memory that flushing will release.
+        //
+        // NOTE: the translator flushes to recover from memory pressure, so a
+        // term it cannot free does not belong here: _file_stats lives until
+        // close and is not accounted here.
+        return _total_memory_usage + current_page_memory_usage()
+               + _current_page_stats.memory_usage()
+               + _flushed_stats.memory_usage();
     }
 
     int64_t current_page_memory_usage() const override {

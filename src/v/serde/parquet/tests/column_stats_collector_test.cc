@@ -18,6 +18,7 @@
 #include <cmath>
 #include <limits>
 #include <optional>
+#include <string>
 
 using namespace serde::parquet;
 using testing::DoubleEq;
@@ -62,6 +63,31 @@ TEST(ColumnStatsCollector, FloatingPoint) {
     collector.record_value(float64_value{-0.0});
     EXPECT_THAT(collector.min(), DoubleBound(IsNegativeZero()));
     EXPECT_THAT(collector.max(), DoubleBound(IsPositiveZero()));
+}
+
+TEST(ColumnStatsCollector, MemoryUsage) {
+    // Fixed-width columns hold their bounds inline: no heap, regardless of the
+    // values recorded.
+    column_stats_collector<int64_value, ordering::int64> numeric;
+    EXPECT_EQ(numeric.memory_usage(), 0);
+    numeric.record_value(int64_value{42});
+    numeric.record_value(int64_value{7});
+    EXPECT_EQ(numeric.memory_usage(), 0);
+
+    // Byte-array columns retain the untruncated min and max values, so the
+    // footprint tracks the size of those bounds.
+    column_stats_collector<byte_array_value, ordering::byte_array> binary;
+    EXPECT_EQ(binary.memory_usage(), 0);
+    auto cat = byte_array_value{iobuf::from("cat")};
+    binary.record_value(cat);
+    // min == max == "cat": 3 bytes each.
+    EXPECT_EQ(binary.memory_usage(), 6);
+    auto big = byte_array_value{iobuf::from(std::string(4096, 'z'))};
+    binary.record_value(big);
+    // min stays "cat" (3 bytes), max is now the 4096-byte value.
+    EXPECT_EQ(binary.memory_usage(), 3 + 4096);
+    binary.reset();
+    EXPECT_EQ(binary.memory_usage(), 0);
 }
 
 TEST(ColumnStatsCollector, Binary) {
