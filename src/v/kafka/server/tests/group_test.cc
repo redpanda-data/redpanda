@@ -49,7 +49,7 @@ static bool is_uuid(const ss::sstring& uuid) {
  *  good covering set of scenarios.
  */
 static group get() {
-    static config::configuration conf;
+    auto& conf = config::shard_local_cfg();
     conf.enable_consumer_group_metrics.set_value(std::vector<ss::sstring>{});
     ss::sharded<cluster::tx_gateway_frontend> fr;
     ss::sharded<features::feature_table> feature_table;
