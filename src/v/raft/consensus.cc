@@ -165,10 +165,8 @@ consensus::consensus(
         maybe_step_down();
         dispatch_vote(false);
     });
-    _deferred_flusher.set_callback([this]() {
-        ssx::spawn_with_gate(
-          _bg, [this]() { return do_flush().discard_result(); });
-    });
+    _deferred_flusher.set_callback(
+      [this]() { ssx::spawn_with_gate(_bg, [this] { return do_flush(); }); });
 }
 
 void consensus::setup_metrics() {
@@ -3003,7 +3001,7 @@ void consensus::background_flush_log() {
     // scheduled flush anymore as this guarantees that everything
     // up until this point is flushed.
     _deferred_flusher.cancel();
-    ssx::spawn_with_gate(_bg, [this]() { return do_flush().discard_result(); });
+    ssx::spawn_with_gate(_bg, [this] { return do_flush(); });
 }
 
 void consensus::maybe_schedule_flush() {
@@ -3164,41 +3162,52 @@ consensus::next_followers_request_seq() {
 
 ss::future<> consensus::refresh_commit_index() {
     auto holder = _bg.hold();
-    return _op_lock.get_units()
-      .then([this](ssx::semaphore_units u) mutable {
-          auto f = ss::now();
-          if (has_pending_flushes()) {
-              f = flush_log().discard_result();
-          }
-
-          if (!is_elected_leader()) {
-              return f;
-          }
-          return f.then([this, u = std::move(u)]() mutable {
-              return do_maybe_update_leader_commit_idx(std::move(u));
-          });
-      })
-      .handle_exception_type([](const ss::broken_semaphore&) {
-          // ignore exception, shutting down
-      })
-      .finally([holder = std::move(holder)] {});
+    try {
+        auto units = co_await ss::coroutine::without_preemption_check(
+          _op_lock.get_units());
+        auto flush = has_pending_flushes() ? flush_log().discard_result()
+                                           : ss::now();
+        if (!is_elected_leader()) {
+            units.return_all();
+            co_await ss::coroutine::without_preemption_check(std::move(flush));
+            co_return;
+        }
+        co_await ss::coroutine::without_preemption_check(std::move(flush));
+        co_await ss::coroutine::without_preemption_check(
+          do_maybe_update_leader_commit_idx(std::move(units)));
+    } catch (const ss::broken_semaphore&) {
+        // ignore exception, shutting down
+    }
 }
 
 void consensus::maybe_update_leader_commit_idx() {
-    ssx::background = ssx::spawn_with_gate_then(_bg, [this] {
-                          return _op_lock.get_units().then(
-                            [this](ssx::semaphore_units u) mutable {
-                                // do not update committed index if not the
-                                // leader, this check has to be done under the
-                                // semaphore
-                                if (!is_elected_leader()) {
-                                    return ss::now();
-                                }
-                                return do_maybe_update_leader_commit_idx(
-                                  std::move(u));
-                            });
-                      }).handle_exception([this](const std::exception_ptr& e) {
-        vlog(_ctxlog.warn, "Error updating leader commit index", e);
+    ssx::spawn_with_gate(_bg, [this](this auto) -> ss::future<> {
+        auto units = co_await ss::coroutine::as_future_without_preemption_check(
+          _op_lock.get_units());
+        if (units.failed()) {
+            auto exception = units.get_exception();
+            vlog(
+              _ctxlog.warn,
+              "Error updating leader commit index: {}",
+              exception);
+            co_return;
+        }
+        // do not update committed index if not the
+        // leader, this check has to be done under the
+        // semaphore
+        if (!is_elected_leader()) {
+            co_return;
+        }
+        auto updated
+          = co_await ss::coroutine::as_future_without_preemption_check(
+            do_maybe_update_leader_commit_idx(std::move(units).get()));
+        if (updated.failed()) {
+            auto exception = updated.get_exception();
+            vlog(
+              _ctxlog.warn,
+              "Error updating leader commit index: {}",
+              exception);
+        }
     });
 }
 /**
