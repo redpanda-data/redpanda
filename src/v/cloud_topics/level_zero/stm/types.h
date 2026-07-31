@@ -31,6 +31,10 @@ struct [[nodiscard]] cluster_epoch_fence {
     ss::rwlock::holder unit;
     // Term in which the batch is replicated.
     model::term_id term;
+
+    // The fence holds the full write lock (more than one unit) iff the
+    // fenced request advanced the "seen" window.
+    bool moves_seen_window() const { return unit.count() > 1; }
 };
 
 // The error returned when the CTP STM has seen a newer epoch than the one
