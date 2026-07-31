@@ -105,12 +105,14 @@ redpanda_cc_library(
 redpanda_cc_library(
     name = "mirroring_task",
     srcs = [
+        "discovery.cc",
         "mirroring_task.cc",
         "probe.cc",
         "reconciler.cc",
         "scope.cc",
     ],
     hdrs = [
+        "discovery.h",
         "mirroring_task.h",
         "probe.h",
         "reconciler.h",
@@ -141,6 +143,7 @@ redpanda_cc_library(
         "//src/v/schema:registry",
         "//src/v/ssx:mutex",
         "//src/v/ssx:semaphore",
+        "//src/v/utils:prefix_logger",
         "@seastar",
     ],
 )

@@ -105,6 +105,26 @@ redpanda_cc_gtest(
 )
 
 redpanda_cc_gtest(
+    name = "discovery_test",
+    timeout = "short",
+    srcs = ["discovery_test.cc"],
+    cpu = 1,
+    deps = [
+        ":sr_sync_test_fixtures",
+        "//src/v/cluster_link/model",
+        "//src/v/cluster_link/schema_registry_sync:mirroring_task",
+        "//src/v/cluster_link/schema_registry_sync:source_reader",
+        "//src/v/container:chunked_hash_map",
+        "//src/v/container:chunked_vector",
+        "//src/v/pandaproxy/schema_registry:types",
+        "//src/v/test_utils:gtest",
+        "//src/v/utils:prefix_logger",
+        "@googletest//:gtest",
+        "@seastar",
+    ],
+)
+
+redpanda_cc_gtest(
     name = "http_source_reader_test",
     timeout = "short",
     srcs = [

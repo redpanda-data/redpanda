@@ -88,7 +88,7 @@ auto stored_for(const ppsr::context_subject& subject) {
 
 class mirroring_task_test : public seastar_test {
 public:
-    static constexpr auto task_reconciler_interval = 1s;
+    static constexpr auto task_reconciler_interval = 100ms;
 
     ss::future<> SetUpAsync() override {
         _clmtf = std::make_unique<cluster_link_manager_test_fixture>(self());
@@ -218,6 +218,35 @@ public:
     // of lasting one tick and being missed by the status waiter.
     void stage_sticky_tail(srs::tail_batch batch) {
         _tail_state.sticky = std::move(batch);
+    }
+
+    // Routes tail ticks to the HTTP fallback: the fake feed reports
+    // unavailable on arm, as a source without `_schemas` over Kafka does.
+    void disable_tail_feed() {
+        _tail_state.arm_result = srs::tail_availability::unavailable;
+    }
+
+    /// Waits for `runs` further runs to have started, counted by source
+    /// listings. Use instead of sleeping for ticks: an assertion that nothing
+    /// happened is vacuous unless ticks ran, which a sleep cannot promise.
+    ss::future<bool> wait_for_further_runs(uint32_t runs) {
+        const auto target = _source_state.subject_listings + runs;
+        return fixture()->wait_for_report_to_match(
+          wait_interval,
+          50ms,
+          [this, target](const model::cluster_link_task_status_report&) {
+              return _source_state.subject_listings >= target;
+          });
+    }
+
+    /// Waits on source-state conditions the status report does not expose
+    /// (probe counts, body reads).
+    ss::future<bool> wait_for_source(std::function<bool()> pred) {
+        return fixture()->wait_for_report_to_match(
+          wait_interval,
+          50ms,
+          [pred = std::move(pred)](
+            const model::cluster_link_task_status_report&) { return pred(); });
     }
 
     static srs::tail_batch
@@ -1773,6 +1802,341 @@ TEST_F(mirroring_task_delete_retry_test, defers_delete_of_non_empty_context) {
       _registry.list_contexts().get(),
       testing::UnorderedElementsAre(
         ppsr::default_context, ppsr::context{".prod"}));
+}
+
+// --- HTTP-fallback tail: the ticks below run with the `_schemas` feed
+// reporting unavailable on arm, so each tail tick takes the
+// http_fallback_tail_sync path (HTTP discovery) rather than polling the
+// feed.
+
+// A full sync that fails mid-run leaves its work undone (and the retained
+// inventory moved out), so the next run must redo the full sync -- not tail
+// over the husk.
+TEST_F(mirroring_task_test, failed_full_sync_is_not_followed_by_a_tail_tick) {
+    _source_state.add(ppsr::context_subject::unqualified("orders-value"), 1);
+
+    disable_tail_feed();
+    lead_schema_registry();
+    fixture()->upsert_link(get_default_metadata()).get();
+
+    auto first = wait_for_sync_status([](const auto& s) {
+                     return s.last_full_sync.has_value()
+                            && s.inventory.selected_source_subjects == 1;
+                 }).get();
+    ASSERT_TRUE(first.has_value());
+    ASSERT_TRUE(first->last_full_sync->start_time.has_value());
+    const auto first_sync_at = first->last_full_sync->start_time->value();
+
+    // A second subject whose body read reports the source gone, so reconcile
+    // fails after the seed was moved out. The config update forces the full
+    // sync that hits it -- the periodic one is an hour away.
+    auto payments = ppsr::context_subject::unqualified("payments-value");
+    _source_state.add(payments, 1);
+    _source_state.fail_read(
+      payments,
+      1,
+      srs::source_error{
+        .kind = srs::source_error_kind::source_unavailable,
+        .message = "source down mid-reconcile"});
+    fixture()->update_link(model::id_t{0}, get_default_metadata()).get();
+
+    ASSERT_TRUE(wait_for_task_state(model::task_state::link_unavailable).get());
+
+    // The source recovers; a re-stamped last_full_sync proves the retry was
+    // a full sync (a tail tick would leave the first sync's timestamp).
+    _source_state.read_errors.clear();
+    auto second = wait_for_sync_status([&](const auto& s) {
+                      return s.last_full_sync.has_value()
+                             && s.last_full_sync->start_time.has_value()
+                             && s.last_full_sync->start_time->value()
+                                  > first_sync_at;
+                  }).get();
+    EXPECT_THAT(
+      second,
+      testing::Optional(
+        testing::Field(
+          &model::schema_registry_sync_status::inventory,
+          testing::AllOf(
+            testing::Field(
+              &model::schema_registry_inventory::selected_source_subjects, 2),
+            testing::Field(
+              &model::schema_registry_inventory::destination_subjects, 2)))));
+}
+
+// The http_tail_* tests below are the intended coverage for the task's
+// http_fallback_tail_sync orchestration: it wires discovery's findings
+// into
+// task-owned state (the retained inventory, the live stats, the reconcile,
+// the park policy), and those seams only exist with the task around them. The
+// discovery legs' own corner cases -- failure classification and the
+// active/soft-deleted partition -- are unit-tested directly in
+// discovery_test.cc.
+
+// A subject registered after the full sync is imported by a tail tick. The
+// fixture's full_sync_interval is 1h, so nothing but a tail tick can have done
+// it -- and the reported last_full_sync summary must be left exactly as the
+// full sync wrote it, since a tail tick is not a full scan.
+TEST_F(mirroring_task_test, http_tail_imports_new_subject) {
+    auto orders = ppsr::context_subject::unqualified("orders-value");
+    _source_state.add(orders, 1);
+
+    disable_tail_feed();
+    lead_schema_registry();
+    fixture()->upsert_link(get_default_metadata()).get();
+
+    auto after_full = wait_for_sync_status([](const auto& s) {
+                          return s.last_full_sync.has_value()
+                                 && !s.current_sync.has_value();
+                      }).get();
+    ASSERT_TRUE(after_full.has_value());
+    ASSERT_EQ(after_full->last_full_sync->subject_versions_changed, 1);
+    const auto full_sync_finish = after_full->last_full_sync->finish_time;
+
+    auto payments = ppsr::context_subject::unqualified("payments-value");
+    _source_state.add(payments, 1);
+
+    auto after_tail
+      = wait_for_sync_status([](const auto& s) {
+            return s.totals_since_task_start.subject_versions_changed == 2;
+        }).get();
+    ASSERT_TRUE(after_tail.has_value());
+
+    const auto& all = _registry.get_all();
+    ASSERT_EQ(all.size(), 2);
+    EXPECT_GE(index_of(all, "orders-value"), 0);
+    EXPECT_GE(index_of(all, "payments-value"), 0);
+    // The tail tick folded into the totals but neither rewrote nor re-stamped
+    // the full-sync summary.
+    EXPECT_EQ(after_tail->last_full_sync->subject_versions_changed, 1);
+    EXPECT_EQ(after_tail->last_full_sync->finish_time, full_sync_finish);
+    EXPECT_EQ(after_tail->totals_since_task_start.errors, 0);
+}
+
+// The scope filter applies to tail discovery exactly as it does to the full
+// sync: an out-of-scope subject registered later is never imported.
+TEST_F(mirroring_task_test, http_tail_ignores_filtered_subject) {
+    _source_state.add(ppsr::context_subject::unqualified("seeded-value"), 1);
+
+    auto metadata = get_default_metadata();
+    auto* api = metadata.configuration.schema_registry_sync_cfg.api_mode();
+    api->filter.subjects.push_back("seeded-value");
+    api->filter.subjects.push_back("orders-value");
+
+    disable_tail_feed();
+    lead_schema_registry();
+    fixture()->upsert_link(std::move(metadata)).get();
+
+    ASSERT_TRUE(wait_for_sync_status([](const auto& s) {
+                    return s.last_full_sync.has_value()
+                           && !s.current_sync.has_value();
+                })
+                  .get()
+                  .has_value());
+
+    // One selected, one excluded. Waiting on the selected one landing is what
+    // makes this a tail-sync test rather than an assertion that nothing
+    // happened -- which would also hold with no tail sync at all.
+    _source_state.add(ppsr::context_subject::unqualified("orders-value"), 1);
+    _source_state.add(ppsr::context_subject::unqualified("payments-value"), 1);
+
+    ASSERT_TRUE(wait_for_sync_status([](const auto& s) {
+                    return s.totals_since_task_start.subject_versions_changed
+                           == 2;
+                })
+                  .get()
+                  .has_value());
+
+    // Further ticks so a late import of the excluded subject would surface.
+    ASSERT_TRUE(wait_for_further_runs(2).get());
+
+    const auto& all = _registry.get_all();
+    ASSERT_EQ(all.size(), 2);
+    EXPECT_GE(index_of(all, "seeded-value"), 0);
+    EXPECT_GE(index_of(all, "orders-value"), 0);
+    EXPECT_EQ(index_of(all, "payments-value"), -1);
+    auto status = wait_for_sync_status([](const auto&) { return true; }).get();
+    ASSERT_TRUE(status.has_value());
+    EXPECT_EQ(status->totals_since_task_start.subject_versions_changed, 2);
+    EXPECT_EQ(status->totals_since_task_start.errors, 0);
+}
+
+// Once a tail tick has imported a subject it must stop rediscovering it: the
+// tick refreshes the retained inventory, so later ticks see the subject as
+// known and never re-list or re-fetch it. Without that, every tick would pay
+// two source listings and a body fetch per already-imported subject forever.
+TEST_F(mirroring_task_test, http_tail_does_not_reimport_after_a_tick) {
+    _source_state.add(ppsr::context_subject::unqualified("orders-value"), 1);
+
+    disable_tail_feed();
+    lead_schema_registry();
+    fixture()->upsert_link(get_default_metadata()).get();
+
+    ASSERT_TRUE(wait_for_sync_status([](const auto& s) {
+                    return s.last_full_sync.has_value()
+                           && !s.current_sync.has_value();
+                })
+                  .get()
+                  .has_value());
+
+    auto payments = ppsr::context_subject::unqualified("payments-value");
+    _source_state.add(payments, 1);
+
+    ASSERT_TRUE(wait_for_sync_status([](const auto& s) {
+                    return s.totals_since_task_start.subject_versions_changed
+                           == 2;
+                })
+                  .get()
+                  .has_value());
+    ASSERT_EQ(_source_state.reads(payments, 1), 1);
+
+    ASSERT_TRUE(wait_for_further_runs(3).get());
+
+    // Still one body fetch: the later ticks did not treat it as new.
+    EXPECT_EQ(_source_state.reads(payments, 1), 1);
+    auto status = wait_for_sync_status([](const auto&) { return true; }).get();
+    ASSERT_TRUE(status.has_value());
+    EXPECT_EQ(status->totals_since_task_start.subject_versions_changed, 2);
+    EXPECT_EQ(status->totals_since_task_start.errors, 0);
+}
+
+// A tail tick now reads from the source, so it can find it gone. That parks the
+// link rather than counting a per-item error, and the link returns to active on
+// its own once the source answers again.
+TEST_F(mirroring_task_test, http_tail_source_failure_parks_and_recovers) {
+    _source_state.add(ppsr::context_subject::unqualified("orders-value"), 1);
+
+    disable_tail_feed();
+    lead_schema_registry();
+    fixture()->upsert_link(get_default_metadata()).get();
+
+    ASSERT_TRUE(wait_for_sync_status([](const auto& s) {
+                    return s.last_full_sync.has_value()
+                           && !s.current_sync.has_value();
+                })
+                  .get()
+                  .has_value());
+
+    _source_state.list_subjects_error = srs::source_error{
+      .kind = srs::source_error_kind::source_unavailable,
+      .message = "source gone"};
+    ASSERT_TRUE(wait_for_task_state(model::task_state::link_unavailable).get());
+
+    _source_state.list_subjects_error.reset();
+    ASSERT_TRUE(wait_for_task_state(model::task_state::active).get());
+}
+
+// The HTTP fallback's counterpart of tail_sync_faults_on_an_unmapped_context:
+// a context created at the source after the full sync arrives here via
+// list_contexts rather than a batch, and must fault the link the way the full
+// sync would, not degrade to per-item errors.
+TEST_F(mirroring_task_test, http_tail_faults_on_an_unmapped_context) {
+    auto a = ppsr::context_subject::unqualified("a");
+    _source_state.add(a, 1);
+
+    auto metadata = get_default_metadata();
+    auto* api = metadata.configuration.schema_registry_sync_cfg.api_mode();
+    // Covers the only context the source has, so the full sync passes; the
+    // context added below is the one the mapping does not cover.
+    model::schema_registry_sync_config::exact_context_mapping mapping;
+    mapping.mappings.emplace(
+      std::string{ppsr::default_context()},
+      std::string{ppsr::default_context()});
+    api->destination = std::move(mapping);
+
+    disable_tail_feed();
+    lead_schema_registry();
+    fixture()->upsert_link(std::move(metadata)).get();
+    wait_for_first_full_sync().get();
+    ASSERT_THAT(_registry.get_all(), testing::SizeIs(1));
+
+    _source_state.contexts.push_back(ppsr::context{".prod"});
+
+    ASSERT_TRUE(wait_for_task_state(model::task_state::faulted).get());
+    auto status = current_sync_status();
+    EXPECT_THAT(status.last_error_message, testing::HasSubstr(".prod"));
+    // Faulted before any discovery, so nothing was imported or counted.
+    EXPECT_THAT(_registry.get_all(), testing::SizeIs(1));
+    EXPECT_EQ(status.totals_since_task_start.errors, 0);
+}
+
+// The reverse of the takeover: a feed that resumes (poll re-arms it from
+// its own progress) owns the tail again, and HTTP discovery stops. Proven
+// by the subject-listing counter freezing while a staged batch is consumed.
+TEST_F(mirroring_task_test, feed_reclaims_the_tail_after_resuming) {
+    auto a = ppsr::context_subject::unqualified("a");
+    _source_state.add(a, 1);
+
+    lead_schema_registry();
+    fixture()->upsert_link(get_default_metadata()).get();
+    wait_for_first_full_sync().get();
+
+    // Dead feed: ticks discover over HTTP (the listing counter moves).
+    _tail_state.armed = false;
+    const auto listings_dead = _source_state.subject_listings;
+    ASSERT_TRUE(wait_for_source([&] {
+                    return _source_state.subject_listings > listings_dead;
+                }).get());
+
+    // The feed resumes, as a real reader's poll does by re-arming itself.
+    _tail_state.armed = true;
+    _source_state.add(a, 2);
+    stage_tail(subjects_changed({a}));
+    ASSERT_TRUE(wait_for_sync_status([](const auto& st) {
+                    return st.totals_since_task_start.subject_versions_changed
+                           == 2;
+                })
+                  .get()
+                  .has_value());
+
+    // With the feed serving again, ticks stop listing subjects over HTTP.
+    const auto listings_live = _source_state.subject_listings;
+    const auto polls_before = _tail_state.polls;
+    ASSERT_TRUE(wait_for_source([&] {
+                    return _tail_state.polls > polls_before + 1;
+                }).get());
+    EXPECT_EQ(_source_state.subject_listings, listings_live);
+}
+
+// The cascade's core promise: a feed that dies mid-tenure hands the tail over
+// to HTTP discovery on the next tick, with no change on the link. The feed's
+// last tick names an already-imported subject, so its reconcile moves the
+// retained inventory and the no-op skips the closing rescan -- the fallback
+// must rebuild that husk rather than rediscover the whole registry as new.
+TEST_F(mirroring_task_test, http_tail_takes_over_when_the_feed_dies) {
+    auto a = ppsr::context_subject::unqualified("a");
+    _source_state.add(a, 1);
+
+    lead_schema_registry();
+    fixture()->upsert_link(get_default_metadata()).get();
+    wait_for_first_full_sync().get();
+    ASSERT_EQ(_source_state.reads(a, 1), 1);
+
+    // A no-op feed tick: the batch names a subject the destination already
+    // holds.
+    stage_tail(subjects_changed({a}));
+    ASSERT_TRUE(
+      wait_for_source([this] { return _tail_state.batches.empty(); }).get());
+
+    // The feed dies; nothing else changes on the link.
+    _tail_state.armed = false;
+
+    // A subject registered after the death can only arrive via HTTP
+    // discovery.
+    auto b = ppsr::context_subject::unqualified("b");
+    _source_state.add(b, 1);
+    ASSERT_TRUE(wait_for_sync_status([](const auto& st) {
+                    return st.totals_since_task_start.subject_versions_changed
+                           == 2;
+                })
+                  .get()
+                  .has_value());
+    EXPECT_GE(index_of(_registry.get_all(), "b"), 0);
+    // The husk was rebuilt, not rediscovered: the already-imported subject
+    // was never re-fetched.
+    EXPECT_EQ(_source_state.reads(a, 1), 1);
+    auto status = wait_for_sync_status([](const auto&) { return true; }).get();
+    ASSERT_TRUE(status.has_value());
+    EXPECT_EQ(status->totals_since_task_start.errors, 0);
 }
 
 TEST_F(mirroring_task_test, tail_sync_imports_a_newly_registered_version) {

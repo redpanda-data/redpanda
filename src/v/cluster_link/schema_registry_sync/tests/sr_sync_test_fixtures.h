@@ -119,6 +119,9 @@ struct fake_source_state {
     bool reports_deleted_flag = true;
     std::optional<srs::source_error> list_contexts_error;
     std::optional<srs::source_error> list_subjects_error;
+    // Forces list_subjects to fail for specific contexts only, letting a test
+    // inject a per-context listing failure while other contexts keep listing.
+    chunked_hash_map<ppsr::context, srs::source_error> list_subjects_errors;
     // Forces list_subject_versions to fail for specific subjects, letting a
     // test inject a per-subject enumeration failure (e.g. operation_failed)
     // without taking down the whole listing.
@@ -129,6 +132,9 @@ struct fake_source_state {
     chunked_hash_map<ppsr::schema_id, srs::source_error> schema_id_errors;
     // list_schema_id_subject_versions call count, keyed by probed id.
     chunked_hash_map<ppsr::schema_id, uint32_t> schema_id_probe_counts;
+    // list_subjects call count: every run lists each in-scope context, so a
+    // test can wait for runs to advance instead of sleeping for ticks.
+    uint32_t subject_listings{0};
     // read_subject_version call count, keyed by (subject, version).
     chunked_hash_map<ppsr::subject_version, uint32_t> read_counts;
     // Total list_subject_versions calls, so a test can assert a sync did no
@@ -197,6 +203,23 @@ struct fake_source_state {
         auto s = make_schema(
           sub, version, fmt::format("{{\"v\":{}}}", version), deleted);
         s.id = next_id();
+        schemas.push_back(std::move(s));
+    }
+
+    // Places a subject version at an exact schema id, so an id-probe test can
+    // build a specific id layout (holes, out-of-scope ids). `add` allocates ids
+    // from a global counter instead, which cannot express one.
+    void add_with_id(
+      const ppsr::context_subject& sub,
+      int32_t version,
+      int32_t id,
+      ppsr::is_deleted deleted = ppsr::is_deleted::no) {
+        auto s = make_schema(
+          sub,
+          version,
+          fmt::format("{{\"v\":{},\"id\":{}}}", version, id),
+          deleted);
+        s.id = ppsr::schema_id{id};
         schemas.push_back(std::move(s));
     }
 
@@ -271,8 +294,14 @@ public:
 
     ss::future<srs::source_result<chunked_vector<ppsr::context_subject>>>
     list_subjects(ppsr::context ctx, ss::abort_source&) override {
+        ++_state->subject_listings;
         if (_state->list_subjects_error.has_value()) {
             co_return std::unexpected(*_state->list_subjects_error);
+        }
+        if (
+          auto it = _state->list_subjects_errors.find(ctx);
+          it != _state->list_subjects_errors.end()) {
+            co_return std::unexpected(it->second);
         }
         chunked_hash_set<ppsr::context_subject> seen;
         chunked_vector<ppsr::context_subject> subjects;
@@ -458,6 +487,10 @@ struct fake_tail_state {
     // contract forbids -- so a reader that breaks it must not take the full
     // sync down with it.
     bool arm_throws{false};
+    // What arm() reports; `unavailable` models a source without `_schemas`
+    // over the Kafka API, routing tail ticks to the HTTP fallback.
+    srs::tail_availability arm_result{srs::tail_availability::available};
+    bool armed{false};
     std::optional<srs::source_error> poll_error;
     std::deque<srs::tail_batch> batches;
     size_t arms{0};
@@ -513,8 +546,11 @@ public:
         if (_state->arm_throws) {
             throw std::runtime_error("tail arm failed");
         }
-        co_return srs::tail_availability::available;
+        _state->armed = _state->arm_result == srs::tail_availability::available;
+        co_return _state->arm_result;
     }
+
+    bool armed() const override { return _state->armed; }
 
     ss::future<srs::source_result<srs::tail_batch>>
     poll(ss::abort_source&) override {

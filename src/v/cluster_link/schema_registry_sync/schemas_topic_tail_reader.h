@@ -77,6 +77,9 @@ public:
 
     ss::future<> rewind() override;
 
+    // Out-of-line so the header need not see direct_consumer's definition.
+    bool armed() const override;
+
     /// Aborts a parked idle long-poll via the fetcher's abort source, so
     /// teardown does not wait it out.
     ss::future<> stop() override;

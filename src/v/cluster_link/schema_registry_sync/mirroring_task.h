@@ -11,6 +11,7 @@
 
 #pragma once
 
+#include "cluster_link/schema_registry_sync/discovery.h"
 #include "cluster_link/schema_registry_sync/probe.h"
 #include "cluster_link/schema_registry_sync/reconciler.h"
 #include "cluster_link/schema_registry_sync/source_reader.h"
@@ -22,6 +23,9 @@
 
 #include <seastar/core/abort_source.hh>
 #include <seastar/util/noncopyable_function.hh>
+
+#include <chrono>
+#include <expected>
 
 namespace cluster_link::schema_registry_sync {
 
@@ -95,6 +99,9 @@ protected:
 private:
     bool leads_schema_registry_partition() const;
 
+    /// Builds the HTTP tail's read side.
+    std::unique_ptr<discovery> make_discovery();
+
     /// Rebuilds the source and tail readers from the current API-mode config,
     /// releasing the previous readers' transports first. Called on a config
     /// change so a new source URL, auth, or TLS setting takes effect on the
@@ -146,6 +153,15 @@ private:
     ss::future<state_transition>
     on_tail_source_error(const source_error& error);
 
+    /// Lists the source contexts, intersects them with the effective scan
+    /// scope and vets the resulting set with the same preconditions the full
+    /// sync and HTTP fallback tail both require.
+    ss::future<std::expected<chunked_hash_set<ppsr::context>, state_transition>>
+    load_sync_contexts(
+      ss::abort_source& as,
+      bool unfiltered,
+      const chunked_hash_set<ppsr::context>& scan_contexts);
+
     /// Incremental sync: applies the changes the tail reader recorded since the
     /// last poll, through the same per-subject path a full sync uses, so a
     /// replayed change is a no-op.
@@ -153,7 +169,7 @@ private:
     /// Returns without touching the destination -- the common case -- when
     /// nothing changed, and never advances the full-sync timer: it sees only
     /// the subjects its batch named, so it is no substitute for the full scan.
-    ss::future<state_transition> tail_sync(
+    ss::future<state_transition> feed_tail_sync(
       ss::abort_source&,
       model::schema_registry_sync_config::unsupported_feature_policy
         feature_policy,
@@ -177,18 +193,47 @@ private:
       reconciler::limits limits,
       ss::abort_source& as);
 
+    /// The tail tick for a source whose `_schemas` feed is not armed:
+    /// discovers what the destination lacks over the HTTP API alone
+    /// (discovery's subject-listing diff) and imports it. Deliberately
+    /// partial -- new versions of known subjects, deletions, and mode and
+    /// compatibility changes wait for the full sync -- and never touches
+    /// `_last_full_sync`, so a tail tick cannot postpone or masquerade as a
+    /// full scan.
+    ss::future<state_transition> http_fallback_tail_sync(
+      ss::abort_source&,
+      const chunked_hash_set<ppsr::context>& contexts,
+      model::schema_registry_sync_config::unsupported_feature_policy
+        feature_policy,
+      const ss::noncopyable_function<bool(const ppsr::context_subject&)>&
+        in_scope);
+
+    /// Subjects the destination already holds, derived from the retained
+    /// inventory -- rebuilt first when a run left it moved-out. `all`, not
+    /// `active`: a fully soft-deleted subject is still one the destination
+    /// knows, and reading it as new would re-list it on every tick forever.
+    ss::future<chunked_hash_set<ppsr::context_subject>> known_subjects(
+      const ss::noncopyable_function<bool(const ppsr::context_subject&)>&
+        in_scope,
+      ss::abort_source&);
+
     /// The source (subject, version) nodes a discovery pass found, split by
     /// their soft-delete state at the source.
-    struct discovered_versions {
-        chunked_hash_set<ppsr::subject_version> active;
-        chunked_hash_set<ppsr::subject_version> deleted;
-    };
+    using discovered_versions = discovery::discovered_versions;
 
     /// Diffs the discovered source nodes against the retained destination
     /// inventory into the versions to import, propagating source soft-deletes.
     /// Versions the source no longer has at all are hard-deleted instead, see
     /// `collect_purge_targets`.
     work_set build_work_set(const discovered_versions& discovered) const;
+
+    /// Folds a finished reconcile's counters into the in-progress sync summary
+    /// and the task totals, then clears them so the report-time reflection of
+    /// the live counters cannot double-count. Returns the folded snapshot.
+    /// The HTTP-fallback tail's counterpart of the fold inside
+    /// `run_reconcile`, which this path cannot use -- see
+    /// http_fallback_tail_sync's reconcile.
+    reconcile_stats fold_reconcile_stats();
 
     /// Imports `work` referent-first, then folds the reconcile's counters into
     /// the in-progress sync summary and the task totals and returns them.
@@ -212,33 +257,6 @@ private:
         feature_policy,
       reconciler::limits limits,
       ss::abort_source& as);
-
-    /// Lists one subject's versions, classifying each into `source_active` or
-    /// `source_deleted`. The source listing returns bare version numbers, so
-    /// two calls recover the per-version deleted state: include_deleted::no
-    /// gives the active versions, and the rest of the include_deleted::yes
-    /// listing are soft-deleted. A reachable-but-failed listing is a counted
-    /// per-item error and adds the subject to `failed_subjects` so its versions
-    /// (undiscovered, hence source-absent-looking) are spared the hard-delete;
-    /// a source_unavailable is captured in `unavailable` to back off the sync.
-    ss::future<> list_one_subject(
-      const ppsr::context_subject& subject,
-      ss::abort_source& as,
-      discovered_versions& discovered,
-      chunked_hash_set<ppsr::context_subject>& failed_subjects,
-      std::optional<source_error>& unavailable);
-
-    /// One source version listing with shared error handling: returns the
-    /// versions on success, or nullopt after capturing a source_unavailable in
-    /// `unavailable` or counting a reachable-but-failed listing as a per-item
-    /// error. Lets list_one_subject short-circuit so a failing subject counts
-    /// at most one error across its two listings.
-    ss::future<std::optional<chunked_vector<ppsr::schema_version>>>
-    list_versions_once(
-      const ppsr::context_subject& subject,
-      ppsr::include_deleted include_deleted,
-      ss::abort_source& as,
-      std::optional<source_error>& unavailable);
 
     /// A destination (subject, version) to hard-delete because the source no
     /// longer has it.
@@ -354,6 +372,9 @@ private:
     std::unique_ptr<source_reader> _reader;
     tail_reader_factory* _tail_factory;
     std::unique_ptr<tail_reader> _tail;
+    // Read side of the HTTP fallback for tail ticks whose feed is not
+    // armed.
+    std::unique_ptr<discovery> _discovery;
     // Serializes stopping and replacing _reader/_tail. stop() (readers-first,
     // while run_impl is still live) and reset_reader() (run by run_impl on a
     // config change) both stop the readers and then free them via reassignment;

@@ -190,7 +190,9 @@ mirroring_task::mirroring_task(
   , _source_factory(source_factory)
   , _reader(_source_factory->create(_config.api_mode()))
   , _tail_factory(tail_factory)
-  , _tail(_tail_factory->create(link)) {}
+  , _tail(_tail_factory->create(link)) {
+    _discovery = make_discovery();
+}
 
 void mirroring_task::update_config(const model::metadata& link_metadata) {
     _config = link_metadata.configuration.schema_registry_sync_cfg.copy();
@@ -678,82 +680,41 @@ mirroring_task::on_tail_source_error(const source_error& error) {
     co_return make_unavailable(error.message);
 }
 
+ss::future<
+  std::expected<chunked_hash_set<ppsr::context>, task::state_transition>>
+mirroring_task::load_sync_contexts(
+  ss::abort_source& as,
+  bool unfiltered,
+  const chunked_hash_set<ppsr::context>& scan_contexts) {
+    auto contexts_res = co_await _reader->list_contexts(as);
+    if (!contexts_res.has_value()) {
+        co_return std::unexpected(on_source_error(contexts_res.error()));
+    }
+
+    chunked_hash_set<ppsr::context> contexts;
+    for (auto& ctx : contexts_res.value()) {
+        if (unfiltered || scan_contexts.contains(ctx)) {
+            contexts.insert(std::move(ctx));
+        }
+    }
+
+    if (
+      auto reason = check_preconditions(
+        _config,
+        contexts,
+        config::shard_local_cfg().schema_registry_enable_qualified_subjects());
+      reason.has_value()) {
+        co_return std::unexpected(make_faulted(*reason));
+    }
+
+    co_return contexts;
+}
+
 void mirroring_task::record_error(std::string_view what) {
     ++_status.current_sync->summary.errors;
     ++_status.totals_since_task_start.errors;
     _status.last_error_message = ss::sstring{what};
     vlog(logger().warn, "Schema Registry sync error: {}", what);
-}
-
-ss::future<std::optional<chunked_vector<ppsr::schema_version>>>
-mirroring_task::list_versions_once(
-  const ppsr::context_subject& subject,
-  ppsr::include_deleted include_deleted,
-  ss::abort_source& as,
-  std::optional<source_error>& unavailable) {
-    as.check();
-    auto res = co_await _reader->list_subject_versions(
-      subject, include_deleted, as);
-    if (res.has_value()) {
-        co_return std::move(res.value());
-    }
-    if (res.error().kind == source_error_kind::source_unavailable) {
-        if (!unavailable.has_value()) {
-            unavailable = std::move(res.error());
-        }
-        co_return std::nullopt;
-    }
-    // Not-found means no versions of this kind, not a fault -- how a fully
-    // soft-deleted subject's active-only listing reads.
-    if (res.error().kind == source_error_kind::subject_not_found) {
-        co_return chunked_vector<ppsr::schema_version>{};
-    }
-    // Reachable but failed (rare delete race): count and skip. Counters are
-    // touched only between co_awaits, so sharing them across the concurrent
-    // fibers is safe on one reactor.
-    record_error(res.error().message);
-    co_return std::nullopt;
-}
-
-ss::future<> mirroring_task::list_one_subject(
-  const ppsr::context_subject& subject,
-  ss::abort_source& as,
-  discovered_versions& discovered,
-  chunked_hash_set<ppsr::context_subject>& failed_subjects,
-  std::optional<source_error>& unavailable) {
-    // A peer fiber already hit source_unavailable; skip the remaining work.
-    if (unavailable.has_value()) {
-        co_return;
-    }
-    // A nullopt from a reachable error (not source_unavailable, which sets
-    // `unavailable`) leaves this subject's versions undiscovered, so exclude it
-    // from the hard-delete: its destination versions must not be read as
-    // source-absent.
-    // List all versions first: unlike the active-only listing, it succeeds
-    // for a fully soft-deleted subject. The two listings partition versions
-    // into active vs. soft-deleted.
-    auto all = co_await list_versions_once(
-      subject, ppsr::include_deleted::yes, as, unavailable);
-    if (!all.has_value()) {
-        failed_subjects.insert(subject);
-        co_return;
-    }
-    auto active = co_await list_versions_once(
-      subject, ppsr::include_deleted::no, as, unavailable);
-    if (!active.has_value()) {
-        failed_subjects.insert(subject);
-        co_return;
-    }
-    chunked_hash_set<ppsr::schema_version> active_set;
-    for (auto version : *active) {
-        active_set.insert(version);
-        discovered.active.insert(ppsr::subject_version{subject, version});
-    }
-    for (auto version : *all) {
-        if (!active_set.contains(version)) {
-            discovered.deleted.insert(ppsr::subject_version{subject, version});
-        }
-    }
 }
 
 work_set
@@ -891,9 +852,6 @@ ss::future<task::state_transition> mirroring_task::full_source_sync(
     in_scope) {
     const auto limits = sync_limits();
 
-    // Discover the source nodes; the reconciler fetches the bodies.
-    discovered_versions discovered;
-
     // Track failed context and subject listing calls to narrow the hard-delete
     // purge to only what discovery saw whole and avoid hard-deleting subjects
     // based on incomplete discovery.
@@ -925,20 +883,16 @@ ss::future<task::state_transition> mirroring_task::full_source_sync(
     }
     _status.inventory.selected_source_subjects = subjects.size();
 
-    // Bounded concurrency over independent round-trips. list_one_subject is a
-    // member, not a coroutine lambda (see its declaration), so the forwarding
-    // lambda only returns its future.
-    std::optional<source_error> unavailable;
-    co_await ss::max_concurrent_for_each(
-      subjects,
-      std::max<size_t>(1, limits.parallelism),
-      [&](const ppsr::context_subject& subject) {
-          return list_one_subject(
-            subject, as, discovered, failed_subjects, unavailable);
-      });
-    if (unavailable.has_value()) {
-        co_return make_unavailable(unavailable->message);
+    auto versions = co_await _discovery->list_versions(
+      *_reader, subjects, limits.parallelism, as);
+    for (auto& error : versions.errors) {
+        record_error(error);
     }
+    if (versions.unavailable.has_value()) {
+        co_return make_unavailable(versions.unavailable->message);
+    }
+    auto discovered = std::move(versions.discovered);
+    failed_subjects = std::move(versions.failed_subjects);
 
     // Every discovered source version is selected for sync, soft-deleted ones
     // included (they are imported too), so count both -- mirroring
@@ -956,6 +910,16 @@ ss::future<task::state_transition> mirroring_task::full_source_sync(
       failed_contexts,
       failed_subjects);
 
+    // run_reconcile() moves `_destination_inventory.all`, so the retained
+    // inventory is invalid until the final rescan rebuilds it. If we exit
+    // earlier, clear it and `_last_full_sync`: a config-forced full sync can
+    // fail while the last successful full sync is still recent, and keeping
+    // that timestamp would let the next run tail under the new config instead
+    // of redoing the source-wide full sync.
+    auto invalidate_inventory = ss::defer([this] {
+        _destination_inventory = inventory{};
+        _last_full_sync.reset();
+    });
     auto result = co_await run_reconcile(
       std::move(work), feature_policy, in_scope, limits, as);
     if (!result.has_value()) {
@@ -1023,6 +987,7 @@ ss::future<task::state_transition> mirroring_task::full_source_sync(
     // Completed (best-effort, per-item failures counted), so advance the timer
     // and retry on the normal interval.
     _last_full_sync = ss::lowres_clock::now();
+    invalidate_inventory.cancel();
     co_return make_active();
 }
 
@@ -1036,19 +1001,16 @@ mirroring_task::sync_batch_subjects(
   ss::abort_source& as) {
     co_await refresh_destination_inventory(in_scope, as);
 
-    discovered_versions discovered;
-    chunked_hash_set<ppsr::context_subject> failed_subjects;
-    std::optional<source_error> unavailable;
-    co_await ss::max_concurrent_for_each(
-      subjects,
-      std::max<size_t>(1, limits.parallelism),
-      [&](const ppsr::context_subject& subject) {
-          return list_one_subject(
-            subject, as, discovered, failed_subjects, unavailable);
-      });
-    if (unavailable.has_value()) {
-        co_return std::unexpected(std::move(*unavailable));
+    auto versions = co_await _discovery->list_versions(
+      *_reader, subjects, limits.parallelism, as);
+    for (auto& error : versions.errors) {
+        record_error(error);
     }
+    if (versions.unavailable.has_value()) {
+        co_return std::unexpected(std::move(*versions.unavailable));
+    }
+    auto discovered = std::move(versions.discovered);
+    auto failed_subjects = std::move(versions.failed_subjects);
     // The inventory counters stay as the full sync left them: they describe the
     // whole selected source, and this pass looked at a handful of subjects.
 
@@ -1077,7 +1039,7 @@ mirroring_task::sync_batch_subjects(
         std::move(to_purge), as)};
 }
 
-ss::future<task::state_transition> mirroring_task::tail_sync(
+ss::future<task::state_transition> mirroring_task::feed_tail_sync(
   ss::abort_source& as,
   model::schema_registry_sync_config::unsupported_feature_policy feature_policy,
   const ss::noncopyable_function<bool(const ppsr::context_subject&)>&
@@ -1182,6 +1144,137 @@ ss::future<task::state_transition> mirroring_task::tail_sync(
     co_return make_active();
 }
 
+reconcile_stats mirroring_task::fold_reconcile_stats() {
+    const auto stats = _reconcile_stats;
+    _reconcile_stats = reconcile_stats{};
+    _status.current_sync->summary.subject_versions_changed
+      += stats.versions_changed;
+    _status.current_sync->summary.errors += stats.errors;
+    _status.current_sync->summary.unsupported_features_removed
+      += stats.unsupported_features_removed;
+    _status.totals_since_task_start.subject_versions_changed
+      += stats.versions_changed;
+    _status.totals_since_task_start.errors += stats.errors;
+    _status.totals_since_task_start.unsupported_features_removed
+      += stats.unsupported_features_removed;
+    return stats;
+}
+
+std::unique_ptr<discovery> mirroring_task::make_discovery() {
+    return std::make_unique<discovery>();
+}
+
+ss::future<chunked_hash_set<ppsr::context_subject>>
+mirroring_task::known_subjects(
+  const ss::noncopyable_function<bool(const ppsr::context_subject&)>& in_scope,
+  ss::abort_source& as) {
+    // The feed path moves the retained inventory into its reconcile seed and
+    // rescans only when something landed, so a feed tick that imported
+    // nothing can leave it empty; rebuild it rather than rediscover the
+    // whole registry as new.
+    if (_destination_inventory.all.empty()) {
+        co_await refresh_destination_inventory(in_scope, as);
+    }
+    chunked_hash_set<ppsr::context_subject> known;
+    for (const auto& node : _destination_inventory.all) {
+        known.insert(node.sub);
+    }
+    co_return known;
+}
+
+ss::future<task::state_transition> mirroring_task::http_fallback_tail_sync(
+  ss::abort_source& as,
+  const chunked_hash_set<ppsr::context>& contexts,
+  model::schema_registry_sync_config::unsupported_feature_policy feature_policy,
+  const ss::noncopyable_function<bool(const ppsr::context_subject&)>&
+    in_scope) {
+    const auto known = co_await known_subjects(in_scope, as);
+    auto listing = co_await _discovery->list_new_subjects(
+      *_reader, contexts, known, in_scope, as);
+    for (auto& error : listing.errors) {
+        record_error(error);
+    }
+    if (listing.unavailable.has_value()) {
+        co_return make_unavailable(listing.unavailable->message);
+    }
+
+    if (listing.subjects.empty()) {
+        // The common case; costs the listings above and nothing else.
+        co_return make_active();
+    }
+
+    const auto limits = sync_limits();
+    auto versions = co_await _discovery->list_versions(
+      *_reader, listing.subjects, limits.parallelism, as);
+    for (auto& error : versions.errors) {
+        record_error(error);
+    }
+    if (versions.unavailable.has_value()) {
+        co_return make_unavailable(versions.unavailable->message);
+    }
+    auto discovered = std::move(versions.discovered);
+
+    // Same diff the full sync uses. Not redundant here: listing-leg nodes are
+    // new by construction, but probe hits can name nodes the destination
+    // already holds.
+    auto work = build_work_set(discovered);
+    if (work.upserts.empty()) {
+        co_return make_active();
+    }
+
+    // Not run_reconcile: that moves the retained inventory into its seed,
+    // while this path's seed is copied -- the inventory is the next tick's
+    // diff baseline and this tick may skip the closing rescan.
+    auto rec = reconciler{
+      _reader.get(),
+      _destination,
+      [&in_scope](const ppsr::context_subject& cs) { return in_scope(cs); },
+      _mapper,
+      limits,
+      feature_policy};
+    _reconcile_stats = reconcile_stats{};
+    auto result = co_await rec.reconcile(
+      std::move(work),
+      ss::chunked_hash_set_from_range(_destination_inventory.all),
+      _reconcile_stats,
+      as);
+    // Before branching on the result: reconcile can fail partway with
+    // versions already landed, and a stale tail inventory is not repaired by
+    // the next run -- it would rediscover the same subjects on every tick.
+    const auto stats = fold_reconcile_stats();
+    // Refresh the retained destination baseline only if reconcile actually
+    // imported versions. The next HTTP-tail tick reuses
+    // `_destination_inventory`
+    // (`all` and `max_id`) to discover deltas, so if a partial reconcile landed
+    // writes and then failed, we must repair that baseline here rather than let
+    // the next tick rediscover the same items. The rescan reads only the
+    // destination, so it costs no source requests and is safe even when the
+    // source has just gone away.
+    if (stats.versions_changed > 0) {
+        co_await refresh_destination_inventory(in_scope, as);
+    }
+    if (!result.has_value()) {
+        if (result.error().kind == source_error_kind::source_unavailable) {
+            co_return make_unavailable(result.error().message);
+        }
+        record_error(result.error().message);
+        co_return make_active();
+    }
+
+    vlog(
+      logger().info,
+      "Schema Registry tail sync (HTTP): {} new subjects, imported {} "
+      "versions, {} errors",
+      listing.subjects.size(),
+      stats.versions_changed,
+      stats.errors);
+
+    // No finish_time stamp: run_impl clears current_sync on the way out and
+    // nothing carries a tail summary anywhere, unlike the full sync copying
+    // its own into last_full_sync.
+    co_return make_active();
+}
+
 ss::future<task::state_transition>
 mirroring_task::run_impl(ss::abort_source& as) {
     // Stamp the cumulative summary's start time once per leadership acquisition
@@ -1262,7 +1355,27 @@ mirroring_task::run_impl(ss::abort_source& as) {
     const auto feature_policy = api->feature_policy;
 
     if (!long_sync) {
-        co_return co_await tail_sync(as, feature_policy, in_scope);
+        // A live change feed is authoritative -- cheaper, and it sees
+        // deletions and mode/config changes -- so the feed always gets its
+        // tick first: poll both serves a live reader and resumes a dead one
+        // from its own progress (with backoff), and a reader that never
+        // armed polls as a free no-op. Only when the feed comes out of the
+        // tick still not serving does this tick discover over HTTP instead.
+        auto feed_tick = co_await feed_tail_sync(as, feature_policy, in_scope);
+        if (
+          _tail->armed()
+          || feed_tick.desired_state != model::task_state::active) {
+            co_return feed_tick;
+        }
+        // Discovery needs the in-scope contexts, which the feed path does
+        // not: one list_contexts per fallback tick.
+        auto contexts = co_await load_sync_contexts(
+          as, unfiltered, scan_contexts);
+        if (!contexts.has_value()) {
+            co_return std::move(contexts.error());
+        }
+        co_return co_await http_fallback_tail_sync(
+          as, contexts.value(), feature_policy, in_scope);
     }
 
     // Before this sync's first source read: see tail_reader::arm for why that
@@ -1285,29 +1398,14 @@ mirroring_task::run_impl(ss::abort_source& as) {
           logger().warn, "Schema Registry topic tailing could not arm: {}", ex);
     }
 
-    // Contexts to replicate = source contexts intersected with the filter.
-    auto contexts_res = co_await _reader->list_contexts(as);
-    if (!contexts_res.has_value()) {
-        co_return on_source_error(contexts_res.error());
-    }
-    chunked_hash_set<ppsr::context> contexts;
-    for (auto& ctx : contexts_res.value()) {
-        if (unfiltered || scan_contexts.contains(ctx)) {
-            contexts.insert(std::move(ctx));
-        }
-    }
-
-    if (
-      auto reason = check_preconditions(
-        _config,
-        contexts,
-        config::shard_local_cfg().schema_registry_enable_qualified_subjects());
-      reason.has_value()) {
-        co_return make_faulted(*reason);
+    auto contexts = co_await load_sync_contexts(as, unfiltered, scan_contexts);
+    if (!contexts.has_value()) {
+        co_return std::move(contexts.error());
     }
 
     co_await refresh_destination_inventory(in_scope, as);
-    co_return co_await full_source_sync(as, contexts, feature_policy, in_scope);
+    co_return co_await full_source_sync(
+      as, contexts.value(), feature_policy, in_scope);
 }
 
 task::state_transition

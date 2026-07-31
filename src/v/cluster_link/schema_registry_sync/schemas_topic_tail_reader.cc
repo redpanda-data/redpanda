@@ -646,6 +646,8 @@ ss::future<> schemas_topic_tail_reader::rewind() {
     co_await release_consumer();
 }
 
+bool schemas_topic_tail_reader::armed() const { return _consumer != nullptr; }
+
 ss::future<> schemas_topic_tail_reader::stop() {
     _stopped = true;
     co_await disarm("reader stopped");

@@ -91,6 +91,13 @@ public:
     /// on it. Only `poll` can fault.
     virtual ss::future<tail_availability> arm(ss::abort_source&) = 0;
 
+    /// Whether the change feed is currently live: armed and not since torn
+    /// down by a poll failure or stop(). Consulted after a tail tick, not
+    /// before it -- poll both serves a live feed and resumes a dead one, so
+    /// the caller always polls first and falls back to discovery over the
+    /// source's HTTP API only when the reader is still not serving.
+    virtual bool armed() const = 0;
+
     /// Reports the changes recorded since the last poll. Returns an empty batch
     /// -- the common case -- when nothing changed, and likewise on a reader
     /// that did not arm, so callers need no availability check of their own.
