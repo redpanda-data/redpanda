@@ -308,8 +308,7 @@ snapshot_metastore::get_extent_metadata_forwards(
                   obj_result.error(), "Error getting object metadata: "));
             }
             if (!obj_result.value().has_value()) {
-                vlog(
-                  cd_log.error, "Object {} metadata is missing: {}", val.oid);
+                vlog(cd_log.error, "Object {} metadata is missing", val.oid);
                 co_return std::unexpected(errc::transport_error);
             }
             const auto& obj = *obj_result.value();
