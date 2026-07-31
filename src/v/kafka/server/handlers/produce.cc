@@ -42,6 +42,10 @@ namespace kafka {
 namespace {
 static constexpr auto despam_interval = std::chrono::minutes(5);
 
+/// Errors raised here apply to whole topics (request-level failures such as
+/// authorization or a full disk), so they carry no RecordErrors: no single
+/// record is to blame. Per-record diagnostics come from batch validation, see
+/// finalize_request_with_error_code.
 void fill_response_with_errors(
   produce_request::topic_cit topics_begin,
   produce_request::topic_cit topics_end,
@@ -186,22 +190,32 @@ partition_produce_stages partition_append(
     };
 }
 
+/// `batch_index` identifies the record within the batch that caused the
+/// rejection, when validation could attribute the failure to one. It is
+/// reported alongside the error message as a KIP-467 RecordErrors entry, which
+/// the encoder drops below produce v8.
 produce_response::partition finalize_request_with_error_code(
   error_code ec,
   std::unique_ptr<ss::promise<>> dispatch,
   const model::ntp& ntp,
   ss::shard_id source_shard,
-  std::optional<ss::sstring> err_msg = std::nullopt) {
+  std::optional<ss::sstring> err_msg = std::nullopt,
+  std::optional<int32_t> batch_index = std::nullopt) {
     // submit back to promise source shard
     ssx::background = ss::smp::submit_to(
       source_shard, [dispatch = std::move(dispatch)]() mutable {
           dispatch->set_value();
           dispatch.reset();
       });
-    return produce_response::partition{
-      .partition_index = ntp.tp.partition,
-      .error_code = ec,
-      .error_message = std::move(err_msg)};
+    produce_response::partition p{
+      .partition_index = ntp.tp.partition, .error_code = ec};
+    if (batch_index.has_value()) {
+        p.record_errors.push_back(
+          batch_index_and_error_message{
+            .batch_index = *batch_index, .batch_index_error_message = err_msg});
+    }
+    p.error_message = std::move(err_msg);
+    return p;
 }
 
 struct ntp_produce_request {
@@ -300,7 +314,8 @@ ss::future<produce_response::partition> do_produce_topic_partition(
           std::move(dispatched),
           req.ntp,
           ss::this_shard_id(),
-          std::move(validate_batch_res.error->msg));
+          std::move(validate_batch_res.error->msg),
+          validate_batch_res.error->batch_index);
     }
 
     auto batch_size = req.batch->size_bytes();

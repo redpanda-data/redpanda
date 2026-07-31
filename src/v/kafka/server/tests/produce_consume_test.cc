@@ -22,6 +22,7 @@
 #include "model/compression.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
+#include "model/tests/raw_record_batch_factory.h"
 #include "model/timeout_clock.h"
 #include "model/timestamp.h"
 #include "random/generators.h"
@@ -315,8 +316,8 @@ single_batch(model::partition_id p_id, const size_t volume) {
 /// below v8; from v8 they reach the client. v9 re-encodes the same field as a
 /// compact nullable string, so it is worth covering separately.
 ///
-/// The companion RecordErrors array stays empty: Redpanda rejects batches
-/// whole rather than per-record. See fill_response_with_errors in produce.cc.
+/// This rejection is a property of the whole batch, so RecordErrors stays
+/// empty. See test_produce_record_errors_kip467 for the per-record case.
 FIXTURE_TEST(test_produce_error_message_kip467, prod_consume_fixture) {
     wait_for_controller_leadership().get();
     start();
@@ -346,6 +347,86 @@ FIXTURE_TEST(test_produce_error_message_kip467, prod_consume_fixture) {
                   std::string_view{*p.error_message}.contains("exceeds max"));
             }
             BOOST_REQUIRE(p.record_errors.empty());
+        }
+    }
+}
+
+namespace {
+
+/// A batch that claims one more record than it carries. Parsing it stops at
+/// index `record_count`, which is the record the broker blames.
+model::record_batch batch_with_missing_last_record(int32_t record_count) {
+    storage::record_batch_builder builder(
+      model::record_batch_type::raft_data, model::offset(0));
+    for (int32_t i = 0; i < record_count; ++i) {
+        iobuf v{};
+        v.append("v", 1);
+        builder.add_raw_kv(iobuf{}, std::move(v));
+    }
+    auto batch = std::move(builder).build();
+
+    auto header = batch.header();
+    header.record_count = record_count + 1;
+    header.last_offset_delta = record_count;
+    auto data = batch.data().copy();
+    // the batch is otherwise well formed: the CRC covers the record count, so
+    // it has to be recomputed or the broker rejects it as corrupt instead
+    header.reset_size_checksum_metadata(data);
+
+    return model::test::raw_record_batch_factory::create_record_batch(
+      header, std::move(data), false);
+}
+
+} // namespace
+
+/// KIP-467 also added RecordErrors, which pinpoints the records that caused a
+/// batch to be rejected. Redpanda stops validating at the first offending
+/// record, so it reports that one index, with the same detail as the summary
+/// ErrorMessage. Like ErrorMessage, the encoder drops it below v8.
+FIXTURE_TEST(test_produce_record_errors_kip467, prod_consume_fixture) {
+    wait_for_controller_leadership().get();
+    start();
+
+    static constexpr int32_t record_count = 4;
+    const auto invalid = [] {
+        kafka::produce_request::partition partition;
+        partition.partition_index = model::partition_id(0);
+        partition.records.emplace(batch_with_missing_last_record(record_count));
+        chunked_vector<kafka::produce_request::partition> res;
+        res.push_back(std::move(partition));
+        return res;
+    };
+
+    for (auto v = kafka::api_version(3);
+         v <= kafka::produce_handler::max_supported;
+         ++v) {
+        auto resp = produce_raw(producers.front(), invalid(), v).get();
+        BOOST_TEST_CONTEXT("produce version " << v) {
+            BOOST_REQUIRE_EQUAL(resp.data.responses.size(), 1);
+            const auto& p = *resp.data.responses.begin()->partitions.begin();
+            BOOST_REQUIRE_EQUAL(
+              p.error_code, kafka::error_code::invalid_record);
+
+            if (v < kafka::api_version(8)) {
+                // neither field exists on the wire yet
+                BOOST_REQUIRE(!p.error_message.has_value());
+                BOOST_REQUIRE(p.record_errors.empty());
+            } else {
+                BOOST_REQUIRE(p.error_message.has_value());
+                // the message is a protocol string, so it has to survive the
+                // client's control character check, i.e. carry no exception
+                // text or backtrace
+                BOOST_REQUIRE(
+                  std::string_view{*p.error_message}.contains(
+                    "index " + std::to_string(record_count)));
+                BOOST_REQUIRE_EQUAL(p.record_errors.size(), 1);
+                const auto& record_error = *p.record_errors.begin();
+                BOOST_REQUIRE_EQUAL(record_error.batch_index, record_count);
+                BOOST_REQUIRE(
+                  record_error.batch_index_error_message.has_value());
+                BOOST_REQUIRE_EQUAL(
+                  *record_error.batch_index_error_message, *p.error_message);
+            }
         }
     }
 }

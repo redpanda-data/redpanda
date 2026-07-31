@@ -902,6 +902,7 @@ redpanda_cc_btest(
         "//src/v/kafka/server",
         "//src/v/model",
         "//src/v/model:batch_compression",
+        "//src/v/model/tests:raw_record_batch_factory",
         "//src/v/random:generators",
         "//src/v/redpanda/tests:fixture",
         "//src/v/storage:record_batch_builder",
