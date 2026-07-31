@@ -486,7 +486,7 @@ void segment::cache_truncate(model::offset offset) {
 ss::future<> segment::do_compaction_index_batch(const model::record_batch& b) {
     vassert(!b.compressed(), "wrong method. Call compact_index_batch. {}", b);
     auto& w = compaction_index();
-    return model::for_each_record(
+    co_await model::for_each_record(
       b,
       [o = b.base_offset(),
        batch_type = b.header().type,

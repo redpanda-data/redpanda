@@ -1070,17 +1070,12 @@ public:
     static ss::future<model::record_batch>
     serde_async_direct_read(iobuf_parser& in, serde::header h) {
         using serde::read_async_nested;
-        // TODO: change to coroutine after we upgrade to clang-16
         auto bytes_left_limit = h._bytes_left_limit;
-        return read_async_nested<model::record_batch_header>(
-                 in, bytes_left_limit)
-          .then([&in, bytes_left_limit](model::record_batch_header header) {
-              return read_async_nested<iobuf>(in, bytes_left_limit)
-                .then([header](iobuf records) {
-                    return model::record_batch{
-                      header, std::move(records), tag_ctor_ng()};
-                });
-          });
+        auto header = co_await read_async_nested<model::record_batch_header>(
+          in, bytes_left_limit);
+        auto records = co_await read_async_nested<iobuf>(in, bytes_left_limit);
+        co_return model::record_batch{
+          header, std::move(records), tag_ctor_ng()};
     }
 
 private:
@@ -1109,27 +1104,20 @@ private:
 
     template<typename Func>
     friend ss::future<>
-    for_each_record(const model::record_batch& batch, Func&& f);
+    for_each_record(const model::record_batch& batch, Func f);
 };
 
 /**
  * Iterate over records with lazy record materialization.
  */
 template<typename Func>
-inline ss::future<>
-for_each_record(const model::record_batch& batch, Func&& f) {
-    return ss::do_with(
-      record_batch_copy_iterator::create(batch),
-      record{},
-      [f = std::forward<Func>(f)](
-        record_batch_copy_iterator& it, record& r) mutable {
-          return ss::do_until(
-            [&it]() { return !it.has_next(); },
-            [&it, &r, f = std::forward<Func>(f)]() {
-                r = it.next();
-                return ss::futurize_invoke(f, r);
-            });
-      });
+inline ss::future<> for_each_record(const model::record_batch& batch, Func f) {
+    auto iterator = record_batch_copy_iterator::create(batch);
+    auto current = record{};
+    while (iterator.has_next()) {
+        current = iterator.next();
+        co_await ss::futurize_invoke(f, current);
+    }
 }
 
 class record_batch_crc_checker {
