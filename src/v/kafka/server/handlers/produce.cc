@@ -32,6 +32,8 @@
 #include <seastar/core/future.hh>
 #include <seastar/core/shared_ptr.hh>
 #include <seastar/core/smp.hh>
+#include <seastar/coroutine/as_future.hh>
+#include <seastar/coroutine/try_future.hh>
 #include <seastar/util/log.hh>
 
 #include <chrono>
@@ -134,7 +136,9 @@ error_code map_produce_error_code(std::error_code ec) {
  * Caller is expected to catch errors that may be thrown while the kafka
  * batch is being deserialized (see reader_from_kafka_batch).
  */
-partition_produce_stages partition_append(
+ss::future<produce_response::partition> partition_append(
+  ss::shard_id source_shard,
+  std::unique_ptr<ss::promise<>> dispatch,
   model::partition_id id,
   partition_proxy partition,
   model::batch_identity bid,
@@ -153,37 +157,47 @@ partition_produce_stages partition_append(
                                 : batch->header().max_timestamp;
     auto stages = partition.replicate(
       bid, std::move(*batch), acks_to_replicate_options(acks, timeout_ms));
-    return partition_produce_stages{
-      .dispatched = std::move(stages.request_enqueued),
-      .produced = stages.replicate_finished.then_wrapped(
-        [partition = std::move(partition),
-         id,
-         num_records = num_records,
-         num_bytes,
-         log_append_time_ms = log_append_time_ms](
-          ss::future<result<raft::replicate_result>> f) mutable {
-            produce_response::partition p{.partition_index = id};
-            try {
-                auto r = f.get();
-                if (r.has_value()) {
-                    // have to subtract num_of_records - 1 as base_offset
-                    // is inclusive
-                    p.base_offset = model::offset(
-                      r.value().last_offset - (num_records - 1));
-                    p.log_append_time_ms = log_append_time_ms;
-                    p.error_code = error_code::none;
-                    partition.probe().add_records_produced(num_records);
-                    partition.probe().add_bytes_produced(num_bytes);
-                    partition.probe().add_batches_produced(1);
-                } else {
-                    p.error_code = map_produce_error_code(r.error());
-                }
-            } catch (...) {
-                p.error_code = error_code::request_timed_out;
-            }
-            return p;
-        }),
-    };
+    auto dispatch_result = co_await ss::coroutine::as_future(
+      std::move(stages.request_enqueued));
+    if (dispatch_result.failed()) {
+        auto exception = dispatch_result.get_exception();
+        ssx::background = ss::smp::submit_to(
+          source_shard, [dispatch = std::move(dispatch), exception]() mutable {
+              dispatch->set_exception(exception);
+              dispatch.reset();
+          });
+    } else {
+        ssx::background = ss::smp::submit_to(
+          source_shard, [dispatch = std::move(dispatch)]() mutable {
+              dispatch->set_value();
+              dispatch.reset();
+          });
+    }
+
+    produce_response::partition response{.partition_index = id};
+    auto replicated = co_await ss::coroutine::as_future(
+      std::move(stages.replicate_finished));
+    if (replicated.failed()) {
+        response.error_code = error_code::request_timed_out;
+        co_return response;
+    }
+
+    auto result = std::move(replicated).get();
+    if (result.has_error()) {
+        response.error_code = map_produce_error_code(result.error());
+        co_return response;
+    }
+
+    // have to subtract num_of_records - 1 as base_offset
+    // is inclusive
+    response.base_offset = model::offset(
+      result.value().last_offset - (num_records - 1));
+    response.log_append_time_ms = log_append_time_ms;
+    response.error_code = error_code::none;
+    partition.probe().add_records_produced(num_records);
+    partition.probe().add_bytes_produced(num_bytes);
+    partition.probe().add_batches_produced(1);
+    co_return response;
 }
 
 produce_response::partition finalize_request_with_error_code(
@@ -399,7 +413,9 @@ ss::future<produce_response::partition> do_produce_topic_partition(
           auto bid = model::batch_identity::from(batch->header());
           auto num_records = batch->record_count();
           auto batch_size = batch->size_bytes();
-          auto stages = partition_append(
+          return partition_append(
+            source_shard,
+            std::move(dispatch),
             ntp.tp.partition,
             std::move(*partition),
             bid,
@@ -408,28 +424,6 @@ ss::future<produce_response::partition> do_produce_topic_partition(
             num_records,
             batch_size,
             timeout);
-          return stages.dispatched
-            .then_wrapped([source_shard, dispatch = std::move(dispatch)](
-                            ss::future<> f) mutable {
-                if (f.failed()) {
-                    ssx::background = ss::smp::submit_to(
-                      source_shard,
-                      [dispatch = std::move(dispatch),
-                       e = f.get_exception()]() mutable {
-                          dispatch->set_exception(e);
-                          dispatch.reset();
-                      });
-                    return;
-                }
-                ssx::background = ss::smp::submit_to(
-                  source_shard, [dispatch = std::move(dispatch)]() mutable {
-                      dispatch->set_value();
-                      dispatch.reset();
-                  });
-            })
-            .then([f = std::move(stages.produced)]() mutable {
-                return std::move(f);
-            });
       });
     if (p.error_code == error_code::none) {
         auto dur = std::chrono::steady_clock::now() - start;
