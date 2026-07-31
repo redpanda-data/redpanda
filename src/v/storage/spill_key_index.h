@@ -118,6 +118,8 @@ private:
     ss::future<> open();
     ss::future<> drain_all_keys();
     ss::future<> add_key(compaction::compaction_key, value_type);
+    ss::future<> finish_add_key(
+      ss::future<>, compaction::compaction_key, value_type, size_t);
     // called during add_key if the index should have keys spilled into the
     // backing file in order to free up capacity for new keys. see function for
     // details on the exact spill policy.

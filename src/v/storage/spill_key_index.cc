@@ -151,7 +151,6 @@ spill_key_index::spill_some(size_t entry_size, size_t min_index_size) {
 
 ss::future<>
 spill_key_index::add_key(compaction::compaction_key b, value_type v) {
-    auto f = ss::now();
     const auto entry_size = entry_mem_usage(b);
     const auto expected_size = idx_mem_usage() + _keys_mem_usage + entry_size;
 
@@ -170,19 +169,29 @@ spill_key_index::add_key(compaction::compaction_key b, value_type v) {
     if (
       (take_result.checkpoint_hint && expected_size > min_index_size)
       || expected_size >= _max_mem) {
-        f = spill_some(entry_size, min_index_size);
+        return finish_add_key(
+          spill_some(entry_size, min_index_size), std::move(b), v, entry_size);
     }
 
-    return f.then([this, entry_size, b = std::move(b), v]() mutable {
-        // convert iobuf to key
-        _keys_mem_usage += entry_size;
+    // No update to _mem_units here: we already took units at top
+    // of add_key before starting the write.
+    _keys_mem_usage += entry_size;
+    _last_key_indexed = b;
+    _midx.insert({std::move(b), v});
+    return ss::now();
+}
 
-        // No update to _mem_units here: we already took units at top
-        // of add_key before starting the write.
-
-        _last_key_indexed = b;
-        _midx.insert({std::move(b), v});
-    });
+ss::future<> spill_key_index::finish_add_key(
+  ss::future<> spill,
+  compaction::compaction_key key,
+  value_type value,
+  size_t entry_size) {
+    co_await std::move(spill);
+    // No update to _mem_units here: we already took units at top
+    // of add_key before starting the write.
+    _keys_mem_usage += entry_size;
+    _last_key_indexed = key;
+    _midx.insert({std::move(key), value});
 }
 
 ss::future<> spill_key_index::index(
@@ -295,27 +304,17 @@ void spill_key_index::append_to_spill_payload(
 }
 
 ss::future<> spill_key_index::append(compacted_index::entry e) {
-    return ss::try_with_gate(_gate, [this, e = std::move(e)]() mutable {
-        return ss::do_with(std::move(e), [this](compacted_index::entry& e) {
-            return spill(e.type, e.key, value_type{e.offset, e.delta});
-        });
-    });
+    auto holder = _gate.hold();
+    co_await spill(e.type, e.key, value_type{e.offset, e.delta});
 }
 
 ss::future<> spill_key_index::drain_all_keys() {
-    return ss::do_until(
-      [this] {
-          // stop condition
-          return _midx.empty();
-      },
-      [this] {
-          auto node = _midx.extract(_midx.begin());
-          release_entry_memory(node.key());
-          return ss::do_with(
-            node.key(), node.mapped(), [this](const bytes& k, value_type o) {
-                return spill(compacted_index::entry_type::key, k, o);
-            });
-      });
+    while (!_midx.empty()) {
+        auto node = _midx.extract(_midx.begin());
+        release_entry_memory(node.key());
+        co_await spill(
+          compacted_index::entry_type::key, node.key(), node.mapped());
+    }
 }
 
 void spill_key_index::set_flag(compacted_index::footer_flags f) {
