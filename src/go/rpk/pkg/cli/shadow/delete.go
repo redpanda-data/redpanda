@@ -20,9 +20,7 @@ import (
 	"connectrpc.com/connect"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/adminapi"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
-	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/oauth/providers/auth0"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/out"
-	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/publicapi"
 	"github.com/spf13/afero"
 	"github.com/spf13/cobra"
 )
@@ -82,12 +80,7 @@ Force delete a Shadow Link with active shadow topics:
 				}
 			}
 			if prof.CheckFromCloud() {
-				cloudClient, err := publicapi.NewValidatedCloudClientSet(
-					cfg.DevOverrides().PublicAPIURL,
-					prof.CurrentAuth().AuthToken,
-					auth0.NewClient(cfg.DevOverrides()).Audience(),
-					[]string{prof.CurrentAuth().ClientID},
-				)
+				cloudClient, err := newCloudClientSet(cfg, prof)
 				out.MaybeDieErr(err)
 
 				link, err := cloudClient.ShadowLinkByNameAndRPID(cmd.Context(), linkName, prof.CloudCluster.ClusterID)
@@ -109,7 +102,7 @@ Force delete a Shadow Link with active shadow topics:
 				}
 				if !isComplete {
 					spinner.Stop()
-					out.Exit("Shadow link deletion is taking longer than expected. Please check the status of the shadow link using 'rpk shadow status %q'", linkName)
+					out.Exit("Shadow link deletion is taking longer than expected. Please check the status of the shadow link using 'rpk shadow status %v'", linkName)
 				}
 				spinner.Success(fmt.Sprintf("Shadow Link %q deleted successfully", linkName))
 				os.Exit(0)

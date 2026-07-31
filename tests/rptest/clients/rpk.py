@@ -1357,7 +1357,12 @@ class RpkTool:
         output = self._execute(cmd)
         return json.loads(output) if output_format == "json" else output
 
-    def _run_shadow(self, args: list[str], output_format: str | None = None) -> Any:
+    def _run_shadow(
+        self,
+        args: list[str],
+        output_format: str | None = None,
+        env: dict[str, str] | None = None,
+    ) -> Any:
         cmd = [
             self._rpk_binary(),
             "-X",
@@ -1366,7 +1371,7 @@ class RpkTool:
         ] + args
         if output_format is not None:
             cmd += ["--format", output_format]
-        output = self._execute(cmd)
+        output = self._execute(cmd, env=env)
         return json.loads(output) if output_format == "json" else output
 
     def shadow_create(self, config: dict[str, Any], no_confirm: bool = True) -> str:
@@ -1383,6 +1388,13 @@ class RpkTool:
             yaml.safe_dump(config, tf)
             tf.flush()
             return self._run_shadow(["update", name, "-c", tf.name])
+
+    def shadow_update_editor(self, name: str, editor: str) -> str:
+        """Run 'rpk shadow update' in editor mode. rpk seeds a temp file with
+        the current configuration and invokes `editor <tmpfile>` ($EDITOR is
+        not shell-parsed, so it must be a single executable); the edited file
+        is submitted when the editor exits."""
+        return self._run_shadow(["update", name], env={"EDITOR": editor})
 
     def shadow_status(self, name: str, output_format: str = "json") -> Any:
         return self._run_shadow(["status", name, "--print-all"], output_format)
@@ -1573,7 +1585,9 @@ class RpkTool:
             self._redpanda.logger.debug("Executing command: %s", cmd)
 
         if env is not None:
-            env.update(os.environ.copy())
+            # Caller-provided variables take precedence over the inherited
+            # environment.
+            env = os.environ | env
 
         p = subprocess.Popen(
             cmd,
