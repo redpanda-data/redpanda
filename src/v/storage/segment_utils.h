@@ -162,7 +162,7 @@ ss::future<ss::file> make_handle(
   std::optional<ntp_sanitizer_config> ntp_sanitizer_config);
 
 ss::future<segment_appender_ptr> make_segment_appender(
-  const segment_full_path& path,
+  segment_full_path path,
   std::optional<uint64_t> segment_size,
   storage_resources& resources,
   std::optional<ntp_sanitizer_config> ntp_sanitizer_config,

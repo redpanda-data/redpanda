@@ -147,54 +147,41 @@ ss::future<ss::file> make_reader_handle(
 }
 
 ss::future<segment_appender_ptr> make_segment_appender(
-  const segment_full_path& path,
+  segment_full_path path,
   std::optional<uint64_t> segment_size,
   storage_resources& resources,
   std::optional<ntp_sanitizer_config> ntp_sanitizer_config,
   segment_appender::stats_ptr shared_stats) {
-    return internal::make_writer_handle(path, std::nullopt)
-      .then([path,
-             segment_size,
-             &resources,
-             shared_stats,
-             ntp_sanitizer_config = std::move(ntp_sanitizer_config)](
-              ss::file writer) mutable {
-          // file_io_sanitizer requires a pointer to the appender,
-          // so we create it inline and give it the pointer after
-          // the appender is created.
-          ss::shared_ptr<file_io_sanitizer> sanitized_writer{nullptr};
-          if (ntp_sanitizer_config) {
-              sanitized_writer = ss::make_shared<file_io_sanitizer>(
-                std::move(writer),
-                path,
-                std::move(ntp_sanitizer_config.value()));
+    auto writer = co_await internal::make_writer_handle(path, std::nullopt);
+    // file_io_sanitizer requires a pointer to the appender,
+    // so we create it inline and give it the pointer after
+    // the appender is created.
+    ss::shared_ptr<file_io_sanitizer> sanitized_writer{nullptr};
+    if (ntp_sanitizer_config) {
+        sanitized_writer = ss::make_shared<file_io_sanitizer>(
+          std::move(writer), path, std::move(ntp_sanitizer_config.value()));
+        writer = ss::file(sanitized_writer);
+    }
 
-              writer = ss::file(sanitized_writer);
-          }
+    std::exception_ptr allocation_error;
+    // NOTE: This try-catch is needed to not uncover the real
+    // exception during an OOM condition, since the appender allocates
+    // 1MB of memory aligned buffers
+    try {
+        auto appender = std::make_unique<segment_appender>(
+          writer,
+          segment_appender::options(segment_size, resources, shared_stats));
+        if (sanitized_writer) {
+            sanitized_writer->set_pointer_to_appender(appender.get());
+        }
+        co_return appender;
+    } catch (...) {
+        allocation_error = std::current_exception();
+        vlog(stlog.error, "could not allocate appender: {}", allocation_error);
+    }
 
-          try {
-              // NOTE: This try-catch is needed to not uncover the real
-              // exception during an OOM condition, since the appender allocates
-              // 1MB of memory aligned buffers
-              auto appender_ptr = std::make_unique<segment_appender>(
-                writer,
-                segment_appender::options(
-                  segment_size, resources, shared_stats));
-
-              if (sanitized_writer) {
-                  sanitized_writer->set_pointer_to_appender(appender_ptr.get());
-              }
-
-              return ss::make_ready_future<segment_appender_ptr>(
-                std::move(appender_ptr));
-          } catch (...) {
-              auto e = std::current_exception();
-              vlog(stlog.error, "could not allocate appender: {}", e);
-              return writer.close().then_wrapped([writer, e = e](ss::future<>) {
-                  return ss::make_exception_future<segment_appender_ptr>(e);
-              });
-          }
-      });
+    (void)co_await ss::coroutine::as_future(writer.close());
+    co_return ss::coroutine::exception(allocation_error);
 }
 
 ss::future<roaring::Roaring>
