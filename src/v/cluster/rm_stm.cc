@@ -34,6 +34,8 @@
 #include <seastar/core/loop.hh>
 #include <seastar/core/sstring.hh>
 #include <seastar/coroutine/as_future.hh>
+#include <seastar/coroutine/try_future.hh>
+#include <seastar/util/defer.hh>
 
 #include <filesystem>
 #include <iterator>
@@ -298,15 +300,16 @@ ss::future<checked<model::term_id, tx::errc>> rm_stm::begin_tx(
        tx_seq,
        transaction_timeout_ms,
        tm,
-       producer](ssx::semaphore_units units) {
-          return do_begin_tx(
-                   synced_term,
-                   new_pid,
-                   producer,
-                   tx_seq,
-                   transaction_timeout_ms,
-                   tm)
-            .finally([units = std::move(units)] {});
+       producer](this auto, ssx::semaphore_units units)
+        -> ss::future<checked<model::term_id, tx::errc>> {
+          (void)units;
+          co_return co_await ss::coroutine::try_future(do_begin_tx(
+            synced_term,
+            new_pid,
+            producer,
+            tx_seq,
+            transaction_timeout_ms,
+            tm));
       });
 }
 
@@ -536,9 +539,10 @@ ss::future<tx::errc> rm_stm::commit_tx(
     }
     co_return co_await producer->run_with_lock(
       [this, synced_term, tx_seq, timeout, producer](
-        ssx::semaphore_units units) {
-          return do_commit_tx(synced_term, producer, tx_seq, timeout)
-            .finally([units = std::move(units)] {});
+        this auto, ssx::semaphore_units units) -> ss::future<tx::errc> {
+          (void)units;
+          co_return co_await ss::coroutine::try_future(
+            do_commit_tx(synced_term, producer, tx_seq, timeout));
       });
 }
 
@@ -696,9 +700,10 @@ ss::future<tx::errc> rm_stm::abort_tx(
     }
     co_return co_await producer->run_with_lock(
       [this, synced_term, tx_seq, timeout, producer](
-        ssx::semaphore_units units) {
-          return do_abort_tx(synced_term, producer, tx_seq, timeout)
-            .finally([units = std::move(units)] {});
+        this auto, ssx::semaphore_units units) -> ss::future<tx::errc> {
+          (void)units;
+          co_return co_await ss::coroutine::try_future(
+            do_abort_tx(synced_term, producer, tx_seq, timeout));
       });
 }
 
@@ -930,10 +935,12 @@ ss::future<tx::errc> rm_stm::mark_expired(model::producer_identity pid) {
     }
     auto producer = producer_it->second;
     co_return co_await producer->run_with_lock(
-      [this, producer](ssx::semaphore_units units) {
+      [this, producer](
+        this auto, ssx::semaphore_units units) -> ss::future<tx::errc> {
           producer->force_transaction_expiry();
-          return do_try_abort_old_tx(producer).finally(
-            [units = std::move(units)] {});
+          (void)units;
+          co_return co_await ss::coroutine::try_future(
+            do_try_abort_old_tx(producer));
       });
 }
 
@@ -1071,10 +1078,13 @@ ss::future<result<kafka_result>> rm_stm::transactional_replicate(
     }
     auto producer = result.value().first;
     co_return co_await producer->run_with_lock(
-      [&, expected_term](ssx::semaphore_units units) {
-          return do_transactional_replicate(
-                   expected_term.value(), producer, bid, std::move(batch))
-            .finally([units = std::move(units)] {});
+      [&, expected_term](
+        this auto,
+        ssx::semaphore_units units) -> ss::future<::result<kafka_result>> {
+          (void)units;
+          co_return co_await ss::coroutine::try_future(
+            do_transactional_replicate(
+              expected_term.value(), producer, bid, std::move(batch)));
       });
 }
 
@@ -1230,15 +1240,17 @@ ss::future<result<kafka_result>> rm_stm::idempotent_replicate(
     }
     auto [producer, known_producer] = result.value();
     co_return co_await producer->run_with_lock(
-      [&, known_producer](ssx::semaphore_units units) {
-          return idempotent_replicate(
+      [&, known_producer](
+        this auto,
+        ssx::semaphore_units units) -> ss::future<::result<kafka_result>> {
+          co_return co_await ss::coroutine::try_future(idempotent_replicate(
             producer,
             bid,
             std::move(batch),
             opts,
             std::move(enqueued),
             std::move(units),
-            known_producer);
+            known_producer));
       });
 }
 
@@ -1549,9 +1561,11 @@ ss::future<std::chrono::milliseconds> rm_stm::do_abort_old_txes() {
 
 ss::future<tx::errc> rm_stm::try_abort_old_tx(producer_ptr producer) {
     return producer->run_with_lock(
-      [this, producer](ssx::semaphore_units units) {
-          return do_try_abort_old_tx(producer).finally(
-            [units = std::move(units)] {});
+      [this, producer](
+        this auto, ssx::semaphore_units units) -> ss::future<tx::errc> {
+          (void)units;
+          co_return co_await ss::coroutine::try_future(
+            do_try_abort_old_tx(producer));
       });
 }
 

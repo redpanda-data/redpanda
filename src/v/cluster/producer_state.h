@@ -22,11 +22,14 @@
 
 #include <seastar/core/lowres_clock.hh>
 #include <seastar/core/shared_future.hh>
+#include <seastar/coroutine/exception.hh>
+#include <seastar/coroutine/try_future.hh>
 #include <seastar/util/defer.hh>
 #include <seastar/util/noncopyable_function.hh>
 
 #include <bit>
 #include <chrono>
+#include <type_traits>
 
 using namespace std::chrono_literals;
 
@@ -193,14 +196,25 @@ public:
     /// Runs the passed async function under the op_lock scope.
 
     template<AcceptsUnits AsyncFunc>
-    auto run_with_lock(AsyncFunc&& func) {
+    auto run_with_lock(AsyncFunc func)
+      -> ss::futurize_t<std::invoke_result_t<AsyncFunc, ssx::semaphore_units>> {
+        using result_type
+          = std::invoke_result_t<AsyncFunc, ssx::semaphore_units>;
         if (_evicted) {
-            throw ss::gate_closed_exception();
+            co_return ss::coroutine::exception(
+              std::make_exception_ptr(ss::gate_closed_exception()));
         }
-        return _op_lock.get_units().then(
-          [f = std::forward<AsyncFunc>(func)](auto units) {
-              return f(std::move(units));
-          });
+        auto units = co_await ss::coroutine::without_preemption_check(
+          _op_lock.get_units());
+        if constexpr (ss::is_future<result_type>::value) {
+            co_return co_await ss::coroutine::try_future(
+              func(std::move(units)));
+        } else if constexpr (std::is_void_v<result_type>) {
+            func(std::move(units));
+            co_return;
+        } else {
+            co_return func(std::move(units));
+        }
     }
 
     void shutdown_input();
