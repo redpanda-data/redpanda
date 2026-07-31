@@ -46,25 +46,23 @@ inline void check_out_of_range(size_t got, size_t expected) {
 
 inline ss::future<std::optional<header>>
 parse_header(ss::input_stream<char>& in) {
-    return read_iobuf_exactly(in, size_of_rpc_header).then([](iobuf b) {
-        if (b.size_bytes() != size_of_rpc_header) {
-            return ss::make_ready_future<std::optional<header>>();
-        }
-        iobuf_parser parser(std::move(b));
-        auto h = reflection::adl<header>{}.from(parser);
-        if (
-          auto got = checksum_header_only(h);
-          unlikely(h.header_checksum != got)) {
-            vlog(
-              rpclog.info,
-              "rpc header missmatching checksums. expected:{}, got:{} - {}",
-              h.header_checksum,
-              got,
-              h);
-            return ss::make_ready_future<std::optional<header>>();
-        }
-        return ss::make_ready_future<std::optional<header>>(h);
-    });
+    auto buffer = co_await read_iobuf_exactly(in, size_of_rpc_header);
+    if (buffer.size_bytes() != size_of_rpc_header) {
+        co_return std::nullopt;
+    }
+    iobuf_parser parser(std::move(buffer));
+    auto parsed_header = reflection::adl<header>{}.from(parser);
+    auto checksum = checksum_header_only(parsed_header);
+    if (unlikely(parsed_header.header_checksum != checksum)) {
+        vlog(
+          rpclog.info,
+          "rpc header missmatching checksums. expected:{}, got:{} - {}",
+          parsed_header.header_checksum,
+          checksum,
+          parsed_header);
+        co_return std::nullopt;
+    }
+    co_return parsed_header;
 }
 
 inline void validate_payload_and_header(const iobuf& io, const header& h) {
@@ -142,11 +140,8 @@ encode_for_version(iobuf& out, T msg, transport_version version) {
     static_assert(serde::is_envelope<T>);
 
     vassert(version >= transport_version::v2, "Can't encode serde <= v2");
-    return ss::do_with(std::move(msg), [&out, version](T& msg) {
-        return serde::write_async(out, std::move(msg)).then([version] {
-            return version;
-        });
-    });
+    co_await serde::write_async(out, std::move(msg));
+    co_return version;
 }
 
 /*
@@ -242,41 +237,31 @@ struct v0_message_codec {
         if constexpr (is_rpc_adl_exempt<T>) {
             vunreachable("Cannot use serde-only types in v0 server");
         } else {
-            return reflection::async_adl<T>{}.to(out, std::move(msg)).then([] {
-                return transport_version::v0;
-            });
+            co_await reflection::async_adl<T>{}.to(out, std::move(msg));
+            co_return transport_version::v0;
         }
     }
 };
 
 template<typename T, typename Codec>
-ss::future<T> parse_type(ss::input_stream<char>& in, const header& h) {
-    return read_iobuf_exactly(in, h.payload_size).then([h](iobuf io) {
-        validate_payload_and_header(io, h);
+ss::future<T> parse_type(ss::input_stream<char>& in, header h) {
+    auto buffer = co_await read_iobuf_exactly(in, h.payload_size);
+    validate_payload_and_header(buffer, h);
 
-        ss::future<iobuf> iobuf_fut = ss::make_ready_future<iobuf>();
+    switch (h.compression) {
+    case compression_type::none:
+        break;
+    case compression_type::zstd:
+        buffer = co_await compression::async_stream_zstd_instance().uncompress(
+          std::move(buffer));
+        break;
+    default:
+        throw std::runtime_error(
+          fmt::format("no compression supported. header: {}", h));
+    }
 
-        switch (h.compression) {
-        case compression_type::none:
-            iobuf_fut = ss::make_ready_future<iobuf>(std::move(io));
-            break;
-        case compression_type::zstd: {
-            auto& zstd_inst = compression::async_stream_zstd_instance();
-            iobuf_fut = zstd_inst.uncompress(std::move(io));
-            break;
-        }
-        default:
-            iobuf_fut = ss::make_exception_future<iobuf>(std::runtime_error(
-              fmt::format("no compression supported. header: {}", h)));
-        }
-
-        return iobuf_fut.then([h](iobuf io) {
-            auto p = std::make_unique<iobuf_parser>(std::move(io));
-            auto raw = p.get();
-            return Codec::template decode<T>(*raw, h.version)
-              .finally([p = std::move(p)] {});
-        });
-    });
+    auto parser = std::make_unique<iobuf_parser>(std::move(buffer));
+    co_return co_await Codec::template decode<T>(*parser, h.version);
 }
 
 } // namespace rpc
