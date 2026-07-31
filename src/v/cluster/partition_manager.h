@@ -277,6 +277,12 @@ private:
     void check_partitions_shutdown_state();
 
     void maybe_arm_shutdown_watchdog();
+
+    // Awaits the topic_storage_mode_migration feature and then re-runs
+    // the partition_storage_mode sync on every current leader (with bounded
+    // concurrency), covering partitions that became leader while the feature
+    // was inactive.
+    ss::future<> sync_partition_storage_mode_on_migration_feature();
     storage::api& _storage;
     /// used to wait for concurrent recoveries
     ss::sharded<raft::group_manager>& _raft_manager;

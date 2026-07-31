@@ -25,6 +25,7 @@
 #include "cluster/partition_recovery_manager.h"
 #include "cluster/topic_configuration.h"
 #include "cluster/types.h"
+#include "container/chunked_vector.h"
 #include "model/metadata.h"
 #include "raft/consensus.h"
 #include "raft/consensus_utils.h"
@@ -32,6 +33,7 @@
 #include "ssx/async-clear.h"
 #include "ssx/future-util.h"
 
+#include <seastar/core/loop.hh>
 #include <seastar/core/lowres_clock.hh>
 #include <seastar/core/shared_ptr.hh>
 
@@ -107,7 +109,57 @@ partition_manager::get_topic_partition_table(
 
 ss::future<> partition_manager::start() {
     maybe_arm_shutdown_watchdog();
+    // Sync partition_storage_mode once the migration feature activates. The
+    // leadership-notification sync (sync_partition_storage_mode) is gated on
+    // the feature being active, so a partition that became leader while the
+    // feature was inactive is left with partition_storage_mode == unset. Re-run
+    // the sync on every current leader when the feature turns active;
+    // partitions that gain leadership after activation are covered by the
+    // leadership notification.
+    ssx::spawn_with_gate(_gate, [this] {
+        return sync_partition_storage_mode_on_migration_feature();
+    });
     co_return;
+}
+
+ss::future<>
+partition_manager::sync_partition_storage_mode_on_migration_feature() {
+    try {
+        co_await _feature_table.local().await_feature(
+          features::feature::topic_storage_mode_migration, _as);
+    } catch (...) {
+        // Aborted on shutdown before the feature activated.
+        co_return;
+    }
+    // Snapshot the current leaders: _ntp_table can mutate across the yields
+    // below, and sync_partition_storage_mode re-checks leadership anyway.
+    chunked_vector<ss::lw_shared_ptr<partition>> leaders;
+    for (const auto& [_, p] : _ntp_table) {
+        if (p->is_leader()) {
+            leaders.push_back(p);
+        }
+    }
+    // Bound the concurrency, per shard (this sweep runs on every shard): at
+    // activation every leader needs a real sync (a quorum write), on every
+    // node in the cluster at the same time.
+    //
+    // Both halves of the shutdown handling are needed. The wait is on _as as
+    // well as on the sync because the loop being waited for belongs to the
+    // partition and outlives this sweep, while stop_partitions() closes the
+    // gate this fiber holds before it stops any partition -- a wait only the
+    // partition could end would deadlock shutdown. The check is because
+    // max_concurrent_for_each runs the whole range regardless, so without it
+    // every remaining leader would still be notified on the way out.
+    co_await ss::max_concurrent_for_each(leaders, 16, [this](const auto& p) {
+        if (_as.abort_requested()) {
+            return ss::now();
+        }
+        return ssx::ignore_shutdown_exceptions(
+          ssx::with_timeout_abortable(
+            p->partition_storage_mode_sync().notify_and_wait(),
+            ss::lowres_clock::time_point::max(),
+            _as));
+    });
 }
 
 ss::future<consensus_ptr> partition_manager::manage(
