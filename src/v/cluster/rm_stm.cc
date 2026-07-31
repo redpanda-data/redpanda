@@ -825,23 +825,8 @@ kafka_stages rm_stm::replicate_in_stages(
   raft::replicate_options opts) {
     auto enqueued = ss::make_lw_shared<available_promise<>>();
     auto f = enqueued->get_future();
-    auto replicate_finished
-      = do_replicate(bid, std::move(batch), opts, enqueued).finally([enqueued] {
-            // we should avoid situations when
-            // replicate_finished is set while enqueued
-            // isn't because it leads to hanging produce
-            // requests and the resource leaks. since
-            // staged replication is an optimization and
-            // setting enqueued only after
-            // replicate_finished is already set doesn't
-            // have sematic implications adding this
-            // post replicate_finished as a safety
-            // measure in case enqueued isn't set
-            // explicitly
-            if (!enqueued->available()) {
-                enqueued->set_value();
-            }
-        });
+    auto replicate_finished = do_replicate(
+      bid, std::move(batch), opts, enqueued);
     return {std::move(f), std::move(replicate_finished)};
 }
 
@@ -862,6 +847,21 @@ ss::future<result<kafka_result>> rm_stm::do_replicate(
   model::record_batch batch,
   raft::replicate_options opts,
   ss::lw_shared_ptr<available_promise<>> enqueued) {
+    // we should avoid situations when
+    // replicate_finished is set while enqueued
+    // isn't because it leads to hanging produce
+    // requests and the resource leaks. since
+    // staged replication is an optimization and
+    // setting enqueued only after
+    // replicate_finished is already set doesn't
+    // have semantic implications, so this scope
+    // guard is a safety measure in case enqueued
+    // isn't set explicitly
+    auto ensure_enqueued = ss::defer([enqueued] {
+        if (!enqueued->available()) {
+            enqueued->set_value();
+        }
+    });
     auto holder = _gate.hold();
     auto unit = co_await _state_lock.hold_read_lock();
     if (bid.is_transactional) {
@@ -1228,7 +1228,7 @@ ss::future<result<kafka_result>> rm_stm::idempotent_replicate(
   ss::lw_shared_ptr<available_promise<>> enqueued) {
     if (!co_await sync(_sync_timeout())) {
         // it's ok not to set enqueued on early return because
-        // the safety check in replicate_in_stages sets it automatically
+        // the scope guard in do_replicate sets it automatically
         co_return cluster::errc::not_leader;
     }
     if (!opts.expected_term.has_value()) {
@@ -1269,9 +1269,10 @@ ss::future<result<kafka_result>> rm_stm::replicate_msg(
     }
 
     auto ss = _raft->replicate_in_stages(std::move(batch), opts);
-    co_await std::move(ss.request_enqueued);
+    co_await ss::coroutine::try_future(std::move(ss.request_enqueued));
     enqueued->set_value();
-    auto r = co_await std::move(ss.replicate_finished);
+    auto r = co_await ss::coroutine::try_future(
+      std::move(ss.replicate_finished));
 
     if (!r) {
         co_return ret_t(r.error());
