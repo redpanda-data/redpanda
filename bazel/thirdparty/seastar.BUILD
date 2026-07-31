@@ -28,7 +28,7 @@ bool_flag(
 # "fmt_VERSION VERSION_GREATER_EQUAL 8.0.0" OFF)
 bool_flag(
     name = "logger_compile_time_fmt",
-    build_setting_default = False,
+    build_setting_default = True,
 )
 
 bool_flag(
