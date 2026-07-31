@@ -467,10 +467,8 @@ public:
             }));
 
         for (const auto& topic : topic_table.topics_map()) {
-            // we only care about cloud topics
-            if (!topic.second.get_metadata()
-                   .get_configuration()
-                   .is_cloud_topic()) {
+            const auto& cfg = topic.second.get_metadata().get_configuration();
+            if (!cfg.is_cloud_topic() || cfg.is_read_replica()) {
                 continue;
             }
 
