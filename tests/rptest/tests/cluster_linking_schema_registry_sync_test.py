@@ -75,6 +75,7 @@ class SchemaRegistrySyncMixin:
     create_default_link_request: Any
     create_link_with_request: Any
     get_link: Any
+    update_link: Any
 
     # A layered diamond DAG (top -> mid -> leaf), like the reconciler
     # concurrent_stress unit test but larger: adjacent referrers share referents,
@@ -232,6 +233,7 @@ class SchemaRegistrySyncMixin:
         self,
         source_url: str | None = None,
         full_sync_interval_sec: int = 2,
+        tail_interval_sec: int = 2,
         source_filter_subjects: list[str] | None = None,
         source_filter_contexts: list[str] | None = None,
         exact_context_map: dict[str, str] | None = None,
@@ -254,7 +256,9 @@ class SchemaRegistrySyncMixin:
         )
         api = shadow_link_pb2.SchemaRegistrySyncOptions.ShadowSchemaRegistryApi(
             source_url=source_url,
-            tail_interval=google.protobuf.duration_pb2.Duration(seconds=2),
+            tail_interval=google.protobuf.duration_pb2.Duration(
+                seconds=tail_interval_sec
+            ),
             full_sync_interval=google.protobuf.duration_pb2.Duration(
                 seconds=full_sync_interval_sec
             ),
@@ -1377,6 +1381,186 @@ class SchemaRegistrySyncMixin:
         # aborting the tasks they were blocked on) until the 30s node-stop
         # timeout killed the node. Success here is simply a clean teardown.
 
+    def _test_schema_registry_api_sync_http_tail_propagates_without_full_sync(
+        self,
+    ):
+        # Pins HTTP-fallback propagation without full sync, end to end. The
+        # helper is only called from a harness that denies READ on `_schemas`,
+        # so the feed dies on its first fetch and every tail tick below runs
+        # through the HTTP fallback instead.
+        src = self._make_source_client()
+        dest = SchemaRegistryRedpandaClient(self.target_cluster_service)
+
+        # Seed one subject so the first (unavoidable) full sync has something to
+        # do and establishes the destination inventory the tail diffs against.
+        self._register(src, "seeded-value", self._leaf_schema(0))
+
+        # The whole point of this test: a full-sync interval far longer than the
+        # run, so anything that replicates below can only have come from a tail
+        # tick. Without this the test would also pass on a build whose tail tick
+        # is a no-op, and would validate nothing.
+        self._create_sr_link(full_sync_interval_sec=600, tail_interval_sec=1)
+        self._wait_synced(src, dest, [("seeded-value", 1)])
+
+        # _wait_synced returns mid-reconcile, while the full sync still has its
+        # purge, mode/config fan-out and closing rescan to do -- so wait for it to
+        # finish, or the poll below can still catch FULL.
+        def full_sync_done() -> bool:
+            sr = self._admin_sr_status()
+            return sr.HasField("last_full_sync") and not sr.HasField("current_sync")
+
+        wait_until(
+            full_sync_done,
+            timeout_sec=60,
+            backoff_sec=0.5,
+            err_msg="the first full sync never finished",
+        )
+
+        # An armed feed finishes an idle tail tick in microseconds, so catching
+        # current_sync mid-tick is a lottery; prove tail delivery by stability
+        # instead -- if last_full_sync never advances while the cases below
+        # land, nothing but tail ticks can have delivered them.
+        baseline = self._last_full_sync_finish_ns()
+        assert baseline is not None
+
+        # CASE 1 -- a new version of a subject the destination already has. The
+        # subject listing is unchanged (same name), so only the schema-id probe
+        # can find this.
+        self._register(src, "seeded-value", self._leaf_schema(0, evolve=True))
+        self._wait_synced(src, dest, [("seeded-value", 2)])
+
+        # CASE 2 -- a brand new subject. Found by the subject listing.
+        self._register(src, "fresh-value", self._leaf_schema(1))
+        self._wait_synced(src, dest, [("fresh-value", 1)])
+
+        # CASE 3 -- a new subject whose content duplicates an existing schema.
+        # The registry reuses the existing schema id rather than allocating one,
+        # so the probe cannot see it; only the subject listing can. This is the
+        # case that makes both tail legs necessary rather than one.
+        fresh_view = self._schema_view(src, "fresh-value", 1)
+        assert fresh_view is not None, "source lost fresh-value v1"
+        dup_id = self._register(src, "duplicate-value", self._leaf_schema(1))
+        assert dup_id == fresh_view["id"], (
+            "expected the duplicate registration to reuse the existing schema id; "
+            "without that this case does not exercise the listing-only path"
+        )
+        self._wait_synced(src, dest, [("duplicate-value", 1)])
+
+        # Everything above arrived on tail ticks: no full sync completed while
+        # the cases landed.
+        self._wait_no_sync_in_progress()
+        after = self._last_full_sync_finish_ns()
+        assert after == baseline, (
+            f"a full sync completed during the tail cases (finish {baseline} "
+            f"-> {after}), so this run does not demonstrate propagation "
+            "without a full sync"
+        )
+
+        # Tailing really was attempted and really was refused. Arming needs
+        # only DESCRIBE, so it succeeds; the DENY stops the fetch that follows.
+        dest_svc = self.target_cluster_service
+        assert dest_svc.search_log_any(
+            "Schema Registry topic tailing is configured to start at the end of _schemas"
+        ), "tailing never armed, so the refused fetch was never reached"
+        assert dest_svc.search_log_any(
+            "Schema Registry topic tailing stopped: fetching from source"
+        ), "the refused fetch did not stop tailing"
+
+        # The work above was the HTTP fallback's, not the feed's: the HTTP
+        # summary line is present and the feed's summary (which ends "tail
+        # sync:" without the "(HTTP)" marker) never appears.
+        assert dest_svc.search_log_any("Schema Registry tail sync (HTTP):"), (
+            "the HTTP fallback never reported doing the work"
+        )
+        assert not dest_svc.search_log_any("Schema Registry tail sync: "), (
+            "the feed did work despite _schemas being unreadable"
+        )
+
+        # Degraded, not broken: a dead tail is an availability change, so it is
+        # not counted as a sync error and the task keeps running.
+        sr = self._admin_sr_status()
+        self._log_counters("admin API", sr)
+        assert sr.totals_since_task_start.errors == 0, (
+            f"the refused tail was counted as a sync error: {sr}"
+        )
+        # One entry per broker shard, and only the _schemas/0 leader's shard runs
+        # the task, so the rest report NOT_RUNNING. What matters is that the shard
+        # that does run it is active and that none faulted.
+        sr_tasks = [
+            task
+            for task in self.get_link(LINK_NAME).status.task_statuses
+            if task.name == SCHEMA_REGISTRY_SYNC_TASK_NAME
+        ]
+        states = [(t.broker_id, t.shard, t.state, t.reason) for t in sr_tasks]
+        assert shadow_link_pb2.TASK_STATE_ACTIVE in [t.state for t in sr_tasks], (
+            f"no shard is running the Schema Registry sync task: {states}"
+        )
+        assert shadow_link_pb2.TASK_STATE_FAULTED not in [t.state for t in sr_tasks], (
+            f"the refused tail faulted the Schema Registry sync task: {states}"
+        )
+
+        # No negative delete case here: whether a tail tick propagates a soft
+        # delete depends on which tail is live -- the _schemas feed does (and
+        # its own tests pin that), the HTTP fallback never deletes (pinned by
+        # the mirroring_task unit tests) -- and this test cannot force the
+        # fallback path.
+
+    def _test_schema_registry_api_sync_http_filter_widening(self):
+        src = self._make_source_client()
+        dest = SchemaRegistryRedpandaClient(self.target_cluster_service)
+
+        # One in-scope subject; everything else registered later is outside the
+        # filter. Full sync far away, so replication below is tail-only.
+        self._register(src, "ours-value", self._leaf_schema(0))
+        self._create_sr_link(
+            full_sync_interval_sec=600,
+            tail_interval_sec=1,
+            source_filter_subjects=["ours-value"],
+        )
+        self._wait_synced(src, dest, [("ours-value", 1)])
+
+        # The source keeps allocating ids to subjects the filter rejects. The
+        # probe hits each of them (they exist), imports nothing, and must keep
+        # walking -- its cursor, not the floor, carries it past this stretch.
+        for i in range(3):
+            self._register(src, f"theirs-{i}-value", self._leaf_schema(10 + i))
+
+        # A new in-scope version lands ABOVE the foreign ids, so the only way
+        # tail can deliver it is by having walked past all of them.
+        self._register(src, "ours-value", self._leaf_schema(0, evolve=True))
+        self._wait_synced(src, dest, [("ours-value", 2)])
+        for i in range(3):
+            assert self._schema_view(dest, f"theirs-{i}-value", 1) is None, (
+                f"theirs-{i}-value replicated despite being outside the filter"
+            )
+
+        # Reconfigure: widen the filter so the foreign subjects are selected.
+        # The config change forces a full sync, which picks up their backlog by
+        # name -- their ids sit below the probe floor by now, so no walk could.
+        link = self.get_link(LINK_NAME)
+        api = (
+            link.configurations.schema_registry_sync_options.shadow_schema_registry_api
+        )
+        del api.source_filter.subjects[:]
+        api.source_filter.subjects.extend(
+            ["ours-value"] + [f"theirs-{i}-value" for i in range(3)]
+        )
+        self.update_link(
+            shadow_link=link,
+            update_mask=google.protobuf.field_mask_pb2.FieldMask(
+                paths=[
+                    "configurations.schema_registry_sync_options"
+                    ".shadow_schema_registry_api.source_filter"
+                ]
+            ),
+        )
+        self._wait_synced(src, dest, [(f"theirs-{i}-value", 1) for i in range(3)])
+
+        # And from here the formerly-foreign subjects are first-class tail
+        # citizens: a new version of one must arrive on a tail tick.
+        self._register(src, "theirs-0-value", self._leaf_schema(10, evolve=True))
+        self._wait_synced(src, dest, [("theirs-0-value", 2)])
+
     def _test_schema_registry_api_sync_survives_leadership_change(self):
         src = self._make_source_client()
         dest = SchemaRegistryRedpandaClient(self.target_cluster_service)
@@ -1906,13 +2090,14 @@ class SchemaRegistrySyncUnreadableSchemasTest(
     ShadowLinkTestBase, SchemaRegistrySyncMixin
 ):
     """A source whose `_schemas` topic the link principal may not READ: tailing
-    arms (metadata and ListOffsets need only DESCRIBE) and then dies on its first
-    fetch, so full syncs have to carry every change on their own.
+    arms (metadata and ListOffsets need only DESCRIBE) and then dies on its
+    first fetch, so tail ticks fall back to discovery over the source's HTTP
+    API and changes keep arriving on the tail interval.
 
-    This is the realistic shape of the fallback. `_schemas` is an internal topic,
-    so a link granted only what topic shadowing documents will not be able to
-    read it, and replication must degrade to full-sync latency rather than stop,
-    fault the task, or count sync errors.
+    This is the realistic shape of the fallback. `_schemas` is an internal
+    topic, so a link granted only what topic shadowing documents will not be
+    able to read it -- and that must not force changes to wait for the next
+    full sync, count sync errors, or stop/fault the task.
 
     Node budget: 3 (destination Redpanda) + 1 (source Redpanda) = 4. A
     single-broker source is fine -- the SR `_schemas` topic is RF=1, as the
@@ -1921,10 +2106,6 @@ class SchemaRegistrySyncUnreadableSchemasTest(
     LINK_USER = "sr-sync-link-user"
     LINK_PASSWORD = "sr-sync-link-password"
     LINK_PRINCIPAL = f"User:{LINK_USER}"
-
-    # Longer than the suite default so each propagation below plainly waits for
-    # the next full sync, and short enough to keep the test quick.
-    FULL_SYNC_INTERVAL_SEC = 10
 
     def __init__(self, test_context: TestContext, *args: Any, **kwargs: Any):
         source_sr_config = SchemaRegistryConfig()
@@ -1996,87 +2177,6 @@ class SchemaRegistrySyncUnreadableSchemasTest(
         )
 
     @cluster(num_nodes=4)
-    def test_unreadable_schemas_topic_syncs_by_full_sync_only(self):
-        src = self._make_source_client()
-        dest = SchemaRegistryRedpandaClient(self.target_cluster_service)
-
-        self._create_link_principal()
-        self._deny_schemas_read()
-
-        v_only = [{"name": "v", "type": "string"}]
-        seeded = "untailable-seeded-value"
-        self._register(src, seeded, self._record("Seeded", v_only))
-
-        self._create_sr_link(full_sync_interval_sec=self.FULL_SYNC_INTERVAL_SEC)
-        self._wait_synced(src, dest, [(seeded, 1)])
-        self._wait_initial_full_sync_done()
-
-        # A new version of a known subject and a brand-new subject: on a readable
-        # source the tail carries both within a tick or two. That both still
-        # arrive is the point; what attributes them to a full sync is the
-        # zero-tail-sync assertion at the end.
-        self._register(
-            src,
-            seeded,
-            self._record(
-                "Seeded", v_only + [{"name": "e", "type": "long", "default": 0}]
-            ),
-        )
-        self._wait_full_synced(
-            lambda: self._schema_view(dest, seeded, 2)
-            == self._schema_view(src, seeded, 2),
-            "a new version did not propagate on a full sync",
-        )
-
-        fresh = "untailable-fresh-value"
-        self._register(src, fresh, self._record("Fresh", v_only))
-        self._wait_full_synced(
-            lambda: self._schema_view(dest, fresh, 1)
-            == self._schema_view(src, fresh, 1),
-            "a new subject did not propagate on a full sync",
-        )
-
-        # Tailing really was attempted and really was refused. Arming needs only
-        # DESCRIBE, so it succeeds; the DENY stops the fetch that follows.
-        dest_svc = self.target_cluster_service
-        assert dest_svc.search_log_any(
-            "Schema Registry topic tailing is configured to start at the end of _schemas"
-        ), "tailing never armed, so the refused fetch was never reached"
-        assert dest_svc.search_log_any(
-            "Schema Registry topic tailing stopped: fetching from source"
-        ), "the refused fetch did not stop tailing"
-
-        # And no tail sync ever did any work over the whole test, so nothing but
-        # a full sync can have delivered the changes above. A tick that finds any
-        # target logs a summary; a tick that finds none logs nothing at all.
-        assert not dest_svc.search_log_any("Schema Registry tail sync:"), (
-            "a tail sync did work despite _schemas being unreadable"
-        )
-
-        # Degraded, not broken: a dead tail is an availability change, so it is
-        # not counted as a sync error and the task keeps running.
-        sr = self._admin_sr_status()
-        self._log_counters("admin API", sr)
-        assert sr.totals_since_task_start.errors == 0, (
-            f"the refused tail was counted as a sync error: {sr}"
-        )
-        # One entry per broker shard, and only the _schemas/0 leader's shard runs
-        # the task, so the rest report NOT_RUNNING. What matters is that the shard
-        # that does run it is active and that none faulted.
-        sr_tasks = [
-            task
-            for task in self.get_link(LINK_NAME).status.task_statuses
-            if task.name == SCHEMA_REGISTRY_SYNC_TASK_NAME
-        ]
-        states = [(t.broker_id, t.shard, t.state, t.reason) for t in sr_tasks]
-        assert shadow_link_pb2.TASK_STATE_ACTIVE in [t.state for t in sr_tasks], (
-            f"no shard is running the Schema Registry sync task: {states}"
-        )
-        assert shadow_link_pb2.TASK_STATE_FAULTED not in [t.state for t in sr_tasks], (
-            f"the refused tail faulted the Schema Registry sync task: {states}"
-        )
-
-    @cluster(num_nodes=4)
     def test_tailing_resumes_after_a_transient_acl_loss(self):
         src = self._make_source_client()
         dest = SchemaRegistryRedpandaClient(self.target_cluster_service)
@@ -2104,16 +2204,17 @@ class SchemaRegistrySyncUnreadableSchemasTest(
             err_msg="losing READ on _schemas did not stop tailing",
         )
 
-        # Registered while the tail is down. Recovering it is the point: a resume
-        # that restarted at the log end instead of where the reader had got to
-        # would skip it, and with full syncs an hour away nothing else would.
-        stranded = "recovering-stranded-value"
-        self._register(src, stranded, self._record("Stranded", v_only))
+        # Written while the tail is down, as a change API-based tailing cannot
+        # deliver: the HTTP fallback's listing leg would happily carry a new
+        # subject, but a config override only travels through the feed (or a
+        # full sync, an hour away). Recovering it proves the feed resumed
+        # from its own progress rather than the log end.
+        self._set_source_config(src, seeded, {"compatibility": "FULL"})
 
         self._allow_schemas_read()
         self._wait_tail_synced(
-            lambda: self._schema_view(dest, stranded, 1)
-            == self._schema_view(src, stranded, 1),
+            lambda: dest.get_config_subject(seeded).json().get("compatibilityLevel")
+            == "FULL",
             "the tail did not resume and carry what was written while it was down",
             # Resuming waits out the reader's re-arm backoff, then a tail tick.
             timeout_sec=180,
@@ -2124,6 +2225,24 @@ class SchemaRegistrySyncUnreadableSchemasTest(
         assert sr.totals_since_task_start.errors == 0, (
             f"the interrupted tail was counted as a sync error: {sr}"
         )
+
+    # The mixin's HTTP-tail tests run here against the path they name: with
+    # READ on `_schemas` denied the feed dies on its first fetch, so every
+    # tail tick below is the HTTP fallback -- including the probe-cursor walk
+    # past out-of-scope ids that filter widening exercises.
+    @cluster(num_nodes=4)
+    def test_http_tail_propagates_without_full_sync_with_unreadable_schemas_topic(
+        self,
+    ):
+        self._create_link_principal()
+        self._deny_schemas_read()
+        self._test_schema_registry_api_sync_http_tail_propagates_without_full_sync()
+
+    @cluster(num_nodes=4)
+    def test_http_filter_widening_with_unreadable_schemas_topic(self):
+        self._create_link_principal()
+        self._deny_schemas_read()
+        self._test_schema_registry_api_sync_http_filter_widening()
 
 
 class _CredentialedSRClient(SchemaRegistryRedpandaClient):
