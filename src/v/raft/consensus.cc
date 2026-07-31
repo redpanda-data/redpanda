@@ -47,8 +47,10 @@
 #include <seastar/core/gate.hh>
 #include <seastar/core/metrics.hh>
 #include <seastar/core/semaphore.hh>
+#include <seastar/coroutine/as_future.hh>
 #include <seastar/coroutine/exception.hh>
 #include <seastar/coroutine/switch_to.hh>
+#include <seastar/coroutine/try_future.hh>
 #include <seastar/util/defer.hh>
 
 #include <algorithm>
@@ -3026,65 +3028,53 @@ void consensus::maybe_schedule_flush() {
 ss::future<storage::append_result> consensus::disk_append(
   chunked_vector<model::record_batch> batches,
   update_last_quorum_index should_update_last_quorum_idx) {
-    using ret_t = storage::append_result;
     auto cfg = storage::log_append_config{
       // no fsync explicit on a per write, we verify at the end to
       // batch fsync
       storage::log_append_config::fsync::no};
 
-    return details::for_each_ref_extract_configuration(
-             _log->offsets().dirty_offset,
-             std::move(batches),
-             _log->make_appender(cfg))
-      .then([this, should_update_last_quorum_idx](
-              std::tuple<ret_t, chunked_vector<offset_configuration>> t) {
-          auto& [ret, configurations] = t;
-          _pending_flush_bytes += ret.byte_size;
-          if (should_update_last_quorum_idx) {
-              /**
-               * We have to update last quorum replicated index before we
-               * trigger read for followers recovery as recovery_stm will have
-               * to deceide if follower flush is required basing on last quorum
-               * replicated index.
-               */
-              _last_quorum_replicated_index_with_flush = ret.last_offset;
-          } else {
-              // Here are are appending entries without a flush, signal the
-              // flusher incase we hit the thresholds, particularly unflushed
-              // bytes.
-              maybe_schedule_flush();
-          }
-          // TODO
-          // if we rolled a log segment. write current configuration
-          // for speedy recovery in the background
+    auto [result, configurations]
+      = co_await ss::coroutine::try_future_without_preemption_check(
+        details::for_each_ref_extract_configuration(
+          _log->offsets().dirty_offset,
+          std::move(batches),
+          _log->make_appender(cfg)));
+    _pending_flush_bytes += result.byte_size;
+    if (should_update_last_quorum_idx) {
+        /**
+         * We have to update last quorum replicated index before we
+         * trigger read for followers recovery as recovery_stm will have
+         * to deceide if follower flush is required basing on last quorum
+         * replicated index.
+         */
+        _last_quorum_replicated_index_with_flush = result.last_offset;
+    } else {
+        // Here are are appending entries without a flush, signal the
+        // flusher incase we hit the thresholds, particularly unflushed
+        // bytes.
+        maybe_schedule_flush();
+    }
+    // TODO
+    // if we rolled a log segment. write current configuration
+    // for speedy recovery in the background
 
-          // leader never flush just after write
-          // for quorum_ack it flush in parallel to dispatching RPCs
-          // to followers for other consistency flushes are done
-          // separately.
-          auto f = ss::now();
-          if (!configurations.empty()) {
-              // we can use latest configuration to update follower stats
-              f = _configuration_manager.add(std::move(configurations))
-                    .then([this] {
-                        update_follower_states(
-                          _configuration_manager.get_latest());
-                    });
-          }
+    // leader never flush just after write
+    // for quorum_ack it flush in parallel to dispatching RPCs
+    // to followers for other consistency flushes are done
+    // separately.
+    if (!configurations.empty()) {
+        co_await ss::coroutine::try_future_without_preemption_check(
+          _configuration_manager.add(std::move(configurations)));
+        // we can use latest configuration to update follower stats
+        update_follower_states(_configuration_manager.get_latest());
+    }
 
-          return f.then([this, ret = ret] {
-              // if we are already shutting down, do nothing
-              if (_bg.is_closed()) {
-                  return ret;
-              }
-
-              _configuration_manager
-                .maybe_store_highest_known_offset_in_background(
-                  ret.last_offset, ret.byte_size, _bg);
-
-              return ret;
-          });
-      });
+    // if we are already shutting down, do nothing
+    if (!_bg.is_closed()) {
+        _configuration_manager.maybe_store_highest_known_offset_in_background(
+          result.last_offset, result.byte_size, _bg);
+    }
+    co_return result;
 }
 
 model::term_id consensus::get_term(model::offset o) const {

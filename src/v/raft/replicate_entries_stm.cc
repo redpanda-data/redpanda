@@ -23,6 +23,8 @@
 #include "ssx/async_algorithm.h"
 
 #include <seastar/core/coroutine.hh>
+#include <seastar/coroutine/as_future.hh>
+#include <seastar/coroutine/try_future.hh>
 #include <seastar/util/defer.hh>
 
 #include <chrono>
@@ -62,29 +64,40 @@ replicate_entries_stm::send_append_entries_request(
     // op_lock so next append entries request can be dispatched to the
     // follower
     auto signal_dispatch_sem = ss::defer([this] { _dispatch_sem.signal(); });
-    return _ptr->_client_protocol
-      .append_entries(
-        n.id(),
-        append_entries_request(
-          _ptr->self(),
-          n,
-          _meta,
-          std::move(batches),
-          _batches_size,
-          _is_flush_required),
-        std::move(opts))
+    auto reply = _ptr->_client_protocol.append_entries(
+      n.id(),
+      append_entries_request(
+        _ptr->self(),
+        n,
+        _meta,
+        std::move(batches),
+        _batches_size,
+        _is_flush_required),
+      std::move(opts));
+    if (!reply.available()) {
+        _dispatch_sem.signal();
+        signal_dispatch_sem.cancel();
+    }
 
-      .then(
-        [this, target_node_id = n.id()](result<append_entries_reply> reply) {
-            return _ptr->validate_reply_target_node(
-              "append_entries_replicate", reply, target_node_id);
-        })
-      .handle_exception([this](const std::exception_ptr& e) {
-          vlog(_ctxlog.warn, "Error while replicating entries {}", e);
-          return result<append_entries_reply>(
-            errc::append_entries_dispatch_error);
-      })
-      .finally([this, n] { _inflight_appends[n].mark_finished(); });
+    auto finished_guard = ss::defer(
+      [this, n] { _inflight_appends[n].mark_finished(); });
+    auto reply_result
+      = co_await ss::coroutine::as_future_without_preemption_check(
+        std::move(reply));
+    if (reply_result.failed()) {
+        auto exception = reply_result.get_exception();
+        vlog(_ctxlog.warn, "Error while replicating entries {}", exception);
+        co_return errc::append_entries_dispatch_error;
+    }
+
+    try {
+        co_return _ptr->validate_reply_target_node(
+          "append_entries_replicate", std::move(reply_result).get(), n.id());
+    } catch (...) {
+        auto exception = std::current_exception();
+        vlog(_ctxlog.warn, "Error while replicating entries {}", exception);
+        co_return errc::append_entries_dispatch_error;
+    }
 }
 
 ss::future<> replicate_entries_stm::dispatch_one(vnode id) {
@@ -114,70 +127,78 @@ ss::future<> replicate_entries_stm::dispatch_remote_append_entries(vnode id) {
       id != _ptr->_self,
       "Incorrect remote entries dispatch for local node: {}",
       id);
-    return share_batches()
-      .then([this, id](chunked_vector<model::record_batch> batches) mutable {
-          return send_append_entries_request(id, std::move(batches));
-      })
-      .then([this, id](result<append_entries_reply> reply) {
-          raft::follower_req_seq seq{0};
-          auto it = _followers_seq.find(id);
-          vassert(
-            it != _followers_seq.end(),
-            "Follower request sequence is required to exists "
-            "for each follower. No follower sequence found "
-            "for {}",
-            id);
-          seq = it->second;
-          if (!reply) {
-              _ptr->get_probe().replicate_request_error();
-          }
-          _ptr->process_append_entries_reply(
-            id.id(), reply, seq, _dirty_offset);
-      });
+    auto batches = co_await ss::coroutine::try_future_without_preemption_check(
+      share_batches());
+    auto reply = co_await ss::coroutine::try_future_without_preemption_check(
+      send_append_entries_request(id, std::move(batches)));
+    auto it = _followers_seq.find(id);
+    vassert(
+      it != _followers_seq.end(),
+      "Follower request sequence is required to exists "
+      "for each follower. No follower sequence found "
+      "for {}",
+      id);
+    auto seq = it->second;
+    if (!reply) {
+        _ptr->get_probe().replicate_request_error();
+    }
+    _ptr->process_append_entries_reply(id.id(), reply, seq, _dirty_offset);
 }
 
 ss::future<result<storage::append_result>>
 replicate_entries_stm::append_to_self() {
-    return share_batches()
-      .then([this](chunked_vector<model::record_batch> batches) mutable {
-          vlog(_ctxlog.trace, "Self append entries - {}", _meta);
+    auto append_failed = [this](const std::exception_ptr& exception) {
+        vlog(
+          _ctxlog.warn,
+          "Error replicating entries, leader append failed - {}",
+          exception);
+        return result<storage::append_result>(errc::leader_append_failed);
+    };
 
-          _ptr->_last_write_flushed = _is_flush_required;
-          return _ptr->disk_append(
-            std::move(batches),
-            _is_flush_required ? consensus::update_last_quorum_index::yes
-                               : consensus::update_last_quorum_index::no);
-      })
-      .then([this](storage::append_result res) {
-          vlog(_ctxlog.trace, "Leader append result: {}", res);
-          if (
-            // no batches, nothing was appended
-            res.last_offset == model::offset{}
-            // no records, valid header, invalid input per kafka protocol.
-            || res.last_offset < res.base_offset) {
-              return result<storage::append_result>(
-                errc::invalid_input_records);
-          }
-          // only update visibility upper bound if all quorum
-          // replicated entries are committed already
-          if (
-            _ptr->_commit_index
-            >= _ptr->_last_quorum_replicated_index_with_flush) {
-              // for relaxed consistency mode update visibility
-              // upper bound with last offset appended to the log
-              _ptr->_visibility_upper_bound_index = std::max(
-                _ptr->_visibility_upper_bound_index, res.last_offset);
-              _ptr->maybe_update_majority_replicated_index();
-          }
-          return result<storage::append_result>(std::move(res));
-      })
-      .handle_exception([this](const std::exception_ptr& e) {
-          vlog(
-            _ctxlog.warn,
-            "Error replicating entries, leader append failed - {}",
-            e);
-          return result<storage::append_result>(errc::leader_append_failed);
-      });
+    try {
+        auto shared
+          = co_await ss::coroutine::as_future_without_preemption_check(
+            share_batches());
+        if (shared.failed()) {
+            co_return append_failed(shared.get_exception());
+        }
+
+        vlog(_ctxlog.trace, "Self append entries - {}", _meta);
+        _ptr->_last_write_flushed = _is_flush_required;
+        auto appended
+          = co_await ss::coroutine::as_future_without_preemption_check(
+            _ptr->disk_append(
+              std::move(shared).get(),
+              _is_flush_required ? consensus::update_last_quorum_index::yes
+                                 : consensus::update_last_quorum_index::no));
+        if (appended.failed()) {
+            co_return append_failed(appended.get_exception());
+        }
+
+        auto result = std::move(appended).get();
+        vlog(_ctxlog.trace, "Leader append result: {}", result);
+        if (
+          // no batches, nothing was appended
+          result.last_offset == model::offset{}
+          // no records, valid header, invalid input per kafka protocol.
+          || result.last_offset < result.base_offset) {
+            co_return errc::invalid_input_records;
+        }
+        // only update visibility upper bound if all quorum
+        // replicated entries are committed already
+        if (
+          _ptr->_commit_index
+          >= _ptr->_last_quorum_replicated_index_with_flush) {
+            // for relaxed consistency mode update visibility
+            // upper bound with last offset appended to the log
+            _ptr->_visibility_upper_bound_index = std::max(
+              _ptr->_visibility_upper_bound_index, result.last_offset);
+            _ptr->maybe_update_majority_replicated_index();
+        }
+        co_return result;
+    } catch (...) {
+        co_return append_failed(std::current_exception());
+    }
 }
 /**
  *  We skip sending follower requests it those two cases:
@@ -278,13 +299,13 @@ ss::future<result<replicate_result>> replicate_entries_stm::apply(units_t u) {
 
     // wait for the requests to be dispatched in background and then release
     // units
-    ssx::spawn_with_gate(_req_bg, [this]() {
+    ssx::spawn_with_gate(_req_bg, [this](this auto) -> ss::future<> {
         // Wait until all RPCs will be dispatched
-        return _dispatch_sem.wait(_requests_count).then([this] {
-            // release memory reservations, and destroy data
-            _batches = {};
-            _units.release();
-        });
+        co_await ss::coroutine::try_future_without_preemption_check(
+          _dispatch_sem.wait(_requests_count));
+        // release memory reservations, and destroy data
+        _batches = {};
+        _units.release();
     });
 
     co_return build_replicate_result();

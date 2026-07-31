@@ -24,6 +24,7 @@
 #include <seastar/core/coroutine.hh>
 #include <seastar/core/smp.hh>
 #include <seastar/core/sstring.hh>
+#include <seastar/coroutine/try_future.hh>
 
 #include <tuple>
 #include <utility>
@@ -151,11 +152,15 @@ struct configuration_extracting_consumer {
         return wrapped(batch);
     }
 
-    auto end_of_stream() {
-        return ss::futurize_invoke([this] { return wrapped.end_of_stream(); })
-          .then([confs = std::move(configurations)](auto ret) mutable {
-              return std::make_tuple(std::move(ret), std::move(confs));
-          });
+    using result_type = typename ss::futurize<
+      decltype(std::declval<ReferenceConsumer&>().end_of_stream())>::value_type;
+
+    ss::future<std::tuple<result_type, chunked_vector<offset_configuration>>>
+    end_of_stream() {
+        auto result
+          = co_await ss::coroutine::try_future_without_preemption_check(
+            ss::futurize_invoke([this] { return wrapped.end_of_stream(); }));
+        co_return std::make_tuple(std::move(result), std::move(configurations));
     }
 
     ReferenceConsumer wrapped;
@@ -164,8 +169,8 @@ struct configuration_extracting_consumer {
 };
 
 template<typename ReferenceConsumer>
-using configuration_extracting_consumer_result_t = typename ss::futurize<
-  decltype(std::declval<ReferenceConsumer&>().end_of_stream())>::value_type;
+using configuration_extracting_consumer_result_t =
+  typename configuration_extracting_consumer<ReferenceConsumer>::result_type;
 
 /**
  * Consumes all batches with the given consumer while lazily extracting
