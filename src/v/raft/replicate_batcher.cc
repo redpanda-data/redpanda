@@ -19,6 +19,8 @@
 #include <seastar/core/future.hh>
 #include <seastar/core/gate.hh>
 #include <seastar/core/shared_ptr.hh>
+#include <seastar/coroutine/as_future.hh>
+#include <seastar/coroutine/try_future.hh>
 
 #include <optional>
 
@@ -129,12 +131,27 @@ replicate_batcher::cache_and_wait_for_result(
          */
         if (!_flush_pending) {
             _flush_pending = true;
-            ssx::background = ssx::spawn_with_gate_then(_bg, [this]() {
-                return _lock.get_units()
-                  .then([this](auto units) {
-                      return flush(std::move(units), false);
-                  })
-                  .handle_exception([this](const std::exception_ptr& e) {
+            ssx::background = ssx::spawn_with_gate_then(
+              _bg, [this](this auto) -> ss::future<> {
+                  // Preserve the batch cutoff established by the ready-future
+                  // continuation: do not yield after taking the lock and before
+                  // flush() snapshots _item_cache.
+                  auto units = co_await ss::coroutine::
+                    as_future_without_preemption_check(_lock.get_units());
+                  if (units.failed()) {
+                      auto exception = units.get_exception();
+                      vlog(
+                        _ptr->_ctxlog.error,
+                        "Error in background flush: {}",
+                        exception);
+                      co_return;
+                  }
+
+                  auto flushed = co_await ss::coroutine::
+                    as_future_without_preemption_check(
+                      flush(std::move(units).get(), false));
+                  if (flushed.failed()) {
+                      auto exception = flushed.get_exception();
                       // an exception here is quite unlikely, since the flush()
                       // method generally catches all its exceptions and
                       // propagates them to the promises associated with the
@@ -142,9 +159,9 @@ replicate_batcher::cache_and_wait_for_result(
                       vlog(
                         _ptr->_ctxlog.error,
                         "Error in background flush: {}",
-                        e);
-                  });
-            });
+                        exception);
+                  }
+              });
         }
     } catch (...) {
         // exception in caching phase
@@ -152,7 +169,7 @@ replicate_batcher::cache_and_wait_for_result(
         co_return errc::replicate_batcher_cache_error;
     }
 
-    co_return co_await item->get_future();
+    co_return co_await ss::coroutine::try_future(item->get_future());
 }
 
 ss::future<> replicate_batcher::stop() {
@@ -392,35 +409,49 @@ ss::future<> replicate_batcher::do_flush(
          * replicate batcher
          */
         if (leader_result) {
-            (void)stm->wait_for_majority()
-              .then([holder = std::move(holder),
-                     notifications = std::move(notifications)](
-                      result<replicate_result> quorum_result) mutable {
-                  propagate_result(
-                    quorum_result, notifications, [](const item_ptr& item) {
-                        return item->get_consistency_level()
-                               == consistency_level::quorum_ack;
-                    });
-              })
-              .finally([stm] {});
+            (void)[
+                holder = std::move(holder),
+                notifications = std::move(notifications),
+                stm
+            ](this auto)
+              ->ss::future<> {
+                (void)holder;
+                auto quorum_result
+                  = co_await ss::coroutine::try_future_without_preemption_check(
+                    stm->wait_for_majority());
+                propagate_result(
+                  quorum_result, notifications, [](const item_ptr& item) {
+                      return item->get_consistency_level()
+                             == consistency_level::quorum_ack;
+                  });
+            }
+            ();
         }
     } catch (...) {
         propagate_current_exception(notifications);
     }
 
-    auto f = stm->wait_for_shutdown().finally([stm] {});
+    auto shutdown = stm->wait_for_shutdown();
     if (_bg.is_closed()) {
         _ptr->_ctxlog.info(
           "gate-closed, waiting to finish background requests");
-        co_return co_await std::move(f);
+        co_await ss::coroutine::try_future(std::move(shutdown));
+        co_return;
     }
-    ssx::spawn_with_gate(_bg, [this, stm, f = std::move(f)]() mutable {
-        return std::move(f).handle_exception(
-          [this](const std::exception_ptr& e) {
-              _ptr->_ctxlog.debug(
-                "Error waiting for background acks to finish - {}", e);
-          });
-    });
+    ssx::spawn_with_gate(
+      _bg,
+      [this, stm, shutdown = std::move(shutdown)](this auto) -> ss::future<> {
+          auto result
+            = co_await ss::coroutine::as_future_without_preemption_check(
+              std::move(shutdown));
+          if (result.failed()) {
+              auto exception = result.get_exception();
+              vlog(
+                _ptr->_ctxlog.debug,
+                "Error waiting for background acks to finish - {}",
+                exception);
+          }
+      });
 }
 
 } // namespace raft

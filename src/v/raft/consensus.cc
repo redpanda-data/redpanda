@@ -822,49 +822,55 @@ consensus::linearizable_barrier(model::timeout_clock::time_point deadline) {
     co_return ret_t(_commit_index);
 }
 
-ss::future<result<replicate_result>>
-consensus::chain_stages(replicate_stages stages) {
-    return stages.request_enqueued.then_wrapped(
-      [this, f = std::move(stages.replicate_finished)](
-        ss::future<> enqueued) mutable {
-          if (enqueued.failed()) {
-              return enqueued
-                .handle_exception([](const std::exception_ptr& e) {
-                    vlog(
-                      raftlog.debug, "replicate first stage exception - {}", e);
-                })
-                .then([this, f = std::move(f)]() mutable {
-                    return f.discard_result()
-                      .handle_exception([](const std::exception_ptr& e) {
-                          vlog(
-                            raftlog.debug,
-                            "ignoring replicate second stage exception - {}",
-                            e);
-                      })
-                      .then([this] {
-                          if (_as.abort_requested()) {
-                              return result<replicate_result>(
-                                make_error_code(errc::shutting_down));
-                          } else {
-                              return result<replicate_result>(make_error_code(
-                                errc::replicate_first_stage_exception));
-                          }
-                      });
-                });
-          }
+ss::future<result<replicate_result>> consensus::chain_stages(
+  ss::future<> request_enqueued,
+  ss::future<result<replicate_result>> replicate_finished) {
+    auto enqueued = co_await ss::coroutine::as_future_without_preemption_check(
+      std::move(request_enqueued));
+    if (!enqueued.failed()) {
+        co_return co_await ss::coroutine::try_future_without_preemption_check(
+          std::move(replicate_finished));
+    }
 
-          return std::move(f);
-      });
+    auto first_stage_exception = enqueued.get_exception();
+    vlog(
+      raftlog.debug,
+      "replicate first stage exception - {}",
+      first_stage_exception);
+
+    auto replicated
+      = co_await ss::coroutine::as_future_without_preemption_check(
+        std::move(replicate_finished));
+    if (replicated.failed()) {
+        auto second_stage_exception = replicated.get_exception();
+        vlog(
+          raftlog.debug,
+          "ignoring replicate second stage exception - {}",
+          second_stage_exception);
+    }
+
+    if (_as.abort_requested()) {
+        co_return errc::shutting_down;
+    }
+    co_return errc::replicate_first_stage_exception;
 }
 
 ss::future<result<replicate_result>> consensus::replicate(
   chunked_vector<model::record_batch> batches, replicate_options opts) {
-    return chain_stages(do_replicate(std::move(batches), opts));
+    auto stages = do_replicate(std::move(batches), opts);
+    co_return co_await ss::coroutine::try_future_without_preemption_check(
+      chain_stages(
+        std::move(stages.request_enqueued),
+        std::move(stages.replicate_finished)));
 }
 ss::future<result<replicate_result>>
 consensus::replicate(model::record_batch batch, replicate_options opts) {
-    return chain_stages(do_replicate(
-      chunked_vector<model::record_batch>::single(std::move(batch)), opts));
+    auto stages = do_replicate(
+      chunked_vector<model::record_batch>::single(std::move(batch)), opts);
+    co_return co_await ss::coroutine::try_future_without_preemption_check(
+      chain_stages(
+        std::move(stages.request_enqueued),
+        std::move(stages.replicate_finished)));
 }
 
 replicate_stages consensus::replicate_in_stages(

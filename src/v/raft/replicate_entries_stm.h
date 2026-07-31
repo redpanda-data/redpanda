@@ -31,11 +31,16 @@ namespace raft {
 /// A single-shot class. Utility method with state
 /// Use with a lw_shared_ptr like so:
 /// auto ptr = ss::make_lw_shared<replicate_entries_stm>(..);
-/// return ptr->apply()
-///            .then([ptr]{
-///                 // wait in background.
-///                (void)ptr->wait_for_majority().finally([ptr]{});
-///            });
+/// auto result = co_await ptr->apply();
+/// if (result) {
+///     // wait in background.
+///     (void)[ptr](this auto) -> ss::future<> {
+///         (void)co_await ptr->wait_for_majority();
+///     }();
+/// }
+/// (void)[ptr](this auto) -> ss::future<> {
+///     co_await ptr->wait_for_shutdown();
+/// }();
 ///
 /// Replicate STM implements following algorithm
 ///

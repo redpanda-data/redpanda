@@ -658,7 +658,9 @@ private:
     replicate_stages
       do_replicate(chunked_vector<model::record_batch>, replicate_options);
 
-    ss::future<result<replicate_result>> chain_stages(replicate_stages);
+    ss::future<result<replicate_result>> chain_stages(
+      ss::future<> request_enqueued,
+      ss::future<result<replicate_result>> replicate_finished);
 
     ss::future<storage::append_result> disk_append(
       chunked_vector<model::record_batch>, update_last_quorum_index);
