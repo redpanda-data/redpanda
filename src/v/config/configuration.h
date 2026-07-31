@@ -39,6 +39,7 @@
 
 #include <cctype>
 #include <chrono>
+#include <memory>
 #include <vector>
 
 class monitor_unsafe;
@@ -807,7 +808,16 @@ struct configuration final : public config_store {
     bounded_property<uint32_t> shadow_link_failover_batch_size;
     property<std::chrono::milliseconds> internal_rpc_request_timeout_ms;
 
-    configuration();
+    class ctor_key {
+        ctor_key() = default;
+        friend std::unique_ptr<configuration> make_config();
+    };
+
+    explicit configuration(ctor_key);
+    configuration(const configuration&) = delete;
+    configuration& operator=(const configuration&) = delete;
+    configuration(configuration&&) = delete;
+    configuration& operator=(configuration&&) = delete;
 
     error_map_t load(const YAML::Node& root_node);
 
