@@ -166,6 +166,16 @@ public:
 
     bool is_elected_leader() const;
     bool is_leader() const;
+
+    // The loop keeping durable partition_storage_mode in step with
+    // topic_storage_mode() (see sync_partition_storage_mode). Poke it on
+    // becoming leader, on migration-feature activation and on topic-config
+    // changes; notify_and_wait() to bound how many quorum writes a sweep has in
+    // flight at once.
+    ssx::reconciler& partition_storage_mode_sync() {
+        return _partition_storage_mode_sync;
+    }
+
     bool has_followers() const;
     void block_new_leadership() const;
     void unblock_new_leadership() const;
@@ -427,9 +437,23 @@ private:
     // dirty so that it gets reuploaded
     ss::future<> restart_archiver(bool should_notify_topic_config);
 
+    // Precondition for sync_partition_storage_mode: the stm exists, the feature
+    // is active, and this is not a read replica (nothing on one keys on
+    // partition_storage_mode).
+    bool partition_storage_mode_sync_enabled() const;
+
     // Move ntp_config to the STM's partition_storage_mode and restart the
     // archiver if needed. Driven by _partition_storage_mode_apply.
     ss::future<> apply_partition_storage_mode();
+
+    // Write topic_storage_mode() through to partition_properties if this
+    // leader's durable partition_storage_mode differs from it, so that the
+    // serving predicates see the new mode. Gated behind the
+    // partition_storage_mode feature and leader-only; legacy shadow_indexing
+    // topics (topic_storage_mode() == unset) are left unset. Driven by
+    // _partition_storage_mode_sync; returning is success, a throw is retried
+    // with backoff.
+    ss::future<> sync_partition_storage_mode();
 
     consensus_ptr _raft; // never null
     ss::shared_ptr<cluster::log_eviction_stm> _log_eviction_stm;
@@ -438,10 +462,14 @@ private:
     ss::shared_ptr<partition_properties_stm> _partition_properties_stm;
     ss::sharded<cloud_topics::state_accessors>* _cloud_topics_state;
     ss::abort_source _as;
-    // Holds the apply loop triggered by the stm's partition_storage_mode
-    // callback; closed in stop() before the archiver is torn down.
+    // Holds both partition_storage_mode loops -- the apply loop triggered by
+    // the stm's partition_storage_mode callback and the sync loop triggered by
+    // leadership, the migration-feature sweep and update_configuration. Closed
+    // in stop() before the archiver is torn down. Neither loop waits on the
+    // other, so one gate for both is enough.
     ss::gate _partition_storage_mode_gate;
     ssx::reconciler _partition_storage_mode_apply;
+    ssx::reconciler _partition_storage_mode_sync;
     partition_probe _probe;
     ss::sharded<features::feature_table>& _feature_table;
     ss::lw_shared_ptr<const archival::configuration> _archival_conf;

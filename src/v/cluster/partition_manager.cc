@@ -30,6 +30,7 @@
 #include "raft/consensus_utils.h"
 #include "raft/fundamental.h"
 #include "ssx/async-clear.h"
+#include "ssx/future-util.h"
 
 #include <seastar/core/lowres_clock.hh>
 #include <seastar/core/shared_ptr.hh>
@@ -73,6 +74,12 @@ partition_manager::partition_manager(
                 if (a) {
                     a.value().get().notify_leadership(leader_id);
                 }
+                // Sync the partition's durable storage mode to its topic
+                // config on becoming leader (no-op when not leader or already
+                // in sync). Detached: the sync runs under the partition's own
+                // gate, and only one loop runs per partition however many
+                // callers poke it.
+                p->partition_storage_mode_sync().notify();
             }
         });
     _shutdown_watchdog.set_callback(

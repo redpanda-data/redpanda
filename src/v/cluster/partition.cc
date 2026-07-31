@@ -32,14 +32,17 @@
 #include "raft/state_machine_manager.h"
 #include "ssx/future-util.h"
 #include "ssx/sformat.h"
+#include "ssx/sleep_abortable.h"
 #include "ssx/when_all.h"
 #include "storage/ntp_config.h"
 
 #include <seastar/coroutine/as_future.hh>
+#include <seastar/coroutine/exception.hh>
 #include <seastar/util/defer.hh>
 
 #include <chrono>
 #include <optional>
+#include <system_error>
 
 namespace cluster {
 
@@ -59,6 +62,12 @@ partition::partition(
       clusterlog,
       ssx::sformat("{} partition_storage_mode apply", _raft->ntp()),
       [this] { return apply_partition_storage_mode(); },
+      _as)
+  , _partition_storage_mode_sync(
+      _partition_storage_mode_gate,
+      clusterlog,
+      ssx::sformat("{} partition_storage_mode sync", _raft->ntp()),
+      [this] { return sync_partition_storage_mode(); },
       _as)
   , _probe(std::make_unique<replicated_partition_probe>(*this))
   , _feature_table(feature_table)
@@ -940,27 +949,43 @@ ss::future<> partition::update_configuration(topic_properties new_properties) {
     // Pass the configuration update to the raft layer
     _raft->notify_config_update();
 
-    // If this partition's cloud storage mode changed, rebuild the archiver.
-    // This must happen after the raft+storage update, because it reads raft's
-    // ntp_config to decide whether to construct an archiver.
-    if (cloud_storage_changed) {
-        co_await restart_archiver(true);
-    } else {
-        vlog(
-          clusterlog.trace,
-          "update_configuration[{}]: no cloud storage change, archiver "
-          "exists={}",
-          _raft->ntp(),
-          bool(_archiver));
-
-        if (_archiver) {
+    // If topic_storage_mode() == partition_storage_mode() and there was a
+    // change to archiver configuration, restart the archiver here. If
+    // topic_storage_mode() != partition_storage_mode(), we know:
+    // 1. partition_properties_stm::partition_storage_mode is set, and since
+    //    sync_partition_storage_mode is its only writer, the sync is enabled
+    // 2. the sync loop poked below will propagate a raft update to
+    //    bring it into sync and restart the archiver if necessary, marking the
+    //    topic manifest dirty as it does
+    if (
+      get_ntp_config().topic_storage_mode()
+      == get_ntp_config().partition_storage_mode()) {
+        if (cloud_storage_changed) {
+            co_await restart_archiver(true);
+        } else if (_archiver) {
             // Assume that a partition config may also mean a topic
             // configuration change.  This could be optimized by hooking
             // in separate updates from the controller when our topic
             // configuration changes.
             _archiver->notify_topic_config();
         }
+    } else {
+        vlog(
+          clusterlog.trace,
+          "update_configuration[{}]: leaving the archiver to the "
+          "partition_storage_mode update, topic_storage_mode={} "
+          "partition_storage_mode={}",
+          _raft->ntp(),
+          get_ntp_config().topic_storage_mode(),
+          get_ntp_config().partition_storage_mode());
     }
+
+    // A storage.mode change lands in topic_storage_mode() (above); keep the
+    // durable partition_storage_mode in step so serving predicates see the new
+    // mode. In the background: the sync takes a raft commit, and this path runs
+    // inside controller_backend's per-NTP reconciliation, which must not block
+    // on it.
+    _partition_storage_mode_sync.notify();
 }
 
 ss::future<> partition::restart_archiver(bool should_notify_topic_config) {
@@ -1823,6 +1848,50 @@ ss::future<> partition::apply_partition_storage_mode() {
     if (should_construct_archiver() != static_cast<bool>(_archiver)) {
         co_await restart_archiver(true);
     }
+}
+
+bool partition::partition_storage_mode_sync_enabled() const {
+    // Read replicas are excluded because nothing on one keys on
+    // partition_storage_mode: every predicate that would consult it
+    // short-circuits on being a read replica first, including the archiver's
+    // construction gate. Recording a mode would be a quorum write per partition
+    // to produce durable state that governs nothing, and that a later reader
+    // could mistake for a real mode.
+    return _partition_properties_stm
+           && _feature_table.local().is_active(
+             features::feature::topic_storage_mode_migration)
+           && !get_ntp_config().is_read_replica_mode_enabled();
+}
+
+ss::future<> partition::sync_partition_storage_mode() {
+    if (!partition_storage_mode_sync_enabled() || !is_leader()) {
+        co_return;
+    }
+    // All allowed storage mode transitions are simply passed through: mirror
+    // topic_storage_mode() into partition_storage_mode whenever they differ. (A
+    // legacy shadow_indexing topic has topic_storage_mode() == unset;
+    // partition_storage_mode starts unset too, so this is a no-op and it stays
+    // unset.)
+    //
+    // Recomputed on every attempt: the topic config may change while retrying,
+    // including while a previous attempt was replicating.
+    const auto target = get_ntp_config().topic_storage_mode();
+    if (_partition_properties_stm->partition_storage_mode() == target) {
+        co_return;
+    }
+    // The archiver is rebuilt after the ntp_config flip by
+    // apply_partition_storage_mode, on the apply path -- nothing to order here.
+    auto res = co_await _partition_properties_stm->set_partition_storage_mode(
+      target);
+    if (res.has_error()) {
+        // Retried with backoff for as long as this replica is still leader: a
+        // replication error steps the leader down, and then the next attempt
+        // finds itself ineligible and the successor's notification takes over.
+        co_await ss::coroutine::return_exception(
+          std::system_error{res.error()});
+    }
+    // A target that moves while replicating comes from update_configuration,
+    // which notifies as well, so there is no need to ask for another pass here.
 }
 
 ss::future<result<model::offset>> partition::set_writes_disabled(
