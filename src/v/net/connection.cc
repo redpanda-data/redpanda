@@ -215,7 +215,7 @@ ss::future<> connection::shutdown() {
 
 ss::future<> connection::write(scattered_buffer bufs) {
     _probe.add_bytes_sent(iobuf::scattered_size(bufs));
-    return _out.write(std::move(bufs)).discard_result();
+    (void)co_await _out.write(std::move(bufs));
 }
 
 } // namespace net
