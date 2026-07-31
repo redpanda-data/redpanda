@@ -32,6 +32,10 @@
 #include <seastar/core/reactor.hh>
 #include <seastar/core/seastar.hh>
 #include <seastar/core/shared_ptr.hh>
+#include <seastar/coroutine/as_future.hh>
+#include <seastar/coroutine/exception.hh>
+#include <seastar/coroutine/try_future.hh>
+#include <seastar/util/defer.hh>
 
 #include <exception>
 #include <optional>
@@ -776,24 +780,6 @@ fmt::iterator segment::format_to(fmt::iterator it) const {
       index());
 }
 
-template<typename Func>
-auto with_segment(ss::lw_shared_ptr<segment> s, Func&& f) {
-    return f(s).then_wrapped([s](
-                               ss::future<ss::lw_shared_ptr<segment>> new_seg) {
-        try {
-            auto ptr = new_seg.get();
-            return ss::make_ready_future<ss::lw_shared_ptr<segment>>(ptr);
-        } catch (...) {
-            return s->close()
-              .then_wrapped([e = std::current_exception()](ss::future<>) {
-                  return ss::make_exception_future<ss::lw_shared_ptr<segment>>(
-                    e);
-              })
-              .finally([s] {});
-        }
-    });
-}
-
 ss::future<ss::lw_shared_ptr<segment>> open_segment(
   segment_full_path path,
   std::optional<batch_cache_index> batch_cache,
@@ -847,76 +833,69 @@ ss::future<ss::lw_shared_ptr<segment>> make_segment(
   segment_appender::stats_ptr shared_stats) {
     auto path = segment_full_path(ntpc, base_offset, term, version);
     vlog(stlog.info, "Creating new segment {}", path);
-    return open_segment(
-             path,
-             std::move(batch_cache),
-             buf_size,
-             read_ahead,
-             resources,
-             feature_table,
-             ntp_sanitizer_config)
-      .then([path,
-             segment_size_hint,
-             &resources,
-             ntp_sanitizer_config,
-             shared_stats](ss::lw_shared_ptr<segment> seg) mutable {
-          return with_segment(
-            std::move(seg),
-            [path,
-             segment_size_hint,
-             &resources,
-             ntp_sanitizer_config,
-             shared_stats](const ss::lw_shared_ptr<segment>& seg) mutable {
-                return internal::make_segment_appender(
-                         path,
-                         segment_size_hint,
-                         resources,
-                         std::move(ntp_sanitizer_config),
-                         shared_stats)
-                  .then([seg, &resources](segment_appender_ptr a) {
-                      return ss::make_ready_future<ss::lw_shared_ptr<segment>>(
-                        ss::make_lw_shared<segment>(
-                          seg->offsets(),
-                          seg->release_segment_reader(),
-                          std::move(seg->index()),
-                          std::move(a),
-                          std::nullopt,
-                          seg->has_cache()
-                            ? std::optional(std::move(seg->cache()->get()))
-                            : std::nullopt,
-                          resources));
-                  });
-            });
-      })
-      .then([path, &ntpc, &resources, ntp_sanitizer_config](
-              ss::lw_shared_ptr<segment> seg) mutable {
-          if (!ntpc.is_locally_compacted()) {
-              return ss::make_ready_future<ss::lw_shared_ptr<segment>>(seg);
-          }
-          return with_segment(
-            seg,
-            [path, &resources, ntp_sanitizer_config](
-              const ss::lw_shared_ptr<segment>& seg) mutable {
-                auto compacted_path = path.to_compacted_index();
-                auto compact = make_file_backed_compacted_index(
-                  compacted_path,
-                  false,
-                  resources,
-                  std::move(ntp_sanitizer_config));
+    auto segment = co_await open_segment(
+      path,
+      std::move(batch_cache),
+      buf_size,
+      read_ahead,
+      resources,
+      feature_table,
+      ntp_sanitizer_config);
 
-                return ss::make_ready_future<ss::lw_shared_ptr<segment>>(
-                  ss::make_lw_shared<segment>(
-                    seg->offsets(),
-                    seg->release_segment_reader(),
-                    std::move(seg->index()),
-                    seg->release_appender(),
-                    std::move(compact),
-                    seg->has_cache()
-                      ? std::optional(std::move(seg->cache()->get()))
-                      : std::nullopt,
-                    resources));
-            });
-      });
+    auto appender_config = ntp_sanitizer_config;
+    auto appender = co_await ss::coroutine::as_future(
+      internal::make_segment_appender(
+        path,
+        segment_size_hint,
+        resources,
+        std::move(appender_config),
+        shared_stats));
+    if (appender.failed()) {
+        auto exception = appender.get_exception();
+        (void)co_await ss::coroutine::as_future(segment->close());
+        co_return ss::coroutine::exception(exception);
+    }
+
+    std::exception_ptr construction_error;
+    ss::lw_shared_ptr<storage::segment> initialized;
+    try {
+        initialized = ss::make_lw_shared<storage::segment>(
+          segment->offsets(),
+          segment->release_segment_reader(),
+          std::move(segment->index()),
+          std::move(appender).get(),
+          std::nullopt,
+          segment->has_cache()
+            ? std::optional(std::move(segment->cache()->get()))
+            : std::nullopt,
+          resources);
+    } catch (...) {
+        construction_error = std::current_exception();
+    }
+    if (construction_error) {
+        (void)co_await ss::coroutine::as_future(segment->close());
+        co_return ss::coroutine::exception(construction_error);
+    }
+
+    if (!ntpc.is_locally_compacted()) {
+        co_return initialized;
+    }
+
+    auto compacted_index = make_file_backed_compacted_index(
+      path.to_compacted_index(),
+      false,
+      resources,
+      std::move(ntp_sanitizer_config));
+    co_return ss::make_lw_shared<storage::segment>(
+      initialized->offsets(),
+      initialized->release_segment_reader(),
+      std::move(initialized->index()),
+      initialized->release_appender(),
+      std::move(compacted_index),
+      initialized->has_cache()
+        ? std::optional(std::move(initialized->cache()->get()))
+        : std::nullopt,
+      resources);
 }
 
 ss::future<model::timestamp> segment::get_file_timestamp() const {
