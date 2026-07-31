@@ -85,44 +85,40 @@ public:
     }
 
     template<typename Protocol, typename Func>
-    requires requires(Func&& f, Protocol proto) { f(proto); }
+    requires requires(Func& f, Protocol proto) { f(proto); }
     auto with_node_client(
-      model::node_id node_id, timeout_spec connection_timeout, Func&& f) {
+      model::node_id node_id, timeout_spec connection_timeout, Func f) ->
+      typename ss::futurize<
+        result_wrap_t<std::invoke_result_t<Func, Protocol>>>::type {
         using ret_t = result_wrap_t<std::invoke_result_t<Func, Protocol>>;
+        using value_t = typename ss::futurize<ret_t>::value_type;
         auto conn_it = _connections.find(node_id);
 
         if (conn_it == _connections.end()) {
             // No client available
-            return ss::futurize<ret_t>::convert(
+            co_return value_t(
               rpc::make_error_code(errc::missing_node_rpc_client));
         }
 
-        return ss::do_with(
-          conn_it->second,
-          [connection_timeout = connection_timeout.timeout_at(),
-           f = std::forward<Func>(f)](auto& transport_ptr) mutable {
-              return transport_ptr->get_connected(connection_timeout)
-                .then([f = std::forward<Func>(f)](
-                        result<ss::lw_shared_ptr<rpc::transport>>
-                          transport) mutable {
-                    if (!transport) {
-                        // Connection error
-                        return ss::futurize<ret_t>::convert(transport.error());
-                    }
-                    return ss::futurize<ret_t>::convert(
-                      f(Protocol(transport.value())));
-                });
-          });
+        auto transport_ptr = conn_it->second;
+        auto transport = co_await transport_ptr->get_connected(
+          connection_timeout.timeout_at());
+        if (!transport) {
+            // Connection error
+            co_return value_t(transport.error());
+        }
+        co_return co_await ss::futurize<ret_t>::convert(
+          f(Protocol(transport.value())));
     }
 
     template<typename Protocol, typename Func, RpcDurationOrPoint Timeout>
-    requires requires(Func&& f, Protocol proto) { f(proto); }
-    auto with_node_client(
-      model::node_id node_id, Timeout connection_timeout, Func&& f) {
-        return with_node_client<Protocol, Func>(
-          node_id,
-          timeout_spec::from_either(connection_timeout),
-          std::forward<Func>(f));
+    requires requires(Func& f, Protocol proto) { f(proto); }
+    auto
+    with_node_client(model::node_id node_id, Timeout connection_timeout, Func f)
+      -> typename ss::futurize<
+        result_wrap_t<std::invoke_result_t<Func, Protocol>>>::type {
+        co_return co_await with_node_client<Protocol, Func>(
+          node_id, timeout_spec::from_either(connection_timeout), std::move(f));
     }
 
     /// If a reconnect_transport is in a backed-off state, reset
