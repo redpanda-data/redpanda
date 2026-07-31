@@ -4,6 +4,7 @@
 #include "raft/types.h"
 #include "ssx/future-util.h"
 
+#include <seastar/core/coroutine.hh>
 #include <seastar/core/loop.hh>
 #include <seastar/util/later.hh>
 #include <seastar/util/variant_utils.hh>
@@ -17,23 +18,27 @@ append_entries_buffer::append_entries_buffer(
   , _max_buffered(max_buffered_elements) {}
 
 ss::future<append_entries_reply>
-append_entries_buffer::enqueue(append_entries_request&& r) {
-    auto guard = _gate.hold();
+append_entries_buffer::enqueue(append_entries_request r) {
+    std::optional<ss::future<append_entries_reply>> response;
+    {
+        auto guard = _gate.hold();
 
-    // we normally do not want to wait as it would cause requests
-    // reordering. Reordering may only happend if we would wait on condition
-    // variable.
+        // we normally do not want to wait as it would cause requests
+        // reordering. Reordering may only happend if we would wait on condition
+        // variable.
+        co_await ss::coroutine::without_preemption_check(
+          _flushed.wait([this] { return _requests.size() < _max_buffered; }));
 
-    return _flushed.wait([this] { return _requests.size() < _max_buffered; })
-      .then([this, r = std::move(r), guard = std::move(guard)]() mutable {
-          ss::promise<append_entries_reply> p;
-          auto f = p.get_future();
-          _requests.push_back(std::move(r));
-          _responses.push_back(std::move(p));
-          _enqueued.signal();
-          // do not wait for the future to finish inside the gate
-          return f;
-      });
+        ss::promise<append_entries_reply> promise;
+        response.emplace(promise.get_future());
+        _requests.push_back(std::move(r));
+        _responses.push_back(std::move(promise));
+        _enqueued.signal();
+    }
+
+    // Do not wait for the response while holding the gate.
+    co_return co_await ss::coroutine::without_preemption_check(
+      std::move(*response));
 }
 
 ss::future<> append_entries_buffer::stop() {
@@ -58,43 +63,39 @@ ss::future<> append_entries_buffer::stop() {
 void append_entries_buffer::start() {
     ssx::spawn_with_gate(_gate, [this] {
         return ss::with_scheduling_group(
-          _consensus._scheduling.recv_sg, [this] {
-              return ss::do_until(
-                [this] { return _gate.is_closed(); },
-                [this] {
-                    return _enqueued.wait([this] { return !_requests.empty(); })
-                      .then([this] { return flush(); });
-                });
-          });
+          _consensus._scheduling.recv_sg, [this] { return dispatch_loop(); });
     });
+}
+
+ss::future<> append_entries_buffer::dispatch_loop() {
+    while (!_gate.is_closed()) {
+        co_await ss::coroutine::without_preemption_check(
+          _enqueued.wait([this] { return !_requests.empty(); }));
+        co_await flush();
+    }
 }
 
 ss::future<> append_entries_buffer::flush() {
     // empty requests, do nothing
     if (_requests.empty()) {
-        return ss::now();
+        co_return;
     }
     auto requests = std::exchange(_requests, {});
     auto response_promises = std::exchange(_responses, {});
 
-    return _consensus._op_lock.get_units().then(
-      [this,
-       requests = std::move(requests),
-       response_promises = std::move(response_promises)](
-        ssx::semaphore_units u) mutable {
-          return do_flush(
-            std::move(requests), std::move(response_promises), std::move(u));
-      });
+    co_await ss::coroutine::without_preemption_check(
+      do_flush(std::move(requests), std::move(response_promises)));
 }
 
 ss::future<> append_entries_buffer::do_flush(
-  request_t requests, response_t response_promises, ssx::semaphore_units u) {
+  request_t requests, response_t response_promises) {
     bool needs_flush = false;
     reply_list_t replies;
-    auto f = ss::now();
+    std::optional<ss::future<consensus::flushed>> flush;
     _consensus._probe->append_entries_buffer_flush();
     {
-        ssx::semaphore_units op_lock_units = std::move(u);
+        auto op_lock_units = co_await ss::coroutine::without_preemption_check(
+          _consensus._op_lock.get_units());
         replies.reserve(requests.size());
         for (auto& req : requests) {
             if (req.is_flush_required()) {
@@ -110,12 +111,14 @@ ss::future<> append_entries_buffer::do_flush(
             }
         }
         if (needs_flush) {
-            f = _consensus.flush_log().discard_result();
+            flush.emplace(_consensus.flush_log());
         }
     }
 
     // units were released before flushing log
-    co_await std::move(f);
+    if (flush) {
+        (void)co_await std::move(*flush);
+    }
 
     propagate_results(std::move(replies), std::move(response_promises));
     _flushed.broadcast();

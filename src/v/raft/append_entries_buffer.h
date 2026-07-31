@@ -127,7 +127,7 @@ class append_entries_buffer {
 public:
     explicit append_entries_buffer(consensus&, size_t max_buffered_elements);
 
-    ss::future<append_entries_reply> enqueue(append_entries_request&& r);
+    ss::future<append_entries_reply> enqueue(append_entries_request r);
 
     void start();
     ss::future<> stop();
@@ -142,7 +142,8 @@ private:
     using reply_list_t = ss::chunked_fifo<reply_t, 32>;
 
     ss::future<> flush();
-    ss::future<> do_flush(request_t, response_t, ssx::semaphore_units);
+    ss::future<> dispatch_loop();
+    ss::future<> do_flush(request_t, response_t);
 
     void propagate_results(reply_list_t, response_t);
 

@@ -623,8 +623,7 @@ private:
     // immediately
     ss::future<> transfer_and_stepdown(std::string_view);
     ss::future<vote_reply> do_vote(vote_request);
-    ss::future<append_entries_reply>
-    do_append_entries(append_entries_request&&);
+    ss::future<append_entries_reply> do_append_entries(append_entries_request);
     ss::future<install_snapshot_reply>
     do_install_snapshot(install_snapshot_request r);
     ss::future<> do_start(std::optional<xshard_transfer_state>);

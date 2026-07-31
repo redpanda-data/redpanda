@@ -22,6 +22,7 @@
 #include "ssx/when_all.h"
 
 #include <seastar/core/chunked_fifo.hh>
+#include <seastar/core/coroutine.hh>
 #include <seastar/core/sharded.hh>
 #include <seastar/core/shared_ptr.hh>
 #include <seastar/core/timed_out_error.hh>
@@ -141,32 +142,15 @@ public:
         });
     }
 
-    [[gnu::always_inline]] ss::future<append_entries_reply>
-
+    ss::future<append_entries_reply>
     append_entries(append_entries_request r, rpc::streaming_context&) final {
-        return _probe.append_entries().then([this, r = std::move(r)]() mutable {
-            auto gr = r.target_group();
-            return dispatch_request(
-              std::move(r),
-              [gr]() { return make_missing_group_reply(gr); },
-              [](append_entries_request&& r, consensus_ptr c) {
-                  return c->append_entries(std::move(r));
-              });
-        });
+        co_return co_await ss::coroutine::without_preemption_check(
+          append_entries_impl(std::move(r)));
     }
-    [[gnu::always_inline]] ss::future<append_entries_reply>
-    append_entries_full_serde(
+    ss::future<append_entries_reply> append_entries_full_serde(
       append_entries_request_serde_wrapper r, rpc::streaming_context&) final {
-        return _probe.append_entries().then([this, r = std::move(r)]() mutable {
-            auto request = std::move(r).release();
-            const raft::group_id gr = request.target_group();
-            return dispatch_request(
-              std::move(request),
-              [gr]() { return make_missing_group_reply(gr); },
-              [](append_entries_request&& req, consensus_ptr c) {
-                  return c->append_entries(std::move(req));
-              });
-        });
+        co_return co_await ss::coroutine::without_preemption_check(
+          append_entries_impl(std::move(r).release()));
     }
 
     [[gnu::always_inline]] ss::future<install_snapshot_reply> install_snapshot(
@@ -229,6 +213,20 @@ public:
 
 private:
     using consensus_ptr = seastar::lw_shared_ptr<consensus>;
+
+    ss::future<append_entries_reply>
+    append_entries_impl(append_entries_request request) {
+        co_await ss::coroutine::without_preemption_check(
+          _probe.append_entries());
+        const auto group = request.target_group();
+        co_return co_await ss::coroutine::without_preemption_check(
+          dispatch_request(
+            std::move(request),
+            [group]() { return make_missing_group_reply(group); },
+            [](append_entries_request&& req, consensus_ptr c) {
+                return c->append_entries(std::move(req));
+            }));
+    }
 
     struct shard_groupped_hbeat_requests {
         absl::flat_hash_map<ss::shard_id, ss::chunked_fifo<heartbeat_metadata>>

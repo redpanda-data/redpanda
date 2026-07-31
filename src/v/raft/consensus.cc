@@ -2074,7 +2074,7 @@ consensus::append_entries(append_entries_request&& r) {
 }
 
 ss::future<append_entries_reply>
-consensus::do_append_entries(append_entries_request&& r) {
+consensus::do_append_entries(append_entries_request r) {
     auto lstats = _log->offsets();
     append_entries_reply reply;
     const auto request_metadata = r.metadata();
@@ -2247,9 +2247,9 @@ consensus::do_append_entries(append_entries_request&& r) {
             reply.result = reply_result::failure;
             co_return reply;
         }
-        auto f = ss::now();
+        std::optional<ss::future<flushed>> flush;
         if (r.is_flush_required() && lstats.dirty_offset > _flushed_offset) {
-            f = flush_log().discard_result();
+            flush.emplace(flush_log());
         }
         auto last_visible = std::min(
           lstats.dirty_offset, request_metadata.last_visible_index);
@@ -2268,7 +2268,9 @@ consensus::do_append_entries(append_entries_request&& r) {
             _follower_recovery_state.reset();
         }
 
-        co_await std::move(f);
+        if (flush) {
+            (void)co_await std::move(*flush);
+        }
         maybe_update_follower_commit_idx(
           model::offset(request_metadata.commit_index));
         reply.last_flushed_log_index = _flushed_offset;
