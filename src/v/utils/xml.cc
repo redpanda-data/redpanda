@@ -24,16 +24,12 @@ void log_buffer_with_rate_limiting(
     static constexpr int buffer_size = 0x100;
     static constexpr auto rate_limit = std::chrono::seconds(1);
     thread_local static ss::logger::rate_limit rate(rate_limit);
-    auto log_with_rate_limit = [&logger](
-                                 ss::logger::format_info fmt, auto... args) {
-        logger.log(ss::log_level::warn, rate, fmt, args...);
-    };
     iobuf_istreambuf strbuf(buf);
     std::istream stream(&strbuf);
     std::array<char, buffer_size> str{};
     auto sz = stream.readsome(str.data(), buffer_size);
     auto sview = std::string_view(str.data(), sz);
-    vlog(log_with_rate_limit, "{}: {}", msg, sview);
+    vloglr(logger, ss::log_level::warn, rate, "{}: {}", msg, sview);
 }
 
 } // namespace
