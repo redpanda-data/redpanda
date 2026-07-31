@@ -77,6 +77,7 @@ ss::future<cluster::begin_group_tx_reply> rm_group_frontend::begin_group_tx(
             vlog(
               cluster::txlog.trace,
               "can't find meta info for {}/{}, retrying",
+              tp,
               *partition_opt);
             ec = cluster::tx::errc::partition_not_exists;
             co_await ss::sleep(delay_ms);
