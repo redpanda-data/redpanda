@@ -31,6 +31,7 @@ redpanda_cc_gtest(
         "//src/v/cloud_storage_clients",
         "//src/v/cloud_topics/level_zero/stm:ctp_stm",
         "//src/v/config",
+        "//src/v/container:chunked_vector",
         "//src/v/kafka/server/tests:kafka_test_utils",
         "//src/v/model",
         "//src/v/model:batch_builder",
