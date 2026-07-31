@@ -30,6 +30,8 @@
 #include <seastar/core/gate.hh>
 #include <seastar/core/iostream.hh>
 #include <seastar/core/metrics_registration.hh>
+#include <seastar/coroutine/as_future.hh>
+#include <seastar/coroutine/exception.hh>
 #include <seastar/net/api.hh>
 #include <seastar/net/tls.hh>
 
@@ -320,8 +322,6 @@ ss::future<result<rpc::client_context<T>>> parse_result(
   ss::input_stream<char>& in,
   std::unique_ptr<streaming_context> sctx,
   transport_version req_ver) {
-    using ret_t = result<rpc::client_context<T>>;
-
     const auto st = static_cast<status>(sctx->get_header().meta);
     const auto rep_ver = sctx->get_header().version;
 
@@ -340,7 +340,7 @@ ss::future<result<rpc::client_context<T>>> parse_result(
              * the unsupported version scenario.
              */
             sctx->signal_body_parse();
-            return ss::make_ready_future<ret_t>(map_server_error(st));
+            co_return map_server_error(st);
         }
         if (protocol_violation) {
             auto msg = fmt::format(
@@ -353,33 +353,28 @@ ss::future<result<rpc::client_context<T>>> parse_result(
             vlog(rpclog.error, "{}", msg);
             auto ex = std::make_exception_ptr(std::runtime_error(msg));
             sctx->body_parse_exception(ex);
-            return ss::make_exception_future<ret_t>(ex);
+            co_return ss::coroutine::exception(ex);
         }
         sctx->signal_body_parse();
-        return ss::make_ready_future<ret_t>(map_server_error(st));
+        co_return map_server_error(st);
     }
 
-    // use-after-move check doesn't take into account c++17 evaluation order
-    // correctly, so when used before and after `.then` it is a false positive.
-    // https://reviews.llvm.org/D145581
     auto header = sctx->get_header();
-    return parse_type<T, default_message_codec>(in, header)
-      .then_wrapped([sctx = std::move(sctx)](ss::future<T> data_fut) {
-          if (data_fut.failed()) {
-              const auto ex = data_fut.get_exception();
-              sctx->body_parse_exception(ex);
-              /**
-               * we want to throw an exception when body parsing failed.
-               * this will invalidate the connection since it may not be
-               * valid any more.
-               */
-              std::rethrow_exception(ex);
-          }
-          sctx->signal_body_parse();
-          return ret_t(
-            rpc::client_context<T>(
-              sctx->get_header(), std::move(data_fut.get())));
-      });
+    auto parsed = co_await ss::coroutine::as_future(
+      parse_type<T, default_message_codec>(in, header));
+    if (parsed.failed()) {
+        auto exception = parsed.get_exception();
+        sctx->body_parse_exception(exception);
+        /**
+         * we want to propagate an exception when body parsing failed.
+         * this will invalidate the connection since it may not be
+         * valid any more.
+         */
+        co_return ss::coroutine::exception(exception);
+    }
+    sctx->signal_body_parse();
+    co_return rpc::client_context<T>(
+      sctx->get_header(), std::move(parsed).get());
 }
 
 } // namespace internal
@@ -387,15 +382,12 @@ ss::future<result<rpc::client_context<T>>> parse_result(
 template<typename Input, typename Output>
 inline ss::future<result<client_context<Output>>>
 transport::send_typed(Input r, method_info method, rpc::client_opts opts) {
-    using ret_t = result<client_context<Output>>;
-    return send_typed_versioned<Input, Output>(
-             std::move(r), method, std::move(opts), _version)
-      .then([](result<result_context<Output>> res) {
-          if (!res) {
-              return ss::make_ready_future<ret_t>(res.error());
-          }
-          return ss::make_ready_future<ret_t>(std::move(res.value().ctx));
-      });
+    auto result = co_await send_typed_versioned<Input, Output>(
+      std::move(r), method, std::move(opts), _version);
+    if (!result) {
+        co_return result.error();
+    }
+    co_return std::move(result.value().ctx);
 }
 
 template<typename Input, typename Output>
@@ -406,7 +398,6 @@ transport::send_typed_versioned(
   rpc::client_opts opts,
   transport_version version) {
     using ret_t = result<result_context<Output>>;
-    using ctx_t = result<std::unique_ptr<streaming_context>>;
     _probe->request();
 
     auto b = std::make_unique<rpc::netbuf>();
@@ -417,32 +408,25 @@ transport::send_typed_versioned(
 
     auto& target_buffer = raw_b->buffer();
     auto seq = ++_seq;
-    return encode_for_version(target_buffer, std::move(r), version)
-      .then([this, version, b = std::move(b), seq, opts = std::move(opts)](
-              transport_version effective_version) mutable {
-          vassert(
-            version >= transport_version::min_supported,
-            "Request type {} cannot be encoded at version {} (effective {}).",
-            typeid(Input).name(),
-            version,
-            effective_version);
-          b->set_version(effective_version);
-          return do_send(seq, std::move(*b.get()), std::move(opts))
-            .then([effective_version](ctx_t ctx) {
-                return std::make_tuple(std::move(ctx), effective_version);
-            });
-      })
-      .then_unpack([this](ctx_t sctx, transport_version req_ver) {
-          if (!sctx) {
-              return ss::make_ready_future<ret_t>(sctx.error());
-          }
-          const auto version = sctx.value()->get_header().version;
-          return internal::parse_result<Output>(
-                   in(), std::move(sctx.value()), req_ver)
-            .then([version](result<client_context<Output>> r) {
-                return ret_t(result_context<Output>{version, std::move(r)});
-            });
-      });
+    auto effective_version = co_await encode_for_version(
+      target_buffer, std::move(r), version);
+    vassert(
+      version >= transport_version::min_supported,
+      "Request type {} cannot be encoded at version {} (effective {}).",
+      typeid(Input).name(),
+      version,
+      effective_version);
+    b->set_version(effective_version);
+
+    auto context = co_await do_send(seq, std::move(*b), std::move(opts));
+    if (!context) {
+        co_return context.error();
+    }
+    const auto response_version = context.value()->get_header().version;
+    auto parsed = co_await internal::parse_result<Output>(
+      in(), std::move(context.value()), effective_version);
+    co_return ret_t(
+      result_context<Output>{response_version, std::move(parsed)});
 }
 
 } // namespace rpc
