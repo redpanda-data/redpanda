@@ -1063,6 +1063,29 @@ redpanda_cc_bench(
 )
 
 redpanda_cc_bench(
+    name = "validate_fetch_offset_rpbench",
+    srcs = [
+        "validate_fetch_offset_bench.cc",
+    ],
+    deps = [
+        "//src/v/base",
+        "//src/v/cluster",
+        "//src/v/cluster:leader_balancer_strategy",
+        "//src/v/cluster:node_status_backend",
+        "//src/v/cluster:self_test",
+        "//src/v/cluster:topic_metrics_watcher",
+        "//src/v/kafka/data:partition_proxy",
+        "//src/v/model",
+        "//src/v/random:generators",
+        "//src/v/redpanda/tests:fixture",
+        "//src/v/test_utils:async",
+        "//src/v/test_utils:scoped_config",
+        "@seastar",
+        "@seastar//:benchmark",
+    ],
+)
+
+redpanda_cc_bench(
     name = "kafka_fetch_plan_rpbench",
     srcs = [
         "fetch_plan_bench.cc",
