@@ -35,6 +35,7 @@
 #include "storage/ntp_config.h"
 
 #include <seastar/coroutine/as_future.hh>
+#include <seastar/coroutine/try_future.hh>
 #include <seastar/util/defer.hh>
 
 #include <chrono>
@@ -367,33 +368,44 @@ ss::shared_ptr<cluster::rm_stm> partition::rm_stm() {
 }
 
 namespace {
-template<class Units, class StagesFutureFunc>
+template<class StagesFutureFunc>
 ss::future<result<kafka_result>> stages_with_units_helper(
-  ss::future<result<Units>> maybe_units_f,
+  partition& partition,
   ss::promise<> enqueued_promise,
   StagesFutureFunc stages_future_func) {
-    auto maybe_units = co_await std::move(maybe_units_f);
+    auto maybe_units = co_await ss::coroutine::try_future(
+      partition.hold_writes_enabled());
     if (!maybe_units.has_value()) {
         enqueued_promise.set_value();
         co_return maybe_units.error();
     }
     kafka_stages orig_stages = stages_future_func();
-    co_await std::move(orig_stages.request_enqueued);
+    co_await ss::coroutine::try_future(std::move(orig_stages.request_enqueued));
     enqueued_promise.set_value();
-    co_return co_await std::move(orig_stages.replicate_finished);
+    co_return co_await ss::coroutine::try_future(
+      std::move(orig_stages.replicate_finished));
 }
 
-template<class Units, class StagesFutureFunc>
-kafka_stages stages_with_units(
-  ss::future<result<Units>> maybe_units_f,
-  StagesFutureFunc stages_future_func) {
+template<class StagesFutureFunc>
+kafka_stages
+stages_with_units(partition& partition, StagesFutureFunc stages_future_func) {
     ss::promise<> enqueued_promise;
     auto enqueued_f = enqueued_promise.get_future();
     auto replicated_f = stages_with_units_helper(
-      std::move(maybe_units_f),
-      std::move(enqueued_promise),
-      std::move(stages_future_func));
+      partition, std::move(enqueued_promise), std::move(stages_future_func));
     return {std::move(enqueued_f), std::move(replicated_f)};
+}
+
+ss::future<result<kafka_result>> to_kafka_result(
+  partition& partition, ss::future<result<raft::replicate_result>> replicated) {
+    auto result = co_await ss::coroutine::try_future(std::move(replicated));
+    if (result.has_error()) {
+        co_return result.error();
+    }
+
+    auto offset = kafka::offset(
+      partition.log()->from_log_offset(result.value().last_offset)());
+    co_return kafka_result{offset, result.value().last_term};
 }
 } // namespace
 
@@ -401,8 +413,6 @@ kafka_stages partition::replicate_in_stages(
   model::batch_identity bid,
   model::record_batch batch,
   raft::replicate_options opts) {
-    using ret_t = result<kafka_result>;
-
     if (bid.is_transactional) {
         if (!_rm_stm) {
             vlog(
@@ -424,7 +434,7 @@ kafka_stages partition::replicate_in_stages(
     }
 
     return stages_with_units(
-      hold_writes_enabled(),
+      *this,
       [this,
        bid = std::move(bid),
        batch = std::move(batch),
@@ -433,17 +443,8 @@ kafka_stages partition::replicate_in_stages(
               return _rm_stm->replicate_in_stages(bid, std::move(batch), opts);
           }
           auto res = _raft->replicate_in_stages(std::move(batch), opts);
-          auto replicate_finished = res.replicate_finished.then(
-            [this](result<raft::replicate_result> r) {
-                if (!r) {
-                    return ret_t(r.error());
-                }
-                auto old_offset = r.value().last_offset;
-                auto term = r.value().last_term;
-                auto new_offset = kafka::offset(
-                  log()->from_log_offset(old_offset)());
-                return ret_t(kafka_result{new_offset, term});
-            });
+          auto replicate_finished = to_kafka_result(
+            *this, std::move(res.replicate_finished));
           return kafka_stages(
             std::move(res.request_enqueued), std::move(replicate_finished));
       });
