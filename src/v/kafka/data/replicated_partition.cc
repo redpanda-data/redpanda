@@ -25,6 +25,8 @@
 #include "storage/types.h"
 
 #include <seastar/core/future.hh>
+#include <seastar/coroutine/try_future.hh>
+#include <seastar/util/std-compat.hh>
 
 #include <optional>
 
@@ -66,6 +68,30 @@ kafka_to_cloud_log_reader_config(kafka::log_reader_config cfg) {
 } // namespace
 
 namespace kafka {
+
+namespace {
+
+ss::future<result<model::offset>> to_kafka_offset(
+  SEASTAR_CORO_AWAIT_ELIDABLE_ARGUMENT ss::future<result<cluster::kafka_result>>
+    replicated) {
+    auto result = co_await ss::coroutine::try_future(std::move(replicated));
+    if (result.has_error()) {
+        co_return result.error();
+    }
+    co_return model::offset(result.value().last_offset());
+}
+
+ss::future<result<raft::replicate_result>>
+to_raft_replicate_result(ss::future<result<cluster::kafka_result>> replicated) {
+    auto result = co_await ss::coroutine::try_future(std::move(replicated));
+    if (result.has_error()) {
+        co_return result.error();
+    }
+    co_return raft::replicate_result{
+      model::offset(result.value().last_offset())};
+}
+
+} // namespace
 replicated_partition::replicated_partition(
   ss::lw_shared_ptr<cluster::partition> p) noexcept
   : _partition(p)
@@ -354,26 +380,18 @@ replicated_partition::timequery(storage::timequery_config cfg) {
 }
 ss::future<result<model::offset>> replicated_partition::replicate(
   chunked_vector<model::record_batch> batches, raft::replicate_options opts) {
-    using ret_t = result<model::offset>;
     if (_partition->is_read_replica_mode_enabled()) {
-        return ss::make_ready_future<ret_t>(
-          kafka::error_code::invalid_topic_exception);
+        co_return kafka::error_code::invalid_topic_exception;
     }
 
-    return _partition->replicate(std::move(batches), opts)
-      .then([](result<cluster::kafka_result> r) {
-          if (!r) {
-              return ret_t(r.error());
-          }
-          return ret_t(model::offset(r.value().last_offset()));
-      });
+    co_return co_await ss::coroutine::try_future(
+      to_kafka_offset(_partition->replicate(std::move(batches), opts)));
 }
 
 raft::replicate_stages replicated_partition::replicate(
   model::batch_identity batch_id,
   model::record_batch batch,
   raft::replicate_options opts) {
-    using ret_t = result<raft::replicate_result>;
     if (_partition->is_read_replica_mode_enabled()) {
         return {
           ss::now(),
@@ -385,14 +403,8 @@ raft::replicate_stages replicated_partition::replicate(
 
     raft::replicate_stages out(raft::errc::success);
     out.request_enqueued = std::move(res.request_enqueued);
-    out.replicate_finished = res.replicate_finished.then(
-      [](result<cluster::kafka_result> r) {
-          if (!r) {
-              return ret_t(r.error());
-          }
-          return ret_t(
-            raft::replicate_result{model::offset(r.value().last_offset())});
-      });
+    out.replicate_finished = to_raft_replicate_result(
+      std::move(res.replicate_finished));
     return out;
 }
 
