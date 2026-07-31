@@ -1221,9 +1221,9 @@ connection_context::client_protocol_state::do_process_responses(
  */
 ss::future<> connection_context::client_protocol_state::maybe_process_responses(
   ss::lw_shared_ptr<connection_context> connection_ctx) {
-    return ss::repeat([this, connection_ctx]() {
-        return do_process_responses(connection_ctx);
-    });
+    while (co_await do_process_responses(connection_ctx)
+           == ss::stop_iteration::no) {
+    }
 }
 
 fmt::iterator virtual_connection_id::format_to(fmt::iterator it) const {
