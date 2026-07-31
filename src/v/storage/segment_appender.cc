@@ -22,6 +22,7 @@
 #include <seastar/core/align.hh>
 #include <seastar/core/future-util.hh>
 #include <seastar/core/future.hh>
+#include <seastar/coroutine/try_future.hh>
 
 #include <optional>
 #include <ostream>
@@ -113,21 +114,22 @@ ss::future<> segment_appender::append(const model::record_batch& batch) {
 
     auto hdrbuf = std::make_unique<iobuf>(
       storage::batch_header_to_disk_iobuf(batch.header()));
-    auto ptr = hdrbuf.get();
-    return append(*ptr).then(
-      [this, &batch, cpy = std::move(hdrbuf)] { return append(batch.data()); });
+    co_await ss::coroutine::try_future(append(*hdrbuf));
+    hdrbuf.reset();
+    co_await ss::coroutine::try_future(append(batch.data()));
 }
 
 ss::future<> segment_appender::append(bytes_view s) {
     // NOLINTNEXTLINE
-    return append(reinterpret_cast<const char*>(s.data()), s.size());
+    co_await ss::coroutine::try_future(
+      append(reinterpret_cast<const char*>(s.data()), s.size()));
 }
 
 ss::future<> segment_appender::append(const iobuf& io) {
-    return ss::do_for_each(
-      io.begin(), io.end(), [this](const iobuf::fragment& f) {
-          return append(f.get(), f.size());
-      });
+    for (const auto& fragment : io) {
+        co_await ss::coroutine::try_future(
+          append(fragment.get(), fragment.size()));
+    }
 }
 
 ss::future<> segment_appender::append(const char* buf, const size_t n) {
@@ -135,12 +137,11 @@ ss::future<> segment_appender::append(const char* buf, const size_t n) {
     // cancelled because it firing may dispatch a background write, which as
     // currently formulated, is not safe to interleave with append.
     _inactive_timer.cancel();
-    return do_append(buf, n).then([this] {
-        if (_head && _head->bytes_pending()) {
-            _inactive_timer.arm(
-              config::shard_local_cfg().segment_appender_flush_timeout_ms());
-        }
-    });
+    co_await ss::coroutine::try_future(do_append(buf, n));
+    if (_head && _head->bytes_pending()) {
+        _inactive_timer.arm(
+          config::shard_local_cfg().segment_appender_flush_timeout_ms());
+    }
 }
 
 ss::future<> segment_appender::do_append(const char* buf, size_t n) {
