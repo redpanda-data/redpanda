@@ -472,8 +472,8 @@ ctp_stm::fence_epoch(cluster_epoch e) {
               || _state.epoch_above_window(term, e)) {
                 vlog(_log.debug, "Bumping max seen epoch to {}", e);
                 _state.advance_max_seen_epoch(term, e);
-                // Demote to reader lock after max_seen_epoch is updated.
-                unit.return_units(unit.count() - 1);
+                // Demote to reader lock when the command is queued
+                // in Raft. Keep all the units for now.
                 epoch_fence_opt.emplace(std::move(unit), term);
             }
 
