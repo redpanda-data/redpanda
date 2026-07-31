@@ -425,6 +425,9 @@ private:
     // dirty so that it gets reuploaded
     ss::future<> restart_archiver(bool should_notify_topic_config);
 
+    ss::future<result<model::offset, std::error_code>>
+      do_sync_kafka_start_offset_override(model::timeout_clock::duration);
+
     consensus_ptr _raft; // never null
     ss::shared_ptr<cluster::log_eviction_stm> _log_eviction_stm;
     ss::shared_ptr<cluster::rm_stm> _rm_stm;

@@ -1457,6 +1457,34 @@ partition::get_cloud_storage_manifest_view() {
 ss::future<result<model::offset, std::error_code>>
 partition::sync_kafka_start_offset_override(
   model::timeout_clock::duration timeout) {
+    // Non-suspending fast path for the steady state where the eviction stm has
+    // already synced within the current term and the archival fallback has been
+    // synced once.
+    if (!is_read_replica_mode_enabled() && _log_eviction_stm) {
+        if (
+          auto override
+          = _log_eviction_stm->try_sync_kafka_start_offset_override()) {
+            using ret_t = result<model::offset, std::error_code>;
+            if (*override != kafka::offset{}) {
+                return ss::make_ready_future<ret_t>(
+                  kafka::offset_cast(*override));
+            }
+            if (!_archival_meta_stm) {
+                return ss::make_ready_future<ret_t>(model::offset{});
+            }
+            if (_has_synced_archival_for_start_override) {
+                return ss::make_ready_future<ret_t>(
+                  kafka::offset_cast(_archival_meta_stm->manifest()
+                                       .get_start_kafka_offset_override()));
+            }
+        }
+    }
+    return do_sync_kafka_start_offset_override(timeout);
+}
+
+ss::future<result<model::offset, std::error_code>>
+partition::do_sync_kafka_start_offset_override(
+  model::timeout_clock::duration timeout) {
     try {
         if (is_read_replica_mode_enabled()) {
             auto term = _raft->term();
