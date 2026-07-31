@@ -1967,11 +1967,10 @@ disk_log_impl::retention_offset(gc_config cfg) const {
 }
 
 ss::future<> disk_log_impl::remove_empty_segments() {
-    return ss::do_until(
-      [this] { return _segs.empty() || !_segs.back()->empty(); },
-      [this] {
-          return _segs.back()->close().then([this] { _segs.pop_back(); });
-      });
+    while (!_segs.empty() && _segs.back()->empty()) {
+        co_await _segs.back()->close();
+        _segs.pop_back();
+    }
 }
 
 model::term_id disk_log_impl::term() const {
@@ -2097,27 +2096,22 @@ ss::future<> disk_log_impl::new_segment(model::offset o, model::term_id t) {
     // Recomputing here means that any roll size checks after this takes into
     // account updated segment size.
     _max_segment_size = compute_max_segment_size();
-    return _manager
-      .make_log_segment(
-        config(),
-        o,
-        t,
-        config::shard_local_cfg().storage_read_buffer_size(),
-        config::shard_local_cfg().storage_read_readahead_count(),
-        _max_segment_size)
-      .then([this](ss::lw_shared_ptr<segment> handles) mutable {
-          return remove_empty_segments().then(
-            [this, h = std::move(handles)]() mutable {
-                throw_if_closed();
-                if (config().is_locally_compacted()) {
-                    h->mark_as_compacted_segment();
-                }
-                _segs.add(std::move(h));
-                _probe->segment_created();
-                _stm_hookset->request_make_snapshot_in_background();
-                _stm_dirty_bytes_units.return_all();
-            });
-      });
+    auto segment = co_await _manager.make_log_segment(
+      config(),
+      o,
+      t,
+      config::shard_local_cfg().storage_read_buffer_size(),
+      config::shard_local_cfg().storage_read_readahead_count(),
+      _max_segment_size);
+    co_await remove_empty_segments();
+    throw_if_closed();
+    if (config().is_locally_compacted()) {
+        segment->mark_as_compacted_segment();
+    }
+    _segs.add(std::move(segment));
+    _probe->segment_created();
+    _stm_hookset->request_make_snapshot_in_background();
+    _stm_dirty_bytes_units.return_all();
 }
 namespace {
 model::offset get_next_append_offset(const offset_stats& offsets) {
@@ -2256,8 +2250,8 @@ ss::future<> disk_log_impl::force_roll() {
     }
 
     add_segment_bytes(ptr, ptr->size_bytes());
-    co_return co_await ptr->release_appender(_readers_cache.get())
-      .then([this, next_offset, t] { return new_segment(next_offset, t); });
+    co_await ptr->release_appender(_readers_cache.get());
+    co_await new_segment(next_offset, t);
 }
 
 ss::future<> disk_log_impl::maybe_roll_unlocked(
