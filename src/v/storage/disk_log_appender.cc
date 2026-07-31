@@ -18,6 +18,7 @@
 #include "storage/segment.h"
 
 #include <seastar/coroutine/exception.hh>
+#include <seastar/coroutine/try_future.hh>
 
 #include <exception>
 
@@ -36,16 +37,15 @@ disk_log_appender::disk_log_appender(
 
 ss::future<> disk_log_appender::initialize() {
     if (_log._segs.empty()) {
-        return ss::make_ready_future<>();
+        co_return;
     }
     release_lock();
     auto ptr = _log._segs.back();
     // appending is a non-destructive op. so acquire read lock
-    return ptr->read_lock().then([this, ptr](ss::rwlock::holder h) {
-        _seg = ptr;
-        _seg_lock = std::move(h);
-        _bytes_left_in_segment = _log.bytes_left_before_roll();
-    });
+    auto holder = co_await ss::coroutine::try_future(ptr->read_lock());
+    _seg = ptr;
+    _seg_lock = std::move(holder);
+    _bytes_left_in_segment = _log.bytes_left_before_roll();
 }
 
 bool disk_log_appender::segment_is_appendable(model::term_id batch_term) const {
@@ -135,26 +135,25 @@ disk_log_appender::append_batch_to_segment(const model::record_batch& batch) {
       unlikely(batch.header().type == model::record_batch_type::ghost_batch)) {
         _idx = batch.last_offset() + model::offset(1); // next base offset
         _last_offset = batch.last_offset();
-        return ss::make_ready_future<ss::stop_iteration>(
-          ss::stop_iteration::no);
+        co_return ss::stop_iteration::no;
     }
-    return _seg->append(batch).then([this](append_result r) {
-        _idx = r.last_offset + model::offset(1); // next base offset
-        _byte_size += r.byte_size;
-        // do not track base_offset, only the last one
-        _last_offset = r.last_offset;
-        auto& p = _log.get_probe();
-        p.add_bytes_written(r.byte_size);
-        p.batch_written();
+    auto result = co_await ss::coroutine::try_future(_seg->append(batch));
+    _idx = result.last_offset + model::offset(1); // next base offset
+    _byte_size += result.byte_size;
+    // do not track base_offset, only the last one
+    _last_offset = result.last_offset;
+    auto& probe = _log.get_probe();
+    probe.add_bytes_written(result.byte_size);
+    probe.batch_written();
 
-        // Register increase in dirty bytes since last STM snapshot
-        _log.wrote_stm_bytes(r.byte_size);
+    // Register increase in dirty bytes since last STM snapshot
+    _log.wrote_stm_bytes(result.byte_size);
 
-        // substract the bytes from the append
-        // take the min because _bytes_left_in_segment is optimistic
-        _bytes_left_in_segment -= std::min(_bytes_left_in_segment, r.byte_size);
-        return ss::stop_iteration::no;
-    });
+    // substract the bytes from the append
+    // take the min because _bytes_left_in_segment is optimistic
+    _bytes_left_in_segment -= std::min(
+      _bytes_left_in_segment, result.byte_size);
+    co_return ss::stop_iteration::no;
 }
 
 ss::future<append_result> disk_log_appender::end_of_stream() {
@@ -165,13 +164,20 @@ ss::future<append_result> disk_log_appender::end_of_stream() {
       .byte_size = _byte_size,
       .last_term = _last_term};
     if (_config.should_fsync == storage::log_append_config::fsync::yes) {
-        co_await _log.flush();
-        release_lock();
+        return end_of_stream_with_fsync(retval);
     }
     // Do checkpointing in the background to avoid latency spikes in the write
     // path caused by KVStore flush debouncing.
     _log.bg_checkpoint_offset_translator();
-    co_return retval;
+    return ss::make_ready_future<append_result>(retval);
+}
+
+ss::future<append_result>
+disk_log_appender::end_of_stream_with_fsync(append_result result) {
+    co_await ss::coroutine::try_future(_log.flush());
+    release_lock();
+    _log.bg_checkpoint_offset_translator();
+    co_return result;
 }
 
 fmt::iterator disk_log_appender::format_to(fmt::iterator it) const {
