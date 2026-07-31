@@ -31,12 +31,14 @@
     public:                                                                    \
         void fixture_test();                                                   \
         template<typename... T>                                                \
-        static auto info(T&&... t) {                                           \
-            return g_seastar_test_log.info(std::forward<T>(t)...);             \
+        static auto info(ss::logger::format_info_t<T...> format, T&&... t) {   \
+            return g_seastar_test_log.info(                                    \
+              std::move(format), std::forward<T>(t)...);                       \
         }                                                                      \
         template<typename... T>                                                \
-        static auto debug(T&&... t) {                                          \
-            return g_seastar_test_log.debug(std::forward<T>(t)...);            \
+        static auto debug(ss::logger::format_info_t<T...> format, T&&... t) {  \
+            return g_seastar_test_log.debug(                                   \
+              std::move(format), std::forward<T>(t)...);                       \
         }                                                                      \
                                                                                \
     private:                                                                   \
