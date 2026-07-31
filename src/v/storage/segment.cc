@@ -495,29 +495,37 @@ ss::future<append_result> segment::do_append(const model::record_batch& b) {
       *this,
       b.header());
     if (unlikely(b.base_offset() > b.last_offset())) {
-        return ss::make_exception_future<append_result>(std::runtime_error(
-          fmt::format(
-            "Empty batch written to {}. Batch header: {}",
-            path(),
-            b.header())));
+        co_return ss::coroutine::exception(
+          std::make_exception_ptr(
+            std::runtime_error(
+              fmt::format(
+                "Empty batch written to {}. Batch header: {}",
+                path(),
+                b.header()))));
     }
     if (unlikely(b.base_offset() < _tracker.get_base_offset())) {
-        return ss::make_exception_future<append_result>(std::runtime_error(
-          fmt::format(
-            "Invalid state. Attempted to append a batch with base_offset:{}, "
-            "but would invalidate our initial state base offset of:{}. Actual "
-            "batch header:{}, self:{}",
-            b.base_offset(),
-            _tracker.get_base_offset(),
-            b.header(),
-            *this)));
+        co_return ss::coroutine::exception(
+          std::make_exception_ptr(
+            std::runtime_error(
+              fmt::format(
+                "Invalid state. Attempted to append a batch with "
+                "base_offset:{}, "
+                "but would invalidate our initial state base offset of:{}. "
+                "Actual "
+                "batch header:{}, self:{}",
+                b.base_offset(),
+                _tracker.get_base_offset(),
+                b.header(),
+                *this))));
     }
     if (unlikely(b.compressed() && !b.header().attrs.is_valid_compression())) {
-        return ss::make_exception_future<append_result>(std::runtime_error(
-          fmt::format(
-            "record batch marked as compressed, but has no valid "
-            "compression:{}",
-            b.header())));
+        co_return ss::coroutine::exception(
+          std::make_exception_ptr(
+            std::runtime_error(
+              fmt::format(
+                "record batch marked as compressed, but has no valid "
+                "compression:{}",
+                b.header()))));
     }
     const auto start_physical_offset = _appender->file_byte_offset();
     const auto expected_end_physical = start_physical_offset
@@ -529,77 +537,92 @@ ss::future<append_result> segment::do_append(const model::record_batch& b) {
     _inflight.emplace(expected_end_physical, b.last_offset());
 
     // proxy serialization to segment_appender
-    auto write_fut = _appender->append(b).then(
-      [this, &b, start_physical_offset, expected_end_physical] {
-          _tracker.set_offset(offset_tracker::dirty_offset_t{b.last_offset()});
-          const auto end_physical_offset = _appender->file_byte_offset();
+    auto append_to_log =
+      [this, &b, start_physical_offset, expected_end_physical](
+        this auto) -> ss::future<append_result> {
+        co_await ss::coroutine::try_future(_appender->append(b));
+        _tracker.set_offset(offset_tracker::dirty_offset_t{b.last_offset()});
+        const auto end_physical_offset = _appender->file_byte_offset();
 
-          vassert(
-            end_physical_offset == expected_end_physical,
-            "size must be deterministic: end_offset:{}, expected:{}, "
-            "batch.header:{} - {}",
-            end_physical_offset,
-            expected_end_physical,
-            b.header(),
-            *this);
+        vassert(
+          end_physical_offset == expected_end_physical,
+          "size must be deterministic: end_offset:{}, expected:{}, "
+          "batch.header:{} - {}",
+          end_physical_offset,
+          expected_end_physical,
+          b.header(),
+          *this);
 
-          // index the write
-          _idx.maybe_track(
-            b.header(), ss::lowres_system_clock::now(), start_physical_offset);
-          auto ret = append_result{
-            .base_offset = b.base_offset(),
-            .last_offset = b.last_offset(),
-            .byte_size = (size_t)b.size_bytes()};
+        // index the write
+        _idx.maybe_track(
+          b.header(), ss::lowres_system_clock::now(), start_physical_offset);
+        auto result = append_result{
+          .base_offset = b.base_offset(),
+          .last_offset = b.last_offset(),
+          .byte_size = (size_t)b.size_bytes()};
 
-          // cache always copies the batch
-          cache_put(
-            b,
-            // It may happen that this continuation may run after the stable
-            // offset has been advances and the cache was already marked as
-            // clean up to or beyond the offset of the batch we are writing. In
-            // that case, the batch entry should be considered clean.
-            _tracker.get_stable_offset() < b.last_offset()
-              ? batch_cache::is_dirty_entry::yes
-              : batch_cache::is_dirty_entry::no);
-          return ret;
-      });
+        // cache always copies the batch
+        cache_put(
+          b,
+          // It may happen that this coroutine resumes after the stable
+          // offset has advanced and the cache was already marked as
+          // clean up to or beyond the offset of the batch we are writing. In
+          // that case, the batch entry should be considered clean.
+          _tracker.get_stable_offset() < b.last_offset()
+            ? batch_cache::is_dirty_entry::yes
+            : batch_cache::is_dirty_entry::no);
+        co_return result;
+    };
+
+    if (!has_compaction_index()) {
+        auto appended = co_await ss::coroutine::as_future(append_to_log());
+        clear_cached_disk_usage();
+        if (appended.failed()) {
+            auto exception = appended.get_exception();
+            vlog(stlog.error, "segment::append failed: {}", exception);
+            co_return ss::coroutine::exception(exception);
+        }
+        if (
+          !_first_write.has_value()
+          && b.header().type == model::record_batch_type::raft_data) {
+            _first_write = ss::lowres_clock::now();
+        }
+        co_return std::move(appended).get();
+    }
+
+    auto write_fut = append_to_log();
     auto index_fut = compaction_index_batch(b);
-    return ss::when_all(std::move(write_fut), std::move(index_fut))
-      .then([this, batch_type = b.header().type](
-              std::tuple<ss::future<append_result>, ss::future<>> p) {
-          auto& [append_fut, index_fut] = p;
-          const bool index_append_failed = index_fut.failed()
-                                           && has_compaction_index();
-          const bool has_error = append_fut.failed() || index_append_failed;
-          clear_cached_disk_usage();
-          if (!has_error) {
-              if (
-                !this->_first_write.has_value()
-                && batch_type == model::record_batch_type::raft_data) {
-                  // record time of first write of data batch
-                  this->_first_write = ss::lowres_clock::now();
-              }
-              index_fut.get();
-              return std::move(append_fut);
-          }
-          if (append_fut.failed()) {
-              auto append_err = std::move(append_fut).get_exception();
-              vlog(stlog.error, "segment::append failed: {}", append_err);
-              if (index_fut.failed()) {
-                  auto index_err = std::move(index_fut).get_exception();
-                  vlog(stlog.error, "segment::append index: {}", index_err);
-              }
-              return ss::make_exception_future<append_result>(append_err);
-          }
-          auto ret = append_fut.get();
-          auto index_err = std::move(index_fut).get_exception();
-          vlog(
-            stlog.error,
-            "segment::append index: {}. ignoring append: {}",
-            index_err,
-            ret);
-          return ss::make_exception_future<append_result>(index_err);
-      });
+    auto [append_fut, compacted_index_fut] = co_await ss::when_all(
+      std::move(write_fut), std::move(index_fut));
+    const bool has_error = append_fut.failed() || compacted_index_fut.failed();
+    clear_cached_disk_usage();
+    if (!has_error) {
+        if (
+          !_first_write.has_value()
+          && b.header().type == model::record_batch_type::raft_data) {
+            // record time of first write of data batch
+            _first_write = ss::lowres_clock::now();
+        }
+        compacted_index_fut.get();
+        co_return std::move(append_fut).get();
+    }
+    if (append_fut.failed()) {
+        auto append_error = std::move(append_fut).get_exception();
+        vlog(stlog.error, "segment::append failed: {}", append_error);
+        if (compacted_index_fut.failed()) {
+            auto index_error = std::move(compacted_index_fut).get_exception();
+            vlog(stlog.error, "segment::append index: {}", index_error);
+        }
+        co_return ss::coroutine::exception(append_error);
+    }
+    auto result = append_fut.get();
+    auto index_error = std::move(compacted_index_fut).get_exception();
+    vlog(
+      stlog.error,
+      "segment::append index: {}. ignoring append: {}",
+      index_error,
+      result);
+    co_return ss::coroutine::exception(index_error);
 }
 
 ss::future<append_result> segment::append(const model::record_batch& b) {
@@ -629,9 +652,11 @@ ss::future<append_result> segment::append(const model::record_batch& b) {
 }
 
 ss::future<append_result> segment::append(model::record_batch&& b) {
-    return ss::do_with(std::move(b), [this](model::record_batch& b) mutable {
-        return append(b);
-    });
+    return append_owned(std::move(b));
+}
+
+ss::future<append_result> segment::append_owned(model::record_batch b) {
+    co_return co_await append(b);
 }
 
 ss::future<segment_reader_handle> segment::offset_data_stream(model::offset o) {
