@@ -229,52 +229,37 @@ ss::future<size_t> segment::remove_persistent_state() {
 }
 
 ss::future<> segment::do_close() {
-    auto f = _reader->close();
+    co_await _reader->close();
     if (_appender) {
-        f = f.then([this] { return _appender->close(); });
+        co_await _appender->close();
     }
     if (_compaction_index) {
-        f = f.then([this] { return _compaction_index.value()->close(); });
+        co_await _compaction_index.value()->close();
     }
     // after appender flushes to make sure we make things visible
     // only after appender flush
-    f = f.then([this] { return _idx.flush(); });
+    co_await _idx.flush();
     if (_cache) {
-        f = f.then([this] { return _cache->clear_async(); });
+        co_await _cache->clear_async();
     }
-    return f;
 }
 
 ss::future<> segment::do_release_appender(
   segment_appender_ptr appender,
   std::optional<batch_cache_index> cache,
   std::optional<std::unique_ptr<compacted_index_writer>> compacted_index) {
-    return ss::do_with(
-      std::move(appender),
-      std::move(compacted_index),
-      [this, cache = std::move(cache)](
-        segment_appender_ptr& appender,
-        std::optional<std::unique_ptr<compacted_index_writer>>&
-          compacted_index) {
-          return appender->close()
-            .then([this] {
-                clear_cached_disk_usage();
-                return _idx.flush();
-            })
-            .then([&compacted_index] {
-                if (compacted_index) {
-                    return compacted_index.value()->close();
-                }
-                return ss::now();
-            })
-            .then([this, &compacted_index, &appender] {
-                std::optional<size_t> cmp_idx_size{std::nullopt};
-                if (compacted_index) {
-                    cmp_idx_size = compacted_index.value()->size_bytes();
-                }
-                set_cached_disk_usage(appender->size_bytes(), cmp_idx_size);
-            });
-      });
+    (void)cache;
+    co_await appender->close();
+    clear_cached_disk_usage();
+    co_await _idx.flush();
+    if (compacted_index) {
+        co_await compacted_index.value()->close();
+    }
+    std::optional<size_t> compacted_index_size;
+    if (compacted_index) {
+        compacted_index_size = compacted_index.value()->size_bytes();
+    }
+    set_cached_disk_usage(appender->size_bytes(), compacted_index_size);
 }
 
 ss::future<> segment::release_appender(readers_cache* readers_cache) {
@@ -295,29 +280,21 @@ ss::future<> segment::release_appender(readers_cache* readers_cache) {
      */
     if (_destructive_ops.try_write_lock()) {
         _destructive_ops.write_unlock();
-        return write_lock().then([this](ss::rwlock::holder h) {
-            return do_flush()
-              .then([this] {
-                  auto a = std::exchange(_appender, nullptr);
-                  auto c
-                    = config::shard_local_cfg().release_cache_on_segment_roll()
-                        ? std::exchange(_cache, std::nullopt)
-                        : std::nullopt;
-                  auto i = std::exchange(_compaction_index, std::nullopt);
-                  return do_release_appender(
-                    std::move(a), std::move(c), std::move(i));
-              })
-              .finally([h = std::move(h)] {});
-        });
-    } else {
-        return read_lock().then([this, readers_cache](ss::rwlock::holder h) {
-            return do_flush()
-              .then([this, readers_cache] {
-                  release_appender_in_background(readers_cache);
-              })
-              .finally([h = std::move(h)] {});
-        });
+        auto holder = co_await write_lock();
+        co_await do_flush();
+        auto appender = std::exchange(_appender, nullptr);
+        auto cache = config::shard_local_cfg().release_cache_on_segment_roll()
+                       ? std::exchange(_cache, std::nullopt)
+                       : std::nullopt;
+        auto compacted_index = std::exchange(_compaction_index, std::nullopt);
+        co_await do_release_appender(
+          std::move(appender), std::move(cache), std::move(compacted_index));
+        co_return;
     }
+
+    auto holder = co_await read_lock();
+    co_await do_flush();
+    release_appender_in_background(readers_cache);
 }
 
 void segment::release_appender_in_background(readers_cache* readers_cache) {
@@ -334,67 +311,57 @@ void segment::release_appender_in_background(readers_cache* readers_cache) {
        readers_cache,
        a = std::move(a),
        c = std::move(c),
-       i = std::move(i)]() mutable {
-          return readers_cache
-            ->evict_range(
-              _tracker.get_base_offset(), _tracker.get_dirty_offset())
-            .then(
-              [this, a = std::move(a), c = std::move(c), i = std::move(i)](
-                readers_cache::range_lock_holder readers_cache_lock) mutable {
-                  return ss::do_with(
-                           std::move(readers_cache_lock),
-                           [this](auto&) { return write_lock(); })
-                    .then([this,
-                           a = std::move(a),
-                           c = std::move(c),
-                           i = std::move(i)](ss::rwlock::holder h) mutable {
-                        return do_release_appender(
-                                 std::move(a), std::move(c), std::move(i))
-                          .finally([h = std::move(h)] {});
-                    });
-              });
+       i = std::move(i)](this auto) -> ss::future<> {
+          auto readers_cache_lock = co_await readers_cache->evict_range(
+            _tracker.get_base_offset(), _tracker.get_dirty_offset());
+          auto holder = co_await write_lock();
+          co_await do_release_appender(
+            std::move(a), std::move(c), std::move(i));
       });
 }
 
 ss::future<> segment::flush() {
     check_segment_not_closed("flush()");
-    return read_lock().then([this](ss::rwlock::holder h) {
-        return do_flush().finally([h = std::move(h)] {});
-    });
+    auto holder = co_await ss::coroutine::try_future(read_lock());
+    co_await ss::coroutine::try_future(do_flush());
 }
 ss::future<> segment::do_flush() {
     advance_generation();
     if (!_appender) {
-        return ss::make_ready_future<>();
+        co_return;
     }
     auto o = _tracker.get_dirty_offset();
-    return _appender->flush().then([this, o] {
-        // never move committed offset backward, there may be multiple
-        // outstanding flushes once the one executed later in terms of offset
-        // finishes we guarantee that all previous flushes finished.
-        _tracker.set_offsets(
-          offset_tracker::committed_offset_t{
-            std::max(o, _tracker.get_committed_offset())},
-          offset_tracker::stable_offset_t{
-            std::max(o, _tracker.get_stable_offset())});
-        clear_cached_disk_usage();
-    });
+    co_await ss::coroutine::try_future(_appender->flush());
+    // never move committed offset backward, there may be multiple
+    // outstanding flushes once the one executed later in terms of offset
+    // finishes we guarantee that all previous flushes finished.
+    _tracker.set_offsets(
+      offset_tracker::committed_offset_t{
+        std::max(o, _tracker.get_committed_offset())},
+      offset_tracker::stable_offset_t{
+        std::max(o, _tracker.get_stable_offset())});
+    clear_cached_disk_usage();
 }
 
 ss::future<> remove_compacted_index(const segment_full_path& reader_path) {
     auto path = reader_path.to_compacted_index();
-    return ss::remove_file(path.string())
-      .handle_exception([path](const std::exception_ptr& e) {
-          try {
-              std::rethrow_exception(e);
-          } catch (const std::filesystem::filesystem_error& e) {
-              if (e.code() == std::errc::no_such_file_or_directory) {
-                  // Do not log: ENOENT on removal is success
-                  return;
-              }
-          }
-          vlog(stlog.warn, "error removing compacted index {} - {}", path, e);
-      });
+    try {
+        co_await ss::remove_file(path.string());
+    } catch (const std::filesystem::filesystem_error& error) {
+        if (error.code() != std::errc::no_such_file_or_directory) {
+            vlog(
+              stlog.warn,
+              "error removing compacted index {} - {}",
+              path,
+              error);
+        }
+    } catch (...) {
+        vlog(
+          stlog.warn,
+          "error removing compacted index {} - {}",
+          path,
+          std::current_exception());
+    }
 }
 
 ss::future<> segment::truncate(
