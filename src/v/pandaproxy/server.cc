@@ -146,7 +146,7 @@ struct handler_adaptor : ss::httpd::handler_base {
             auto ex = std::current_exception();
             vlog(
               _log.warn,
-              "Request: {} {} failed: {:?}",
+              "Request: {} {} failed: {}",
               method,
               url,
               std::current_exception());
