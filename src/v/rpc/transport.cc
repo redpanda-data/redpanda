@@ -222,65 +222,57 @@ transport::make_response_handler(netbuf& b, rpc::client_opts& opts) {
 
 ss::future<result<std::unique_ptr<streaming_context>>>
 transport::do_send(sequence_t seq, netbuf b, rpc::client_opts opts) {
-    using ret_t = result<std::unique_ptr<streaming_context>>;
     // hold invariant of always having a valid connection _and_ a working
     // dispatch gate where we can wait for async futures
     if (!is_valid() || _dispatch_gate.is_closed()) {
-        return ss::make_ready_future<ret_t>(errc::disconnected_endpoint);
+        co_return errc::disconnected_endpoint;
     }
-    return ss::with_gate(
-      _dispatch_gate,
-      [this, b = std::move(b), opts = std::move(opts), seq]() mutable {
-          auto f = make_response_handler(b, opts);
+    auto gate_holder = _dispatch_gate.hold();
+    auto response = make_response_handler(b, opts);
+    // send
+    auto size = b.buffer().size_bytes();
+    auto correlation = b.correlation_id();
 
-          // send
-          auto sz = b.buffer().size_bytes();
-          auto corr = b.correlation_id();
-          return get_units(_memory, sz)
-            .then([b = std::move(b), corr, this](
-                    ssx::semaphore_units units) mutable {
-                auto it = _correlations.find(corr);
-                if (likely(it != _correlations.end())) {
-                    auto& timing = it->second->timing;
-                    timing.memory_reserved_at = clock_type::now();
-                }
-                return std::move(b).as_scattered().then(
-                  [u = std::move(units)](scattered_buffer bufs) mutable {
-                      return std::make_tuple(std::move(u), std::move(bufs));
-                  });
-            })
-            .then_unpack(
-              [this, f = std::move(f), seq, corr](
-                ssx::semaphore_units units, scattered_buffer bufs) mutable {
-                  auto e = std::make_unique<entry>(std::move(bufs), corr);
-                  _requests_queue.emplace(seq, std::move(e));
+    std::exception_ptr error;
+    try {
+        auto units = co_await ss::coroutine::without_preemption_check(
+          get_units(_memory, size));
+        auto it = _correlations.find(correlation);
+        if (likely(it != _correlations.end())) {
+            it->second->timing.memory_reserved_at = clock_type::now();
+        }
+        auto buffers = co_await ss::coroutine::without_preemption_check(
+          std::move(b).as_scattered());
+        auto request = std::make_unique<entry>(std::move(buffers), correlation);
+        _requests_queue.emplace(seq, std::move(request));
 
-                  // By this point the request may already have timed out but
-                  // we still do dispatch_send where it is handled. This is
-                  // needed for two reasons:
-                  // - Monotonic updates to _last_seq
-                  // - Draining of the request_queue which could otherwise be
-                  //   stalled by missing sequence number.
-                  dispatch_send();
-                  return std::move(f).finally([u = std::move(units)] {});
-              })
-            .handle_exception([this, seq, corr](std::exception_ptr eptr) {
-                // This is unlikely but may potentially mean dispatch_send()
-                // is not called, stalling the sequence number. Shut it down
-                // because in this case it is not usable anymore.
-                vlog(
-                  rpclog.error,
-                  "Exception {} dispatching rpc with sequence: {}, "
-                  "correlation_idx: {}, last_seq: {}",
-                  eptr,
-                  seq,
-                  corr,
-                  _last_seq);
-                _probe->request_error();
-                fail_outstanding_futures();
-                return ss::make_exception_future<ret_t>(eptr);
-            });
-      });
+        // By this point the request may already have timed out but
+        // we still do dispatch_send where it is handled. This is
+        // needed for two reasons:
+        // - Monotonic updates to _last_seq
+        // - Draining of the request_queue which could otherwise be
+        //   stalled by missing sequence number.
+        dispatch_send();
+        co_return co_await ss::coroutine::without_preemption_check(
+          std::move(response));
+    } catch (...) {
+        error = std::current_exception();
+    }
+
+    // This is unlikely but may potentially mean dispatch_send()
+    // is not called, stalling the sequence number. Shut it down
+    // because in this case it is not usable anymore.
+    vlog(
+      rpclog.error,
+      "Exception {} dispatching rpc with sequence: {}, correlation_idx: {}, "
+      "last_seq: {}",
+      error,
+      seq,
+      correlation,
+      _last_seq);
+    _probe->request_error();
+    fail_outstanding_futures();
+    co_return ss::coroutine::exception(error);
 }
 
 ss::future<> transport::do_dispatch_send() {
@@ -300,8 +292,19 @@ ss::future<> transport::do_dispatch_send() {
             co_return;
         }
 
-        // Do not add a scheduling point before erasing this entry: concurrent
-        // dispatch loops could otherwise send the same sequence.
+        // Be careful adding any scheduling points in the loop body
+        // below.
+        //
+        // If a scheduling point is added before
+        // `_requests_queue.erase` then two concurrent instances of
+        // dispatch_send could try sending the same message.
+        // Resulting in one of them throwing a seg. fault.
+        //
+        // And if a scheduling point is added after
+        // `_requests_queue.erase` but before `out().write`, the conditional for
+        // executing the loop body could succeed for two different messages
+        // concurrently resulting in incorrect ordering of the sent
+        // messages.
         auto it = _requests_queue.begin();
         _last_seq = it->first;
         auto buffers = std::move(it->second->bufs);
@@ -310,11 +313,20 @@ ss::future<> transport::do_dispatch_send() {
 
         auto response = _correlations.find(correlation);
         if (response == _correlations.end()) {
+            // request had already completed even before we sent
+            // it (probably due to timeout or disconnect). We
+            // don't need to do anything.
             continue;
         }
         auto& response_entry = response->second;
         auto message_size = iobuf::scattered_size(buffers);
         std::optional<ss::future<bool>> write;
+        // These units are released once we are out of scope here
+        // and that is intentional because the underlying write
+        // call to the batched output stream guarantees us the
+        // in-order delivery of the dispatched write calls, which
+        // is the intent of holding on to the units up until this
+        // point.
         {
             auto units = std::move(response_entry->resource_units);
             write.emplace(out().write(std::move(buffers)));
