@@ -289,6 +289,11 @@ private:
       model::offset,
       model::term_id,
       std::optional<std::reference_wrapper<ss::abort_source>> as);
+    ss::future<bool> do_sync_and_notify_waiters(
+      model::timeout_clock::duration,
+      model::offset,
+      model::term_id,
+      std::optional<std::reference_wrapper<ss::abort_source>> as);
     ss::future<std::optional<stm_snapshot>> load_local_snapshot();
     ss::future<> wait_for_snapshot_hydrated();
 

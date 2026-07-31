@@ -21,6 +21,7 @@
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/coroutine.hh>
 #include <seastar/core/future.hh>
+#include <seastar/util/defer.hh>
 
 #include <exception>
 #include <filesystem>
@@ -480,22 +481,43 @@ ss::future<bool> persisted_stm_base<BaseT, T>::do_sync(
 }
 
 template<typename BaseT, supported_stm_snapshot T>
+ss::future<bool> persisted_stm_base<BaseT, T>::do_sync_and_notify_waiters(
+  model::timeout_clock::duration timeout,
+  model::offset sync_offset,
+  model::term_id term,
+  std::optional<std::reference_wrapper<ss::abort_source>> as) {
+    bool is_synced = false;
+    auto notify_waiters = ss::defer([this, &is_synced] {
+        _is_catching_up = false;
+        for (auto& sync_waiter : _sync_waiters) {
+            sync_waiter->set_value(is_synced);
+        }
+        _sync_waiters.clear();
+    });
+
+    is_synced = co_await ss::coroutine::without_preemption_check(
+      do_sync(timeout, sync_offset, term, as));
+    co_return is_synced;
+}
+
+template<typename BaseT, supported_stm_snapshot T>
 ss::future<bool> persisted_stm_base<BaseT, T>::sync(
   model::timeout_clock::duration timeout,
   std::optional<std::reference_wrapper<ss::abort_source>> as) {
     auto term = _raft->term();
     if (!_raft->is_leader()) {
-        return ss::make_ready_future<bool>(false);
+        co_return false;
     }
     if (_insync_term == term) {
-        return ss::make_ready_future<bool>(true);
+        co_return true;
     }
     if (_is_catching_up) {
         auto deadline = model::timeout_clock::now() + timeout;
         auto sync_waiter = ss::make_lw_shared<expiring_promise<bool>>();
         _sync_waiters.push_back(sync_waiter);
-        return sync_waiter->get_future_with_timeout(
-          deadline, [] { return false; }, as);
+        co_return co_await ss::coroutine::without_preemption_check(
+          sync_waiter->get_future_with_timeout(
+            deadline, [] { return false; }, as));
     }
     _is_catching_up = true;
 
@@ -521,15 +543,8 @@ ss::future<bool> persisted_stm_base<BaseT, T>::sync(
         sync_offset = log_offsets.dirty_offset;
     }
 
-    return do_sync(timeout, sync_offset, term, as).then([this](bool is_synced) {
-        _is_catching_up = false;
-        for (auto& sync_waiter : _sync_waiters) {
-            sync_waiter->set_value(is_synced);
-        }
-        _sync_waiters.clear();
-
-        return is_synced;
-    });
+    co_return co_await ss::coroutine::without_preemption_check(
+      do_sync_and_notify_waiters(timeout, sync_offset, term, as));
 }
 
 template<typename BaseT, supported_stm_snapshot T>
@@ -537,26 +552,24 @@ ss::future<bool> persisted_stm_base<BaseT, T>::wait_no_throw(
   model::offset offset,
   model::timeout_clock::time_point deadline,
   std::optional<std::reference_wrapper<ss::abort_source>> as) const noexcept {
-    return BaseT::wait(offset, deadline, as)
-      .then([] { return true; })
-      .handle_exception_type([](const ss::abort_requested_exception&) {
-          // Shutting down
-          return false;
-      })
-      .handle_exception_type(
-        [this, offset, ntp = _raft->ntp()](const ss::timed_out_error&) {
-            vlog(_log.warn, "timed out while waiting for offset: {}", offset);
-            return false;
-        })
-      .handle_exception(
-        [this, offset, ntp = _raft->ntp()](std::exception_ptr e) {
-            vlog(
-              _log.error,
-              "An error {} happened during waiting for offset: {}",
-              e,
-              offset);
-            return false;
-        });
+    try {
+        co_await ss::coroutine::without_preemption_check(
+          BaseT::wait(offset, deadline, as));
+        co_return true;
+    } catch (const ss::abort_requested_exception&) {
+        // Shutting down
+        co_return false;
+    } catch (const ss::timed_out_error&) {
+        vlog(_log.warn, "timed out while waiting for offset: {}", offset);
+        co_return false;
+    } catch (...) {
+        vlog(
+          _log.error,
+          "An error {} happened during waiting for offset: {}",
+          std::current_exception(),
+          offset);
+        co_return false;
+    }
 }
 
 template<typename BaseT, supported_stm_snapshot T>
