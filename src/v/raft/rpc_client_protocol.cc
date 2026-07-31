@@ -19,6 +19,21 @@
 
 namespace raft {
 
+namespace {
+
+ss::future<result<append_entries_reply>> append_entries_full_serde(
+  raftgen_client_protocol client,
+  append_entries_request request,
+  rpc::client_opts opts) {
+    auto result = co_await ss::coroutine::without_preemption_check(
+      client.append_entries_full_serde(
+        append_entries_request_serde_wrapper(std::move(request)),
+        std::move(opts)));
+    co_return rpc::get_ctx_data<append_entries_reply>(std::move(result));
+}
+
+} // namespace
+
 ss::future<bool> rpc_client_protocol::ensure_disconnect(model::node_id n) {
     struct resetter {
         ss::lw_shared_ptr<rpc::transport> transport;
@@ -77,11 +92,8 @@ ss::future<result<append_entries_reply>> rpc_client_protocol::append_entries(
       timeout,
       [r = std::move(r),
        opts = std::move(opts)](raftgen_client_protocol client) mutable {
-          return client
-            .append_entries_full_serde(
-              append_entries_request_serde_wrapper(std::move(r)),
-              std::move(opts))
-            .then(&rpc::get_ctx_data<append_entries_reply>);
+          return append_entries_full_serde(
+            std::move(client), std::move(r), std::move(opts));
       });
 }
 

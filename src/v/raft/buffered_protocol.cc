@@ -24,6 +24,7 @@
 #include "ssx/semaphore.h"
 
 #include <seastar/core/metrics.hh>
+#include <seastar/coroutine/as_future.hh>
 
 #include <cstdint>
 
@@ -264,45 +265,36 @@ append_entries_queue::append_entries_queue(
 };
 
 ss::future<> append_entries_queue::dispatch_loop() {
-    return _new_requests.wait([this] { return !_requests.empty(); })
-      .then([this] {
-          return ss::get_units(_inflight_requests_sem, 1)
-            .then([this](ssx::semaphore_units inflight_units) {
-                ssx::spawn_with_gate(
-                  _gate,
-                  [this, inflight_units = std::move(inflight_units)]() mutable {
-                      auto msg_entry = std::move(_requests.front());
-                      _requests.pop_front();
-                      _buffered_bytes -= msg_entry.request.total_size();
-                      auto f = do_dispatch(
-                        std::move(msg_entry), std::move(inflight_units));
-                      _dispatched.signal();
-                      return f;
-                  });
-            });
+    co_await ss::coroutine::without_preemption_check(
+      _new_requests.wait([this] { return !_requests.empty(); }));
+    auto inflight_units = co_await ss::coroutine::without_preemption_check(
+      ss::get_units(_inflight_requests_sem, 1));
+    ssx::spawn_with_gate(
+      _gate, [this, inflight_units = std::move(inflight_units)]() mutable {
+          auto msg_entry = std::move(_requests.front());
+          _requests.pop_front();
+          _buffered_bytes -= msg_entry.request.total_size();
+          auto dispatched = do_dispatch(
+            std::move(msg_entry), std::move(inflight_units));
+          _dispatched.signal();
+          return dispatched;
       });
 }
 ss::future<> append_entries_queue::do_dispatch(
   request_entry entry, ssx::semaphore_units inflight_units) {
+    (void)inflight_units;
     auto sent_ts = clock_type::now();
     _last_sent_timestamp = sent_ts;
     // update timeout not to account for the time in a queue
     entry.opts.timeout = rpc::timeout_spec::from_now(
       entry.opts.timeout.timeout_period);
-    return _base_protocol
-      .append_entries(
-        _target_node, std::move(entry.request), std::move(entry.opts))
-      .then_wrapped(
-        [this,
-         inflight_units = std::move(inflight_units),
-         reply_promise = std::move(entry.reply),
-         sent_ts](ss::future<result<append_entries_reply>> reply_f) mutable {
-            auto now = clock_type::now();
-            const auto request_latency = now - sent_ts;
-            _last_reply_timestamp = now;
-            _hist.record(request_latency);
-            reply_f.forward_to(std::move(reply_promise));
-        });
+    auto reply = co_await ss::coroutine::as_future_without_preemption_check(
+      _base_protocol.append_entries(
+        _target_node, std::move(entry.request), std::move(entry.opts)));
+    auto now = clock_type::now();
+    _last_reply_timestamp = now;
+    _hist.record(now - sent_ts);
+    std::move(reply).forward_to(std::move(entry.reply));
 }
 
 bool append_entries_queue::can_buffer_next_request(size_t size) const {
@@ -323,18 +315,18 @@ ss::future<result<append_entries_reply>> append_entries_queue::append_entries(
     auto sz = r.total_size();
     // hold gate to prevent accessing state after the queue is stopped
     auto holder = _gate.hold();
-    return _dispatched.wait([this, sz] { return can_buffer_next_request(sz); })
-      .then([this, r = std::move(r), opts = std::move(opts)]() mutable {
-          /// consensus is no longer responsible for tracking memory usage and
-          /// dispatch ordering after this point
-          opts.resource_units.reset();
-          _buffered_bytes += r.total_size();
-          _requests.emplace_back(std::move(r), std::move(opts));
+    co_await ss::coroutine::without_preemption_check(
+      _dispatched.wait([this, sz] { return can_buffer_next_request(sz); }));
+    /// consensus is no longer responsible for tracking memory usage and
+    /// dispatch ordering after this point
+    opts.resource_units.reset();
+    _buffered_bytes += r.total_size();
+    _requests.emplace_back(std::move(r), std::move(opts));
 
-          _new_requests.signal();
-          return _requests.back().reply.get_future();
-      })
-      .finally([h = std::move(holder)] {});
+    auto reply = _requests.back().reply.get_future();
+    _new_requests.signal();
+    co_return co_await ss::coroutine::without_preemption_check(
+      std::move(reply));
 }
 ss::future<> append_entries_queue::stop() {
     vlog(_logger.debug, "stopping append entries queue");
