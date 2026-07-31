@@ -233,6 +233,7 @@ private:
     // like flush, but wait on fibers. used by truncate() and close() which are
     // still heavy weight operations compared to regular flush()
     ss::future<> hard_flush();
+    ss::future<> flush_file();
 
     /**
      * Returns true if there is an inflight write for the current head chunk and
@@ -327,6 +328,10 @@ private:
               alignment);
         }
     };
+    ss::future<> do_dispatch_background_head_write(
+      ss::lw_shared_ptr<inflight_write>,
+      ss::lw_shared_ptr<ssx::semaphore>,
+      ss::future<ssx::semaphore_units>);
 
     ss::chunked_fifo<ss::lw_shared_ptr<inflight_write>> _inflight;
     // A gauge of the current number of oustanding dispatched writes, equal to
