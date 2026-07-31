@@ -39,7 +39,7 @@
 namespace config {
 using namespace std::chrono_literals;
 
-configuration::configuration()
+configuration::configuration(ctor_key)
   : log_segment_size(
       *this,
       "log_segment_size",
@@ -5409,7 +5409,9 @@ std::unique_ptr<configuration> make_config() {
     // the case in all tests (BOOST_AUTO_TEST_CASE). Further, otherwise we are
     // running on a native posix thread with large stack anyway so this isn't an
     // issue.
-    auto make_cfg = []() { return std::make_unique<configuration>(); };
+    auto make_cfg = []() {
+        return std::make_unique<configuration>(configuration::ctor_key{});
+    };
     if (seastar::engine_is_ready() && ss::thread::running_in_thread()) {
         ss::thread_attributes attrs;
         attrs.stack_size = 512_KiB;

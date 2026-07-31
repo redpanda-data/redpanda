@@ -44,7 +44,8 @@ int run_seastar(std::function<ss::future<int>()> main) {
 
 int print_cluster_config_schema() {
     return run_seastar([]() -> ss::future<int> {
-        auto schema = util::generate_json_schema(config::configuration());
+        auto cfg = config::make_config();
+        auto schema = util::generate_json_schema(*cfg);
         if (!schema._body_writer) {
             vassert(
               !schema._res.empty(),
