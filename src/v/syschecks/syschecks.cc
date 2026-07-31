@@ -99,7 +99,7 @@ void memory(
           "Memory: '{}' below required: '{}'",
           human::bytes(shard_mem),
           human::bytes(required_per_shard));
-        checklog.error(line.c_str());
+        checklog.error("{}", line);
         throw std::runtime_error(line);
     }
     if (shard_mem < kRecommendedMemory) {
@@ -109,7 +109,7 @@ void memory(
           human::bytes(kRecommendedMemory));
         auto log_lvl = developer_mode_enabled ? ss::log_level::warn
                                               : ss::log_level::error;
-        checklog.log(log_lvl, line.c_str());
+        checklog.log(log_lvl, "{}", line);
     }
 }
 
