@@ -21,7 +21,10 @@
 #include "ssx/future-util.h"
 
 #include <seastar/core/with_timeout.hh>
+#include <seastar/coroutine/as_future.hh>
+#include <seastar/coroutine/exception.hh>
 #include <seastar/net/api.hh>
+#include <seastar/util/defer.hh>
 
 #include <fmt/core.h>
 
@@ -380,22 +383,19 @@ void transport::dispatch_send() {
 }
 
 ss::future<> transport::do_reads() {
-    return ss::do_until(
-      [this] { return !is_valid(); },
-      [this] {
-          return parse_header(in()).then([this](std::optional<header> h) {
-              if (!h) {
-                  vlog(
-                    rpclog.debug,
-                    "could not parse header from server: {}",
-                    server_address());
-                  _probe->header_corrupted();
-                  fail_outstanding_futures();
-                  return ss::make_ready_future<>();
-              }
-              return dispatch(h.value());
-          });
-      });
+    while (is_valid()) {
+        auto parsed_header = co_await parse_header(in());
+        if (!parsed_header) {
+            vlog(
+              rpclog.debug,
+              "could not parse header from server: {}",
+              server_address());
+            _probe->header_corrupted();
+            fail_outstanding_futures();
+            continue;
+        }
+        co_await dispatch(*parsed_header);
+    }
 }
 
 /// - this needs a streaming_context.
