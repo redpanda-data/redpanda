@@ -13,6 +13,7 @@
 #include "base/vassert.h"
 #include "ssx/semaphore.h"
 
+#include <seastar/core/coroutine.hh>
 #include <seastar/core/future.hh>
 
 namespace net {
@@ -35,23 +36,26 @@ already_closed_error(scattered_buffer& bufs) {
 
 ss::future<bool> batched_output_stream::write(scattered_buffer bufs) {
     if (unlikely(_closed)) {
-        return already_closed_error(bufs);
+        co_return co_await ss::coroutine::without_preemption_check(
+          already_closed_error(bufs));
     }
-    return ss::with_semaphore(
-      *_write_sem, 1, [this, v = std::move(bufs)]() mutable {
-          if (unlikely(_closed)) {
-              return already_closed_error(v);
-          }
-          const size_t vbytes = iobuf::scattered_size(v);
-          return _out.write(std::span{v}).then([this, vbytes] {
-              _unflushed_bytes += vbytes;
-              if (
-                _write_sem->waiters() == 0 || _unflushed_bytes >= _cache_size) {
-                  return do_flush().then([] { return true; });
-              }
-              return ss::make_ready_future<bool>(false);
-          });
-      });
+    // Keep the write and waiter-based flush decision in one task turn when the
+    // underlying futures are ready, matching the continuation implementation.
+    auto units = co_await ss::coroutine::without_preemption_check(
+      ss::get_units(*_write_sem, 1));
+    if (unlikely(_closed)) {
+        co_return co_await ss::coroutine::without_preemption_check(
+          already_closed_error(bufs));
+    }
+    const size_t bytes = iobuf::scattered_size(bufs);
+    co_await ss::coroutine::without_preemption_check(
+      _out.write(std::span{bufs}));
+    _unflushed_bytes += bytes;
+    if (_write_sem->waiters() == 0 || _unflushed_bytes >= _cache_size) {
+        co_await ss::coroutine::without_preemption_check(do_flush());
+        co_return true;
+    }
+    co_return false;
 }
 ss::future<> batched_output_stream::do_flush() {
     if (_unflushed_bytes == 0) {
