@@ -484,7 +484,7 @@ ss::future<> segment_appender::maybe_advance_stable_offset(
 
     if (!committed) {
         --_inflight_dispatched;
-        return ss::now();
+        co_return;
     }
 
     // if we advanced the committed offset, do the callbacks and
@@ -493,7 +493,7 @@ ss::future<> segment_appender::maybe_advance_stable_offset(
         _committed_offset_clb(*committed);
     }
     _stable_offset = *committed;
-    return process_flush_ops(*committed);
+    co_await process_flush_ops(*committed);
 }
 
 ss::future<> segment_appender::process_flush_ops(size_t committed) {
@@ -504,7 +504,7 @@ ss::future<> segment_appender::process_flush_ops(size_t committed) {
 
     if (flushable == _flush_ops.end()) {
         --_inflight_dispatched;
-        return ss::now();
+        co_return;
     }
 
     flush_ops_container ops(
@@ -513,40 +513,15 @@ ss::future<> segment_appender::process_flush_ops(size_t committed) {
 
     _flush_ops.pop_back_n(std::distance(flushable, _flush_ops.end()));
 
-    return _out.flush().then([this, committed, ops = std::move(ops)]() mutable {
-        // Inflight_dispatched is incremented right before a write is
-        // dispatched and then must be decremented when the write is
-        // "finished", where we don't consider the write finished
-        // until any associated flush operations that were triggered
-        // as part of write completion (i.e., stuff in this method)
-        // are complete.
-        //
-        // We also don't want to decrement this too late, i.e., in a
-        // continuation attached the write completion path (which
-        // would be easier), because then it might be non-zero
-        // unexpectedly as observed by a client do does an append +
-        // flush and waits for the futures to resolve: the flush
-        // future resolves immediately below in the set_value loop,
-        // but the future returned by *this* method may resolve later,
-        // after the client observes a non-zero value. So we decrement
-        // the counter here, *after* the flush has completed but
-        // before we set the futures which have been returned to the
-        // callers.
-        //
-        // Unfortunately this means we need to decrement this counter
-        // in multiple places.
-        --_inflight_dispatched;
-        _flushed_offset = committed;
-        ++_opts.shared_stats->fsyncs;
-        /*
-         * TODO: as an optimization, add a little house keeping to
-         * determine if eligible flush operations showed up while
-         * flush() was completing.
-         */
-        for (auto& op : ops) {
-            op.p.set_value();
-        }
-    });
+    co_await _out.flush();
+    // This must be decremented before resolving the flush promises: clients
+    // inspect it as soon as their promise becomes ready.
+    --_inflight_dispatched;
+    _flushed_offset = committed;
+    ++_opts.shared_stats->fsyncs;
+    for (auto& op : ops) {
+        op.p.set_value();
+    }
 }
 
 void segment_appender::dispatch_background_head_write() {
@@ -618,70 +593,56 @@ void segment_appender::dispatch_background_head_write() {
      */
     auto units = ss::get_units(*head_sem, 1);
 
-    (void)ss::with_semaphore(
-      _concurrent_flushes,
-      1,
-      [w, this, head_sem, units = std::move(units)]() mutable {
-          return units
-            .then([this, w](ssx::semaphore_units u) mutable {
-                const auto dma_size = w->chunk_end - w->chunk_begin;
+    (void)do_dispatch_background_head_write(
+      std::move(w), std::move(head_sem), std::move(units));
+}
 
-                vassert(
-                  dma_size <= _chunk_size && w->chunk_end > w->chunk_begin
-                    && w->chunk_end <= _chunk_size,
-                  "Bad write bounds _chunk_size: {}, chunk_begin: {}, "
-                  "chunk_end: {}",
-                  _chunk_size,
-                  w->chunk_begin,
-                  w->chunk_end);
+ss::future<> segment_appender::do_dispatch_background_head_write(
+  ss::lw_shared_ptr<inflight_write> write,
+  ss::lw_shared_ptr<ssx::semaphore> head_sem,
+  ss::future<ssx::semaphore_units> prior_write_units) {
+    try {
+        auto flush_units = co_await ss::get_units(_concurrent_flushes, 1);
+        auto ordering_units = co_await std::move(prior_write_units);
+        const auto dma_size = write->chunk_end - write->chunk_begin;
 
-                // prevent any more writes from merging into this entry
-                // as it is about to be dma_write'd.
-                w->set_state(write_state::DISPATCHED);
-                ++_inflight_dispatched;
-                ++_dispatched_writes;
+        vassert(
+          dma_size <= _chunk_size && write->chunk_end > write->chunk_begin
+            && write->chunk_end <= _chunk_size,
+          "Bad write bounds _chunk_size: {}, chunk_begin: {}, chunk_end: {}",
+          _chunk_size,
+          write->chunk_begin,
+          write->chunk_end);
 
-                return _out
+        write->set_state(write_state::DISPATCHED);
+        ++_inflight_dispatched;
+        ++_dispatched_writes;
+
+        auto written = co_await _out
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wdeprecated-declarations"
-                  .dma_write(
-                    w->file_start_offset,
-                    w->chunk->data() + w->chunk_begin,
-                    dma_size)
+                         .dma_write(
+                           write->file_start_offset,
+                           write->chunk->data() + write->chunk_begin,
+                           dma_size);
 #pragma clang diagnostic pop
-                  .then([this, w, dma_size](size_t got) {
-                      _opts.shared_stats->bytes_written += dma_size;
-                      ++_opts.shared_stats->writes_completed;
-                      /*
-                       * the continuation that captured full=true is the
-                       * end of the dependency chain for this chunk. it
-                       * can be returned to cache.
-                       */
-                      if (w->last_write_to_current_chunk) {
-                          w->chunk->reset();
-                          _opts.resources.chunks().add(w->chunk);
-                      }
+        _opts.shared_stats->bytes_written += dma_size;
+        ++_opts.shared_stats->writes_completed;
+        if (write->last_write_to_current_chunk) {
+            write->chunk->reset();
+            _opts.resources.chunks().add(write->chunk);
+        }
+        write->chunk = nullptr;
 
-                      // release our reference to the chunk since this
-                      // structure might hang around for a while in the
-                      // _inflight list but we can free this chunk to
-                      // re-use now as we won't use it again
-                      w->chunk = nullptr;
-
-                      const auto expected = w->chunk_end - w->chunk_begin;
-                      if (unlikely(expected != got)) {
-                          return size_mismatch_error(
-                            "chunk::write", expected, got);
-                      }
-                      return maybe_advance_stable_offset(w);
-                  })
-                  .finally([u = std::move(u)] {});
-            })
-            .finally([head_sem] {});
-      })
-      .handle_exception([this](std::exception_ptr e) {
-          vunreachable("Could not dma_write: {} - {}", e, *this);
-      });
+        const auto expected = write->chunk_end - write->chunk_begin;
+        if (unlikely(expected != written)) {
+            co_await size_mismatch_error("chunk::write", expected, written);
+        }
+        co_await maybe_advance_stable_offset(write);
+    } catch (...) {
+        vunreachable(
+          "Could not dma_write: {} - {}", std::current_exception(), *this);
+    }
 }
 
 ss::future<> segment_appender::flush() {
@@ -695,11 +656,12 @@ ss::future<> segment_appender::flush() {
         // dispatching background head write.
         auto f = w.p.get_future();
         dispatch_background_head_write();
-        return f;
+        co_await std::move(f);
+        co_return;
     }
 
     if (file_byte_offset() <= _flushed_offset) {
-        return ss::now();
+        co_return;
     }
 
     /*
@@ -709,7 +671,8 @@ ss::future<> segment_appender::flush() {
      */
     if (!_inflight.empty()) {
         auto& w = _flush_ops.emplace_back(file_byte_offset());
-        return w.p.get_future();
+        co_await w.p.get_future();
+        co_return;
     }
 
     vassert(
@@ -719,11 +682,7 @@ ss::future<> segment_appender::flush() {
       _stable_offset,
       *this);
 
-    return _out.flush()
-      .then([this] { ++_opts.shared_stats->fsyncs; })
-      .handle_exception([this](std::exception_ptr e) {
-          vunreachable("Could not flush: {} - {}", e, *this);
-      });
+    co_await flush_file();
 }
 
 ss::future<> segment_appender::hard_flush() {
@@ -731,21 +690,21 @@ ss::future<> segment_appender::hard_flush() {
     if (_head && _head->bytes_pending()) {
         dispatch_background_head_write();
     }
-    return ss::with_semaphore(
-             _concurrent_flushes,
-             ss::semaphore::max_counter(),
-             [this]() mutable {
-                 check_no_dispatched_writes();
-                 vassert(
-                   _flush_ops.empty(),
-                   "Pending flushes after hard flush {}",
-                   *this);
-                 return _out.flush().then(
-                   [this] { ++_opts.shared_stats->fsyncs; });
-             })
-      .handle_exception([this](std::exception_ptr e) {
-          vunreachable("Could not flush: {} - {}", e, *this);
-      });
+    auto units = co_await ss::get_units(
+      _concurrent_flushes, ss::semaphore::max_counter());
+    check_no_dispatched_writes();
+    vassert(_flush_ops.empty(), "Pending flushes after hard flush {}", *this);
+    co_await flush_file();
+}
+
+ss::future<> segment_appender::flush_file() {
+    try {
+        co_await _out.flush();
+        ++_opts.shared_stats->fsyncs;
+    } catch (...) {
+        vunreachable(
+          "Could not flush: {} - {}", std::current_exception(), *this);
+    }
 }
 
 bool segment_appender::inflight_write::try_merge(
