@@ -284,83 +284,59 @@ transport::do_send(sequence_t seq, netbuf b, rpc::client_opts opts) {
 }
 
 ss::future<> transport::do_dispatch_send() {
-    return ss::do_until(
-      [this] {
-          if (_requests_queue.empty()) {
-              return true;
-          }
-          auto queue_begin_sequence = _requests_queue.begin()->first;
-          auto out_of_order = queue_begin_sequence
-                              > (_last_seq + sequence_t(1));
-          if (unlikely(out_of_order)) {
-              vlog(
-                rpclog.debug,
-                "Dispatch request queue out of order. Last seq: "
-                "{}, "
-                "queue begin seq: {}",
-                _last_seq,
-                queue_begin_sequence);
-          }
-          return out_of_order;
-      },
-      // Be careful adding any scheduling points in the lambda
-      // below.
-      //
-      // If a scheduling point is added before
-      // `_requests_queue.erase` then two concurrent instances of
-      // dispatch_send could try sending the same message.
-      // Resulting in one of them throwing a seg. fault.
-      //
-      // And if a scheduling point is added after
-      // `_requests_queue.erase` the conditional for executing the
-      // lambda could succeed for two different messages
-      // concurrently resulting in incorrect ordering of the sent
-      // messages.
-      [this] {
-          auto it = _requests_queue.begin();
-          _last_seq = it->first;
-          auto v = std::move(it->second->bufs);
-          auto corr = it->second->correlation_id;
-          _requests_queue.erase(it);
+    while (true) {
+        if (_requests_queue.empty()) {
+            co_return;
+        }
+        auto queue_begin_sequence = _requests_queue.begin()->first;
+        auto out_of_order = queue_begin_sequence > (_last_seq + sequence_t(1));
+        if (unlikely(out_of_order)) {
+            vlog(
+              rpclog.debug,
+              "Dispatch request queue out of order. Last seq: {}, queue begin "
+              "seq: {}",
+              _last_seq,
+              queue_begin_sequence);
+            co_return;
+        }
 
-          auto resp_it = _correlations.find(corr);
-          if (resp_it == _correlations.end()) {
-              // request had already completed even before we sent
-              // it (probably due to timeout or disconnect). We
-              // don't need to do anything.
-              return ss::now();
-          }
-          auto& resp_entry = resp_it->second;
+        // Do not add a scheduling point before erasing this entry: concurrent
+        // dispatch loops could otherwise send the same sequence.
+        auto it = _requests_queue.begin();
+        _last_seq = it->first;
+        auto buffers = std::move(it->second->bufs);
+        auto correlation = it->second->correlation_id;
+        _requests_queue.erase(it);
 
-          // These units are released once we are out of scope here
-          // and that is intentional because the underlying write
-          // call to the batched output stream guarantees us the
-          // in-order delivery of the dispatched write calls, which
-          // is the intent of holding on to the units up until this
-          // point.
-          auto units = std::move(resp_entry->resource_units);
-          auto msg_size = iobuf::scattered_size(v);
+        auto response = _correlations.find(correlation);
+        if (response == _correlations.end()) {
+            continue;
+        }
+        auto& response_entry = response->second;
+        auto message_size = iobuf::scattered_size(buffers);
+        std::optional<ss::future<bool>> write;
+        {
+            auto units = std::move(response_entry->resource_units);
+            write.emplace(out().write(std::move(buffers)));
+            response_entry->timing.dispatched_at = clock_type::now();
+        }
+        vlog(
+          rpclog.trace,
+          "Dispatched request with sequence: {}, correlation_idx: {}, pending "
+          "queue_size: {}, target_address: {}",
+          _last_seq,
+          correlation,
+          _requests_queue.size(),
+          server_address());
 
-          auto f = out().write(std::move(v));
-          resp_entry->timing.dispatched_at = clock_type::now();
-          vlog(
-            rpclog.trace,
-            "Dispatched request with sequence: {}, "
-            "correlation_idx: {}, "
-            "pending queue_size: {}, target_address: {}",
-            _last_seq,
-            corr,
-            _requests_queue.size(),
-            server_address());
-          return std::move(f)
-            .then([this, corr](bool flushed) {
-                if (auto maybe_timing = get_timing(corr)) {
-                    maybe_timing->written_at = clock_type::now();
-                    maybe_timing->flushed = flushed;
-                }
-            })
-            .finally([this, msg_size] { _probe->add_bytes_sent(msg_size); });
-      });
+        auto account_bytes = ss::defer(
+          [this, message_size] { _probe->add_bytes_sent(message_size); });
+        auto flushed = co_await std::move(*write);
+        if (auto timing = get_timing(correlation)) {
+            timing->written_at = clock_type::now();
+            timing->flushed = flushed;
+        }
+    }
 }
 
 void transport::dispatch_send() {
@@ -370,16 +346,17 @@ void transport::dispatch_send() {
         return;
     }
     auto holder = _dispatch_gate.hold();
-    ssx::background
-      = ssx::ignore_shutdown_exceptions(do_dispatch_send())
-          .then_wrapped([this, h = std::move(holder)](ss::future<> fut) {
-              if (fut.failed()) {
-                  auto ex = fut.get_exception();
-                  vlog(rpclog.info, "Error dispatching socket write:{}", ex);
-                  _probe->request_error();
-                  fail_outstanding_futures();
-              }
-          });
+    ssx::background = [this,
+                       holder = std::move(holder)](this auto) -> ss::future<> {
+        auto dispatched = co_await ss::coroutine::as_future(
+          ssx::ignore_shutdown_exceptions(do_dispatch_send()));
+        if (dispatched.failed()) {
+            auto exception = dispatched.get_exception();
+            vlog(rpclog.info, "Error dispatching socket write:{}", exception);
+            _probe->request_error();
+            fail_outstanding_futures();
+        }
+    }();
 }
 
 ss::future<> transport::do_reads() {
