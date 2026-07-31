@@ -54,23 +54,18 @@ struct server_context_impl final : streaming_context {
 };
 
 ss::future<> rpc_server::apply(ss::lw_shared_ptr<net::connection> conn) {
-    return ss::do_until(
-      [this, conn] { return conn->input().eof() || abort_requested(); },
-      [this, conn]() mutable {
-          return parse_header(conn->input())
-            .then([this, conn](std::optional<header> h) mutable {
-                if (!h) {
-                    rpclog.debug(
-                      "could not parse header from client: {}", conn->addr);
-                    probe().header_corrupted();
-                    // Have to shutdown the connection as data in receiving
-                    // buffer may be corrupted
-                    conn->shutdown_input();
-                    return ss::now();
-                }
-                return dispatch_method_once(h.value(), conn);
-            });
-      });
+    while (!conn->input().eof() && !abort_requested()) {
+        auto parsed_header = co_await parse_header(conn->input());
+        if (!parsed_header) {
+            rpclog.debug("could not parse header from client: {}", conn->addr);
+            probe().header_corrupted();
+            // Have to shutdown the connection as data in receiving
+            // buffer may be corrupted
+            conn->shutdown_input();
+            continue;
+        }
+        co_await dispatch_method_once(*parsed_header, conn);
+    }
 }
 
 ss::future<>
