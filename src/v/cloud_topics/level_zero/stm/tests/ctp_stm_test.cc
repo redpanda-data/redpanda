@@ -1710,3 +1710,96 @@ TEST_F_CORO(
     ASSERT_EQ_CORO(
       co_await accessor.compute_local_retention_offset(*stm), expected);
 }
+
+/*
+ * Audit validation: epoch-fencing-gc:W3.
+ *
+ * register_reader documents that "it's ensured that we don't GC any of the
+ * data at the time this method is called" (ctp_stm.h). The holdback is
+ * implemented by ctp_stm::estimate_inactive_epoch() preferring
+ * _active_readers.front().inactive_epoch over the state value, and
+ * _active_readers is a per-replica, in-memory list: only the replica that
+ * served the fetch has an entry.
+ *
+ * The single channel from estimate_inactive_epoch() to L0 GC is the health
+ * report: cluster/health_monitor_backend.cc:1058-1062 calls
+ * estimate_inactive_epoch() on *every* replica of the partition, and
+ * level_zero_gc.cc:578-585 reduces those per-replica values with std::max.
+ * For the holdback to survive that reduction, no replica may report a value
+ * above the reader's captured epoch. That is the property asserted below.
+ */
+TEST_F_CORO(ctp_stm_fixture, test_active_reader_holdback_is_replica_local) {
+    co_await start();
+    co_await wait_for_leader(raft::default_timeout());
+
+    auto& leader = node(*get_leader());
+    auto leader_api = api(leader);
+
+    // Two unreconciled placeholders: L0 objects at epoch 5 and epoch 10. An
+    // L0 reader is built exactly for this range (frontend.cc:280-291 picks L0
+    // when start_offset > LRO), so a reader created now references both.
+    co_await replicate_record_batch(
+      leader, make_record_batch(ct::cluster_epoch{5}, model::offset{0}, 0));
+    co_await replicate_record_batch(
+      leader, make_record_batch(ct::cluster_epoch{10}, model::offset{1}, 1));
+
+    // A fetch registers a reader on the replica that serves it
+    // (level_zero_reader.cc:557, reached only from frontend::make_l0_reader).
+    auto reader = std::make_unique<ct::active_reader_state>();
+    leader_api.register_reader(reader.get());
+    ASSERT_TRUE_CORO(reader->inactive_epoch.has_value());
+    const auto held = reader->inactive_epoch.value();
+    // Everything at epoch >= 5 is protected at this instant, which covers both
+    // objects the reader references.
+    ASSERT_EQ_CORO(held, ct::cluster_epoch{4});
+
+    // While the reader is still streaming, the reconciler advances the LRO past
+    // its range and a new epoch window opens, so the state's own floor rises
+    // above the epoch-5 object the reader still needs.
+    co_await leader_api.advance_reconciled_offset(
+      kafka::offset{1}, model::no_timeout, as);
+    co_await leader_api.advance_epoch(
+      ct::cluster_epoch{20}, model::no_timeout, as);
+    co_await leader_api.sync_to_next_placeholder(model::no_timeout, as);
+
+    // The replica hosting the reader honours the holdback.
+    ASSERT_EQ_CORO(
+      leader_api.estimate_inactive_epoch(), std::make_optional(held));
+
+    // Every replica has applied the same log, so every replica reports.
+    const auto leader_lrlo = leader_api.get_last_reconciled_log_offset();
+    for (auto& [id, instance] : nodes()) {
+        auto replica_api = api(*instance);
+        RPTEST_REQUIRE_EVENTUALLY_CORO(
+          10s, [&replica_api, leader_lrlo]() -> bool {
+              return replica_api.get_max_epoch() == ct::cluster_epoch{20}
+                     && replica_api.get_last_reconciled_log_offset()
+                          == leader_lrlo;
+          });
+    }
+
+    // GC takes std::max over the per-replica reports
+    // (level_zero_gc.cc:578-585), so the holdback only survives if no replica
+    // reports above it. Reproduce that reduction here.
+    std::optional<ct::cluster_epoch> reduced;
+    ss::sstring per_replica;
+    for (auto& [id, instance] : nodes()) {
+        auto replica_api = api(*instance);
+        auto reported = replica_api.estimate_inactive_epoch();
+        ASSERT_TRUE_CORO(reported.has_value());
+        per_replica += fmt::format(
+          "node {}{}: {}; ",
+          id,
+          id == *get_leader() ? " (leader, hosts the reader)" : " (follower)",
+          reported.value());
+        reduced = reduced.has_value()
+                    ? std::max(reduced.value(), reported.value())
+                    : reported;
+    }
+
+    ASSERT_LE_CORO(reduced.value(), held)
+      << "cross-replica max of the reported max GC eligible epoch is "
+      << reduced.value() << " but a registered reader on the leader captured "
+      << held << " and still references the L0 object at epoch 5. Reports: "
+      << per_replica;
+}

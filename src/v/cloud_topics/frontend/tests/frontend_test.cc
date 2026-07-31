@@ -15,12 +15,14 @@
 #include "cloud_topics/frontend/frontend.h"
 #include "cloud_topics/level_zero/common/extent_meta.h"
 #include "cloud_topics/level_zero/stm/ctp_stm.h"
+#include "cloud_topics/state_accessors.h"
 #include "gmock/gmock.h"
 #include "model/fundamental.h"
 #include "model/namespace.h"
 #include "model/tests/random_batch.h"
 #include "raft/replicate.h"
 #include "redpanda/tests/fixture.h"
+#include "storage/record_batch_builder.h"
 #include "test_utils/scoped_config.h"
 
 #include <seastar/core/future.hh>
@@ -329,6 +331,194 @@ TEST_F(frontend_fixture, test_tiered_cloud_replicate_stages_skips_l0_upload) {
 
     auto res = stages.replicate_finished.get();
     ASSERT_TRUE(res.has_value());
+}
+
+// A fixture wired to the *real* cloud topics data plane (write pipeline,
+// write request scheduler, batcher) instead of the mock, so that a produce
+// request travels the whole L0 write path before reaching raft.
+class real_data_plane_fixture
+  : public s3_imposter_fixture
+  , public redpanda_thread_fixture
+  , public Test {
+public:
+    real_data_plane_fixture()
+      : redpanda_thread_fixture(init_cloud_topics_tag{}, httpd_port_number()) {
+        set_expectations_and_listen({});
+        wait_for_controller_leadership().get();
+    }
+
+    cloud_topics::data_plane_api* data_plane() {
+        return app.cloud_topics_app->get_state()->local().get_data_plane();
+    }
+
+    ss::lw_shared_ptr<cluster::partition>
+    make_cloud_topic(const model::topic& topic_name) {
+        model::ntp ntp(model::kafka_namespace, topic_name, 0);
+        cluster::topic_properties props;
+        props.storage_mode = model::redpanda_storage_mode::cloud;
+        props.shadow_indexing = model::shadow_indexing_mode::disabled;
+        add_topic({model::kafka_namespace, topic_name}, 1, props).get();
+        wait_for_leader(ntp).get();
+        return app.partition_manager.local().get(ntp);
+    }
+
+    size_t count_l0_uploads() {
+        size_t n = 0;
+        for (const auto& r : get_requests()) {
+            if (
+              r.method == "PUT"
+              && r.url.find("level_zero/data/") != ss::sstring::npos) {
+                n++;
+            }
+        }
+        return n;
+    }
+};
+
+namespace {
+
+model::record_batch make_marked_batch(std::string_view marker, int records) {
+    storage::record_batch_builder builder(
+      model::record_batch_type::raft_data, model::offset(0));
+    for (int i = 0; i < records; i++) {
+        builder.add_raw_kv(
+          iobuf::from(std::string(marker)), iobuf::from(std::string(marker)));
+    }
+    return std::move(builder).build();
+}
+
+} // namespace
+
+// Kafka requires that records a single producer sends to one partition are
+// appended in send order, whether or not the producer is idempotent. A
+// non-idempotent client with max.in.flight > 1 may have two produce requests
+// for one partition in flight at once: the kafka connection only waits for a
+// request's `dispatched` stage (== frontend's request_enqueued) before
+// reading the next request off the wire.
+//
+// This test issues the two requests exactly that way -- the second
+// replicate() call is made without waiting for the first request_enqueued --
+// and asserts the resulting raft offsets are in submission order.
+TEST_F(real_data_plane_fixture, pipelined_no_pid_writes_keep_order) {
+    auto partition = make_cloud_topic(model::topic("nopid_order"));
+    ASSERT_TRUE(partition);
+
+    cloud_topics::frontend frontend(partition, data_plane());
+
+    auto b1 = make_marked_batch("FIRSTREQUEST", 1);
+    auto b2 = make_marked_batch("SECONDREQUEST", 1);
+    auto bid1 = model::batch_identity::from(b1.header());
+    auto bid2 = model::batch_identity::from(b2.header());
+    // Non-idempotent producer: no producer id at all.
+    ASSERT_EQ(bid1.pid.get_id(), model::no_producer_id);
+    ASSERT_EQ(bid2.pid.get_id(), model::no_producer_id);
+
+    raft::replicate_options opts(raft::consistency_level::quorum_ack);
+    auto st1 = frontend.replicate(bid1, std::move(b1), opts);
+    auto st2 = frontend.replicate(bid2, std::move(b2), opts);
+
+    st1.request_enqueued.get();
+    st2.request_enqueued.get();
+    auto r1 = st1.replicate_finished.get();
+    auto r2 = st2.replicate_finished.get();
+
+    ASSERT_TRUE(r1.has_value())
+      << "first replicate failed: " << r1.error().message();
+    ASSERT_TRUE(r2.has_value())
+      << "second replicate failed: " << r2.error().message();
+
+    // Both requests were aggregated into a single L0 object; that is the
+    // configuration the finding is about.
+    EXPECT_EQ(count_l0_uploads(), 1u);
+
+    EXPECT_LT(r1.value().last_offset, r2.value().last_offset)
+      << "records must be appended in send order: first request landed at "
+      << r1.value().last_offset << ", second at " << r2.value().last_offset;
+}
+
+// Same as pipelined_no_pid_writes_keep_order, but with the no-pid
+// concurrency limit set to 1. Checks whether the semaphore in
+// nopid_ticket_impl acts as an ordering mechanism when it admits only one
+// request at a time.
+TEST_F(real_data_plane_fixture, pipelined_no_pid_writes_concurrency_one) {
+    scoped_config cfg;
+    cfg.get("cloud_topics_produce_no_pid_concurrency").set_value(size_t{1});
+
+    auto partition = make_cloud_topic(model::topic("nopid_order_serial"));
+    ASSERT_TRUE(partition);
+
+    cloud_topics::frontend frontend(partition, data_plane());
+
+    auto b1 = make_marked_batch("FIRSTREQUEST", 1);
+    auto b2 = make_marked_batch("SECONDREQUEST", 1);
+    auto bid1 = model::batch_identity::from(b1.header());
+    auto bid2 = model::batch_identity::from(b2.header());
+
+    raft::replicate_options opts(raft::consistency_level::quorum_ack);
+    auto st1 = frontend.replicate(bid1, std::move(b1), opts);
+    auto st2 = frontend.replicate(bid2, std::move(b2), opts);
+
+    st1.request_enqueued.get();
+    st2.request_enqueued.get();
+    auto r1 = st1.replicate_finished.get();
+    auto r2 = st2.replicate_finished.get();
+
+    ASSERT_TRUE(r1.has_value())
+      << "first replicate failed: " << r1.error().message();
+    ASSERT_TRUE(r2.has_value())
+      << "second replicate failed: " << r2.error().message();
+
+    EXPECT_LT(r1.value().last_offset, r2.value().last_offset)
+      << "records must be appended in send order: first request landed at "
+      << r1.value().last_offset << ", second at " << r2.value().last_offset;
+}
+
+// Control for the test above: the same pipelining with a real producer id.
+// The producer queue chains tickets per producer id, so ordering must hold
+// here. If this control fails the harness is wrong, not the code.
+TEST_F(real_data_plane_fixture, pipelined_idempotent_writes_keep_order) {
+    auto partition = make_cloud_topic(model::topic("pid_order"));
+    ASSERT_TRUE(partition);
+
+    cloud_topics::frontend frontend(partition, data_plane());
+
+    auto b1 = make_marked_batch("FIRSTREQUEST", 1);
+    auto b2 = make_marked_batch("SECONDREQUEST", 1);
+    model::producer_identity pid{77, 0};
+    auto bid1 = model::batch_identity{
+      .pid = pid,
+      .first_seq = 0,
+      .last_seq = 0,
+      .record_count = b1.record_count(),
+      .max_timestamp = b1.header().max_timestamp,
+      .is_transactional = false};
+    auto bid2 = model::batch_identity{
+      .pid = pid,
+      .first_seq = 1,
+      .last_seq = 1,
+      .record_count = b2.record_count(),
+      .max_timestamp = b2.header().max_timestamp,
+      .is_transactional = false};
+
+    raft::replicate_options opts(raft::consistency_level::quorum_ack);
+    auto st1 = frontend.replicate(bid1, std::move(b1), opts);
+    auto st2 = frontend.replicate(bid2, std::move(b2), opts);
+
+    st1.request_enqueued.get();
+    st2.request_enqueued.get();
+    auto r1 = st1.replicate_finished.get();
+    auto r2 = st2.replicate_finished.get();
+
+    ASSERT_TRUE(r1.has_value())
+      << "first replicate failed: " << r1.error().message();
+    ASSERT_TRUE(r2.has_value())
+      << "second replicate failed: " << r2.error().message();
+
+    EXPECT_EQ(count_l0_uploads(), 1u);
+
+    EXPECT_LT(r1.value().last_offset, r2.value().last_offset)
+      << "records must be appended in send order: first request landed at "
+      << r1.value().last_offset << ", second at " << r2.value().last_offset;
 }
 
 TEST_F(frontend_fixture, test_advance_epoch) {

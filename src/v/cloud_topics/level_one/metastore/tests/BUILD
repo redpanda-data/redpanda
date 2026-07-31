@@ -97,7 +97,10 @@ redpanda_cc_gtest(
     deps = [
         "//src/v/cloud_storage:remote_label",
         "//src/v/cloud_topics:app",
+        "//src/v/cloud_topics:logger",
+        "//src/v/cloud_topics/level_one/domain:domain_supervisor",
         "//src/v/cloud_topics/level_one/metastore:domain_uuid",
+        "//src/v/cloud_topics/level_one/metastore:leader_router",
         "//src/v/cloud_topics/level_one/metastore:manifest_io",
         "//src/v/cloud_topics/level_one/metastore:metastore_manifest",
         "//src/v/cloud_topics/level_one/metastore:replicated_metastore",
@@ -119,6 +122,7 @@ redpanda_cc_gtest(
         "//src/v/lsm/io:memory_persistence",
         "//src/v/model",
         "//src/v/serde",
+        "//src/v/test_utils:async",
         "//src/v/test_utils:gtest",
         "@googletest//:gtest",
     ],

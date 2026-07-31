@@ -132,6 +132,34 @@ redpanda_cc_gtest(
 )
 
 redpanda_cc_gtest(
+    name = "remove_topics_read_error_test",
+    timeout = "moderate",
+    srcs = [
+        "remove_topics_read_error_test.cc",
+    ],
+    deps = [
+        "//src/v/bytes:ioarray",
+        "//src/v/cloud_topics/level_one/common:object_id",
+        "//src/v/cloud_topics/level_one/metastore:state",
+        "//src/v/cloud_topics/level_one/metastore/lsm:keys",
+        "//src/v/cloud_topics/level_one/metastore/lsm:state_reader",
+        "//src/v/cloud_topics/level_one/metastore/lsm:state_update",
+        "//src/v/cloud_topics/level_one/metastore/lsm:values",
+        "//src/v/cloud_topics/level_one/metastore/lsm:write_batch_row",
+        "//src/v/lsm",
+        "//src/v/lsm/core:exceptions",
+        "//src/v/lsm/io:memory_persistence",
+        "//src/v/lsm/io:persistence",
+        "//src/v/model",
+        "//src/v/serde",
+        "//src/v/ssx:time",
+        "//src/v/test_utils:gtest",
+        "@googletest//:gtest",
+        "@seastar",
+    ],
+)
+
+redpanda_cc_gtest(
     name = "state_update_test",
     timeout = "short",
     srcs = [

@@ -1355,3 +1355,188 @@ INSTANTIATE_TEST_SUITE_P(
       return "Shard_" + std::to_string(std::get<0>(info.param)) + "_Of_"
              + std::to_string(std::get<1>(info.param));
   });
+
+/*
+ * ---------------------------------------------------------------------------
+ * Audit validation: epoch-fencing-gc:W2 / :W3
+ *
+ * These tests encode the behaviour that the L0 GC round is required to have,
+ * so a failure here IS the reported defect.
+ * ---------------------------------------------------------------------------
+ */
+
+namespace {
+/*
+ * Append an L0 data object with the given epoch and age to `listed`.
+ */
+void add_listed_object(
+  chunked_vector<cloud_storage_clients::client::list_bucket_item>& listed,
+  int64_t epoch,
+  std::chrono::milliseconds age) {
+    auto key = cloud_topics::object_path_factory::level_zero_path(
+      cloud_topics::object_id{
+        .epoch = cloud_topics::cluster_epoch(epoch),
+        .name = uuid_t::create(),
+        .prefix = 0,
+      });
+    listed.push_back(
+      cloud_storage_clients::client::list_bucket_item{
+        .key = key().string(),
+        .last_modified = std::chrono::system_clock::now() - age,
+      });
+}
+} // namespace
+
+/*
+ * W2 (join level). A cloud topic partition that has never applied an epoch
+ * reports std::nullopt for cloud_topic_max_gc_eligible_epoch from *every*
+ * replica (health_monitor_backend.cc:1058-1062 ->
+ * ctp_stm::estimate_inactive_epoch(), which is nullopt until
+ * ctp_stm_state::advance_epoch runs). A partition in that state is therefore
+ * absent from the report produced by get_partitions_max_gc_epoch, while
+ * get_partitions still lists it from the topic table.
+ *
+ * Requirement: a single brand-new partition must not stop the cluster from
+ * collecting objects that a *different*, reporting, partition has already
+ * released.
+ */
+TEST_F(LevelZeroGCMaxEpochTest, W2_UnreportedPartitionMustNotFailTheRound) {
+    snapshot().snap_revision = cloud_topics::cluster_epoch(1000);
+
+    // p0 has applied epochs and reports a real value.
+    snapshot().partitions[tpns0].push_back(model::partition_id(0));
+    partition_epochs()[tpns0][model::partition_id(0)]
+      = cloud_topics::cluster_epoch(50);
+
+    // p1 was just created: no replica has applied an epoch, so no replica
+    // reports one and the partition is missing from the report entirely.
+    snapshot().partitions[tpns0].push_back(model::partition_id(1));
+
+    auto res = max_gc();
+    ASSERT_TRUE(res.has_value())
+      << "the whole GC round aborted because of one unreported partition: "
+      << res.error();
+    ASSERT_TRUE(res.value().has_value());
+    ASSERT_GT(res.value().value(), cloud_topics::cluster_epoch(0))
+      << "watermark does not permit collecting anything";
+}
+
+/*
+ * Fixture that drives a full GC round through the *default* implementation of
+ * max_gc_eligible_epoch (the join), rather than stubbing the join out. This
+ * lets us observe what a real collection round does when one partition in the
+ * snapshot has no reported epoch.
+ */
+class LevelZeroGCJoinTest : public testing::Test {
+public:
+    using epoch_source_type = cloud_topics::l0::gc::epoch_source;
+    using partitions_snapshot = epoch_source_type::partitions_snapshot;
+    using partitions_max_gc_epoch = epoch_source_type::partitions_max_gc_epoch;
+
+    LevelZeroGCJoinTest() {
+        auto storage = std::make_unique<object_storage_test_impl>(
+          &listed, &deleted, &cfg);
+        gc = std::make_unique<cloud_topics::level_zero_gc>(
+          cloud_topics::level_zero_gc_config{
+            .deletion_grace_period = grace_period_.bind(),
+            .throttle_progress
+            = config::mock_binding<std::chrono::milliseconds>(10ms),
+            .throttle_no_progress
+            = config::mock_binding<std::chrono::milliseconds>(10ms),
+          },
+          std::move(storage),
+          std::make_unique<epoch_source_test_default_impl>(
+            &get_partitions_value, &get_partitions_max_gc_epoch_value),
+          std::make_unique<node_info_test_impl>(),
+          std::make_unique<safety_monitor_test_impl>(&safety_ok),
+          [](ss::lowres_clock::duration) { return 0ms; });
+    }
+
+    void TearDown() override { gc->stop().get(); }
+
+    void add_listed(int64_t epoch, std::chrono::milliseconds age) {
+        add_listed_object(listed, epoch, age);
+    }
+
+    chunked_vector<cloud_storage_clients::client::list_bucket_item> listed;
+    std::unordered_set<ss::sstring> deleted;
+    config::mock_property<std::chrono::milliseconds> grace_period_{
+      std::chrono::milliseconds{12h}};
+    gc_test_config cfg{};
+    bool safety_ok{true};
+    partitions_snapshot get_partitions_value;
+    partitions_max_gc_epoch get_partitions_max_gc_epoch_value;
+    std::unique_ptr<cloud_topics::level_zero_gc> gc;
+};
+
+/*
+ * Control: with every partition reporting, the round collects the objects at
+ * or below the smallest reported epoch. Confirms the fixture works.
+ */
+TEST_F(LevelZeroGCJoinTest, W2_Control_AllPartitionsReport) {
+    for (int i = 0; i < 100; ++i) {
+        add_listed(i, 24h);
+    }
+    get_partitions_value.snap_revision = cloud_topics::cluster_epoch(1000);
+    get_partitions_value.partitions[tpns0].push_back(model::partition_id(0));
+    get_partitions_value.partitions[tpns0].push_back(model::partition_id(1));
+    get_partitions_max_gc_epoch_value[tpns0][model::partition_id(0)]
+      = cloud_topics::cluster_epoch(50);
+    get_partitions_max_gc_epoch_value[tpns0][model::partition_id(1)]
+      = cloud_topics::cluster_epoch(90);
+
+    gc->start().get();
+    EXPECT_TRUE(Eventually([this] { return deleted.size() == 51; }))
+      << "deleted " << deleted.size() << " objects";
+}
+
+/*
+ * W2 (end to end). Same setup, except p1 is a freshly created partition that
+ * has not applied an epoch on any replica. The objects at or below p0's
+ * reported epoch belong to already-reconciled data and must still be
+ * collected.
+ */
+TEST_F(LevelZeroGCJoinTest, W2_NewPartitionMustNotStallCollection) {
+    for (int i = 0; i < 100; ++i) {
+        add_listed(i, 24h);
+    }
+    get_partitions_value.snap_revision = cloud_topics::cluster_epoch(1000);
+    get_partitions_value.partitions[tpns0].push_back(model::partition_id(0));
+    get_partitions_value.partitions[tpns0].push_back(model::partition_id(1));
+    // only p0 reports; p1 has never applied an epoch on any replica
+    get_partitions_max_gc_epoch_value[tpns0][model::partition_id(0)]
+      = cloud_topics::cluster_epoch(50);
+
+    gc->start().get();
+    EXPECT_TRUE(Eventually([this] { return deleted.size() == 51; }))
+      << "deleted " << deleted.size()
+      << " objects; the round makes no progress at all while one partition "
+         "has no reported epoch";
+}
+
+/*
+ * W3 (consequence, end to end). Given the watermark that the cross-replica
+ * max-reduce produces when a follower reports a higher epoch than the
+ * reader-holding leader (see ctp_stm_test
+ * test_active_reader_holdback_is_replica_local for the observed values), GC
+ * deletes the objects the registered reader still needs.
+ *
+ * There the reader captured inactive_epoch=4 while both followers reported 9,
+ * so the reduced value handed to this join is 9.
+ */
+TEST_F(LevelZeroGCJoinTest, W3_WatermarkFromFollowerDeletesReaderObjects) {
+    for (int i = 0; i < 20; ++i) {
+        add_listed(i, 24h);
+    }
+    get_partitions_value.snap_revision = cloud_topics::cluster_epoch(1000);
+    get_partitions_value.partitions[tpns0].push_back(model::partition_id(0));
+    // the value a follower without the reader reports
+    get_partitions_max_gc_epoch_value[tpns0][model::partition_id(0)]
+      = cloud_topics::cluster_epoch(9);
+
+    gc->start().get();
+    // epochs 0..9 are removed even though the reader holds epoch 4 and still
+    // references the object at epoch 5
+    EXPECT_TRUE(Eventually([this] { return deleted.size() == 10; }))
+      << "deleted " << deleted.size() << " objects";
+}

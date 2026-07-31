@@ -15,6 +15,7 @@ from ducktape.utils.util import wait_until
 from ducktape.mark import matrix
 from collections.abc import Callable, Iterable
 
+from rptest.clients.kafka_cat import KafkaCat
 from rptest.clients.kafka_cli_tools import KafkaCliTools
 from rptest.clients.rpk import RpkTool
 from rptest.clients.admin.v2 import Admin, metastore_pb, ntp_pb
@@ -472,6 +473,214 @@ class EndToEndCloudTopicsTest(EndToEndCloudTopicsBase):
             expected_missing_records=35 * self.topics[0].partition_count
         )
         self.wait_until_all_reconciled()
+
+    @cluster(num_nodes=4)
+    @matrix(
+        storage_mode=[
+            TopicSpec.STORAGE_MODE_CLOUD,
+            TopicSpec.STORAGE_MODE_IMPL_TIERED_V2,
+        ],
+    )
+    def test_delete_records_at_high_watermark(self, storage_mode: str):
+        """DeleteRecords with offset -1 deletes every record in the partition.
+
+        Once every record is deleted there is nothing left for the L0 -> L1
+        reconciler to hand over, so every partition must still converge to a
+        reconciled state: the reconciler's last-reconciled offset is what caps
+        local log truncation and what releases the partition's hold on the
+        cluster-wide L0 GC watermark.
+        """
+        self.start_producer()
+        self.await_num_produced(min_records=50000)
+        self.producer.stop()
+        for part in self.rpk.describe_topic(self.s3_topic_name):
+            self.logger.info(
+                f"lwm={part.start_offset},hwm={part.high_watermark},lso={part.last_stable_offset}"
+            )
+        # -1 means "trim to the current high watermark", i.e. delete
+        # everything.
+        output = self.rpk.trim_prefix(self.s3_topic_name, -1)
+        self.logger.info(f"{output}")
+        for part in self.rpk.describe_topic(self.s3_topic_name):
+            assert part.start_offset == part.high_watermark, (
+                f"expected the start offset to reach the high watermark, got: {part}"
+            )
+            self.logger.info(
+                f"lwm={part.start_offset},hwm={part.high_watermark},lso={part.last_stable_offset}"
+            )
+        self.wait_until_all_reconciled()
+        assert (
+            self._metric_sum("vectorized_cloud_topics_reconciler_pending_offset_lag")
+            == 0
+        ), "reconciler still reports pending data after every record was deleted"
+
+    @cluster(num_nodes=4)
+    @matrix(
+        storage_mode=[
+            TopicSpec.STORAGE_MODE_CLOUD,
+            TopicSpec.STORAGE_MODE_IMPL_TIERED_V2,
+        ],
+    )
+    def test_delete_records_at_high_watermark_then_produce(self, storage_mode: str):
+        """Does a produce after a full trim un-stick reconciliation?
+
+        test_delete_records_at_high_watermark shows the reconciler never
+        converging once every record is deleted. This decides whether that state
+        is permanent or merely lasts until the partition is written to again,
+        which is the difference between "this partition is stuck until an
+        operator intervenes" and "this resolves itself on the next produce".
+        """
+        self.start_producer()
+        self.await_num_produced(min_records=50000)
+        self.producer.stop()
+        self.rpk.trim_prefix(self.s3_topic_name, -1)
+        for part in self.rpk.describe_topic(self.s3_topic_name):
+            assert part.start_offset == part.high_watermark, (
+                f"expected the start offset to reach the high watermark, got: {part}"
+            )
+
+        # Write again, then require convergence. If this passes, the stall from
+        # test_delete_records_at_high_watermark is self-clearing.
+        self.start_producer()
+        self.await_num_produced(min_records=100000)
+        self.producer.stop()
+        for part in self.rpk.describe_topic(self.s3_topic_name):
+            self.logger.info(
+                f"after re-produce: lwm={part.start_offset},hwm={part.high_watermark}"
+            )
+        self.wait_until_all_reconciled()
+
+    @cluster(num_nodes=4)
+    @matrix(
+        storage_mode=[
+            TopicSpec.STORAGE_MODE_CLOUD,
+            TopicSpec.STORAGE_MODE_IMPL_TIERED_V2,
+        ],
+    )
+    def test_timequery_below_start_offset(self, storage_mode: str):
+        """A timestamp query below the start offset must not answer below it.
+
+        ListOffsets-by-timestamp must return a fetchable offset. Answering with
+        an offset below the Kafka start offset hands the client an offset that
+        fetch then rejects with OFFSET_OUT_OF_RANGE, and auto.offset.reset
+        decides whether the application skips the surviving log or reprocesses
+        it.
+
+        This mirrors BaseTimeQuery._test_timequery_below_start_offset, which
+        pins the same invariant for a non-cloud topic.
+        """
+        base_ts = int(time.time() * 1000) - 3600_000
+
+        self.start_producer()
+        self.await_num_produced(min_records=50000)
+        self.producer.stop()
+        self.wait_until_all_reconciled()
+
+        trim_to = 1000
+        self.rpk.trim_prefix(self.s3_topic_name, trim_to)
+
+        def start_offset() -> int:
+            for part in self.rpk.describe_topic(self.s3_topic_name):
+                if part.id == 0:
+                    return part.start_offset
+            raise AssertionError("partition 0 not found")
+
+        lwm = start_offset()
+        assert lwm >= trim_to, f"trim did not take effect, start offset is {lwm}"
+
+        kcat = KafkaCat(self.redpanda)
+        offset = kcat.query_offset(self.s3_topic_name, 0, base_ts)
+        self.logger.info(f"timequery({base_ts}) -> {offset}, start_offset={lwm}")
+
+        assert offset >= lwm, (
+            f"timequery answered offset {offset}, below the start offset {lwm}; "
+            "the client cannot fetch this offset"
+        )
+
+    @cluster(num_nodes=4)
+    @matrix(
+        storage_mode=[
+            TopicSpec.STORAGE_MODE_CLOUD,
+            TopicSpec.STORAGE_MODE_IMPL_TIERED_V2,
+        ],
+    )
+    def test_timequery_on_reconciled_topic(self, storage_mode: str):
+        """Timequery below the reconciled range, with no DeleteRecords involved.
+
+        test_timequery_below_start_offset makes the broker throw
+        "Reader cannot read before start of the log 1000 < 11382" — a Kafka
+        offset compared against the local log's start offset. Reconciliation
+        prefix-truncates the local log on its own, so if that comparison is the
+        cause then trimming is beside the point and every timequery below the
+        reconciled range fails. This test removes the trim to find out.
+        """
+        base_ts = int(time.time() * 1000) - 3600_000
+
+        self.start_producer()
+        self.await_num_produced(min_records=50000)
+        self.producer.stop()
+        self.wait_until_all_reconciled()
+
+        for part in self.rpk.describe_topic(self.s3_topic_name):
+            self.logger.info(f"lwm={part.start_offset},hwm={part.high_watermark}")
+
+        kcat = KafkaCat(self.redpanda)
+        offset = kcat.query_offset(self.s3_topic_name, 0, base_ts)
+        self.logger.info(f"timequery({base_ts}) -> {offset}")
+        assert offset >= 0, f"timequery failed on a reconciled topic: {offset}"
+
+    @cluster(num_nodes=4)
+    def test_topic_manifest_removed_on_delete(self):
+        """Deleting a cloud topic must not leave its manifest in the bucket.
+
+        The manifest is what a read replica reads to discover a topic, so one
+        left behind is both an unbounded per-creation leak and a stale object a
+        later topic of the same name could be resolved against.
+        """
+        assert self.redpanda is not None
+        victim = "manifest_leak_topic"
+        # Must be a cloud topic: the manifest uploader only runs for those, so
+        # a default topic would make the premise check below fail.
+        self.rpk.create_topic(
+            victim,
+            partitions=1,
+            replicas=3,
+            config=TopicSpec.storage_mode_config(TopicSpec.STORAGE_MODE_CLOUD),
+        )
+
+        def manifest_keys() -> list[str]:
+            return [
+                o.key
+                for o in self.redpanda.cloud_storage_client.list_objects(
+                    self.s3_bucket_name
+                )
+                if "topic_manifest" in o.key and victim in o.key
+            ]
+
+        # Sanity-check the premise: if no manifest is ever written the deletion
+        # assertion below would pass vacuously.
+        wait_until(
+            lambda: len(manifest_keys()) > 0,
+            timeout_sec=60,
+            backoff_sec=2,
+            err_msg=f"no topic manifest was ever uploaded for {victim}",
+        )
+        before = manifest_keys()
+        self.logger.info(f"manifest(s) before delete: {before}")
+
+        self.rpk.delete_topic(victim)
+
+        try:
+            wait_until(
+                lambda: len(manifest_keys()) == 0,
+                timeout_sec=120,
+                backoff_sec=5,
+                err_msg="manifest still present",
+            )
+        except Exception:
+            raise AssertionError(
+                f"topic manifest(s) survived topic deletion: {manifest_keys()}"
+            )
 
     @cluster(num_nodes=4)
     @matrix(
