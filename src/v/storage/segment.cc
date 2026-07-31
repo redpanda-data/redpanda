@@ -348,6 +348,7 @@ ss::future<> remove_compacted_index(const segment_full_path& reader_path) {
     try {
         co_await ss::remove_file(path.string());
     } catch (const std::filesystem::filesystem_error& error) {
+        // Do not log: ENOENT on removal is success
         if (error.code() != std::errc::no_such_file_or_directory) {
             vlog(
               stlog.warn,
@@ -369,12 +370,9 @@ ss::future<> segment::truncate(
   size_t physical,
   model::timestamp new_max_timestamp) {
     check_segment_not_closed("truncate()");
-    return write_lock().then(
-      [this, new_max_offset, physical, new_max_timestamp](
-        ss::rwlock::holder h) {
-          return do_truncate(new_max_offset, physical, new_max_timestamp)
-            .finally([this, h = std::move(h)] { clear_cached_disk_usage(); });
-      });
+    auto holder = co_await write_lock();
+    auto clear_disk_usage = ss::defer([this] { clear_cached_disk_usage(); });
+    co_await do_truncate(new_max_offset, physical, new_max_timestamp);
 }
 
 ss::future<> segment::do_truncate(
@@ -393,42 +391,36 @@ ss::future<> segment::do_truncate(
       new_max_offset);
     advance_generation();
     cache_truncate(new_max_offset + model::offset(1));
-    auto f = ss::now();
     if (is_compacted_segment()) {
         // if compaction index is opened close it
         if (_compaction_index) {
-            f = ss::do_with(
-              std::exchange(_compaction_index, std::nullopt),
-              [](std::optional<std::unique_ptr<compacted_index_writer>>& c) {
-                  return c.value()->close();
-              });
+            auto compacted_index = std::exchange(
+              _compaction_index, std::nullopt);
+            co_await compacted_index.value()->close();
         }
         // always remove compaction index when truncating compacted segments
-        f = f.then([this] { return remove_compacted_index(_reader->path()); });
+        co_await remove_compacted_index(_reader->path());
     }
 
-    f = f.then([this, new_max_offset, new_max_timestamp] {
-        return _idx.truncate(new_max_offset, new_max_timestamp);
-    });
+    co_await _idx.truncate(new_max_offset, new_max_timestamp);
 
     // physical file only needs *one* truncation call
     if (_appender) {
-        f = f.then([this, physical] { return _appender->truncate(physical); });
+        co_await _appender->truncate(physical);
         // release appender to force segment roll
         if (is_compacted_segment()) {
-            f = f.then([this] {
-                auto appender = std::exchange(_appender, nullptr);
-                auto cache = std::exchange(_cache, std::nullopt);
-                auto c_idx = std::exchange(_compaction_index, std::nullopt);
-                return do_release_appender(
-                  std::move(appender), std::move(cache), std::move(c_idx));
-            });
+            auto appender = std::exchange(_appender, nullptr);
+            auto cache = std::exchange(_cache, std::nullopt);
+            auto compacted_index = std::exchange(
+              _compaction_index, std::nullopt);
+            co_await do_release_appender(
+              std::move(appender),
+              std::move(cache),
+              std::move(compacted_index));
         }
     } else {
-        f = f.then([this, physical] { return _reader->truncate(physical); });
+        co_await _reader->truncate(physical);
     }
-
-    return f;
 }
 
 ss::future<bool> segment::materialize_index() {
@@ -437,15 +429,14 @@ ss::future<bool> segment::materialize_index() {
         == model::next_offset(_tracker.get_dirty_offset()),
       "Materializing the index must happen before tracking any data. {}",
       *this);
-    return _idx.materialize_index().then([this](bool yn) {
-        if (yn) {
-            _tracker.set_offsets(
-              offset_tracker::committed_offset_t{_idx.max_offset()},
-              offset_tracker::stable_offset_t{_idx.max_offset()},
-              offset_tracker::dirty_offset_t{_idx.max_offset()});
-        }
-        return yn;
-    });
+    auto materialized = co_await _idx.materialize_index();
+    if (materialized) {
+        _tracker.set_offsets(
+          offset_tracker::committed_offset_t{_idx.max_offset()},
+          offset_tracker::stable_offset_t{_idx.max_offset()},
+          offset_tracker::dirty_offset_t{_idx.max_offset()});
+    }
+    co_return materialized;
 }
 
 void segment::cache_truncate(model::offset offset) {
