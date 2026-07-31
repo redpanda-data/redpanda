@@ -303,49 +303,49 @@ ss::future<> segment_appender::hydrate_last_half_page() {
     const size_t bytes_to_read = _committed_offset % read_align;
     _head->set_position(bytes_to_read);
     if (bytes_to_read == 0) {
-        return ss::make_ready_future<>();
+        co_return;
     }
-    return _out
+    try {
+        auto actual = co_await _out
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wdeprecated-declarations"
-      .dma_read(sz, buff, read_align /*must be full _write_ alignment*/)
+                        .dma_read(
+                          sz,
+                          buff,
+                          read_align /*must be full _write_ alignment*/);
 #pragma clang diagnostic pop
-      .then([this, bytes_to_read](size_t actual) {
-          ++_opts.shared_stats->last_page_hydrations;
-          vassert(
-            bytes_to_read <= actual && bytes_to_read == _head->flushed_pos(),
-            "Could not hydrate partial page bytes: expected:{}, "
-            "got:{}. "
-            "chunk:{} - appender:{}",
-            bytes_to_read,
-            actual,
-            *_head,
-            *this);
-      })
-      .handle_exception([this](std::exception_ptr e) {
-          vassert(
-            false,
-            "Could not read the last half page in dma_write_alignment: "
-            "{} - {}",
-            e,
-            *this);
-      });
+        ++_opts.shared_stats->last_page_hydrations;
+        vassert(
+          bytes_to_read <= actual && bytes_to_read == _head->flushed_pos(),
+          "Could not hydrate partial page bytes: expected:{}, got:{}. chunk:{} "
+          "- appender:{}",
+          bytes_to_read,
+          actual,
+          *_head,
+          *this);
+    } catch (...) {
+        vassert(
+          false,
+          "Could not read the last half page in dma_write_alignment: {} - {}",
+          std::current_exception(),
+          *this);
+    }
 }
 
 ss::future<> segment_appender::do_truncation(size_t n) {
-    return _out.truncate(n)
-      .then([this] {
-          ++_opts.shared_stats->truncates;
-          return _out.flush().then([this] { ++_opts.shared_stats->fsyncs; });
-      })
-      .handle_exception([n, this](std::exception_ptr e) {
-          vassert(
-            false,
-            "Could not issue truncation:{} - to offset: {} - {}",
-            e,
-            n,
-            *this);
-      });
+    try {
+        co_await _out.truncate(n);
+        ++_opts.shared_stats->truncates;
+        co_await _out.flush();
+        ++_opts.shared_stats->fsyncs;
+    } catch (...) {
+        vassert(
+          false,
+          "Could not issue truncation:{} - to offset: {} - {}",
+          std::current_exception(),
+          n,
+          *this);
+    }
 }
 
 ss::future<> segment_appender::truncate(size_t n) {
@@ -356,42 +356,34 @@ ss::future<> segment_appender::truncate(size_t n) {
       file_byte_offset(),
       n,
       *this);
-    return hard_flush()
-      .then([this, n] { return do_truncation(n); })
-      .then([this, n] {
-          _committed_offset = n;
-          _fallocation_offset = n;
-          _flushed_offset = n;
-          _stable_offset = n;
-          auto f = ss::now();
-          if (_head) {
-              // NOTE: Important to reset chunks for offset accounting.
-              // reset any partial state, since after the truncate, it
-              // makes no sense to keep any old state/pointers/sizes,
-              // etc
-              _head->reset();
-          } else {
-              // https://github.com/redpanda-data/redpanda/issues/43
-              f = _opts.resources.chunks().get().then(
-                [this](ss::lw_shared_ptr<chunk> chunk) {
-                    _head = std::move(chunk);
-                });
-          }
-          return f.then([this] { return hydrate_last_half_page(); });
-      });
+    co_await hard_flush();
+    co_await do_truncation(n);
+    _committed_offset = n;
+    _fallocation_offset = n;
+    _flushed_offset = n;
+    _stable_offset = n;
+    if (_head) {
+        // NOTE: Important to reset chunks for offset accounting.
+        // reset any partial state, since after the truncate, it
+        // makes no sense to keep any old state/pointers/sizes,
+        // etc
+        _head->reset();
+    } else {
+        // https://github.com/redpanda-data/redpanda/issues/43
+        _head = co_await _opts.resources.chunks().get();
+    }
+    co_await hydrate_last_half_page();
 }
 
 ss::future<> segment_appender::close() {
     vassert(!_closed, "close() on closed segment: {}", *this);
     _closed = true;
-    return hard_flush()
-      .then([this] { return do_truncation(_committed_offset); })
-      .then([this] {
-          _fallocation_offset = _committed_offset;
-          _flushed_offset = _committed_offset;
-          _stable_offset = _committed_offset;
-          return _out.close();
-      });
+    co_await hard_flush();
+    co_await do_truncation(_committed_offset);
+    _fallocation_offset = _committed_offset;
+    _flushed_offset = _committed_offset;
+    _stable_offset = _committed_offset;
+    co_await _out.close();
 }
 
 ss::future<> segment_appender::do_next_adaptive_fallocation() {
@@ -399,53 +391,47 @@ ss::future<> segment_appender::do_next_adaptive_fallocation() {
     if (step == 0) {
         // Don't fallocate.  This happens if we're low on disk, or if
         // the user has configured a 0 max falloc step.
-        return ss::make_ready_future<>();
+        co_return;
     }
 
-    return ss::with_semaphore(
-             _concurrent_flushes,
-             ss::semaphore::max_counter(),
-             [this, step]() mutable {
-                 check_no_dispatched_writes();
-                 // step - compute step rounded to alignment(4096); this
-                 // is needed because during a truncation the follow up
-                 // fallocation might not be page aligned
-                 if (_fallocation_offset % fallocation_alignment != 0) {
-                     // add left over bytes to a full page
-                     step += fallocation_alignment
-                             - (_fallocation_offset % fallocation_alignment);
-                 }
+    try {
+        auto units = co_await ss::coroutine::without_preemption_check(
+          ss::get_units(_concurrent_flushes, ss::semaphore::max_counter()));
+        check_no_dispatched_writes();
+        // step - compute step rounded to alignment(4096); this
+        // is needed because during a truncation the follow up
+        // fallocation might not be page aligned
+        if (_fallocation_offset % fallocation_alignment != 0) {
+            // add left over bytes to a full page
+            step += fallocation_alignment
+                    - (_fallocation_offset % fallocation_alignment);
+        }
 
-                 vassert(
-                   _fallocation_offset >= _committed_offset,
-                   "Attempting to fallocate at {} below the committed "
-                   "offset "
-                   "{}",
-                   _fallocation_offset,
-                   _committed_offset);
-                 return _out.allocate(_fallocation_offset, step)
-                   .then([this, step] {
-                       ++_opts.shared_stats->fallocations;
-                       // ss::file::allocate does not adjust logical
-                       // file size hence we need to do that explicitly
-                       // with an extra truncate. This allows for more
-                       // efficient writes.
-                       // https://github.com/redpanda-data/redpanda/pull/18598.
-                       return _out.truncate(_fallocation_offset + step);
-                   })
-                   .then([this, step] { _fallocation_offset += step; });
-             })
-      .handle_exception([this](std::exception_ptr e) {
-          vassert(
-            false,
-            "We failed to fallocate file. This usually means we have "
-            "ran out "
-            "of disk space. Please check your data partition and "
-            "ensure you "
-            "have enough space. Error: {} - {}",
-            e,
-            *this);
-      });
+        vassert(
+          _fallocation_offset >= _committed_offset,
+          "Attempting to fallocate at {} below the committed offset {}",
+          _fallocation_offset,
+          _committed_offset);
+        co_await ss::coroutine::without_preemption_check(
+          _out.allocate(_fallocation_offset, step));
+        ++_opts.shared_stats->fallocations;
+        // ss::file::allocate does not adjust logical
+        // file size hence we need to do that explicitly
+        // with an extra truncate. This allows for more
+        // efficient writes.
+        // https://github.com/redpanda-data/redpanda/pull/18598.
+        co_await ss::coroutine::without_preemption_check(
+          _out.truncate(_fallocation_offset + step));
+        _fallocation_offset += step;
+    } catch (...) {
+        vassert(
+          false,
+          "We failed to fallocate file. This usually means we have ran out of "
+          "disk space. Please check your data partition and ensure you have "
+          "enough space. Error: {} - {}",
+          std::current_exception(),
+          *this);
+    }
 }
 
 ss::future<> segment_appender::maybe_advance_stable_offset(
@@ -514,11 +500,34 @@ ss::future<> segment_appender::process_flush_ops(size_t committed) {
     _flush_ops.pop_back_n(std::distance(flushable, _flush_ops.end()));
 
     co_await _out.flush();
-    // This must be decremented before resolving the flush promises: clients
-    // inspect it as soon as their promise becomes ready.
+    // _inflight_dispatched is incremented right before a write is
+    // dispatched and then must be decremented when the write is
+    // "finished", where we don't consider the write finished
+    // until any associated flush operations that were triggered
+    // as part of write completion (i.e., stuff in this method)
+    // are complete.
+    //
+    // We also don't want to decrement this too late, i.e., after
+    // awaiting process_flush_ops() on the write completion path,
+    // because then it might be non-zero unexpectedly as observed
+    // by a client that does an append + flush and waits for the
+    // futures to resolve: the flush promises resolve immediately
+    // below in the set_value loop, but the future returned by
+    // *this* method may resolve later, after the client observes a
+    // non-zero value. So we decrement the counter here, *after*
+    // the flush has completed but before resolving the callers'
+    // promises.
+    //
+    // Unfortunately this means we need to decrement this counter
+    // in multiple places.
     --_inflight_dispatched;
     _flushed_offset = committed;
     ++_opts.shared_stats->fsyncs;
+    /*
+     * TODO: as an optimization, add a little house keeping to
+     * determine if eligible flush operations showed up while
+     * flush() was completing.
+     */
     for (auto& op : ops) {
         op.p.set_value();
     }
@@ -614,6 +623,8 @@ ss::future<> segment_appender::do_dispatch_background_head_write(
           write->chunk_begin,
           write->chunk_end);
 
+        // prevent any more writes from merging into this entry
+        // as it is about to be dma_write'd.
         write->set_state(write_state::DISPATCHED);
         ++_inflight_dispatched;
         ++_dispatched_writes;
@@ -628,10 +639,16 @@ ss::future<> segment_appender::do_dispatch_background_head_write(
 #pragma clang diagnostic pop
         _opts.shared_stats->bytes_written += dma_size;
         ++_opts.shared_stats->writes_completed;
+        // The last write is the end of the dependency chain for this chunk,
+        // so it can return the chunk to the cache.
         if (write->last_write_to_current_chunk) {
             write->chunk->reset();
             _opts.resources.chunks().add(write->chunk);
         }
+        // release our reference to the chunk since this
+        // structure might hang around for a while in the
+        // _inflight list but we can free this chunk to
+        // re-use now as we won't use it again
         write->chunk = nullptr;
 
         const auto expected = write->chunk_end - write->chunk_begin;
