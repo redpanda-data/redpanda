@@ -127,10 +127,10 @@ ss::future<writer_error> serde_parquet_writer::finish() {
             ps.null_value_count = *cs.bounds.null_count;
         }
         if (cs.bounds.min) {
-            ps.lower_bound = iobuf_to_bytes(cs.bounds.min->value.copy());
+            ps.lower_bound = iobuf_to_bytes(cs.bounds.min->value);
         }
         if (cs.bounds.max) {
-            ps.upper_bound = iobuf_to_bytes(cs.bounds.max->value.copy());
+            ps.upper_bound = iobuf_to_bytes(cs.bounds.max->value);
         }
         _column_stats.push_back(std::move(ps));
     }
