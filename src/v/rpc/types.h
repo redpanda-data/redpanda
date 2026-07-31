@@ -337,9 +337,7 @@ public:
     /// until destruction of object without doing a .finally() and moving things
     /// around
     ss::future<> permanent_memory_reservation(size_t n) {
-        return reserve_memory(n).then([this](ssx::semaphore_units units) {
-            _reservations.push_back(std::move(units));
-        });
+        _reservations.push_back(co_await reserve_memory(n));
     }
 
 private:

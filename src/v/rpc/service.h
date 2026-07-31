@@ -21,8 +21,11 @@
 #include <seastar/core/future.hh>
 #include <seastar/core/reactor.hh>
 #include <seastar/core/scheduling.hh>
+#include <seastar/coroutine/as_future.hh>
+#include <seastar/coroutine/exception.hh>
 
 #include <cstdint>
+#include <type_traits>
 
 namespace rpc {
 
@@ -73,56 +76,48 @@ struct service::execution_helper {
       ss::input_stream<char>& in,
       streaming_context& ctx,
       method_info method,
-      Func&& f) {
-        return ctx.permanent_memory_reservation(ctx.get_header().payload_size)
-          .handle_exception([&ctx](const std::exception_ptr& e) {
-              // It's possible to stop all waiters on a semaphore externally
-              // with the semaphore's `broken` method. In which case
-              // `permanent_memory_reservation` will return an exception.
-              // We intercept it here to avoid a broken promise.
-              ctx.body_parse_exception(e);
-              return ss::make_exception_future(e);
-          })
-          .then([f = std::forward<Func>(f), method, &in, &ctx]() mutable {
-              return parse_type<Input, Codec>(in, ctx.get_header())
-                .then_wrapped([f = std::forward<Func>(f),
-                               &ctx](ss::future<Input> input_f) mutable {
-                    if (input_f.failed()) {
-                        throw rpc_internal_body_parsing_exception(
-                          input_f.get_exception());
-                    }
-                    ctx.signal_body_parse();
-                    auto input = input_f.get();
-                    return f(std::move(input), ctx);
-                })
-                .then([method, &ctx](Output out) mutable {
-                    const auto version = Codec::response_version(
-                      ctx.get_header());
-                    auto b = std::make_unique<netbuf>();
-                    auto raw_b = b.get();
-                    raw_b->set_service_method(method);
-                    raw_b->set_version(version);
-                    return Codec::encode(
-                             raw_b->buffer(), std::move(out), version)
-                      .then([version, b = std::move(b)](
-                              transport_version effective_version) {
-                          /*
-                           * this assertion is safe because the conditions under
-                           * which this assertion would fail should have been
-                           * verified in parse_type above.
-                           */
-                          vassert(
-                            effective_version == version,
-                            "Unexpected encoding at effective {} != {}. Input "
-                            "{} Output {}",
-                            effective_version,
-                            version,
-                            serde::type_str<Input>(),
-                            serde::type_str<Output>());
-                          return std::move(*b);
-                      });
-                });
-          });
+      Func f) {
+        auto reservation = co_await ss::coroutine::as_future(
+          ctx.permanent_memory_reservation(ctx.get_header().payload_size));
+        if (reservation.failed()) {
+            // It's possible to stop all waiters on a semaphore externally
+            // with the semaphore's `broken` method. In which case
+            // `permanent_memory_reservation` will return an exception.
+            // We intercept it here to avoid a broken promise.
+            auto exception = reservation.get_exception();
+            ctx.body_parse_exception(exception);
+            co_return ss::coroutine::exception(exception);
+        }
+
+        auto parsed = co_await ss::coroutine::as_future(
+          parse_type<Input, Codec>(in, ctx.get_header()));
+        if (parsed.failed()) {
+            co_return ss::coroutine::exception(
+              std::make_exception_ptr(
+                rpc_internal_body_parsing_exception(parsed.get_exception())));
+        }
+        ctx.signal_body_parse();
+        auto output = co_await f(std::move(parsed).get(), ctx);
+
+        const auto version = Codec::response_version(ctx.get_header());
+        netbuf buffer;
+        buffer.set_service_method(method);
+        buffer.set_version(version);
+        auto effective_version = co_await Codec::encode(
+          buffer.buffer(), std::move(output), version);
+        /*
+         * this assertion is safe because the conditions under
+         * which this assertion would fail should have been
+         * verified in parse_type above.
+         */
+        vassert(
+          effective_version == version,
+          "Unexpected encoding at effective {} != {}. Input {} Output {}",
+          effective_version,
+          version,
+          serde::type_str<Input>(),
+          serde::type_str<Output>());
+        co_return buffer;
     }
 };
 } // namespace rpc
