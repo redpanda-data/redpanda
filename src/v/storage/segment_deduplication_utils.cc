@@ -146,7 +146,7 @@ ss::future<model::offset> build_offset_map(
         vlog(gclog.trace, "Adding segment to offset map: {}", seg->filename());
 
         try {
-            auto read_lock = co_await seg->read_lock();
+            auto read_lock = co_await seg->read_lock(*cfg.asrc);
             co_await internal::maybe_rebuild_compaction_index(
               seg,
               stm_hookset,
@@ -197,7 +197,7 @@ ss::future<index_state> deduplicate_segment(
   offset_delta_time should_offset_delta_times,
   ss::sharded<features::feature_table>& feature_table,
   bool inject_reader_failure) {
-    auto read_holder = co_await seg->read_lock();
+    auto read_holder = co_await seg->read_lock(*cfg.asrc);
     if (seg->is_closed()) {
         throw segment_closed_exception();
     }
@@ -326,7 +326,7 @@ ss::future<bool> index_chunk_of_segment_for_map(
         throw segment_closed_exception();
     }
     co_await map.reset();
-    auto read_holder = co_await seg->read_lock();
+    auto read_holder = co_await seg->read_lock(*compact_cfg.asrc);
     auto start_offset_inclusive = model::next_offset(last_indexed_offset);
     auto rdr = internal::create_segment_full_reader(
       seg, compact_cfg, pb, std::move(read_holder), start_offset_inclusive);

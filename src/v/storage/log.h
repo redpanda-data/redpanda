@@ -193,7 +193,10 @@ public:
     /// acceptable size.
     virtual ss::future<std::optional<offset_range_size_result_t>>
     offset_range_size(
-      model::offset first, offset_range_size_requirements_t target) = 0;
+      model::offset first,
+      offset_range_size_requirements_t target,
+      ss::semaphore::time_point deadline = ss::semaphore::time_point::max())
+      = 0;
 
     virtual bool
     is_compacted(model::offset first, model::offset last) const = 0;

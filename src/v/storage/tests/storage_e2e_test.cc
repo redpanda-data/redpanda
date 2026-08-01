@@ -6618,6 +6618,91 @@ TEST_F(storage_test_fixture, test_offset_range_size_lock_timeout) {
     }
 }
 
+TEST_F(storage_test_fixture, test_make_reader_range_lock_abort) {
+    // - Generate a few segments
+    // - Acquire read locks from each
+    // - Queue up a write lock behind one of them, in the background
+    // - make_reader now blocks on segment range lock acquisition behind the
+    //   pending write lock
+    // - firing the reader config's abort source (or reaching its deadline)
+    //   must promptly fail the acquisition instead of waiting indefinitely
+
+    constexpr size_t num_segments = 5;
+    ss::gate gate{};
+
+    auto cfg = default_log_config(test_dir);
+    storage::log_manager mgr = make_log_manager(cfg);
+    auto deferred = ss::defer([&mgr]() mutable { mgr.stop().get(); });
+    auto ntp = model::ntp("redpanda", "test-topic", 0);
+
+    storage::ntp_config ntp_cfg(ntp, mgr.config().base_dir);
+
+    auto log = manage_log(mgr, std::move(ntp_cfg));
+
+    for (size_t i = 0; i < num_segments; i++) {
+        append_random_batches(
+          log,
+          10,
+          model::term_id(0),
+          std::nullopt,
+          custom_ts_batch_generator(model::timestamp::now()));
+        log->force_roll().get();
+    }
+
+    auto& segments = log->segments();
+
+    {
+        std::vector<ss::future<ss::rwlock::holder>> f_locks;
+        f_locks.reserve(segments.size());
+        for (auto& s : segments) {
+            f_locks.emplace_back(s->read_lock());
+        }
+
+        auto seg = *std::next(segments.begin(), num_segments / 2);
+
+        ssx::spawn_with_gate(gate, [seg] {
+            return seg->write_lock().then([](auto) { return ss::now(); });
+        });
+
+        auto make_blocked_reader_cfg = [&](ss::abort_source& as) {
+            auto reader_cfg = storage::local_log_reader_config(
+              log->offsets().start_offset, log->offsets().dirty_offset, as);
+            reader_cfg.skip_readers_cache = true;
+            return reader_cfg;
+        };
+
+        {
+            // abort source only
+            ss::abort_source as;
+            auto fut = log->make_reader(make_blocked_reader_cfg(as));
+            EXPECT_FALSE(fut.available());
+            as.request_abort();
+            EXPECT_THROW(std::move(fut).get(), ss::abort_requested_exception);
+        }
+
+        {
+            // abort source and deadline: deadline fires first
+            ss::abort_source as;
+            auto reader_cfg = make_blocked_reader_cfg(as);
+            reader_cfg.read_lock_deadline = ss::semaphore::clock::now() + 20ms;
+            EXPECT_THROW(
+              log->make_reader(reader_cfg).get(), ss::timed_out_error);
+        }
+
+        {
+            // abort source and deadline: abort fires first
+            ss::abort_source as;
+            auto reader_cfg = make_blocked_reader_cfg(as);
+            reader_cfg.read_lock_deadline = ss::semaphore::clock::now() + 1h;
+            auto fut = log->make_reader(reader_cfg);
+            EXPECT_FALSE(fut.available());
+            as.request_abort();
+            EXPECT_THROW(std::move(fut).get(), ss::abort_requested_exception);
+        }
+    }
+    gate.close().get();
+}
+
 TEST_F(storage_test_fixture, test_max_eligible_for_compacted_reupload_offset) {
     constexpr size_t num_segments = 2;
     auto cfg = default_log_config(test_dir);

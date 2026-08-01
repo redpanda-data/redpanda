@@ -108,7 +108,10 @@ public:
     /// contains size requirements. The desired target size and smallest
     /// acceptable size.
     ss::future<std::optional<offset_range_size_result_t>> offset_range_size(
-      model::offset first, offset_range_size_requirements_t target) override;
+      model::offset first,
+      offset_range_size_requirements_t target,
+      ss::semaphore::time_point deadline
+      = ss::semaphore::time_point::max()) override;
 
     /// Return true if the offset range contains compacted data
     bool is_compacted(model::offset first, model::offset last) const override;

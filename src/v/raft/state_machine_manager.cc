@@ -535,7 +535,7 @@ ss::future<> state_machine_manager::try_apply_in_foreground() {
          * scheduling group soon
          */
         auto config = storage::local_log_reader_config(
-          _next, _raft->committed_offset());
+          _next, _raft->committed_offset(), _as);
 
         model::record_batch_reader reader = co_await _raft->make_reader(config);
 
@@ -664,7 +664,7 @@ ss::future<> state_machine_manager::background_apply_fiber(
             continue;
         }
         auto config = storage::local_log_reader_config(
-          entry->stm->next(), model::prev_offset(_next));
+          entry->stm->next(), model::prev_offset(_next), _as);
 
         vlog(
           _log.debug,
