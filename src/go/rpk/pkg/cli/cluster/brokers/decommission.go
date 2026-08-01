@@ -25,7 +25,11 @@ import (
 
 // NewDecommissionBroker returns the cluster brokers decommission command.
 func NewDecommissionBroker(fs afero.Fs, p *config.Params) *cobra.Command {
-	var skipLivenessCheck bool
+	var (
+		skipLivenessCheck bool
+		wait              bool
+		watchOpts         watchDecommissionOptions
+	)
 	cmd := &cobra.Command{
 		Use:   "decommission [BROKER ID]",
 		Short: "Decommission the given broker",
@@ -41,6 +45,10 @@ broker is in maintenance mode. As of v23.x, Redpanda supports
 decommissioning a node that is currently in maintenance mode. If you are on
 a v22.x cluster and need to bypass the maintenance mode check (perhaps your
 cluster is unreachable), use the --skip-liveness-check flag.
+
+By default this command returns as soon as the decommission is requested. Use
+--wait to block until the decommission completes, printing progress as data
+moves off the broker.
 `,
 		Args: cobra.ExactArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
@@ -102,7 +110,14 @@ help text for more details on why`, broker)
 			err = cl.DecommissionBroker(cmd.Context(), broker)
 			out.MaybeDie(err, "unable to decommission broker: %v", err)
 
-			fmt.Printf("Success, broker %d decommission started.  Use 'rpk cluster brokers decommission-status %d' to monitor data movement.\n", broker, broker)
+			if !wait {
+				fmt.Fprintf(cmd.OutOrStdout(), "Success, broker %d decommission started.  Use 'rpk cluster brokers decommission-status %d' to monitor data movement.\n", broker, broker)
+				return
+			}
+
+			fmt.Fprintf(cmd.OutOrStdout(), "Success, broker %d decommission started. Waiting for data to move off the broker...\n", broker)
+			err = watchDecommission(cmd.Context(), cl, broker, config.OutFormatter{Kind: "text"}, watchOpts, cmd.OutOrStdout())
+			out.MaybeDieErr(err)
 		},
 	}
 
@@ -115,6 +130,8 @@ help text for more details on why`, broker)
 	cmd.Flags().BoolVar(&skipLivenessCheck, "force", false, "If enabled, rpk will issue the decommission request without checking if the broker is in maintenance mode")
 	cmd.Flags().MarkHidden("force")
 	cmd.Flags().MarkDeprecated("force", "use --skip-liveness-check")
+
+	installWaitFlags(cmd, &watchOpts, &wait)
 
 	return cmd
 }

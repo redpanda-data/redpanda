@@ -135,8 +135,10 @@ func printDecommissionStatus(f config.OutFormatter, resp decommissionStatusRespo
 // NewDecommissionBrokerStatus returns the cluster brokers decommission-status command.
 func NewDecommissionBrokerStatus(fs afero.Fs, p *config.Params) *cobra.Command {
 	var (
-		detailed bool
-		human    bool
+		detailed  bool
+		human     bool
+		wait      bool
+		watchOpts watchDecommissionOptions
 	)
 	cmd := &cobra.Command{
 		Use:   "decommission-status [BROKER ID]",
@@ -195,6 +197,14 @@ kafka/foo/7  Missing partition size information, all replicas may be offline
 			cl, err := adminapi.NewClient(cmd.Context(), fs, p)
 			out.MaybeDie(err, "unable to initialize admin client: %v", err)
 
+			if wait {
+				watchOpts.detailed = detailed
+				watchOpts.human = human
+				err = watchDecommission(cmd.Context(), cl, broker, f, watchOpts, cmd.OutOrStdout())
+				out.MaybeDieErr(err)
+				return
+			}
+
 			dbs, err := cl.DecommissionBrokerStatus(cmd.Context(), broker)
 			if he := (*rpadmin.HTTPResponseError)(nil); errors.As(err, &he) {
 				// Special case 400 (validation) errors with friendly output
@@ -214,16 +224,8 @@ kafka/foo/7  Missing partition size information, all replicas may be offline
 			out.MaybeDie(err, "unable to request brokers: %v", err)
 
 			if dbs.Finished {
-				if isText, _, t, err := f.Format(buildDecommissionStatus(dbs, detailed)); !isText {
-					out.MaybeDie(err, "unable to print in the requested format %q: %v", f.Kind, err)
-					fmt.Fprintln(cmd.OutOrStdout(), t)
-					return
-				}
-				if dbs.ReplicasLeft == 0 {
-					out.Exit("Node %d is decommissioned successfully.", broker)
-				} else {
-					out.Exit("Node %d is decommissioned but there are %d replicas left, which may be an issue inside Redpanda. Please describe how you encountered this at https://github.com/redpanda-data/redpanda/issues/new?assignees=&labels=kind%2Fbug&template=01_bug_report.md", broker, dbs.ReplicasLeft)
-				}
+				out.MaybeDieErr(printDecommissionFinished(f, dbs, broker, detailed, cmd.OutOrStdout()))
+				return
 			}
 
 			types.Sort(dbs.Partitions)
@@ -235,6 +237,7 @@ kafka/foo/7  Missing partition size information, all replicas may be offline
 	}
 	cmd.Flags().BoolVarP(&detailed, "detailed", "d", false, "Print how much data moved and remaining in bytes")
 	cmd.Flags().BoolVarP(&human, "human-readable", "H", false, "Print the partition size in a human-readable form")
+	installWaitFlags(cmd, &watchOpts, &wait)
 	p.InstallFormatFlag(cmd)
 
 	return cmd

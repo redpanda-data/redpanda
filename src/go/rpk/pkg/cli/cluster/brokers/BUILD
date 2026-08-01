@@ -6,6 +6,7 @@ go_library(
         "brokers.go",
         "decommission.go",
         "decommission_status.go",
+        "decommission_watch.go",
         "recommission.go",
     ],
     importpath = "github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/cluster/brokers",
@@ -25,7 +26,10 @@ go_library(
 
 go_test(
     name = "brokers_test",
-    srcs = ["decommission_status_test.go"],
+    srcs = [
+        "decommission_status_test.go",
+        "decommission_watch_test.go",
+    ],
     embed = [":brokers"],
     deps = [
         "//src/go/rpk/pkg/config",
