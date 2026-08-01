@@ -43,6 +43,7 @@ def assert_profile_good_v2(profile: dict[str, Any], wait_ms: int | None = None):
     assert len(profile_attr) > 0, "At least one shard should exist"
     samples = profile_attr[0]["samples"]
     assert len(samples) > 0, "At least one cpu profile should've been collected."
+    assert all("(BuildId:" not in sample["user_backtrace"] for sample in samples)
 
 
 class CPUProfilerAdminAPITest(RedpandaTest):
