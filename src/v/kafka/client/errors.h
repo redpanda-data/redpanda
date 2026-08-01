@@ -115,6 +115,10 @@ inline bool is_retriable_error(kafka::error_code ec) {
     case error_code::transactional_id_not_found:
         return false;
     }
+    // An arbitrary code off the wire might not be in our enum.
+    // Return false to defend against UB.
+    // TODO: Consider adding some validation further up the call chain.
+    return false;
 }
 
 } // namespace kafka::client
