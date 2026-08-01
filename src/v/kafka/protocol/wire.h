@@ -477,6 +477,21 @@ public:
         return write_flex(std::string_view(*v));
     }
 
+    /// Writes an optional named_type as a nullable compact string: an unsigned
+    /// varint of length + 1 followed by the characters, or a single zero varint
+    /// when absent.
+    ///
+    /// Exists so the string is passed by reference. Without it the argument
+    /// converts to optional<ss::sstring>, which builds a second optional and
+    /// copies the string into it.
+    template<typename Tag>
+    uint32_t write_flex(const std::optional<named_type<ss::sstring, Tag>>& v) {
+        if (!v) {
+            return write_unsigned_varint(0);
+        }
+        return write_flex((*v)());
+    }
+
     uint32_t write(std::optional<std::string_view> v) {
         if (!v) {
             return serialize_int<int16_t>(-1);
@@ -489,6 +504,20 @@ public:
             return serialize_int<int16_t>(-1);
         }
         return write(std::string_view(*v));
+    }
+
+    /// Writes an optional named_type as a nullable string: an int16 length
+    /// followed by the characters, or an int16 of -1 when absent.
+    ///
+    /// Exists so the string is passed by reference. Without it the argument
+    /// converts to optional<ss::sstring>, which builds a second optional and
+    /// copies the string into it.
+    template<typename Tag>
+    uint32_t write(const std::optional<named_type<ss::sstring, Tag>>& v) {
+        if (!v) {
+            return serialize_int<int16_t>(-1);
+        }
+        return write((*v)());
     }
 
     uint32_t write(uuid_t id) {
