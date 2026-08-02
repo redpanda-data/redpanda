@@ -889,11 +889,7 @@ private:
     bool has_transactions_in_progress() const;
 
     bool has_pending_transaction(const model::topic_partition& tp) {
-        if (
-          std::any_of(
-            _pending_offset_commits.begin(),
-            _pending_offset_commits.end(),
-            [&tp](const auto& tp_info) { return tp_info.first == tp; })) {
+        if (_pending_offset_commits.contains(tp)) {
             return true;
         }
 

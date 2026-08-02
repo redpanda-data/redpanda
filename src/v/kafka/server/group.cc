@@ -2495,6 +2495,14 @@ group::handle_offset_fetch(offset_fetch_request_group r, bool require_stable) {
     offset_fetch_response_group resp{
       .group_id = r.group_id, .error_code = error_code::none};
 
+    /*
+     * a partition's offset can only be unstable when there is a pending
+     * commit or an open transaction.
+     */
+    const bool check_unstable
+      = require_stable
+        && (!_pending_offset_commits.empty() || has_transactions_in_progress());
+
     // retrieve all topics available
     if (!r.topics) {
         chunked_hash_map<
@@ -2509,7 +2517,7 @@ group::handle_offset_fetch(offset_fetch_request_group r, bool require_stable) {
               .error_code = error_code::none,
             };
 
-            if (require_stable && has_pending_transaction(e.first)) {
+            if (check_unstable && has_pending_transaction(e.first)) {
                 p.error_code = error_code::unstable_offset_commit;
             } else {
                 p.committed_offset = e.second->metadata.offset;
@@ -2542,7 +2550,7 @@ group::handle_offset_fetch(offset_fetch_request_group r, bool require_stable) {
               .error_code = error_code::none,
             };
 
-            if (require_stable && has_pending_transaction(tp)) {
+            if (check_unstable && has_pending_transaction(tp)) {
                 p.error_code = error_code::unstable_offset_commit;
             } else {
                 auto res = offset(tp);
