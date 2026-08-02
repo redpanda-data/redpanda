@@ -2198,7 +2198,8 @@ bool group::try_upsert_offset(
     }
 }
 
-group::offset_commit_stages group::store_offsets(offset_commit_request&& r) {
+std::optional<group::prepared_offset_commits>
+group::prepare_offset_commits(const offset_commit_request& r) {
     cluster::simple_batch_builder builder(
       model::record_batch_type::raft_data, model::offset(0));
 
@@ -2261,13 +2262,25 @@ group::offset_commit_stages group::store_offsets(offset_commit_request&& r) {
         }
     }
     if (builder.empty()) {
+        return std::nullopt;
+    }
+    return prepared_offset_commits{
+      .batch = std::move(builder).build(),
+      .commits = std::move(offset_commits),
+    };
+}
+
+group::offset_commit_stages group::store_offsets(offset_commit_request&& r) {
+    auto prepared = prepare_offset_commits(r);
+    if (!prepared) {
         vlog(_ctxlog.debug, "Empty offsets committed request");
         return offset_commit_stages(
           offset_commit_response(r, error_code::none));
     }
+    auto offset_commits = std::move(prepared->commits);
 
     auto replicate_stages = _partition->raft()->replicate_in_stages(
-      chunked_vector<model::record_batch>::single(std::move(builder).build()),
+      chunked_vector<model::record_batch>::single(std::move(prepared->batch)),
       raft::replicate_options(raft::consistency_level::quorum_ack, _term));
 
     auto f = replicate_stages.replicate_finished.then(

@@ -634,6 +634,18 @@ public:
     ss::future<txn_offset_commit_response>
     store_txn_offsets(txn_offset_commit_request r);
 
+    struct prepared_offset_commits {
+        model::record_batch batch;
+        chunked_vector<std::pair<model::topic_partition, offset_metadata>>
+          commits;
+    };
+
+    /// Builds the record batch for an offset commit request and registers the
+    /// offsets as pending commits. Returns std::nullopt if the request
+    /// contains no offsets.
+    std::optional<prepared_offset_commits>
+    prepare_offset_commits(const offset_commit_request& r);
+
     offset_commit_stages store_offsets(offset_commit_request&& r);
 
     ss::future<txn_offset_commit_response>
