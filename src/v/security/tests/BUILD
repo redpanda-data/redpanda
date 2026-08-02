@@ -340,10 +340,10 @@ redpanda_cc_fuzz_test(
         "-max_total_time=30",
         "-rss_limit_mb=8192",
     ],
-    reactor = True,
     deps = [
         "//src/v/container:chunked_vector",
         "//src/v/security",
+        "//src/v/test_utils:seastar_fuzz",
         "@fmt",
         "@seastar",
     ],

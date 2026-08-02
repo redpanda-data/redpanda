@@ -1,6 +1,5 @@
 load("@bazel_skylib//lib:selects.bzl", "selects")
 load("@bazel_skylib//rules:common_settings.bzl", "bool_flag", "string_flag")
-load("@rules_cc//cc:cc_import.bzl", "cc_import")
 
 bool_flag(
     name = "gofips",
@@ -94,32 +93,4 @@ config_setting(
     flag_values = {
         ":antithesis": "true",
     },
-)
-
-# libFuzzer without its main(), so that a fuzz target can bring up a seastar
-# reactor first and run the fuzzing loop inside it (see
-# //src/v/test_utils:seastar_fuzz). The archive's path depends on the clang
-# version and the target triple, so ask the compiler for it rather than spelling
-# it out.
-genrule(
-    name = "libfuzzer_no_main_archive",
-    outs = ["libclang_rt.fuzzer_no_main.a"],
-    cmd = "cp \"$$($(CC) -print-file-name=libclang_rt.fuzzer_no_main.a)\" $@",
-    target_compatible_with = select({
-        ":enable_fuzz_testing": [],
-        "//conditions:default": ["@platforms//:incompatible"],
-    }),
-    toolchains = ["@bazel_tools//tools/cpp:current_cc_toolchain"],
-    visibility = ["//visibility:public"],
-)
-
-cc_import(
-    name = "libfuzzer_no_main",
-    static_library = ":libfuzzer_no_main_archive",
-    target_compatible_with = select({
-        ":enable_fuzz_testing": [],
-        "//conditions:default": ["@platforms//:incompatible"],
-    }),
-    visibility = ["//visibility:public"],
-    alwayslink = True,
 )

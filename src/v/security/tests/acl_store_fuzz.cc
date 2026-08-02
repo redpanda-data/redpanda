@@ -412,10 +412,9 @@ void run(std::string_view data) {
 
 } // namespace
 
-int fuzz_one_input(const uint8_t* data, size_t size) {
+extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
-    run(std::string_view{reinterpret_cast<const char*>(data), size});
+    std::string input(reinterpret_cast<const char*>(data), size);
+    seastar_fuzz::test_one_input([input = std::move(input)] { run(input); });
     return 0;
 }
-
-RP_SEASTAR_FUZZ(fuzz_one_input);
