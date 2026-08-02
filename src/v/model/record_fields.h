@@ -11,6 +11,7 @@
 
 #pragma once
 
+#include "bytes/bytes.h"
 #include "bytes/iobuf.h"
 #include "bytes/iobuf_parser.h"
 #include "container/chunked_vector.h"
@@ -41,10 +42,19 @@ enum class record_field : uint8_t {
     timestamp_delta,
     /// `int32_t` delta from the batch base offset.
     offset_delta,
+    /// `int32_t`, the key's raw length varint: -1 for a null key, 0 for an
+    /// empty one. Matches `record::key_size()`.
+    key_size,
     /// `iobuf`, empty when the record has a null/empty key.
     key,
+    /// `bytes`, the key materialized into contiguous memory instead of an
+    /// `iobuf`. Mutually exclusive with `key`.
+    key_bytes,
     /// `bool`, true when the record has a null value.
     is_tombstone,
+    /// `int32_t`, the value's raw length varint: -1 for a null value (a
+    /// tombstone), 0 for an empty one. Matches `record::value_size()`.
+    value_size,
     /// `iobuf`, empty when the record has a null/empty value.
     value,
     /// `chunked_vector<record_header>`.
@@ -77,13 +87,28 @@ struct record_field_holder<record_field::offset_delta> {
 };
 
 template<>
+struct record_field_holder<record_field::key_size> {
+    int32_t key_size{-1};
+};
+
+template<>
 struct record_field_holder<record_field::key> {
     iobuf key;
 };
 
 template<>
+struct record_field_holder<record_field::key_bytes> {
+    bytes key_bytes;
+};
+
+template<>
 struct record_field_holder<record_field::is_tombstone> {
     bool is_tombstone{false};
+};
+
+template<>
+struct record_field_holder<record_field::value_size> {
+    int32_t value_size{-1};
 };
 
 template<>
@@ -103,9 +128,12 @@ inline constexpr std::array record_field_layout_order{
   record_field::headers,
   record_field::key,
   record_field::value,
+  record_field::key_bytes,
   record_field::timestamp_delta,
   record_field::size_bytes,
   record_field::offset_delta,
+  record_field::key_size,
+  record_field::value_size,
   record_field::attributes,
   record_field::is_tombstone,
 };
@@ -139,6 +167,18 @@ using layout_sorted_pack_t
   = decltype(make_layout_pack<layout_sorted_fields<Fields...>()>(
     std::make_index_sequence<sizeof...(Fields)>{}));
 
+/// Materialize `len` bytes from the parser as an `iobuf`, zero-copy sharing
+/// when the parser supports it (`iobuf_parser`) and copying otherwise
+/// (`iobuf_const_parser`).
+template<typename Parser>
+iobuf consume_buf(Parser& p, size_t len) {
+    if constexpr (requires { p.share(len); }) {
+        return p.share(len);
+    } else {
+        return p.copy(len);
+    }
+}
+
 } // namespace detail
 
 /// \brief The subset of a record materialized by `parse_record_fields<>()`.
@@ -167,19 +207,26 @@ struct parsed_record : detail::layout_sorted_pack_t<Fields...> {
 /// are materialized) and the record's declared size is validated against the
 /// bytes its fields actually occupy, so a malformed record throws instead of
 /// being silently skipped over.
-template<bool FullyParse, record_field... Fields>
-parsed_record<Fields...> parse_record_fields(iobuf_const_parser& p) {
+template<bool FullyParse, record_field... Fields, typename Parser>
+parsed_record<Fields...> parse_record_fields(Parser& p) {
     constexpr auto wants = [](record_field f) {
         return ((Fields == f) || ...);
     };
+    static_assert(
+      !(wants(record_field::key) && wants(record_field::key_bytes)),
+      "key and key_bytes are two representations of the same field; request "
+      "only one");
 
     // A field must be decoded (though not necessarily materialized) when it is
     // requested, when any later field is requested, or when `FullyParse`
     // requires walking the whole record.
     constexpr bool reach_headers = wants(record_field::headers) || FullyParse;
     constexpr bool reach_value = reach_headers || wants(record_field::value)
+                                 || wants(record_field::value_size)
                                  || wants(record_field::is_tombstone);
-    constexpr bool reach_key = reach_value || wants(record_field::key);
+    constexpr bool reach_key = reach_value || wants(record_field::key)
+                               || wants(record_field::key_bytes)
+                               || wants(record_field::key_size);
     constexpr bool reach_offset = reach_key
                                   || wants(record_field::offset_delta);
     constexpr bool reach_ts = reach_offset
@@ -220,7 +267,15 @@ parsed_record<Fields...> parse_record_fields(iobuf_const_parser& p) {
         skip_tail();
         return out;
     }
-    auto attr = p.consume_type<record_attributes::type>();
+    /*
+     * require that record attributes be unaffected by endianness. all of the
+     * other record fields are properly handled by virtue of their types being
+     * either blobs or variable length integers.
+     */
+    static_assert(
+      sizeof(record_attributes::type) == 1,
+      "model attributes expected to be one byte");
+    auto attr = p.template consume_type<record_attributes::type>();
     if constexpr (wants(record_field::attributes)) {
         out.attributes = record_attributes(attr);
     }
@@ -255,9 +310,16 @@ parsed_record<Fields...> parse_record_fields(iobuf_const_parser& p) {
             key_length,
             record_size));
     }
+    if constexpr (wants(record_field::key_size)) {
+        out.key_size = static_cast<int32_t>(key_length);
+    }
     if constexpr (wants(record_field::key)) {
         if (key_length > 0) {
-            out.key = p.copy(static_cast<size_t>(key_length));
+            out.key = detail::consume_buf(p, static_cast<size_t>(key_length));
+        }
+    } else if constexpr (wants(record_field::key_bytes)) {
+        if (key_length > 0) {
+            out.key_bytes = p.read_bytes(static_cast<size_t>(key_length));
         }
     } else if constexpr (reach_value) {
         // Key not requested, but a later field is: advance past it. When key is
@@ -275,6 +337,9 @@ parsed_record<Fields...> parse_record_fields(iobuf_const_parser& p) {
     if constexpr (wants(record_field::is_tombstone)) {
         out.is_tombstone = value_length < 0;
     }
+    if constexpr (wants(record_field::value_size)) {
+        out.value_size = static_cast<int32_t>(value_length);
+    }
     if (value_length > record_size) [[unlikely]] {
         throw std::out_of_range(
           fmt::format(
@@ -284,7 +349,8 @@ parsed_record<Fields...> parse_record_fields(iobuf_const_parser& p) {
     }
     if constexpr (wants(record_field::value)) {
         if (value_length > 0) {
-            out.value = p.copy(static_cast<size_t>(value_length));
+            out.value = detail::consume_buf(
+              p, static_cast<size_t>(value_length));
         }
     } else if constexpr (reach_headers) {
         if (value_length > 0) {
@@ -312,7 +378,7 @@ parsed_record<Fields...> parse_record_fields(iobuf_const_parser& p) {
         [[maybe_unused]] iobuf hkey;
         if (hk_len > 0) {
             if constexpr (wants(record_field::headers)) {
-                hkey = p.copy(static_cast<size_t>(hk_len));
+                hkey = detail::consume_buf(p, static_cast<size_t>(hk_len));
             } else {
                 p.skip(static_cast<size_t>(hk_len));
             }
@@ -321,7 +387,7 @@ parsed_record<Fields...> parse_record_fields(iobuf_const_parser& p) {
         [[maybe_unused]] iobuf hval;
         if (hv_len > 0) {
             if constexpr (wants(record_field::headers)) {
-                hval = p.copy(static_cast<size_t>(hv_len));
+                hval = detail::consume_buf(p, static_cast<size_t>(hv_len));
             } else {
                 p.skip(static_cast<size_t>(hv_len));
             }
@@ -350,8 +416,8 @@ parsed_record<Fields...> parse_record_fields(iobuf_const_parser& p) {
 /// The common, non-validating parse: unrequested trailing fields are skipped
 /// wholesale rather than decoded. Overload resolution cannot confuse the two:
 /// a leading `bool` never binds to `record_field` and vice versa.
-template<record_field... Fields>
-parsed_record<Fields...> parse_record_fields(iobuf_const_parser& p) {
+template<record_field... Fields, typename Parser>
+parsed_record<Fields...> parse_record_fields(Parser& p) {
     return parse_record_fields<false, Fields...>(p);
 }
 

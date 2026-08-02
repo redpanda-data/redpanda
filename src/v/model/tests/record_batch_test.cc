@@ -833,6 +833,102 @@ TEST_F(RecordBatchTest, ParseRecordFieldsFullParseDetectsSlack) {
     }
 }
 
+// key_bytes materializes the same key as `key`, just as contiguous `bytes`; a
+// null key yields empty bytes.
+TEST_F(RecordBatchTest, ParseRecordFieldsKeyBytes) {
+    std::vector<model::record> recs;
+    recs.push_back(make_record(0, iobuf::from("k0"), iobuf::from("v0")));
+    recs.push_back(make_record(1, std::nullopt, iobuf::from("v1")));
+    auto batch = batch_from_records(std::move(recs));
+
+    auto parser = iobuf_const_parser(batch.data());
+    auto pr0 = model::parse_record_fields<model::record_field::key_bytes>(
+      parser);
+    EXPECT_EQ(pr0.key_bytes, iobuf_to_bytes(iobuf::from("k0")));
+    auto pr1 = model::parse_record_fields<model::record_field::key_bytes>(
+      parser);
+    EXPECT_TRUE(pr1.key_bytes.empty());
+    EXPECT_EQ(parser.bytes_left(), 0u);
+}
+
+// key_size/value_size expose the raw length varints, preserving the
+// distinction between a null field (-1) and an empty one (0) that the iobuf
+// representations erase.
+TEST_F(RecordBatchTest, ParseRecordFieldsSizesPreserveNull) {
+    std::vector<model::record> recs;
+    recs.push_back(make_record(0, iobuf::from("key"), iobuf::from("value")));
+    recs.push_back(make_record(1, std::nullopt, iobuf{})); // null key
+    recs.push_back(make_record(2, iobuf{}, std::nullopt)); // tombstone
+    auto batch = batch_from_records(std::move(recs));
+
+    struct sizes {
+        int32_t key_size;
+        int32_t value_size;
+    };
+    std::vector<sizes> parsed;
+    batch.for_each_record<
+      model::record_field::key_size,
+      model::record_field::value_size>(
+      [&parsed](auto pr) { parsed.push_back({pr.key_size, pr.value_size}); });
+
+    ASSERT_EQ(parsed.size(), 3u);
+    EXPECT_EQ(parsed[0].key_size, 3);
+    EXPECT_EQ(parsed[0].value_size, 5);
+    EXPECT_EQ(parsed[1].key_size, -1);
+    EXPECT_EQ(parsed[1].value_size, 0);
+    EXPECT_EQ(parsed[2].key_size, 0);
+    EXPECT_EQ(parsed[2].value_size, -1);
+}
+
+// parse_one_record_copy_from_buffer must reproduce the original record
+// exactly — including null (not just empty) keys, values and header values —
+// so serialization round-trips.
+TEST_F(RecordBatchTest, ParseOneRecordRoundTrip) {
+    std::vector<model::record> originals;
+    originals.push_back(
+      make_record(0, iobuf::from("key"), iobuf::from("value")));
+    originals.push_back(make_record(1, std::nullopt, iobuf::from("v")));
+    originals.push_back(make_record(2, iobuf::from("k"), std::nullopt));
+    originals.push_back(make_record(3, iobuf{}, iobuf{}));
+    {
+        chunked_vector<model::record_header> h;
+        h.emplace_back(2, iobuf::from("hk"), -1, iobuf{}); // null header value
+        h.emplace_back(-1, iobuf{}, 2, iobuf::from("hv")); // null header key
+        originals.push_back(
+          make_record(4, iobuf::from("k4"), iobuf::from("v4"), std::move(h)));
+    }
+
+    iobuf buf;
+    for (const auto& r : originals) {
+        model::append_record_to_buffer(buf, r);
+    }
+
+    auto parser = iobuf_const_parser(buf);
+    for (const auto& r : originals) {
+        auto parsed = model::parse_one_record_copy_from_buffer(parser);
+        EXPECT_EQ(parsed, r);
+    }
+    EXPECT_EQ(parser.bytes_left(), 0u);
+}
+
+// The zero-copy (share) variant must parse identically to the copy variant.
+TEST_F(RecordBatchTest, ParseOneRecordShareMatchesCopy) {
+    auto original = make_record(
+      0, iobuf::from("share-key"), iobuf::from("share-value"));
+    iobuf buf;
+    model::append_record_to_buffer(buf, original);
+
+    auto copy_parser = iobuf_const_parser(buf);
+    auto copied = model::parse_one_record_copy_from_buffer(copy_parser);
+
+    auto share_parser = iobuf_parser(std::move(buf));
+    auto shared = model::parse_one_record_from_buffer(share_parser);
+
+    EXPECT_EQ(shared, copied);
+    EXPECT_EQ(shared, original);
+    EXPECT_EQ(share_parser.bytes_left(), 0u);
+}
+
 // for_each_record_async<Fields...> honours ss::stop_iteration.
 TEST_F(RecordBatchTest, ForEachRecordFieldsAsyncStops) {
     std::vector<model::record> recs;
