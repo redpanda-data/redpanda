@@ -934,9 +934,12 @@ group_manager::do_snapshot_groups(
           model::topic,
           chunked_vector<group_offsets::partition_offset>>
           offsets;
-        for (const auto& [tp, o] : group->offsets()) {
-            offsets[tp.topic].emplace_back(
-              tp.partition, model::offset_cast(o->metadata.offset));
+        for (const auto& [topic, partitions] : group->offsets()) {
+            auto& topic_offsets = offsets[topic];
+            for (const auto& [pid, o] : partitions) {
+                topic_offsets.emplace_back(
+                  pid, model::offset_cast(o->metadata.offset));
+            }
         }
         for (auto& [t, ps] : offsets) {
             go.offsets.emplace_back(t, std::move(ps));
@@ -2332,8 +2335,11 @@ ss::future<> group_manager::collect_consumer_lag_metrics() {
     constexpr auto collect_ntps = [](const auto& gm) {
         topic_map_t topic_map;
         for (const auto& group : gm._groups | std::views::values) {
-            for (const auto& tp : group->offsets() | std::views::keys) {
-                topic_map[tp.topic].insert(tp.partition);
+            for (const auto& [topic, partitions] : group->offsets()) {
+                auto& parts = topic_map[topic];
+                for (const auto& pid : partitions | std::views::keys) {
+                    parts.insert(pid);
+                }
             }
         }
         return topic_map;
@@ -2402,23 +2408,28 @@ ss::future<> group_manager::collect_consumer_lag_metrics() {
     const auto set_metrics = [&report_r](const group_manager& gm) {
         for (const auto& group : gm._groups | std::views::values) {
             consumer_lag_metrics lag_metrics{};
-            for (const auto& [tp, group_topic_offsets] : group->offsets()) {
-                auto [hwm, lso] = find_lag_bounds(report_r.value(), tp);
-                if (hwm) {
-                    auto committed_offset = offset_cast(
-                      group_topic_offsets->metadata.offset);
-                    // Clamp committed_offset up to log_start_offset when
-                    // known: a stale commit below log_start_offset means no
-                    // consumable backlog exists and should not inflate lag.
-                    // log_start_offset is nullopt for reports from older nodes
-                    // — fall back to the pre-fix behaviour in that case.
-                    auto effective_committed = lso ? std::max(
-                                                       committed_offset, *lso)
-                                                   : committed_offset;
-                    lag part_lag{static_cast<lag>(
-                      std::max(*hwm - effective_committed, offset{0}))};
-                    lag_metrics.sum += part_lag;
-                    lag_metrics.max = std::max(lag_metrics.max, part_lag);
+            for (const auto& [topic, partitions] : group->offsets()) {
+                for (const auto& [pid, group_topic_offsets] : partitions) {
+                    model::topic_partition tp(topic, pid);
+                    auto [hwm, lso] = find_lag_bounds(report_r.value(), tp);
+                    if (hwm) {
+                        auto committed_offset = offset_cast(
+                          group_topic_offsets->metadata.offset);
+                        // Clamp committed_offset up to log_start_offset when
+                        // known: a stale commit below log_start_offset means no
+                        // consumable backlog exists and should not inflate lag.
+                        // log_start_offset is nullopt for reports from older
+                        // nodes — fall back to the pre-fix behaviour in that
+                        // case.
+                        auto effective_committed = lso
+                                                     ? std::max(
+                                                         committed_offset, *lso)
+                                                     : committed_offset;
+                        lag part_lag{static_cast<lag>(
+                          std::max(*hwm - effective_committed, offset{0}))};
+                        lag_metrics.sum += part_lag;
+                        lag_metrics.max = std::max(lag_metrics.max, part_lag);
+                    }
                 }
             }
             group->set_lag_metrics(lag_metrics);
