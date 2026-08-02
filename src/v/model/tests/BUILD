@@ -1,4 +1,4 @@
-load("//bazel:test.bzl", "redpanda_cc_btest", "redpanda_cc_gtest", "redpanda_test_cc_library")
+load("//bazel:test.bzl", "redpanda_cc_bench", "redpanda_cc_btest", "redpanda_cc_gtest", "redpanda_test_cc_library")
 
 redpanda_test_cc_library(
     name = "random",
@@ -172,6 +172,20 @@ redpanda_cc_gtest(
         "//src/v/test_utils:gtest",
         "//src/v/utils:vint",
         "@googletest//:gtest",
+    ],
+)
+
+redpanda_cc_bench(
+    name = "record_fields_rpbench",
+    srcs = [
+        "record_fields_bench.cc",
+    ],
+    deps = [
+        "//src/v/bytes:iobuf",
+        "//src/v/model",
+        "//src/v/random:generators",
+        "@seastar",
+        "@seastar//:benchmark",
     ],
 )
 
