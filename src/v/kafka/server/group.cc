@@ -2486,10 +2486,10 @@ group::handle_offset_commit(offset_commit_request&& r) {
     }
 }
 
-ss::future<offset_fetch_response_group>
+offset_fetch_response_group
 group::handle_offset_fetch(offset_fetch_request_group r, bool require_stable) {
     if (in_state(group_state::dead)) {
-        co_return offset_fetch_response::make_group(std::move(r));
+        return offset_fetch_response::make_group(std::move(r));
     }
 
     offset_fetch_response_group resp{
@@ -2533,7 +2533,7 @@ group::handle_offset_fetch(offset_fetch_request_group r, bool require_stable) {
               {.name = e.first, .partitions = std::move(e.second)});
         }
 
-        co_return resp;
+        return resp;
     }
 
     // retrieve for the topics specified in the request
@@ -2567,7 +2567,7 @@ group::handle_offset_fetch(offset_fetch_request_group r, bool require_stable) {
         resp.topics.push_back(std::move(t));
     }
 
-    co_return resp;
+    return resp;
 }
 
 kafka::member_id group::generate_member_id(const join_group_request& r) {

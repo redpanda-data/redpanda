@@ -170,8 +170,7 @@ struct group_bench {
         }
         perf_tests::start_measuring_time();
         for (auto& req : reqs) {
-            auto resp = co_await g.handle_offset_fetch(
-              std::move(req), require_stable);
+            auto resp = g.handle_offset_fetch(std::move(req), require_stable);
             perf_tests::do_not_optimize(resp);
         }
         perf_tests::stop_measuring_time();
@@ -220,8 +219,7 @@ struct group_bench {
         }
         perf_tests::start_measuring_time();
         for (auto& req : reqs) {
-            auto resp = co_await g.handle_offset_fetch(
-              std::move(req), false);
+            auto resp = g.handle_offset_fetch(std::move(req), false);
             perf_tests::do_not_optimize(resp);
         }
         perf_tests::stop_measuring_time();

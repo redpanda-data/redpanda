@@ -1790,6 +1790,7 @@ group_manager::offset_fetch(offset_fetch_request r) {
     offset_fetch_response response;
 
     for (auto& g_req : r.data.groups) {
+        co_await ss::coroutine::maybe_yield();
         auto& g_res = response.data.groups.emplace_back();
         auto error = validate_group_status(
           r.ntp, g_req.group_id, offset_fetch_api::key, true);
@@ -1803,7 +1804,7 @@ group_manager::offset_fetch(offset_fetch_request r) {
         if (!group) {
             g_res = offset_fetch_response::make_group(std::move(g_req));
         } else {
-            g_res = co_await group->handle_offset_fetch(
+            g_res = group->handle_offset_fetch(
               std::move(g_req), require_stable);
         }
     }

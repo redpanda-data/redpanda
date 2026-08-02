@@ -662,7 +662,7 @@ public:
     ss::future<cluster::commit_group_tx_reply>
     handle_commit_tx(cluster::commit_group_tx_request r);
 
-    ss::future<offset_fetch_response_group>
+    offset_fetch_response_group
     handle_offset_fetch(offset_fetch_request_group r, bool require_stable);
 
     void insert_offset(const model::topic_partition& tp, offset_metadata md) {
