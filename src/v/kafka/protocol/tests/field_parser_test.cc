@@ -30,21 +30,13 @@ kafka::tagged_fields make_random_tags(size_t n) {
     return kafka::tagged_fields(std::move(tags));
 }
 
-kafka::tagged_fields copy_tags(const kafka::tagged_fields& otags) {
-    kafka::tagged_fields::type tags;
-    for (const auto& [tag_id, tag] : otags()) {
-        tags.emplace(tag_id, tag);
-    }
-    return kafka::tagged_fields(std::move(tags));
-}
-
 SEASTAR_THREAD_TEST_CASE(serde_tags) {
     iobuf buf;
     auto tags = make_random_tags(10);
 
     /// Serialize the random tags into an iobuf
     kafka::protocol::encoder writer(buf);
-    writer.write_tags(copy_tags(tags));
+    writer.write_tags(tags);
 
     /// Copy the result to use for a later comparison
     iobuf copy = buf.copy();
@@ -54,7 +46,7 @@ SEASTAR_THREAD_TEST_CASE(serde_tags) {
     auto deser_tags = reader.read_tags();
 
     /// Verify the inital values are equivalent
-    BOOST_REQUIRE(copy_tags(tags) == deser_tags);
+    BOOST_REQUIRE(tags == deser_tags);
 
     /// Re-serialize these tags to compare against the previous
     iobuf result;
