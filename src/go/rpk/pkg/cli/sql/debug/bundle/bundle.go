@@ -52,18 +52,20 @@ type authFlags struct {
 }
 
 type bundleFlags struct {
-	adminHosts  []string
-	output      string
-	uploadURL   string
-	tls         tlsFlags
-	auth        authFlags
-	sqlText     string
-	vmstat      bool
-	cpuSeconds  uint
-	logSince    time.Duration
-	logSizeLim  uint64
-	metricsPort uint16
-	timeout     time.Duration
+	adminHosts      []string
+	output          string
+	uploadURL       string
+	tls             tlsFlags
+	auth            authFlags
+	sqlText         string
+	vmstat          bool
+	cpuSeconds      uint
+	logSince        time.Duration
+	logSizeLim      uint64
+	metricsPort     uint16
+	metricsSamples  int
+	metricsInterval time.Duration
+	timeout         time.Duration
 }
 
 func NewCommand(fs afero.Fs, _ *config.Params) *cobra.Command {
@@ -122,7 +124,9 @@ func (c *bundleFlags) install(f *pflag.FlagSet) {
 	f.UintVar(&c.cpuSeconds, "cpu-profile-seconds", 0, "Collect a CPU profile of this duration per node (0 = skip)")
 	f.DurationVar(&c.logSince, "log-since", 0, "Collect log lines newer than this (0 = server default window)")
 	f.Uint64Var(&c.logSizeLim, "log-size-limit", 0, "Max log bytes per node (0 = server default)")
-	f.Uint16Var(&c.metricsPort, "metrics-port", 8080, "Per-node Prometheus metrics port (scraped twice ~1s apart)")
+	f.Uint16Var(&c.metricsPort, "metrics-port", 8080, "Per-node Prometheus metrics port")
+	f.IntVar(&c.metricsSamples, "metrics-samples", 2, "Number of metrics samples to take per node (at the interval of --metrics-interval). Must be > 0")
+	f.DurationVar(&c.metricsInterval, "metrics-interval", 10*time.Second, "Interval between metrics samples")
 	f.DurationVar(&c.timeout, "timeout", 60*time.Second, "Per-RPC timeout")
 }
 
@@ -131,6 +135,10 @@ func (c *bundleFlags) options(fs afero.Fs) (Options, error) {
 	sqlMode, err := sqlTextMode(c.sqlText)
 	if err != nil {
 		return Options{}, err
+	}
+
+	if c.metricsSamples < 1 {
+		return Options{}, fmt.Errorf("--metrics-samples must be > 0, got %d", c.metricsSamples)
 	}
 
 	var tlsCfg *tls.Config
@@ -158,6 +166,8 @@ func (c *bundleFlags) options(fs afero.Fs) (Options, error) {
 		LogSinceUnixMs:    logSinceMs,
 		LogSizeLimitBytes: c.logSizeLim,
 		MetricsPort:       c.metricsPort,
+		MetricsSamples:    c.metricsSamples,
+		MetricsInterval:   c.metricsInterval,
 		ToolVersion:       "rpk",
 	}, nil
 }
