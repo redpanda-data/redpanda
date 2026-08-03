@@ -319,8 +319,9 @@ ss::future<cluster::errc> client::try_create_topic(
     if (
       ec != cluster::errc::success
       && ec != cluster::errc::topic_already_exists) {
-        throw std::runtime_error(
-          fmt::format("Failed to create topic '{}'", nt));
+        throw topic_create_exception(
+          ec,
+          fmt::format("Failed to create topic '{}' - error_code: {}", nt, ec));
     }
     co_return ec;
 }

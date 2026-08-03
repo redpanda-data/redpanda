@@ -20,6 +20,8 @@
 #include "kafka/data/rpc/serde.h"
 #include "kafka/data/rpc/service.h"
 
+#include <stdexcept>
+
 namespace kafka::data::rpc {
 
 /// Result of a produce operation that includes both base and last offset.
@@ -30,6 +32,21 @@ struct produce_result {
     cluster::errc ec{cluster::errc::success};
     std::optional<model::offset> base_offset;
     std::optional<model::offset> last_offset;
+};
+
+/// Raised when topic creation fails with an unexpected error code; carries
+/// the code so that callers can distinguish permanent configuration errors
+/// (e.g. an invalid replication factor) from transient ones.
+class topic_create_exception final : public std::runtime_error {
+public:
+    topic_create_exception(cluster::errc ec, const std::string& msg)
+      : std::runtime_error(msg)
+      , _errc(ec) {}
+
+    cluster::errc errc() const { return _errc; }
+
+private:
+    cluster::errc _errc;
 };
 
 /**
