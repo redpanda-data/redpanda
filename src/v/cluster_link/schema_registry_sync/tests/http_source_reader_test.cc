@@ -497,11 +497,7 @@ TEST(http_source_reader, read_mode_global_context_hits_global_endpoint) {
           });
     });
     ss::abort_source as;
-    auto res = reader
-                 .read_mode(
-                   pps::context_subject{pps::global_context, pps::subject{""}},
-                   as)
-                 .get();
+    auto res = reader.read_mode(pps::global_mode_config_target, as).get();
     reader.stop().get();
 
     ASSERT_TRUE(res.has_value());

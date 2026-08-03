@@ -69,13 +69,17 @@ concept NegotiableKafkaApi = kafka::KafkaApi<T> && requires {
 ///
 /// Set `broker` to negotiate against that broker alone, for a request
 /// dispatched to one broker: a cluster-wide negotiation refuses whenever any
-/// broker fails to report, however healthy the one being dispatched to.
+/// broker fails to report, however healthy the one being dispatched to. Set
+/// `floor` to the lowest version the caller can use, so a source supporting
+/// nothing at or above it is reported unsupported rather than answered at a
+/// version whose wire format drops fields the caller relies on.
 template<NegotiableKafkaApi ApiT>
 ss::future<std::expected<kafka::api_version, ss::sstring>>
 negotiate_api_version(
   kafka::client::cluster& cluster,
   ss::abort_source& as,
-  std::optional<::model::node_id> broker = std::nullopt) {
+  std::optional<::model::node_id> broker = std::nullopt,
+  kafka::api_version floor = ApiT::min_valid) {
     try {
         auto supported_api_versions = co_await (
           broker.has_value()
@@ -92,6 +96,15 @@ negotiate_api_version(
                 "Unsupported API version for {}: {}",
                 ApiT::name,
                 supported_api_versions->min));
+        }
+        if (supported_api_versions->max < floor) {
+            co_return std::unexpected(
+              ssx::sformat(
+                "Unsupported API version for {}: source supports at most {}, "
+                "below the {} required",
+                ApiT::name,
+                supported_api_versions->max,
+                floor));
         }
         co_return std::min(supported_api_versions->max, ApiT::max_valid);
     } catch (...) {

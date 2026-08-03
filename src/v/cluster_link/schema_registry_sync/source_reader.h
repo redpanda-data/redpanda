@@ -60,8 +60,7 @@ struct source_config_read {
 ///
 /// Reads are split into discovery (list subjects/versions) and fetch (read a
 /// specific schema) so the sync can decide what to import before pulling
-/// schema bodies. Production currently uses an unavailable reader (the real
-/// HTTP-backed implementation is not wired yet); tests inject a fake.
+/// schema bodies. Production uses the HTTP-backed reader; tests inject a fake.
 class source_reader {
 public:
     source_reader() = default;
