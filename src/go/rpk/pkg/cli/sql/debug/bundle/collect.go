@@ -47,6 +47,7 @@ type Options struct {
 	MetricsPort       uint16
 	MetricsSamples    int
 	MetricsInterval   time.Duration
+	Namespace         string
 	ToolVersion       string
 }
 
@@ -54,7 +55,7 @@ type Options struct {
 type collectionResult struct {
 	Node      string `json:"node"`
 	RPC       string `json:"rpc"`
-	Status    string `json:"status"` // "ok" | "error"
+	Status    string `json:"status"` // "ok" | "error" | "skipped"
 	ElapsedMs int64  `json:"elapsed_ms"`
 	Error     string `json:"error,omitempty"`
 }
@@ -112,6 +113,7 @@ func (b *bundle) collect(ctx context.Context) {
 	for _, ep := range endpoints {
 		b.nodeCalls(ctx, ep)
 	}
+	b.k8sResources(ctx)
 }
 
 // discover resolves the node list from the first seed that answers

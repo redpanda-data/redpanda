@@ -65,6 +65,7 @@ type bundleFlags struct {
 	metricsPort     uint16
 	metricsSamples  int
 	metricsInterval time.Duration
+	namespace       string
 	timeout         time.Duration
 }
 
@@ -127,6 +128,7 @@ func (c *bundleFlags) install(f *pflag.FlagSet) {
 	f.Uint16Var(&c.metricsPort, "metrics-port", 8080, "Per-node Prometheus metrics port")
 	f.IntVar(&c.metricsSamples, "metrics-samples", 2, "Number of metrics samples to take per node (at the interval of --metrics-interval). Must be > 0")
 	f.DurationVar(&c.metricsInterval, "metrics-interval", 10*time.Second, "Interval between metrics samples")
+	f.StringVarP(&c.namespace, "namespace", "n", "", "Kubernetes namespace to collect resources from (K8s only; default: the pod's own namespace)")
 	f.DurationVar(&c.timeout, "timeout", 60*time.Second, "Per-RPC timeout")
 }
 
@@ -173,6 +175,7 @@ func (c *bundleFlags) options(fs afero.Fs) (Options, error) {
 		MetricsPort:       c.metricsPort,
 		MetricsSamples:    c.metricsSamples,
 		MetricsInterval:   c.metricsInterval,
+		Namespace:         c.namespace,
 		ToolVersion:       "rpk",
 	}, nil
 }
