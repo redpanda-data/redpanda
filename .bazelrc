@@ -268,19 +268,13 @@ build:debug --copt=-O1
 # This may also happen if the target rejected all inputs we tried so far
 #
 # https://llvm.org/docs/LibFuzzer.html
-build:fuzz --config=debug
+#
+# ASan and libFuzzer coverage on an -O1 build, like the default OSS-Fuzz
+# configuration. This is where long fuzzing runs spend their CPU.
+build:fuzz --config=san-asan-only
+build:fuzz --config=dbgsym-lines
+build:fuzz --copt=-O1
 build:fuzz --copt=-fsanitize=fuzzer-no-link
-
-# Uncomment to exempt seastar from coverage instrumentation: fewer
-# scheduling-dependent edges credited to whichever input happened to yield,
-# and fewer counters for libFuzzer to clear on every execution. Not a
-# complete cure, seastar calls into other instrumented libraries; the same
-# mechanism can exempt those too.
-#build:fuzz --per_file_copt=external/.*seastar.*@-fno-sanitize-coverage=inline-8bit-counters
-#build:fuzz --per_file_copt=external/.*seastar.*@-fno-sanitize-coverage=pc-table
-#build:fuzz --per_file_copt=external/.*seastar.*@-fno-sanitize-coverage=trace-cmp
-#build:fuzz --per_file_copt=external/.*seastar.*@-fno-sanitize-coverage=indirect-calls
-#build:fuzz --per_file_copt=external/.*seastar.*@-fno-sanitize-coverage=stack-depth
 
 # =================================
 # ODR Finder

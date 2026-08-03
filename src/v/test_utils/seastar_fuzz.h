@@ -85,11 +85,6 @@ int checked_callback(const uint8_t* data, size_t size) {
 /// clock or timer when that is what you are testing; a slow target still finds
 /// bugs.
 ///
-/// Watch the exec/s libFuzzer prints. Every execution clears every coverage
-/// counter in the binary, so the more instrumented code the target links, the
-/// fewer executions it gets through. The fuzz section of .bazelrc shows how
-/// to exempt dependencies that are not under test.
-///
 /// Arguments before -- go to libFuzzer, those after to the reactor, which
 /// runs one shard (--smp/-c are rejected) and defaults to warn-level logging:
 ///
