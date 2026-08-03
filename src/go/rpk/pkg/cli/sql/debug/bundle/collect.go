@@ -45,6 +45,8 @@ type Options struct {
 	LogSinceUnixMs    int64
 	LogSizeLimitBytes uint64
 	MetricsPort       uint16
+	MetricsSamples    int
+	MetricsInterval   time.Duration
 	ToolVersion       string
 }
 
@@ -201,10 +203,8 @@ func (b *bundle) nodeCalls(ctx context.Context, endpoint string) {
 	b.scrapeMetrics(ctx, endpoint, dir)
 }
 
-// scrapeMetrics pulls the node's Prometheus /metrics endpoint twice ~1s apart so
-// the bundle carries a short time series for rate/delta analysis. Metrics are
-// served by a separate plain-HTTP server (config `metrics.port`), not the admin
-// API, so this uses http:// on that port and neither TLS nor auth.
+// scrapeMetrics pulls the node's plain-HTTP Prometheus /metrics endpoint
+// MetricsSamples times, MetricsInterval apart (no TLS or auth on that port).
 func (b *bundle) scrapeMetrics(ctx context.Context, node, dir string) {
 	host := node
 	if i := strings.LastIndex(node, ":"); i >= 0 {
@@ -212,14 +212,18 @@ func (b *bundle) scrapeMetrics(ctx context.Context, node, dir string) {
 	}
 	url := fmt.Sprintf("http://%s:%d/metrics", host, b.opts.MetricsPort)
 
-	scrape := func(suffix string) {
+	for i := 0; i < b.opts.MetricsSamples; i++ {
+		if i > 0 {
+			select {
+			case <-ctx.Done():
+				return
+			case <-time.After(b.opts.MetricsInterval):
+			}
+		}
 		start := time.Now()
-		err := b.httpGetToFile(ctx, url, dir+"metrics_"+suffix+".txt")
+		err := b.httpGetToFile(ctx, url, fmt.Sprintf("%smetrics_t%d.txt", dir, i))
 		b.record(node, "GET /metrics", start, err)
 	}
-	scrape("t0")
-	time.Sleep(time.Second)
-	scrape("t1")
 }
 
 // httpGetToFile GETs url and writes the body to name in the bundle. Non-200 is an
