@@ -674,11 +674,40 @@ class ShadowLinkTestBase(PreallocNodesTest):
                 }
             )
 
-        # Propagate SI / cloud-topics config to the secondary (source)
-        # cluster, creating a fresh SecondaryClusterArgs to avoid
+        kwargs.setdefault(
+            "log_config",
+            LoggingConfig(
+                "info",
+                logger_levels={
+                    "cluster": "trace",
+                    "shadow_link": "trace",
+                    "kafka/client": "trace",
+                    "kafka": "trace",
+                    "archival": "trace",
+                    "tx": "trace",
+                    "shadow_link_service": "trace",
+                },
+            ),
+        )
+
+        # Propagate logging and SI / cloud-topics config to the secondary
+        # (source) cluster, creating a fresh SecondaryClusterArgs to avoid
         # mutating the shared default instance.
+        sec_kwargs = dict(secondary_cluster_args.kwargs)
+        # A secondary left without a log_config takes its default level from
+        # the redpanda_log_level ducktape global, which is trace in CDT. At
+        # scale that is tens of GB of log per node, enough that the
+        # end-of-test log scan and trim overrun the test timeout. Copy rather
+        # than share: set_up_failure_injection mutates logger_levels in place.
+        primary_log_config: LoggingConfig = kwargs["log_config"]
+        sec_kwargs.setdefault(
+            "log_config",
+            LoggingConfig(
+                primary_log_config.default_level,
+                logger_levels=dict(primary_log_config.logger_levels),
+            ),
+        )
         if needs_si:
-            sec_kwargs = dict(secondary_cluster_args.kwargs)
             if "si_settings" not in sec_kwargs:
                 sec_kwargs["si_settings"] = kwargs.get("si_settings")
             if needs_cloud_topics:
@@ -701,26 +730,10 @@ class ShadowLinkTestBase(PreallocNodesTest):
                     }
                 )
                 sec_kwargs["extra_rp_conf"] = sec_extra
-            secondary_cluster_args = SecondaryClusterArgs(
-                secondary_cluster_args.num_brokers,
-                *secondary_cluster_args.args,
-                **sec_kwargs,
-            )
-
-        kwargs.setdefault(
-            "log_config",
-            LoggingConfig(
-                "info",
-                logger_levels={
-                    "cluster": "trace",
-                    "shadow_link": "trace",
-                    "kafka/client": "trace",
-                    "kafka": "trace",
-                    "archival": "trace",
-                    "tx": "trace",
-                    "shadow_link_service": "trace",
-                },
-            ),
+        secondary_cluster_args = SecondaryClusterArgs(
+            secondary_cluster_args.num_brokers,
+            *secondary_cluster_args.args,
+            **sec_kwargs,
         )
 
         super().__init__(
