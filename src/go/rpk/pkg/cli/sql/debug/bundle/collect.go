@@ -200,17 +200,18 @@ func (b *bundle) nodeCalls(ctx context.Context, endpoint string) {
 			b.add(dir+"cpu_profile.pprof.gz", cp.PprofGzip)
 		}
 	}
-	b.scrapeMetrics(ctx, endpoint, dir)
+	b.scrapeMetrics(ctx, endpoint)
 }
 
 // scrapeMetrics pulls the node's plain-HTTP Prometheus /metrics endpoint
 // MetricsSamples times, MetricsInterval apart (no TLS or auth on that port).
-func (b *bundle) scrapeMetrics(ctx context.Context, node, dir string) {
+func (b *bundle) scrapeMetrics(ctx context.Context, node string) {
 	host := node
 	if i := strings.LastIndex(node, ":"); i >= 0 {
 		host = node[:i]
 	}
 	url := fmt.Sprintf("http://%s:%d/metrics", host, b.opts.MetricsPort)
+	dir := fmt.Sprintf("%s/metrics/%s/", bundleRoot, debugbundle.SanitizeName(node))
 
 	for i := 0; i < b.opts.MetricsSamples; i++ {
 		if i > 0 {
