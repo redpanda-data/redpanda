@@ -32,6 +32,7 @@ from rptest.tests.redpanda_test import RedpandaTest
 from rptest.util import expect_exception
 from rptest.utils.mode_checks import cleanup_on_early_exit
 from rptest.utils.node_operations import NodeDecommissionWaiter
+from rptest.utils.si_utils import quiesce_uploads
 
 TS_LOG_ALLOW_LIST = [
     re.compile("archival_metadata_stm.*Replication wait for archival STM timed out"),
@@ -475,6 +476,13 @@ class DisableTieredStorageTest(NodePoolMigrationTestBase):
         # defer starting redpanda to test body
         pass
 
+    @property
+    def msg_count(self):
+        # Enough segments that the two segment initial local retention target
+        # is a meaningful truncation point. The base class produces 10x more,
+        # which leaves the archiver too far behind for the upload wait below.
+        return int(100 if self.debug_mode else 100 * self.segment_size / self.msg_size)
+
     @cluster(num_nodes=4, log_allow_list=RESTART_LOG_ALLOW_LIST + TS_LOG_ALLOW_LIST)
     @matrix(
         disable_mode=[
@@ -535,20 +543,14 @@ class DisableTieredStorageTest(NodePoolMigrationTestBase):
         info = describe_topic()
 
         initial_start_offset = info.start_offset
-        initial_hwm = info.high_watermark
 
         def pm_last_offset():
             v = self.admin.get_partition_manifest(spec.name, 0)["last_offset"]
             return v
 
-        self.logger.debug("Wait until most of the topic is uploaded")
+        self.logger.debug("Wait until the topic is fully uploaded")
 
-        wait_until(
-            lambda: pm_last_offset() >= initial_hwm,
-            timeout_sec=30,
-            backoff_sec=2,
-            err_msg="Partition never uploaded",
-        )
+        quiesce_uploads(self.redpanda, [spec.name], timeout_sec=120)
 
         self.logger.debug(
             f"Now {disable_mode} and produce some more to put HWM well above the last uploaded offset"
