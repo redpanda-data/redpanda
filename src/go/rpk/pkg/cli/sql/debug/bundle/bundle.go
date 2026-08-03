@@ -121,7 +121,7 @@ func (c *bundleFlags) install(f *pflag.FlagSet) {
 	f.StringVar(&c.auth.token, "token", "", "Bearer token (mutually exclusive with --user/--password)")
 	f.StringVar(&c.sqlText, "include-sql-text", "masked", "SQL text in query artifacts: masked|raw")
 	f.BoolVar(&c.vmstat, "include-vmstat", false, "Include vmstat in host probes (~1s slower)")
-	f.UintVar(&c.cpuSeconds, "cpu-profile-seconds", 0, "Collect a CPU profile of this duration per node (0 = skip)")
+	f.UintVar(&c.cpuSeconds, "cpu-profile-seconds", 30, "Collect a CPU profile of this duration per node (0 = skip)")
 	f.DurationVar(&c.logSince, "log-since", 0, "Collect log lines newer than this (0 = server default window)")
 	f.Uint64Var(&c.logSizeLim, "log-size-limit", 0, "Max log bytes per node (0 = server default)")
 	f.Uint16Var(&c.metricsPort, "metrics-port", 8080, "Per-node Prometheus metrics port")
@@ -139,6 +139,11 @@ func (c *bundleFlags) options(fs afero.Fs) (Options, error) {
 
 	if c.metricsSamples < 1 {
 		return Options{}, fmt.Errorf("--metrics-samples must be > 0, got %d", c.metricsSamples)
+	}
+
+	// The profile RPC blocks for the whole profiling duration.
+	if profile := time.Duration(c.cpuSeconds) * time.Second; profile >= c.timeout {
+		return Options{}, fmt.Errorf("--cpu-profile-seconds (%v) must be below --timeout (%v); raise --timeout or lower the profile duration", profile, c.timeout)
 	}
 
 	var tlsCfg *tls.Config
