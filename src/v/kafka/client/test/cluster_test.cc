@@ -293,7 +293,11 @@ TEST_F(ClusterFixture, TestDispatchingMultipleRequests) {
     ss::when_all_succeed(std::ranges::to<std::vector<ss::future<>>>(range))
       .get();
     /**
-     * check that order is preserved
+     * Every request must land exactly once. Order is not asserted:
+     * dispatch() suspends between the call and the write to the
+     * connection, so concurrent dispatches can reach the wire in any
+     * order (shuffle_task_queue reorders them in practice). Callers that
+     * need order must not overlap requests; see produce_partition.
      */
     auto batches = app.partition_manager
                      .invoke_on(
@@ -305,11 +309,14 @@ TEST_F(ClusterFixture, TestDispatchingMultipleRequests) {
                      .get();
 
     ASSERT_EQ(batches.size(), 10);
+    std::vector<int> values;
+    values.reserve(batches.size());
     for (auto& b : batches) {
         auto records = b.copy_records();
-        auto r_number = serde::from_iobuf<int>(records[0].value().copy());
-        ASSERT_EQ(static_cast<int64_t>(r_number), b.base_offset()());
+        values.push_back(serde::from_iobuf<int>(records[0].value().copy()));
     }
+    std::ranges::sort(values);
+    ASSERT_TRUE(std::ranges::equal(values, std::ranges::iota_view(0, 10)));
 }
 
 TEST_F(ClusterFixture, TestTopicTimeout) {
