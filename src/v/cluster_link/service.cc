@@ -36,6 +36,7 @@
 #include "cluster_link/shadow_linking_rpc_service.h"
 #include "cluster_link/source_topic_syncer.h"
 #include "cluster_link/sr_preflight_checker.h"
+#include "cluster_link/utils.h"
 #include "config/node_config.h"
 #include "kafka/client/direct_consumer/direct_consumer.h"
 #include "kafka/data/make_exact_offset_replicator.h"
@@ -761,17 +762,20 @@ private:
       retry_chain_node& rcn,
       const ::model::topic_partition& tp,
       ::model::timestamp ts) {
-        auto api_version = co_await get_list_offset_api_version(rcn);
-        if (!api_version) {
-            vlog(cllog.warn, "Unable to determine ListOffset API version");
-            co_return std::nullopt;
-        }
         auto leader_and_epoch = co_await get_leader_and_epoch_for_tp(rcn, tp);
         if (!leader_and_epoch) {
             vlog(cllog.warn, "[{}] No leader found for partition", tp);
             co_return std::nullopt;
         }
         auto [leader_id, leader_epoch] = *leader_and_epoch;
+        rcn.check_abort();
+        auto api_version
+          = co_await negotiate_api_version<kafka::list_offsets_api>(
+            _cluster, rcn.root_abort_source(), leader_id);
+        if (!api_version.has_value()) {
+            vlog(cllog.warn, "[{}] {}", tp, api_version.error());
+            co_return std::nullopt;
+        }
         kafka::list_offsets_request req;
         req.data.replica_id = ::model::node_id{-1}; // normal consumer
         req.data.isolation_level = 1;               // read committed only
@@ -858,22 +862,6 @@ private:
               *lso);
         }
         co_return lso;
-    }
-
-    ss::future<std::optional<kafka::api_version>>
-    get_list_offset_api_version(retry_chain_node& rcn) {
-        rcn.check_abort();
-        auto supported_versions = co_await _cluster.supported_api_versions(
-          kafka::list_offsets_api::key);
-        if (!supported_versions) {
-            co_return std::nullopt;
-        }
-        if (
-          supported_versions.value().min > kafka::list_offsets_api::max_valid) {
-            co_return std::nullopt;
-        }
-        co_return std::min(
-          supported_versions.value().max, kafka::list_offsets_api::max_valid);
     }
 
     std::optional<std::tuple<::model::node_id, kafka::leader_epoch>>

@@ -15,6 +15,7 @@
 #include "kafka/client/cluster.h"
 #include "kafka/client/configuration.h"
 #include "kafka/protocol/types.h"
+#include "ssx/future-util.h"
 #include "ssx/sformat.h"
 
 #include <seastar/core/abort_source.hh>
@@ -24,6 +25,7 @@
 #include <algorithm>
 #include <concepts>
 #include <expected>
+#include <optional>
 
 namespace cluster_link {
 kafka::client::connection_configuration
@@ -62,14 +64,23 @@ concept NegotiableKafkaApi = kafka::KafkaApi<T> && requires {
 /// source `cluster`: the highest version both the source and this build
 /// support. Error messages use `ApiT::name` (the wire protocol API name). On
 /// success returns the negotiated version; on failure returns an error string
-/// suitable for a task state_transition reason. Rethrows
-/// ss::abort_requested_exception so callers can propagate aborts.
+/// suitable for a task state_transition reason. Rethrows shutdown exceptions so
+/// callers can propagate aborts.
+///
+/// Set `broker` to negotiate against that broker alone, for a request
+/// dispatched to one broker: a cluster-wide negotiation refuses whenever any
+/// broker fails to report, however healthy the one being dispatched to.
 template<NegotiableKafkaApi ApiT>
 ss::future<std::expected<kafka::api_version, ss::sstring>>
-negotiate_api_version(kafka::client::cluster& cluster, ss::abort_source& as) {
+negotiate_api_version(
+  kafka::client::cluster& cluster,
+  ss::abort_source& as,
+  std::optional<::model::node_id> broker = std::nullopt) {
     try {
-        auto supported_api_versions = co_await cluster.supported_api_versions(
-          ApiT::key, as);
+        auto supported_api_versions = co_await (
+          broker.has_value()
+            ? cluster.supported_api_versions(*broker, ApiT::key, as)
+            : cluster.supported_api_versions(ApiT::key, as));
         if (!supported_api_versions.has_value()) {
             co_return std::unexpected(
               ssx::sformat(
@@ -83,15 +94,16 @@ negotiate_api_version(kafka::client::cluster& cluster, ss::abort_source& as) {
                 supported_api_versions->min));
         }
         co_return std::min(supported_api_versions->max, ApiT::max_valid);
-    } catch (const ss::abort_requested_exception&) {
-        // Rethrow abort requested to allow caller to handle it
-        throw;
-    } catch (const std::exception& e) {
+    } catch (...) {
+        auto ex = std::current_exception();
+        if (ssx::is_shutdown_exception(ex)) {
+            // Propagate shutdown rather than reporting it as a negotiation
+            // failure, which would fault the caller's task on the way down.
+            std::rethrow_exception(ex);
+        }
         co_return std::unexpected(
           ssx::sformat(
-            "Failed to get supported API version for {}: {}",
-            ApiT::name,
-            e.what()));
+            "Failed to get supported API version for {}: {}", ApiT::name, ex));
     }
 }
 
