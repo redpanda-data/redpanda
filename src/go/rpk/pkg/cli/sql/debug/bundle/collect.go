@@ -154,8 +154,6 @@ func (b *bundle) clusterCalls(ctx context.Context, cl *Client) {
 	dir := bundleRoot + "/cluster/"
 
 	b.grabJSON(ctx, cl, node, "GetOxlaHomeListing", emptyRequest, dir+"redpanda_sql_home_listing.json")
-	b.grabJSON(ctx, cl, node, "GetRecentQueries",
-		getRecentQueriesRequest{IncludeSQLText: b.opts.SQLTextMode}, dir+"recent_queries.json")
 
 	if head := (getCatalogHeadResponse{}); b.call(ctx, cl, node, "GetCatalogHead", emptyRequest, &head) {
 		b.add(dir+"catalog_head.pb", head.CatalogHead)
@@ -183,6 +181,8 @@ func (b *bundle) nodeCalls(ctx context.Context, endpoint string) {
 	}
 	b.grabJSON(ctx, cl, endpoint, "GetActiveQueries",
 		getActiveQueriesRequest{IncludeSQLText: b.opts.SQLTextMode}, dir+"active_queries.json")
+	b.grabJSON(ctx, cl, endpoint, "GetRecentQueries",
+		getRecentQueriesRequest{IncludeSQLText: b.opts.SQLTextMode}, dir+"recent_queries.json")
 
 	b.resourceUsage(ctx, cl, endpoint, dir)
 
