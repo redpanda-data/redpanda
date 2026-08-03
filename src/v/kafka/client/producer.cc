@@ -164,6 +164,11 @@ producer::do_send(model::topic_partition tp, model::record_batch batch) {
 
 ss::future<>
 producer::send(model::topic_partition tp, model::record_batch&& batch) {
+    // produce_partition invokes send() serially per partition; serial
+    // dispatch is what orders produce requests on the wire. A concurrent
+    // send() means the accounting is already corrupt.
+    auto inserted = _in_flight_sends.insert(tp).second;
+    vassert(inserted, "concurrent produce dispatch for {}", tp);
     auto record_count = batch.record_count();
     vlog(
       _logger->debug,
@@ -194,10 +199,12 @@ producer::send(model::topic_partition tp, model::record_batch&& batch) {
                        _as);
                  });
              })
-      .handle_exception([this, p_id](std::exception_ptr ex) {
-          return make_produce_response(p_id, ex, *_logger);
-      })
-      .then([this, tp, record_count](produce_response::partition res) mutable {
+      .then_wrapped([this, tp, p_id, record_count](
+                      ss::future<produce_response::partition> fut) mutable {
+          _in_flight_sends.erase(tp);
+          auto res = fut.failed() ? make_produce_response(
+                                      p_id, fut.get_exception(), *_logger)
+                                  : fut.get();
           vlog(
             _logger->debug,
             "sent record_batch: {}, {{record_count: {}}}, {}",
