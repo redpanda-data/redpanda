@@ -19,6 +19,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/debug/debugbundle"
@@ -88,9 +89,12 @@ func writeBundle(ctx context.Context, out io.Writer, opts Options) error {
 }
 
 type bundle struct {
-	zw       *zip.Writer
-	opts     Options
-	hc       *http.Client
+	zw   *zip.Writer
+	opts Options
+	hc   *http.Client
+
+	// mu guards zw, results, errs, and versions during the per-node fan-out.
+	mu       sync.Mutex
 	results  []collectionResult
 	errs     []string
 	versions map[string]string // endpoint -> version
@@ -110,9 +114,15 @@ func (b *bundle) client(endpoint string) *Client {
 func (b *bundle) collect(ctx context.Context) {
 	endpoints, clusterCl := b.discover(ctx)
 	b.clusterCalls(ctx, clusterCl)
+	var wg sync.WaitGroup
 	for _, ep := range endpoints {
-		b.nodeCalls(ctx, ep)
+		wg.Add(1)
+		go func(ep string) {
+			defer wg.Done()
+			b.nodeCalls(ctx, ep)
+		}(ep)
 	}
+	wg.Wait()
 	b.k8sResources(ctx)
 }
 
@@ -173,7 +183,9 @@ func (b *bundle) nodeCalls(ctx context.Context, endpoint string) {
 	if raw, ok := b.grabJSON(ctx, cl, endpoint, "GetVersion", emptyRequest, dir+"version.json"); ok {
 		var v getVersionResponse
 		if json.Unmarshal(raw, &v) == nil {
+			b.mu.Lock()
 			b.versions[endpoint] = v.Version
+			b.mu.Unlock()
 		}
 	}
 	// config.yaml is per-node (env overrides, host_name, ports differ), so collect
@@ -365,6 +377,8 @@ func (b *bundle) call(ctx context.Context, cl *Client, node, method string, req,
 
 func (b *bundle) record(node, rpc string, start time.Time, err error) {
 	res := collectionResult{Node: node, RPC: rpc, Status: "ok", ElapsedMs: time.Since(start).Milliseconds()}
+	b.mu.Lock()
+	defer b.mu.Unlock()
 	if err != nil {
 		res.Status = "error"
 		res.Error = err.Error()
@@ -374,6 +388,8 @@ func (b *bundle) record(node, rpc string, start time.Time, err error) {
 }
 
 func (b *bundle) add(name string, data []byte) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
 	f, err := b.zw.Create(name)
 	if err != nil {
 		b.errs = append(b.errs, fmt.Sprintf("zip create %s: %v", name, err))
