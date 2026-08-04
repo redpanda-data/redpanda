@@ -236,6 +236,7 @@ partition_translator::fetch_translation_offsets(retry_chain_node& rcn) {
           "[{}] Coordinator applying backpressure (too many pending files); "
           "backing off translation",
           _data_source->ntp());
+        offsets.backpressure = true;
         co_return offsets;
     }
 
@@ -474,7 +475,15 @@ ss::future<> partition_translator::translate_until_stopped() {
         if (finish_now) {
             vlog(_logger.debug, "Requested for immediate finish");
         }
-        if (!offsets && !finish_now) {
+        if (!offsets) {
+            // Without reconciled offsets there is nothing to translate or
+            // finish against.
+            continue;
+        }
+        // A backpressured iteration takes the jittered retry path like a
+        // failed fetch, rather than immediately polling the coordinator
+        // again. A requested finish still proceeds below.
+        if (offsets->backpressure && !finish_now) {
             continue;
         }
         if (offsets->next_translation_begin_offset && !finish_now) {
