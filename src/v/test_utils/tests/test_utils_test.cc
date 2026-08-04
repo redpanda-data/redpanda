@@ -16,9 +16,34 @@
 // unset this so we test the fallback macros
 #undef IS_GTEST
 
+#include "test_utils/async.h"
 #include "test_utils/test_macros.h"
 
+#include <seastar/core/sleep.hh>
+
 #include <gtest/gtest.h>
+
+#include <chrono>
+
+using namespace std::chrono_literals;
+
+namespace {
+// A suspending predicate whose coroutine frame points into the predicate
+// object; the object must stay at a stable address while suspended.
+struct sleeping_predicate {
+    int& attempts;
+    ss::future<bool> operator()() {
+        co_await ss::sleep(1ms);
+        co_return ++attempts >= 3;
+    }
+};
+} // namespace
+
+TEST(TestUtilsTest, assert_eventually_async_predicate) {
+    int attempts = 0;
+    RPTEST_REQUIRE_EVENTUALLY(5s, sleeping_predicate{attempts});
+    ASSERT_GE(attempts, 3);
+}
 
 TEST(TestUtilsTest, test_macros_pass) {
     RPTEST_REQUIRE(true);

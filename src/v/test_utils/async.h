@@ -27,6 +27,7 @@
 #include <seastar/core/timed_out_error.hh>
 
 #include <chrono>
+#include <type_traits>
 
 using namespace std::chrono_literals;
 
@@ -56,6 +57,25 @@ using namespace std::chrono_literals;
 
 namespace tests {
 
+namespace detail {
+
+/// The coroutine frame keeps \p p at a stable address: a suspended
+/// coroutine predicate holds a pointer to it.
+template<typename Predicate>
+ss::future<>
+spin_wait_loop(model::timeout_clock::time_point deadline, Predicate p) {
+    while (model::timeout_clock::now() <= deadline) {
+        bool stop = co_await ss::futurize_invoke(p);
+        if (stop) {
+            co_return;
+        }
+        co_await ss::sleep(std::chrono::milliseconds(10));
+    }
+    throw ss::timed_out_error();
+}
+
+} // namespace detail
+
 // clang-format off
 template<typename Rep, typename Period, typename Predicate>
 requires std::is_invocable_r_v<bool, Predicate> ||
@@ -64,25 +84,11 @@ requires std::is_invocable_r_v<bool, Predicate> ||
 /// Used to wait for Predicate to become true
 ss::future<> cooperative_spin_wait_with_timeout(
   std::chrono::duration<Rep, Period> timeout, Predicate p) {
-    using futurator = ss::futurize<std::invoke_result_t<Predicate>>;
-    auto tout = model::timeout_clock::now() + timeout;
+    auto deadline = model::timeout_clock::now() + timeout;
+    // with_timeout bounds a predicate call that never resolves; the loop's
+    // deadline check ends polling, including in the abandoned fiber.
     return ss::with_timeout(
-      tout, ss::repeat([tout, p = std::forward<Predicate>(p)]() mutable {
-          if (model::timeout_clock::now() > tout) {
-              return ss::make_exception_future<ss::stop_iteration>(
-                ss::timed_out_error());
-          }
-          auto f = futurator::invoke(p);
-          return f.then([](bool stop) {
-              if (stop) {
-                  return ss::make_ready_future<ss::stop_iteration>(
-                    ss::stop_iteration::yes);
-              }
-              return ss::sleep(std::chrono::milliseconds(10)).then([] {
-                  return ss::stop_iteration::no;
-              });
-          });
-      }));
+      deadline, detail::spin_wait_loop(deadline, std::move(p)));
 }
 
 // When a test expects that any background fibers should complete promptly,

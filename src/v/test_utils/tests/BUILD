@@ -35,6 +35,7 @@ redpanda_cc_gtest(
     deps = [
         "//src/v/test_utils:gtest",
         "@googletest//:gtest",
+        "@seastar",
     ],
 )
 
