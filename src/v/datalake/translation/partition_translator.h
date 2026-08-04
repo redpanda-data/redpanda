@@ -163,6 +163,9 @@ private:
         // Offset to begin the next translation from.
         // set if there is new data to translate
         std::optional<kafka::offset> next_translation_begin_offset;
+        // Set if the coordinator is shedding load; the translation loop
+        // should back off before polling again.
+        bool backpressure{false};
     };
     ss::future<std::optional<translation_offsets>>
     fetch_translation_offsets(retry_chain_node&);
