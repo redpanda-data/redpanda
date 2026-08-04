@@ -1,12 +1,21 @@
 #include "bytes/iostream.h"
+#include "config/configuration.h"
+#include "container/chunked_vector.h"
+#include "random/generators.h"
+#include "storage/chunk_cache.h"
 #include "storage/segment_appender.h"
+#include "storage/storage_resources.h"
+#include "test_utils/async.h"
+#include "test_utils/manual_file.h"
 #include "test_utils/random_bytes.h"
+#include "test_utils/scoped_config.h"
 #include "test_utils/test.h"
 
 #include <seastar/core/file.hh>
 #include <seastar/core/fstream.hh>
 #include <seastar/core/gate.hh>
 #include <seastar/core/seastar.hh>
+#include <seastar/core/shared_ptr.hh>
 #include <seastar/core/sleep.hh>
 
 static ss::logger tst_log("test-logger");
@@ -328,4 +337,275 @@ TEST(SegmentAppenderChunk, test_copying_reminder) {
     // flushed position is preserved, only last 2 KiB + 3 bytes appended
     ASSERT_EQ(chunk_4.flushed_pos(), 2_KiB);
     ASSERT_EQ(chunk_4.size(), 2_KiB + 3);
+}
+
+namespace manual_file = tests::manual_file;
+
+struct SegmentAppenderManualFileFixture : seastar_test {
+    using chunk_ptr = ss::lw_shared_ptr<storage::segment_appender::chunk>;
+
+    ss::future<> SetUpAsync() override {
+        // Push the inactive-appender timer out of the way so only explicit
+        // appends and flushes drive the appender.
+        _test_cfg.get("segment_appender_flush_timeout_ms")
+          .set_value(std::chrono::milliseconds(600'000));
+
+        co_await resources.start();
+        storage::segment_appender::options opts(std::nullopt, resources, stats);
+        appender = std::make_unique<storage::segment_appender>(
+          manual_file::make_file(_device, dma_alignment), opts);
+    }
+
+    ss::future<> TearDownAsync() override {
+        if (!appender) {
+            // SetUpAsync() failed before creating it.
+            co_return;
+        }
+        // Drain before close(): automate everything, un-starve any append
+        // parked on the chunk cache, and let it finish. No-ops when the
+        // body ran to completion.
+        if (!_driver) {
+            start_driver(manual_file::io_kind_all);
+        }
+        _driver->automate(manual_file::io_kind_all);
+        co_await return_all_chunks();
+        co_await tests::drain_task_queue();
+        // Close before the assertions so a failed expectation doesn't trip
+        // ~segment_appender's unclosed abort.
+        co_await appender->close();
+        co_await _driver->stop();
+        EXPECT_TRUE(_device.closed);
+        EXPECT_EQ(_device.pending_count(), 0);
+        // Content checks are meaningless after a failure.
+        if (HasFailure()) {
+            co_return;
+        }
+        if (reference.empty()) {
+            EXPECT_EQ(_device.submitted(manual_file::io_kind::write), 0)
+              << "the test wrote to the device but left `reference` unset, "
+                 "skipping content verification";
+            co_return;
+        }
+        EXPECT_EQ(_device.volatile_size(), reference.size());
+        EXPECT_EQ(_device.durable_size(), reference.size());
+        if (
+          _device.volatile_size() != reference.size()
+          || _device.durable_size() != reference.size()) {
+            co_return;
+        }
+        // Walk span by span: one view covers at most one device page.
+        for (size_t at = 0; at < reference.size();) {
+            const auto span = _device.volatile_span(at).substr(
+              0, reference.size() - at);
+            EXPECT_EQ(
+              span, std::string_view(reference).substr(at, span.size()));
+            at += span.size();
+        }
+        expect_durable_prefix(reference.size());
+    }
+
+    manual_file::device& dev() { return _device; }
+
+    /// Attach the driver, declaring the kinds it runs; the rest stay parked
+    /// for the test to complete.
+    manual_file::driver& start_driver(manual_file::io_kind automated) {
+        _driver.emplace(_device, automated);
+        return *_driver;
+    }
+
+    /// Durable content must hold the first \p n bytes of `reference`. A
+    /// prefix check: an in-flight write's dma may carry later bytes.
+    void expect_durable_prefix(size_t n) {
+        if (dev().durable_size() < n) {
+            ADD_FAILURE() << "durable size " << dev().durable_size()
+                          << " short of the expected prefix " << n;
+            return;
+        }
+        for (size_t at = 0; at < n;) {
+            const auto span = dev().durable_span(at).substr(0, n - at);
+            EXPECT_EQ(
+              span, std::string_view(reference).substr(at, span.size()));
+            at += span.size();
+        }
+    }
+
+    /// Exhaust the chunk cache so the next chunk request blocks. The
+    /// probing get() stays parked as the first waiter, so a stray refill
+    /// cannot feed the appender. Returns the cumulative hostage count:
+    /// every chunk the cache can hand out, less what the appender holds.
+    size_t hoard_all_chunks() {
+        vassert(!_parked_get, "hoard with a probing get() already parked");
+        while (true) {
+            auto fut = resources.chunks().get();
+            if (!fut.available()) {
+                _parked_get = std::move(fut);
+                break;
+            }
+            _hostages.push_back(fut.get());
+        }
+        return _hostages.size();
+    }
+
+    ss::future<> return_all_chunks() {
+        for (auto& c : _hostages) {
+            resources.chunks().add(c);
+        }
+        _hostages.clear();
+        if (_parked_get) {
+            _hostages.push_back(co_await std::move(*_parked_get));
+            _parked_get.reset();
+        }
+    }
+
+    scoped_config _test_cfg;
+    static constexpr uint32_t dma_alignment = 4096;
+    storage::storage_resources resources;
+    ss::lw_shared_ptr<storage::segment_appender::stats> stats
+      = ss::make_lw_shared<storage::segment_appender::stats>();
+    // Destroyed after `appender`, whose ss::file references it.
+    manual_file::device _device{tst_log};
+    std::optional<manual_file::driver> _driver;
+    std::unique_ptr<storage::segment_appender> appender;
+    /// Expected device content, verified at teardown.
+    ss::sstring reference;
+    chunked_vector<chunk_ptr> _hostages;
+    std::optional<ss::future<chunk_ptr>> _parked_get;
+};
+
+// Reproduces an assert found by Antithesis:
+//
+//   segment_appender.cc: 'file_byte_offset() <= _stable_offset'
+//   No inflight writes but eof 15651 > stable offset 15590
+//
+// do_append()'s remainder-copy branch nulled _head while suspended on
+// the exhausted chunk cache, with _bytes_flush_pending still accounting
+// bytes from the old head. Once the in-flight write completed, a
+// concurrent flush() found no head, no inflight writes, and eof >
+// stable offset.
+//
+// Writes are manual at the device; the driver runs everything else.
+TEST_F(
+  SegmentAppenderManualFileFixture, FlushWhileHeadSwapBlockedOnChunkCache) {
+    using manual_file::io_kind;
+    using manual_file::io_kind_all;
+    auto& driver = start_driver(io_kind_all & ~io_kind::write);
+    reference = random_generators::gen_alphanum_string(221);
+
+    // Write #1: dispatched by flush #1 and parked at the device.
+    appender->append(reference.data(), 100).get();
+    ASSERT_EQ(appender->file_byte_offset(), 100);
+    auto flush1 = appender->flush();
+    dev().wait_submitted(io_kind::write, 1).get();
+
+    // The head has a DISPATCHED write, so this append remainder-copies
+    // the old head's 100 unaligned bytes into a fresh chunk.
+    appender->append(reference.data() + 100, 50).get();
+    ASSERT_EQ(appender->file_byte_offset(), 150);
+    ASSERT_EQ(stats->bytes_copied_in_chunk_remainder, 100);
+
+    // Parked write #1 still owns the head-write semaphore, so flush #2
+    // leaves write #2 QUEUED...
+    auto flush2 = appender->flush();
+    // Drain the reactor: a wrongly dispatched write #2 would have
+    // arrived by now.
+    tests::drain_task_queue().get();
+    ASSERT_EQ(dev().pending_count(io_kind::write), 1);
+
+    // ...so this append lands in the same chunk behind it.
+    appender->append(reference.data() + 150, 61).get();
+    ASSERT_EQ(appender->file_byte_offset(), 211);
+
+    // Completing write #1 lets write #2 dispatch and park.
+    dev().complete_oldest(io_kind::write);
+    flush1.get();
+    dev().wait_submitted(io_kind::write, 2).get();
+    ASSERT_EQ(dev().pending_count(io_kind::write), 1);
+    // flush #1 resolved: [0, 100) must be durable.
+    expect_durable_prefix(100);
+
+    // With the cache exhausted, the next remainder-copy append blocks
+    // waiting for a chunk. Unfixed code nulls _head here with 61 bytes
+    // still pending.
+    hoard_all_chunks();
+    auto blocked_append = appender->append(reference.data() + 211, 10);
+    tests::drain_task_queue().get();
+    ASSERT_FALSE(blocked_append.available());
+
+    // Completing write #2 drains _inflight while the append is blocked.
+    dev().complete_oldest(io_kind::write);
+    flush2.get();
+    // The append still waits: hoard_all_chunks()'s parked get() would
+    // absorb a wrongly released chunk. The remainder-copy count below is
+    // what covers the release path.
+    tests::drain_task_queue().get();
+    ASSERT_FALSE(blocked_append.available());
+    EXPECT_EQ(appender->file_byte_offset(), 211);
+    // flush #2 promised [0, 150).
+    expect_durable_prefix(150);
+
+    // BUG: unfixed code aborts here: eof 211 > stable offset 150.
+    auto flush3 = appender->flush();
+    dev().wait_submitted(io_kind::write, 3).get();
+    ASSERT_EQ(dev().pending_count(io_kind::write), 1);
+
+    // Unblock the head swap while write #3 still owns the old head: the
+    // resumed append must copy the remainder without touching the
+    // in-flight chunk.
+    return_all_chunks().get();
+    blocked_append.get();
+    ASSERT_EQ(stats->bytes_copied_in_chunk_remainder, 100 + 211);
+
+    dev().complete_oldest(io_kind::write);
+    flush3.get();
+    // flush #3 resolved: the 61 re-dispatched bytes must be durable.
+    // Not 221: a flush covers file_byte_offset() at call time, and the
+    // blocked append's bytes were not accepted yet.
+    expect_durable_prefix(211);
+
+    // From here the device runs itself; teardown closes the appender and
+    // verifies content against `reference`.
+    driver.automate(io_kind_all);
+}
+
+// The head swap's release path when nothing references the old head:
+// write #1 completes while the append waits for a chunk, so the resumed
+// swap recycles the old chunk itself.
+TEST_F(
+  SegmentAppenderManualFileFixture, HeadSwapRecyclesChunkWhenInflightDrained) {
+    using manual_file::io_kind;
+    using manual_file::io_kind_all;
+    auto& driver = start_driver(io_kind_all & ~io_kind::write);
+    reference = random_generators::gen_alphanum_string(150);
+
+    appender->append(reference.data(), 100).get();
+    ASSERT_EQ(appender->file_byte_offset(), 100);
+    auto flush1 = appender->flush();
+    dev().wait_submitted(io_kind::write, 1).get();
+
+    // The remainder-copy append blocks on the exhausted cache with parked
+    // write #1 still covering the head.
+    const auto hoarded = hoard_all_chunks();
+    auto blocked_append = appender->append(reference.data() + 100, 50);
+    tests::drain_task_queue().get();
+    ASSERT_FALSE(blocked_append.available());
+
+    // Write #1 completes while the append waits, draining _inflight.
+    dev().complete_oldest(io_kind::write);
+    flush1.get();
+    tests::drain_task_queue().get();
+    ASSERT_FALSE(blocked_append.available());
+
+    // The resumed swap finds no write referencing the old head and
+    // recycles it after copying the remainder out.
+    return_all_chunks().get();
+    blocked_append.get();
+    ASSERT_EQ(appender->file_byte_offset(), 150);
+    ASSERT_EQ(stats->bytes_copied_in_chunk_remainder, 100);
+
+    // Hoarding again nets the same count -- everything less the
+    // appender's one head chunk -- so the swap recycled the old head
+    // rather than leaking it.
+    ASSERT_EQ(hoard_all_chunks(), hoarded);
+
+    driver.automate(io_kind_all);
 }

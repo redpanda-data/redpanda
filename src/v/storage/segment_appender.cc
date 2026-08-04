@@ -243,8 +243,10 @@ ss::future<> segment_appender::do_append(const char* buf, size_t n) {
             // if head write is dispatched it means there is at least one
             // inflight write. Always copy the remainder to a new chunk
             // to simplify the logic (aligned case is very rare ~0.02%)
-            auto last_inflight_write = _inflight.back();
-            auto old_head = std::exchange(_head, nullptr);
+            // Keep the old head visible while waiting for a cache chunk. A
+            // concurrent flush must be able to dispatch bytes appended after
+            // the in-flight write covered by this branch.
+            auto old_head = _head;
             /**
              * NOTE: Why we do not release _prev_head_write semaphore ?
              * The _prev_head_write semaphore is used to guarantee orders of
@@ -262,27 +264,35 @@ ss::future<> segment_appender::do_append(const char* buf, size_t n) {
 
             auto new_head = co_await _opts.resources.chunks().get();
 
+            // append() calls are serialized, so only flush() may have touched
+            // the head while the chunk allocation was pending. A partial head
+            // remains installed when flushed.
+            vassert(
+              _head == old_head,
+              "Head changed while waiting for a replacement chunk: {}",
+              *this);
+
             const auto remainder_sz = old_head->size()
                                       - old_head->pending_aligned_begin();
 
             new_head->copy_remainder_from(*old_head);
             // swap in the new head with the remainder from the old one.
 
-            _head = new_head;
+            _head = std::move(new_head);
             _opts.shared_stats->bytes_copied_in_chunk_remainder += remainder_sz;
             /**
              * This is the place where we need to release the old head or
-             * mark it for release after the write completes. The
-             * last_inflight_write reference may not longer be valid after
-             * the scheduling point when the new chunk was requested.
+             * mark it for release after the write completes. A concurrent
+             * flush may have added a new write for old_head while the chunk
+             * request was pending, so use the current last write.
              */
 
-            if (last_inflight_write->state == inflight_write::DISPATCHED) {
+            if (!_inflight.empty() && _inflight.back()->chunk == old_head) {
                 // chunk write isn't finished yet
-                last_inflight_write->last_write_to_current_chunk = true;
+                _inflight.back()->last_write_to_current_chunk = true;
             } else {
-                // chunk was already written and it is done, we can release
-                // it right away
+                // All writes using the old chunk are done, so it can be
+                // released right away.
                 old_head->reset();
                 _opts.resources.chunks().add(old_head);
             }
