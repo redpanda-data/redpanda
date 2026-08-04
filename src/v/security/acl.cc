@@ -20,6 +20,7 @@
 #include "serde/rw/rw.h"
 #include "utils/to_string.h"
 
+#include <seastar/core/loop.hh>
 #include <seastar/coroutine/maybe_yield.hh>
 
 #include <container/chunked_vector.h>
@@ -28,6 +29,7 @@
 #include <algorithm>
 #include <iterator>
 #include <ranges>
+#include <utility>
 
 namespace security {
 
@@ -354,17 +356,27 @@ ss::future<chunked_vector<acl_binding>> acl_store::all_bindings() const {
     co_return result;
 }
 
+ss::future<acl_store::staged_bindings>
+acl_store::stage_bindings(const chunked_vector<acl_binding>& bindings) const {
+    staged_bindings staged;
+
+    co_await ss::do_for_each(bindings, [&staged](const acl_binding& binding) {
+        insert_binding(staged.acls, staged.prefix_index, binding);
+    });
+    co_await ss::do_for_each(
+      staged.acls, [](const auto& node) { node->entries.rehash(); });
+
+    co_return staged;
+}
+
+void acl_store::commit_bindings(staged_bindings staged) {
+    _acls = std::move(staged.acls);
+    _prefix_index = std::move(staged.prefix_index);
+}
+
 ss::future<>
 acl_store::reset_bindings(const chunked_vector<acl_binding>& bindings) {
-    // NOTE: not coroutinized because otherwise clang-14 crashes.
-    _acls.clear();
-    _prefix_index.clear();
-    return ss::do_for_each(
-             bindings, [this](const auto& binding) { insert_binding(binding); })
-      .then([this] {
-          return ss::do_for_each(
-            _acls, [](const auto& node) { node->entries.rehash(); });
-      });
+    commit_bindings(co_await stage_bindings(bindings));
 }
 
 acl_principal acl_principal::from_string(std::string_view principal) {
