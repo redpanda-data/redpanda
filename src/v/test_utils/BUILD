@@ -153,6 +153,19 @@ redpanda_test_cc_library(
 )
 
 redpanda_test_cc_library(
+    name = "manual_file",
+    hdrs = [
+        "manual_file.h",
+    ],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//src/v/base",
+        "//src/v/container:chunked_vector",
+        "@seastar",
+    ],
+)
+
+redpanda_test_cc_library(
     name = "runfiles",
     srcs = [
         "runfiles.cc",
