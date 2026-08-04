@@ -76,6 +76,8 @@ public:
 
     void note_backpressure_rejection() { _backpressure_rejections++; }
 
+    size_t backpressure_rejections() const { return _backpressure_rejections; }
+
     ss::future<> wait_for_backpressure_rejections(
       size_t n, std::chrono::seconds timeout = 10s) {
         RPTEST_REQUIRE_EVENTUALLY_CORO(
@@ -507,6 +509,25 @@ TEST_F_CORO(partition_translator_fixture, test_coordinator_backpressure) {
     test_ctx.set_coordinator_backpressure(false);
     co_await test_ctx.wait_for_translation_attempts(10);
     ASSERT_GT_CORO(test_ctx.max_translated_offset(), kafka::offset{0});
+}
+
+TEST_F_CORO(
+  partition_translator_fixture, test_coordinator_backpressure_is_paced) {
+    auto& test_ctx = make_test_context();
+    test_ctx.set_coordinator_backpressure(true);
+    test_ctx.set_should_finish_inflight_translation(false);
+    co_await add_translator(test_ctx);
+
+    co_await test_ctx.wait_for_backpressure_rejections(1);
+    auto baseline = test_ctx.backpressure_rejections();
+    co_await ss::sleep(200ms);
+    auto polls = test_ctx.backpressure_rejections() - baseline;
+
+    // Each backpressured iteration should sleep the loop jitter (10ms base in
+    // this fixture) before polling the coordinator again, so expect ~20 polls.
+    // Regression check for a bug where we would poll without waiting: a
+    // translator that spins on fetches would rack up thousands.
+    ASSERT_LE_CORO(polls, 100);
 }
 
 TEST_F_CORO(partition_translator_fixture, test_batching) {
