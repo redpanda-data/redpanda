@@ -50,12 +50,10 @@ TEST_CORO(SeastarTest, SleepCoro) {
     ASSERT_EQ_CORO(100, 100);
 }
 
-TEST(SeastarTest, assert_eventually) {
-    RPTEST_REQUIRE_EVENTUALLY(100ms, [] { return true; });
-}
+TEST(SeastarTest, assert_eventually) { RPTEST_REQUIRE_EVENTUALLY(100ms, true); }
 
 TEST_CORO(SeastarTest, assert_eventually_coro) {
-    RPTEST_REQUIRE_EVENTUALLY_CORO(100ms, [] { return true; });
+    RPTEST_REQUIRE_EVENTUALLY_CORO(100ms, true);
 }
 
 TEST_CORO(SeastarTest, SkippingWorks) {
