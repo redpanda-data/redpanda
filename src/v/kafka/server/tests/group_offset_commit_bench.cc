@@ -138,7 +138,7 @@ struct group_bench {
             for (size_t t = 0; t < topics; ++t) {
                 model::topic topic(fmt::format("fetch-topic-{}", t));
                 for (size_t p = 0; p < partitions; ++p) {
-                    g.insert_offset(
+                    g.try_upsert_offset(
                       model::topic_partition(
                         topic, model::partition_id(static_cast<int32_t>(p))),
                       group::offset_metadata{
@@ -183,7 +183,7 @@ struct group_bench {
         for (size_t t = 0; t < topics; ++t) {
             model::topic topic(fmt::format("fetch-topic-{}", t));
             for (size_t p = 0; p < partitions; ++p) {
-                g.insert_offset(
+                g.try_upsert_offset(
                   model::topic_partition(
                     topic, model::partition_id(static_cast<int32_t>(p))),
                   group::offset_metadata{

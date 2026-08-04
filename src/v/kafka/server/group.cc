@@ -2201,6 +2201,30 @@ bool group::try_upsert_offset(
     }
 }
 
+std::optional<group::offset_metadata>
+group::offset(const model::topic_partition& tp) const {
+    if (auto t_it = _offsets.find(tp.topic); t_it != _offsets.end()) {
+        if (
+          auto p_it = t_it->second.find(tp.partition);
+          p_it != t_it->second.end()) {
+            return p_it->second->metadata;
+        }
+    }
+    return std::nullopt;
+}
+
+bool group::erase_offset(const model::topic_partition& tp) {
+    auto t_it = _offsets.find(tp.topic);
+    if (t_it == _offsets.end()) {
+        return false;
+    }
+    const auto erased = t_it->second.erase(tp.partition) > 0;
+    if (t_it->second.empty()) {
+        _offsets.erase(t_it);
+    }
+    return erased;
+}
+
 std::optional<group::prepared_offset_commits>
 group::prepare_offset_commits(const offset_commit_request& r) {
     cluster::simple_batch_builder builder(
@@ -3643,6 +3667,39 @@ bool group::has_transactions_in_progress() const {
       [](const producers_map::value_type& p) {
           return p.second.transaction != nullptr;
       });
+}
+
+ss::lw_shared_ptr<ssx::mutex> group::get_tx_lock(model::producer_id pid) {
+    auto lock_it = _tx_locks.find(pid);
+    if (lock_it == _tx_locks.end()) {
+        auto [new_it, _] = _tx_locks.try_emplace(
+          pid, ss::make_lw_shared<ssx::mutex>("tx_lock_group"));
+        lock_it = new_it;
+    }
+    return lock_it->second;
+}
+
+void group::gc_tx_lock(model::producer_id pid) {
+    if (auto it = _tx_locks.find(pid); it != _tx_locks.end()) {
+        if (it->second->ready()) {
+            _tx_locks.erase(it);
+        }
+    }
+}
+
+bool group::has_pending_transaction(const model::topic_partition& tp) {
+    if (_pending_offset_commits.contains(tp)) {
+        return true;
+    }
+
+    if (std::any_of(_producers.begin(), _producers.end(), [&tp](const auto& p) {
+            return p.second.transaction
+                   && p.second.transaction->offsets.contains(tp);
+        })) {
+        return true;
+    }
+
+    return false;
 }
 
 bool group::has_offsets() const {

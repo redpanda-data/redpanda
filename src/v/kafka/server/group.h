@@ -254,12 +254,6 @@ public:
         }
     };
 
-    struct ongoing_tx_offsets {
-        model::producer_identity pid;
-        model::tx_seq tx_seq;
-        absl::node_hash_map<model::topic_partition, offset_metadata> offsets;
-    };
-
     using partition_offsets_map = chunked_hash_map<
       model::partition_id,
       std::unique_ptr<offset_metadata_with_probe>>;
@@ -593,16 +587,7 @@ public:
       const member_id&, const std::optional<group_instance_id>&);
 
     std::optional<offset_metadata>
-    offset(const model::topic_partition& tp) const {
-        if (auto t_it = _offsets.find(tp.topic); t_it != _offsets.end()) {
-            if (
-              auto p_it = t_it->second.find(tp.partition);
-              p_it != t_it->second.end()) {
-                return p_it->second->metadata;
-            }
-        }
-        return std::nullopt;
-    }
+    offset(const model::topic_partition& tp) const;
 
     const auto& offsets() const { return _offsets; }
 
@@ -658,37 +643,10 @@ public:
     offset_fetch_response_group
     handle_offset_fetch(offset_fetch_request_group r, bool require_stable);
 
-    void insert_offset(const model::topic_partition& tp, offset_metadata md) {
-        auto& partitions = _offsets[tp.topic];
-        if (
-          auto p_it = partitions.find(tp.partition); p_it != partitions.end()) {
-            p_it->second->metadata = std::move(md);
-        } else {
-            partitions.emplace(
-              tp.partition,
-              std::make_unique<offset_metadata_with_probe>(
-                std::move(md),
-                _id,
-                tp,
-                _conf.enable_consumer_group_metrics.bind(
-                  std::function{enabled_metrics::from_vector})));
-        }
-    }
-
     /// removes a tracked offset; empty per-topic maps are erased so that
     /// _offsets.empty() means "no offsets" and iteration never visits
     /// offset-less topics
-    bool erase_offset(const model::topic_partition& tp) {
-        auto t_it = _offsets.find(tp.topic);
-        if (t_it == _offsets.end()) {
-            return false;
-        }
-        const auto erased = t_it->second.erase(tp.partition) > 0;
-        if (t_it->second.empty()) {
-            _offsets.erase(t_it);
-        }
-        return erased;
-    }
+    bool erase_offset(const model::topic_partition& tp);
 
     bool
     try_upsert_offset(const model::topic_partition& tp, offset_metadata md);
@@ -853,23 +811,9 @@ private:
         const group& _group;
     };
 
-    ss::lw_shared_ptr<ssx::mutex> get_tx_lock(model::producer_id pid) {
-        auto lock_it = _tx_locks.find(pid);
-        if (lock_it == _tx_locks.end()) {
-            auto [new_it, _] = _tx_locks.try_emplace(
-              pid, ss::make_lw_shared<ssx::mutex>("tx_lock_group"));
-            lock_it = new_it;
-        }
-        return lock_it->second;
-    }
+    ss::lw_shared_ptr<ssx::mutex> get_tx_lock(model::producer_id pid);
 
-    void gc_tx_lock(model::producer_id pid) {
-        if (auto it = _tx_locks.find(pid); it != _tx_locks.end()) {
-            if (it->second->ready()) {
-                _tx_locks.erase(it);
-            }
-        }
-    }
+    void gc_tx_lock(model::producer_id pid);
 
     template<typename Func>
     auto with_pid_lock(model::producer_id pid, Func&& func) {
@@ -927,22 +871,7 @@ private:
 
     bool has_transactions_in_progress() const;
 
-    bool has_pending_transaction(const model::topic_partition& tp) {
-        if (_pending_offset_commits.contains(tp)) {
-            return true;
-        }
-
-        if (
-          std::any_of(
-            _producers.begin(), _producers.end(), [&tp](const auto& p) {
-                return p.second.transaction
-                       && p.second.transaction->offsets.contains(tp);
-            })) {
-            return true;
-        }
-
-        return false;
-    }
+    bool has_pending_transaction(const model::topic_partition& tp);
 
     void update_store_offset_builder(
       cluster::simple_batch_builder& builder,
