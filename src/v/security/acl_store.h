@@ -74,9 +74,18 @@ public:
      */
     acl_matches find(resource_type, const ss::sstring&) const;
 
-    // NOTE: the following functions assume that acl_store doesn't change across
-    // yield points.
+    // NOTE: assumes that acl_store doesn't change across yield points.
     ss::future<chunked_vector<acl_binding>> all_bindings() const;
+
+    /**
+     * Replace the entire contents of the store with `bindings`.
+     *
+     * Atomic with respect to readers: the replacement is built off to the side
+     * and swapped in without an intervening yield, so a find() interleaved with
+     * the rebuild sees either the whole old set or the whole new one, never a
+     * partial one. Callers rely on this, since Kafka authorization checks may
+     * be in flight on the same shard.
+     */
     ss::future<> reset_bindings(const chunked_vector<acl_binding>& bindings);
 
 private:
@@ -152,7 +161,7 @@ private:
      * erasure of an `_acls` key MUST drop the corresponding `_prefix_index`
      * entry in the same step. remove_bindings() (the only element-erasing path)
      * does exactly this when it prunes an emptied pattern; reset_bindings()
-     * clears both.
+     * replaces both together.
      */
     container_type _acls;
 
@@ -170,28 +179,70 @@ private:
      * prunes the emptied pattern from `_acls`, and reset rebuilds alongside
      * `_acls`. There are few resource types, so this map stays tiny.
      */
-    absl::flat_hash_map<resource_type, radix_tree<acl_entry_set_match>>
-      _prefix_index;
+    using prefix_index_type
+      = absl::flat_hash_map<resource_type, radix_tree<acl_entry_set_match>>;
 
-    /// Insert one binding into `_acls`, and when it creates a new prefixed
-    /// pattern, record a reference to it in the prefix index. Returns the entry
+    prefix_index_type _prefix_index;
+
+    /// Insert one binding into `acls`, and when it creates a new prefixed
+    /// pattern, record a reference to it in `prefix_index`. Returns the entry
     /// set it was added to so callers may rehash(); does not rehash itself.
-    acl_entry_set& insert_binding(const acl_binding& binding) {
+    ///
+    /// Takes the containers explicitly so reset_bindings() can build a
+    /// replacement pair without publishing it as it goes.
+    static acl_entry_set& insert_binding(
+      container_type& acls,
+      prefix_index_type& prefix_index,
+      const acl_binding& binding) {
         const auto& pattern = binding.pattern();
-        if (auto it = _acls.find(pattern); it != _acls.end()) {
+        if (auto it = acls.find(pattern); it != acls.end()) {
             (*it)->entries.insert(binding.entry());
             return (*it)->entries;
         }
-        auto [it, _] = _acls.insert(std::make_unique<acls_node>(pattern));
+        auto [it, _] = acls.insert(std::make_unique<acls_node>(pattern));
         auto& node = **it;
         node.entries.insert(binding.entry());
         if (pattern.pattern() == pattern_type::prefixed) {
-            _prefix_index[pattern.resource()].insert(
+            prefix_index[pattern.resource()].insert(
               node.pattern.name(),
               acl_entry_set_match{node.pattern, node.entries});
         }
         return node.entries;
     }
+
+    acl_entry_set& insert_binding(const acl_binding& binding) {
+        return insert_binding(_acls, _prefix_index, binding);
+    }
+
+public:
+    class staged_bindings {
+    public:
+        staged_bindings() = default;
+        staged_bindings(staged_bindings&&) noexcept = default;
+        staged_bindings& operator=(staged_bindings&&) noexcept = default;
+        staged_bindings(const staged_bindings&) = delete;
+        staged_bindings& operator=(const staged_bindings&) = delete;
+        ~staged_bindings() noexcept = default;
+
+    private:
+        friend class acl_store;
+        container_type acls;
+        prefix_index_type prefix_index;
+    };
+
+    /**
+     * Build a replacement for the store's entire contents without publishing
+     * it. Yields while building; the store is untouched throughout, so readers
+     * continue to see the current contents.
+     */
+    ss::future<staged_bindings>
+    stage_bindings(const chunked_vector<acl_binding>& bindings) const;
+
+    /**
+     * Install a replacement built by stage_bindings(). Synchronous and
+     * yield-free, so readers see either the whole old set or the whole new one.
+     */
+    void commit_bindings(staged_bindings staged);
 };
 
 /*
