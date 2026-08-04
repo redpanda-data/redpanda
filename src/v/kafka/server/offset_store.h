@@ -24,6 +24,7 @@
 #include "kafka/protocol/errors.h"
 #include "kafka/protocol/offset_fetch.h"
 #include "kafka/server/group_probe.h"
+#include "kafka/server/offset_writer.h"
 #include "kafka/server/stages.h"
 #include "model/fundamental.h"
 #include "model/timestamp.h"
@@ -181,7 +182,7 @@ public:
       kafka::group_id id,
       config::configuration& conf,
       ss::lw_shared_ptr<ss::rwlock> catchup_lock,
-      ss::lw_shared_ptr<cluster::partition> partition,
+      std::unique_ptr<offset_writer> writer,
       model::term_id term,
       ss::sharded<cluster::tx_gateway_frontend>& tx_frontend,
       ss::sharded<features::feature_table>& feature_table,
@@ -412,7 +413,7 @@ private:
     kafka::group_id _id;
     config::configuration& _conf;
     ss::lw_shared_ptr<ss::rwlock> _catchup_lock;
-    ss::lw_shared_ptr<cluster::partition> _partition;
+    std::unique_ptr<offset_writer> _writer;
     model::term_id _term;
     ss::sharded<cluster::tx_gateway_frontend>& _tx_frontend;
     ss::sharded<features::feature_table>& _feature_table;

@@ -125,7 +125,7 @@ group::group(
       _id,
       conf,
       std::move(catchup_lock),
-      _partition,
+      std::make_unique<partition_offset_writer>(_partition),
       term,
       tx_frontend,
       feature_table,
@@ -165,7 +165,7 @@ group::group(
       _id,
       conf,
       std::move(catchup_lock),
-      _partition,
+      std::make_unique<partition_offset_writer>(_partition),
       term,
       tx_frontend,
       feature_table,
@@ -1840,14 +1840,14 @@ offset_store::commit_tx(cluster::commit_group_tx_request r) {
 ss::future<cluster::begin_group_tx_reply>
 offset_store::begin_tx(cluster::begin_group_tx_request r) {
     vlog(_ctx_txlog.trace, "processing begin tx request: {}", r);
-    if (_partition->term() != _term) {
+    if (_writer->term() != _term) {
         vlog(
           _ctx_txlog.debug,
           "begin tx request {} failed - leadership changed. Expected term: {}, "
           "current term: {}",
           r,
           _term,
-          _partition->term());
+          _writer->term());
         co_return cluster::begin_group_tx_reply(cluster::tx::errc::stale);
     }
 
@@ -1925,9 +1925,7 @@ offset_store::begin_tx(cluster::begin_group_tx_request r) {
     model::record_batch batch = make_tx_fence_batch(
       r.pid, std::move(fence), use_dedicated_batch_type_for_fence());
 
-    auto result = co_await _partition->raft()->replicate(
-      std::move(batch),
-      raft::replicate_options(raft::consistency_level::quorum_ack, _term));
+    auto result = co_await _writer->replicate(std::move(batch), _term);
 
     if (!result) {
         vlog(
@@ -1935,11 +1933,7 @@ offset_store::begin_tx(cluster::begin_group_tx_request r) {
           "begin tx request {} failed - error replicating fencing batch - {}",
           r,
           result.error().message());
-        if (
-          _partition->raft()->is_leader()
-          && _partition->raft()->term() == _term) {
-            co_await _partition->raft()->step_down("group begin_tx failed");
-        }
+        co_await _writer->maybe_step_down(_term, "group begin_tx failed");
         co_return cluster::begin_group_tx_reply(
           map_tx_replication_error(result.error()));
     }
@@ -2001,12 +1995,12 @@ ss::future<txn_offset_commit_response>
 offset_store::store_txn_offsets(txn_offset_commit_request r) {
     // replaying the log, the term isn't set yet
     // we should use replay or not a leader error
-    if (_partition->term() != _term) {
+    if (_writer->term() != _term) {
         vlog(
           _ctx_txlog.warn,
           "Last known term {} doesn't match partition term {}",
           _term,
-          _partition->term());
+          _writer->term());
         co_return txn_offset_commit_response(
           r, error_code::unknown_server_error);
     }
@@ -2072,17 +2066,11 @@ offset_store::store_txn_offsets(txn_offset_commit_request r) {
       pid,
       std::move(tx_entry));
 
-    auto result = co_await _partition->raft()->replicate(
-      std::move(batch),
-      raft::replicate_options(raft::consistency_level::quorum_ack, _term));
+    auto result = co_await _writer->replicate(std::move(batch), _term);
 
     if (!result) {
-        if (
-          _partition->raft()->is_leader()
-          && _partition->raft()->term() == _term) {
-            co_await _partition->raft()->step_down(
-              "group store_txn_offsets failed");
-        }
+        co_await _writer->maybe_step_down(
+          _term, "group store_txn_offsets failed");
         auto tx_ec = map_tx_replication_error(result.error());
 
         co_return txn_offset_commit_response(r, map_tx_errc(tx_ec));
@@ -2309,9 +2297,9 @@ offset_commit_stages offset_store::store_offsets(offset_commit_request&& r) {
     }
     auto offset_commits = std::move(prepared->commits);
 
-    auto replicate_stages = _partition->raft()->replicate_in_stages(
+    auto replicate_stages = _writer->replicate_in_stages(
       chunked_vector<model::record_batch>::single(std::move(prepared->batch)),
-      raft::replicate_options(raft::consistency_level::quorum_ack, _term));
+      _term);
 
     auto f = replicate_stages.replicate_finished.then(
       [this, req = std::move(r), commits = std::move(offset_commits)](
@@ -2958,13 +2946,13 @@ ss::future<cluster::abort_group_tx_reply> offset_store::do_abort(
       "processing do_abort_tx request: producer: {}, sequence: {}",
       pid,
       tx_seq);
-    if (_partition->term() != _term) {
+    if (_writer->term() != _term) {
         vlog(
           _ctxlog.debug,
           "do_abort_tx request: failed - leadership changed, expected term: "
           "{}, current term: {}, pid: {}, sequence: {}",
           _term,
-          _partition->term(),
+          _writer->term(),
           pid,
           tx_seq);
         co_return cluster::abort_group_tx_reply(cluster::tx::errc::stale);
@@ -3041,9 +3029,7 @@ ss::future<cluster::abort_group_tx_reply> offset_store::do_abort(
       pid,
       std::move(tx));
 
-    auto result = co_await _partition->raft()->replicate(
-      std::move(batch),
-      raft::replicate_options(raft::consistency_level::quorum_ack, _term));
+    auto result = co_await _writer->replicate(std::move(batch), _term);
 
     if (!result) {
         vlog(
@@ -3051,11 +3037,7 @@ ss::future<cluster::abort_group_tx_reply> offset_store::do_abort(
           "Error \"{}\" on replicating pid:{} abort batch",
           result.error(),
           pid);
-        if (
-          _partition->raft()->is_leader()
-          && _partition->raft()->term() == _term) {
-            co_await _partition->raft()->step_down("group do abort failed");
-        }
+        co_await _writer->maybe_step_down(_term, "group do abort failed");
         co_return cluster::abort_group_tx_reply(
           map_tx_replication_error(result.error()));
     }
@@ -3075,7 +3057,7 @@ ss::future<cluster::commit_group_tx_reply> offset_store::do_commit(
       "processing do_commit_tx request: pid: {}, seq: {}",
       pid,
       sequence);
-    if (_partition->term() != _term) {
+    if (_writer->term() != _term) {
         vlog(
           _ctx_txlog.warn,
           "do_commit_tx request: pid: {} failed - "
@@ -3083,7 +3065,7 @@ ss::future<cluster::commit_group_tx_reply> offset_store::do_commit(
           "{}, current_term: {}",
           pid,
           _term,
-          _partition->term());
+          _writer->term());
         co_return cluster::commit_group_tx_reply(cluster::tx::errc::stale);
     }
     auto it = _producers.find(pid.get_id());
@@ -3196,9 +3178,7 @@ ss::future<cluster::commit_group_tx_reply> offset_store::do_commit(
 
     batches.push_back(std::move(batch));
 
-    auto result = co_await _partition->raft()->replicate(
-      std::move(batches),
-      raft::replicate_options(raft::consistency_level::quorum_ack, _term));
+    auto result = co_await _writer->replicate(std::move(batches), _term);
 
     if (!result) {
         vlog(
@@ -3206,11 +3186,7 @@ ss::future<cluster::commit_group_tx_reply> offset_store::do_commit(
           "error replicating transaction commit batch for pid: {} - {}",
           pid,
           result.error().message());
-        if (
-          _partition->raft()->is_leader()
-          && _partition->raft()->term() == _term) {
-            co_await _partition->raft()->step_down("group tx commit failed");
-        }
+        co_await _writer->maybe_step_down(_term, "group tx commit failed");
         co_return cluster::commit_group_tx_reply(
           map_tx_replication_error(result.error()));
     }
@@ -3772,7 +3748,7 @@ offset_store::offset_store(
   kafka::group_id id,
   config::configuration& conf,
   ss::lw_shared_ptr<ss::rwlock> catchup_lock,
-  ss::lw_shared_ptr<cluster::partition> partition,
+  std::unique_ptr<offset_writer> writer,
   model::term_id term,
   ss::sharded<cluster::tx_gateway_frontend>& tx_frontend,
   ss::sharded<features::feature_table>& feature_table,
@@ -3780,7 +3756,7 @@ offset_store::offset_store(
   : _id(std::move(id))
   , _conf(conf)
   , _catchup_lock(std::move(catchup_lock))
-  , _partition(std::move(partition))
+  , _writer(std::move(writer))
   , _term(term)
   , _tx_frontend(tx_frontend)
   , _feature_table(feature_table)
