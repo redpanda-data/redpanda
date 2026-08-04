@@ -16,8 +16,8 @@
 #include "iceberg/conversion/protobuf_utils.h"
 #include "iceberg/values.h"
 #include "serde/json/writer.h"
-#include "ssx/future-util.h"
 
+#include <seastar/core/coroutine.hh>
 #include <seastar/util/defer.hh>
 #include <seastar/util/log.hh>
 #include <seastar/util/variant_utils.hh>
@@ -94,18 +94,28 @@ ss::future<optional_value_outcome> message_to_value(
   const pb::Descriptor& descriptor,
   proto_descriptors_stack& stack);
 
-// converts a struct field to an iceberg value, it supports maps and repeated
-// fields
+// converts a message field to an iceberg value
 ss::future<optional_value_outcome> message_field_to_value(
   std::optional<parsed::message::field> field,
   const pb::FieldDescriptor& field_descriptor,
   proto_descriptors_stack& stack);
 
-// converts a single element to iceberg value
-ss::future<optional_value_outcome> single_field_to_value(
+// converts a primitive field to an iceberg value
+ss::future<optional_value_outcome> primitive_field_to_value(
   std::optional<parsed::message::field> field,
-  const pb::FieldDescriptor& field_descriptor,
-  proto_descriptors_stack& stack);
+  const pb::FieldDescriptor& field_descriptor);
+
+template<typename T>
+std::optional<parsed::message::field> map_entry_to_field(T entry) {
+    return ss::visit(
+      std::move(entry),
+      [](std::monostate) -> std::optional<parsed::message::field> {
+          return std::nullopt;
+      },
+      [](auto value) -> std::optional<parsed::message::field> {
+          return parsed::message::field{std::move(value)};
+      });
+}
 
 template<typename SourceT>
 ss::future<value_outcome> convert_repeated_elements(
@@ -115,8 +125,14 @@ ss::future<value_outcome> convert_repeated_elements(
     auto ret = std::make_unique<iceberg::list_value>();
     ret->elements.reserve(elements.size());
     for (typename decltype(elements)::reference element : elements) {
-        auto result = co_await single_field_to_value(
-          std::move(element), field_descriptor, stack);
+        auto field = std::make_optional<parsed::message::field>(
+          std::move(element));
+        auto result = field_descriptor.type()
+                          == pb::FieldDescriptor::TYPE_MESSAGE
+                        ? co_await message_field_to_value(
+                            std::move(field), field_descriptor, stack)
+                        : co_await primitive_field_to_value(
+                            std::move(field), field_descriptor);
         if (result.has_error()) {
             co_return result.error();
         }
@@ -131,27 +147,22 @@ ss::future<optional_value_outcome> convert_repeated(
   proto_descriptors_stack& stack) {
     if (!list_field.has_value()) {
         if (field_descriptor.has_presence()) {
-            return ssx::now<optional_value_outcome>(std::nullopt);
+            co_return std::nullopt;
         }
-        return ssx::now<optional_value_outcome>(
-          std::make_unique<iceberg::list_value>());
+        co_return std::make_unique<iceberg::list_value>();
     }
     auto list_variant
       = std::get<parsed::repeated>(std::move(list_field.value())).elements;
 
-    return ss::visit(
-             std::move(list_variant),
-             [&field_descriptor, &stack](auto list) {
-                 return convert_repeated_elements(
-                   std::move(list), field_descriptor, stack);
-             })
-      .then([](value_outcome vo) {
-          if (vo.has_error()) {
-              return optional_value_outcome(vo.error());
-          }
-
-          return optional_value_outcome(std::move(vo.value()));
+    auto result = co_await ss::visit(
+      std::move(list_variant), [&field_descriptor, &stack](auto list) {
+          return convert_repeated_elements(
+            std::move(list), field_descriptor, stack);
       });
+    if (result.has_error()) {
+        co_return result.error();
+    }
+    co_return optional_value_outcome(std::move(result.value()));
 }
 ss::future<optional_value_outcome> convert_map(
   std::optional<parsed::message::field> field,
@@ -169,25 +180,9 @@ ss::future<optional_value_outcome> convert_map(
     ret->kvs.reserve(parsed_map.entries.size());
 
     for (auto& [entry_k, entry_v] : parsed_map.entries) {
-        /**
-         * Convert key, if a parsed key is represented by a monostate we assume
-         * it has a default value
-         */
-        auto key_result = co_await ss::visit(
-          std::move(entry_k),
-          [&field_descriptor, &stack](std::monostate) {
-              // default value
-              return single_field_to_value(
-                std::nullopt,
-                *field_descriptor.message_type()->map_key(),
-                stack);
-          },
-          [&field_descriptor, &stack](auto value) {
-              return single_field_to_value(
-                std::move(value),
-                *field_descriptor.message_type()->map_key(),
-                stack);
-          });
+        auto key_result = co_await primitive_field_to_value(
+          map_entry_to_field(std::move(entry_k)),
+          *field_descriptor.message_type()->map_key());
 
         if (key_result.has_error()) {
             co_return key_result.error();
@@ -200,26 +195,27 @@ ss::future<optional_value_outcome> convert_map(
                 field_descriptor.DebugString()));
         }
 
-        optional_value_outcome value_result = co_await ss::visit(
-          std::move(entry_v),
-          [](std::monostate) {
-              return ssx::now<optional_value_outcome>(std::nullopt);
-          },
-          [&field_descriptor, &stack](auto value) {
-              return single_field_to_value(
-                std::move(value),
-                *field_descriptor.message_type()->map_value(),
-                stack);
-          });
-
-        if (value_result.has_error()) {
-            co_return value_result.error();
+        std::optional<iceberg::value> map_value;
+        auto value_field = map_entry_to_field(std::move(entry_v));
+        if (value_field.has_value()) {
+            const auto& value_descriptor
+              = *field_descriptor.message_type()->map_value();
+            auto value_result
+              = value_descriptor.type() == pb::FieldDescriptor::TYPE_MESSAGE
+                  ? co_await message_field_to_value(
+                      std::move(value_field), value_descriptor, stack)
+                  : co_await primitive_field_to_value(
+                      std::move(value_field), value_descriptor);
+            if (value_result.has_error()) {
+                co_return value_result.error();
+            }
+            map_value = std::move(value_result.value());
         }
 
         ret->kvs.push_back(
           iceberg::kv_value{
             .key = std::move(*key_result.value()),
-            .val = std::move(value_result.value())});
+            .val = std::move(map_value)});
     }
 
     co_return ret;
@@ -412,25 +408,9 @@ convert_date(std::unique_ptr<parsed::message> message) {
     co_return iceberg::date_value{date};
 }
 
-ss::future<optional_value_outcome> message_field_to_value(
+ss::future<optional_value_outcome> primitive_field_to_value(
   std::optional<parsed::message::field> field,
-  const pb::FieldDescriptor& field_descriptor,
-  proto_descriptors_stack& stack) {
-    if (field_descriptor.is_map()) {
-        return convert_map(std::move(field), field_descriptor, stack);
-    }
-
-    if (field_descriptor.is_repeated()) {
-        return convert_repeated(std::move(field), field_descriptor, stack);
-    }
-
-    return single_field_to_value(std::move(field), field_descriptor, stack);
-}
-
-ss::future<optional_value_outcome> single_field_to_value(
-  std::optional<parsed::message::field> field,
-  const pb::FieldDescriptor& field_descriptor,
-  proto_descriptors_stack& stack) {
+  const pb::FieldDescriptor& field_descriptor) {
     switch (field_descriptor.type()) {
     case pb::FieldDescriptor::TYPE_DOUBLE:
         co_return convert<double, iceberg::double_value>(
@@ -501,57 +481,9 @@ ss::future<optional_value_outcome> single_field_to_value(
           &pb::FieldDescriptor::default_value_string);
     case pb::FieldDescriptor::TYPE_GROUP:
         co_return type_conversion_error(field_descriptor);
-    case pb::FieldDescriptor::TYPE_MESSAGE: {
-        std::unique_ptr<parsed::message> msg_field = nullptr;
-        if (field.has_value()) {
-            msg_field = std::get<std::unique_ptr<parsed::message>>(
-              std::move(field.value()));
-        }
-        if (
-          field_descriptor.message_type()->well_known_type()
-          == pb::Descriptor::WELLKNOWNTYPE_TIMESTAMP) {
-            co_return co_await convert_timestamp(std::move(msg_field));
-        }
-        if (
-          field_descriptor.message_type()->well_known_type()
-          == pb::Descriptor::WELLKNOWNTYPE_STRUCT) {
-            co_return co_await convert_struct_to_json(
-              std::move(msg_field), stack);
-        }
-        if (
-          field_descriptor.message_type()->well_known_type()
-          == pb::Descriptor::WELLKNOWNTYPE_VALUE) {
-            co_return co_await convert_value_to_json(
-              std::move(msg_field), stack);
-        }
-        if (
-          field_descriptor.message_type()->well_known_type()
-          == pb::Descriptor::WELLKNOWNTYPE_LISTVALUE) {
-            co_return co_await convert_list_value_to_json(
-              std::move(msg_field), stack);
-        }
-        if (
-          field_descriptor.message_type()->full_name()
-          == protobuf::datalake_date_type) {
-            co_return co_await convert_date(std::move(msg_field));
-        }
-        // Fail on any other redpanda.datalake.* types. This ensures that we
-        // don't fallback to struct type for any custom types that we may add in
-        // the future and break compatibility. We reserve the right to add
-        // support for specific types under redpanda.datalake.* as needed.
-        if (
-          field_descriptor.message_type()->full_name().starts_with(
-            protobuf::datalake_well_known_type_prefix)) {
-            co_return value_conversion_exception(
-              fmt::format(
-                "Protocol buffer field {} not supported - unhandled "
-                "redpanda.datalake type {}",
-                field_descriptor.DebugString(),
-                field_descriptor.message_type()->full_name()));
-        }
-        co_return co_await message_to_value(
-          std::move(msg_field), *field_descriptor.message_type(), stack);
-    }
+    case pb::FieldDescriptor::TYPE_MESSAGE:
+        co_return value_conversion_exception(
+          "Unexpected message field in primitive conversion");
     case pb::FieldDescriptor::TYPE_BYTES:
         if (!field.has_value()) {
             if (field_descriptor.has_presence()) {
@@ -562,6 +494,59 @@ ss::future<optional_value_outcome> single_field_to_value(
         co_return iceberg::binary_value(
           std::get<iobuf>(std::move(field.value())));
     }
+}
+
+ss::future<optional_value_outcome> message_field_to_value(
+  std::optional<parsed::message::field> field,
+  const pb::FieldDescriptor& field_descriptor,
+  proto_descriptors_stack& stack) {
+    std::unique_ptr<parsed::message> msg_field = nullptr;
+    if (field.has_value()) {
+        msg_field = std::get<std::unique_ptr<parsed::message>>(
+          std::move(field.value()));
+    }
+    if (
+      field_descriptor.message_type()->well_known_type()
+      == pb::Descriptor::WELLKNOWNTYPE_TIMESTAMP) {
+        co_return co_await convert_timestamp(std::move(msg_field));
+    }
+    if (
+      field_descriptor.message_type()->well_known_type()
+      == pb::Descriptor::WELLKNOWNTYPE_STRUCT) {
+        co_return co_await convert_struct_to_json(std::move(msg_field), stack);
+    }
+    if (
+      field_descriptor.message_type()->well_known_type()
+      == pb::Descriptor::WELLKNOWNTYPE_VALUE) {
+        co_return co_await convert_value_to_json(std::move(msg_field), stack);
+    }
+    if (
+      field_descriptor.message_type()->well_known_type()
+      == pb::Descriptor::WELLKNOWNTYPE_LISTVALUE) {
+        co_return co_await convert_list_value_to_json(
+          std::move(msg_field), stack);
+    }
+    if (
+      field_descriptor.message_type()->full_name()
+      == protobuf::datalake_date_type) {
+        co_return co_await convert_date(std::move(msg_field));
+    }
+    // Fail on any other redpanda.datalake.* types. This ensures that we don't
+    // fallback to struct type for any custom types that we may add in the
+    // future and break compatibility. We reserve the right to add support for
+    // specific types under redpanda.datalake.* as needed.
+    if (
+      field_descriptor.message_type()->full_name().starts_with(
+        protobuf::datalake_well_known_type_prefix)) {
+        co_return value_conversion_exception(
+          fmt::format(
+            "Protocol buffer field {} not supported - unhandled "
+            "redpanda.datalake type {}",
+            field_descriptor.DebugString(),
+            field_descriptor.message_type()->full_name()));
+    }
+    co_return co_await message_to_value(
+      std::move(msg_field), *field_descriptor.message_type(), stack);
 }
 
 ss::future<optional_value_outcome> message_to_value(
@@ -601,8 +586,21 @@ ss::future<optional_value_outcome> message_to_value(
                        : std::make_optional<parsed::message::field>(
                            std::move(it->second));
 
-        auto result = co_await message_field_to_value(
-          std::move(field), *field_descriptor, stack);
+        optional_value_outcome result = std::nullopt;
+        if (field_descriptor->is_map()) {
+            result = co_await convert_map(
+              std::move(field), *field_descriptor, stack);
+        } else if (field_descriptor->is_repeated()) {
+            result = co_await convert_repeated(
+              std::move(field), *field_descriptor, stack);
+        } else if (
+          field_descriptor->type() == pb::FieldDescriptor::TYPE_MESSAGE) {
+            result = co_await message_field_to_value(
+              std::move(field), *field_descriptor, stack);
+        } else {
+            result = co_await primitive_field_to_value(
+              std::move(field), *field_descriptor);
+        }
 
         if (result.has_error()) {
             co_return result.error();
