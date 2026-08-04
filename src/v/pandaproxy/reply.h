@@ -166,7 +166,7 @@ inline auto exception_reply(ss::logger& log, std::exception_ptr e) {
         auto& content = eb.get_json_body();
         vlog(
           log.error,
-          "exception_reply: {:?}, exception: {:?}",
+          "exception_reply: {:?}, exception: {}",
           content ? json::rjson_serialize_str(*content) : ss::sstring{},
           std::current_exception());
         return eb;

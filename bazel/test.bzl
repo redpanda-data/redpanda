@@ -186,8 +186,7 @@ def _redpanda_cc_fuzz_test(
         deps = [],
         custom_args = [],
         env = {},
-        data = [],
-        reactor = False):
+        data = []):
     """
     Helper to define a Redpanda C++ fuzzing test.
 
@@ -200,19 +199,14 @@ def _redpanda_cc_fuzz_test(
       custom_args: arguments from cc_test users
       env: environment variables
       data: data file dependencies
-      reactor: true if the target fuzzes code that needs a seastar reactor, in
-        which case it expands RP_SEASTAR_FUZZ to define main and libFuzzer is linked
-        without one of its own. Otherwise libFuzzer's main is used and the target
-        just defines LLVMFuzzerTestOneInput.
     """
     test_data, test_env, test_deps = _test_options()
-    reactor_deps = ["//bazel:libfuzzer_no_main", "//src/v/test_utils:seastar_fuzz"]
     cc_test(
         name = name,
         timeout = timeout,
         srcs = srcs,
         defines = defines,
-        deps = deps + test_deps + (reactor_deps if reactor else []),
+        deps = deps + test_deps,
         copts = redpanda_copts(),
         args = custom_args,
         features = [
@@ -224,7 +218,7 @@ def _redpanda_cc_fuzz_test(
         env = test_env | env,
         data = data + test_data,
         linkopts = [
-            "-fsanitize=fuzzer-no-link" if reactor else "-fsanitize=fuzzer",
+            "-fsanitize=fuzzer",
         ],
         target_compatible_with = select({
             "//bazel:enable_fuzz_testing": [],
@@ -324,8 +318,7 @@ def redpanda_cc_fuzz_test(
         deps = [],
         args = [],
         env = {},
-        data = [],
-        reactor = False):
+        data = []):
     _redpanda_cc_fuzz_test(
         data = data,
         env = env,
@@ -335,7 +328,6 @@ def redpanda_cc_fuzz_test(
         defines = defines,
         deps = deps,
         custom_args = args,
-        reactor = reactor,
     )
 
 def redpanda_cc_btest_no_seastar(

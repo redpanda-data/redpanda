@@ -359,7 +359,7 @@ private:
     void add_runtime_rpc_services(rpc::rpc_server&, bool start_raft_rpc_early);
 
     // All methods are calleds from Seastar thread
-    ss::app_template::config setup_app_config();
+    ss::app_template::seastar_options setup_app_config();
     void validate_arguments(const po::variables_map&);
     YAML::Node hydrate_node_config(const po::variables_map&);
     void log_cluster_config();
