@@ -12,11 +12,13 @@
 
 #include "cluster/commands.h"
 #include "cluster/controller_snapshot.h"
+#include "security/acl_store.h"
 #include "security/authorizer.h"
 #include "security/credential_store.h"
 #include "security/role_store.h"
 
 #include <seastar/core/loop.hh>
+#include <seastar/core/smp.hh>
 #include <seastar/coroutine/maybe_yield.hh>
 
 #include <system_error>
@@ -220,30 +222,38 @@ security_manager::fill_snapshot(controller_snapshot& controller_snap) const {
     co_return;
 }
 
+ss::future<> apply_security_snapshot_to_shard(
+  security::credential_store& credentials,
+  security::authorizer& authorizer,
+  security::role_store& roles,
+  const controller_snapshot_parts::security_t& snapshot) {
+    security::credential_store staged_credentials;
+    co_await ss::do_for_each(
+      snapshot.user_credentials, [&staged_credentials](const auto& user) {
+          staged_credentials.put(user.username, user.credential);
+      });
+
+    auto staged_acls = co_await authorizer.store().stage_bindings(
+      snapshot.acls);
+
+    security::role_store staged_roles;
+    co_await ss::do_for_each(snapshot.roles, [&staged_roles](const auto& r) {
+        staged_roles.put(r.name, security::role{r.role});
+    });
+
+    credentials = std::move(staged_credentials);
+    authorizer.store().commit_bindings(std::move(staged_acls));
+    roles = std::move(staged_roles);
+}
+
 ss::future<> security_manager::apply_snapshot(
   model::offset, const controller_snapshot& controller_snap) {
     const auto& snapshot = controller_snap.security;
 
-    co_await _credentials.invoke_on_all(
-      [&snapshot](security::credential_store& credentials) {
-          credentials.clear();
-          return ss::do_for_each(
-            snapshot.user_credentials, [&credentials](const auto& user) {
-                credentials.put(user.username, user.credential);
-            });
-      });
-
-    co_await _authorizer.invoke_on_all(
-      [&snapshot](security::authorizer& authorizer) {
-          return authorizer.reset_bindings(snapshot.acls);
-      });
-
-    co_await _roles.invoke_on_all(
-      [&snapshot](security::role_store& role_store) {
-          return ss::do_for_each(snapshot.roles, [&role_store](const auto& r) {
-              role_store.put(r.name, security::role{r.role});
-          });
-      });
+    return ss::smp::invoke_on_all([this, &snapshot] {
+        return apply_security_snapshot_to_shard(
+          _credentials.local(), _authorizer.local(), _roles.local(), snapshot);
+    });
 }
 
 } // namespace cluster
