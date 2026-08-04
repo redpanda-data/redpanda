@@ -50,6 +50,7 @@ redpanda_cc_library(
         "//src/v/cluster:plugin_backend",
         "//src/v/cluster:shard_table",
         "//src/v/cluster:topic_metrics_watcher",
+        "//src/v/cluster:topic_table",
         "//src/v/features",
         "//src/v/kafka/data:record_batcher",
         "//src/v/kafka/server:topic_config_utils",
