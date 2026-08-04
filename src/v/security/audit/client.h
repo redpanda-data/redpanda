@@ -161,6 +161,11 @@ protected:
 
     audit_sink* sink() { return _sink; }
 
+    /// Checks the local controller state for the audit topic, allowing the
+    /// configuration phase to skip CreateTopics (and thereby its dependency
+    /// on controller availability) when the topic already exists.
+    bool audit_topic_exists();
+
 private:
     ss::future<> configure();
     ss::abort_source _as;

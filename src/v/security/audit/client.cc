@@ -14,6 +14,7 @@
 #include "cluster/controller.h"
 #include "cluster/ephemeral_credential_frontend.h"
 #include "cluster/security_frontend.h"
+#include "cluster/topic_table.h"
 #include "config/configuration.h"
 #include "kafka/client/client.h"
 #include "kafka/data/record_batcher.h"
@@ -99,6 +100,11 @@ public:
         return ss::now();
     }
     ss::future<> create_internal_topic() {
+        if (audit_topic_exists()) {
+            vlog(
+              adtlog.debug, "Audit log topic already exists, skipping create");
+            co_return;
+        }
         int16_t replication_factor
           = config::shard_local_cfg().audit_log_replication_factor().value_or(
             controller()->internal_topic_replication());
@@ -366,6 +372,11 @@ private:
           5s);
     }
 
+    /// Kafka-client sink only — no exists-skip here, unlike the RPC sink:
+    /// this create is the client's first SASL contact, and its failure is
+    /// what triggers inform(), propagating the __audit credential to
+    /// brokers. Without an explicit inform-all before connect(), skipping
+    /// it breaks authentication.
     ss::future<> create_internal_topic() {
         int16_t replication_factor
           = config::shard_local_cfg().audit_log_replication_factor().value_or(
@@ -474,6 +485,11 @@ audit_client::audit_client(audit_sink* sink, cluster::controller* controller)
   , _send_sem(_max_buffer_size, "audit_log_producer_semaphore")
   , _sink(sink)
   , _controller(controller) {}
+
+bool audit_client::audit_topic_exists() {
+    return _controller->get_topics_state().local().contains(
+      model::topic_namespace_view{model::kafka_audit_logging_nt});
+}
 
 ss::future<> audit_client::initialize() {
     static const auto base_backoff = 250ms;
