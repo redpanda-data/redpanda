@@ -18,10 +18,10 @@
 #include "serde/json/writer.h"
 
 #include <seastar/core/coroutine.hh>
-#include <seastar/util/defer.hh>
 #include <seastar/util/log.hh>
 #include <seastar/util/variant_utils.hh>
 
+#include <absl/container/inlined_vector.h>
 #include <fmt/core.h>
 
 #include <cmath>
@@ -94,13 +94,11 @@ ss::future<optional_value_outcome> message_to_value(
   const pb::Descriptor& descriptor,
   proto_descriptors_stack& stack);
 
-// converts a message field to an iceberg value
-ss::future<optional_value_outcome> message_field_to_value(
-  std::optional<parsed::message::field> field,
-  const pb::FieldDescriptor& field_descriptor,
-  proto_descriptors_stack& stack);
-
 // converts a primitive field to an iceberg value
+optional_value_outcome primitive_field_to_value_impl(
+  std::optional<parsed::message::field> field,
+  const pb::FieldDescriptor& field_descriptor);
+
 ss::future<optional_value_outcome> primitive_field_to_value(
   std::optional<parsed::message::field> field,
   const pb::FieldDescriptor& field_descriptor);
@@ -117,108 +115,136 @@ std::optional<parsed::message::field> map_entry_to_field(T entry) {
       });
 }
 
-template<typename SourceT>
-ss::future<value_outcome> convert_repeated_elements(
-  chunked_vector<SourceT> elements,
-  const pb::FieldDescriptor& field_descriptor,
-  proto_descriptors_stack& stack) {
-    auto ret = std::make_unique<iceberg::list_value>();
-    ret->elements.reserve(elements.size());
-    for (typename decltype(elements)::reference element : elements) {
-        auto field = std::make_optional<parsed::message::field>(
-          std::move(element));
-        auto result = field_descriptor.type()
-                          == pb::FieldDescriptor::TYPE_MESSAGE
-                        ? co_await message_field_to_value(
-                            std::move(field), field_descriptor, stack)
-                        : co_await primitive_field_to_value(
-                            std::move(field), field_descriptor);
-        if (result.has_error()) {
-            co_return result.error();
-        }
-        ret->elements.push_back(std::move(result.value()));
-    };
-    co_return std::move(ret);
-}
+struct field_work {
+    std::optional<parsed::message::field> field;
+    const pb::FieldDescriptor* descriptor;
+    std::optional<iceberg::value>* output;
+    bool is_repeated_element{false};
+};
 
-ss::future<optional_value_outcome> convert_repeated(
-  std::optional<serde::pb::parsed::message::field> list_field,
-  const pb::FieldDescriptor& field_descriptor,
-  proto_descriptors_stack& stack) {
-    if (!list_field.has_value()) {
-        if (field_descriptor.has_presence()) {
-            co_return std::nullopt;
+struct leave_message_work {};
+
+using conversion_work = std::variant<field_work, leave_message_work>;
+
+// Recursive coroutine calls prevent heap-allocation elision, so retain the
+// message traversal state explicitly while coroutine leaves process fields.
+class conversion_work_stack {
+public:
+    template<typename T>
+    void emplace_back(T&& item) {
+        if (_overflow.empty() && _inline_items.size() < inline_capacity) {
+            _inline_items.emplace_back(std::forward<T>(item));
+        } else {
+            _overflow.emplace_back(std::forward<T>(item));
         }
-        co_return std::make_unique<iceberg::list_value>();
     }
-    auto list_variant
-      = std::get<parsed::repeated>(std::move(list_field.value())).elements;
 
-    auto result = co_await ss::visit(
-      std::move(list_variant), [&field_descriptor, &stack](auto list) {
-          return convert_repeated_elements(
-            std::move(list), field_descriptor, stack);
-      });
-    if (result.has_error()) {
-        co_return result.error();
+    bool empty() const { return _inline_items.empty() && _overflow.empty(); }
+
+    conversion_work& back() {
+        return _overflow.empty() ? _inline_items.back() : _overflow.back();
     }
-    co_return optional_value_outcome(std::move(result.value()));
-}
-ss::future<optional_value_outcome> convert_map(
-  std::optional<parsed::message::field> field,
-  const pb::FieldDescriptor& field_descriptor,
-  proto_descriptors_stack& stack) {
-    if (!field.has_value()) {
-        if (field_descriptor.has_presence()) {
-            co_return std::nullopt;
+
+    void pop_back() {
+        if (_overflow.empty()) {
+            _inline_items.pop_back();
+        } else {
+            _overflow.pop_back();
         }
-        // if no presence is tracked return an empty map
-        co_return std::make_unique<iceberg::map_value>();
     }
-    auto ret = std::make_unique<iceberg::map_value>();
-    auto parsed_map = std::get<parsed::map>(std::move(field.value()));
-    ret->kvs.reserve(parsed_map.entries.size());
 
-    for (auto& [entry_k, entry_v] : parsed_map.entries) {
-        auto key_result = co_await primitive_field_to_value(
-          map_entry_to_field(std::move(entry_k)),
-          *field_descriptor.message_type()->map_key());
+private:
+    static constexpr size_t inline_capacity = 32;
+    absl::InlinedVector<conversion_work, inline_capacity> _inline_items;
+    chunked_vector<conversion_work> _overflow;
+};
 
-        if (key_result.has_error()) {
-            co_return key_result.error();
-        }
+std::optional<value_conversion_exception> push_message_work(
+  std::unique_ptr<parsed::message> message,
+  const pb::Descriptor& descriptor,
+  std::optional<iceberg::value>* output,
+  proto_descriptors_stack& descriptor_stack,
+  conversion_work_stack& work) {
+    if (message == nullptr) {
+        *output = std::nullopt;
+        return std::nullopt;
+    }
 
-        if (!key_result.value().has_value()) {
-            co_return value_conversion_exception(
-              fmt::format(
-                "Map key must exist. Map field {}",
-                field_descriptor.DebugString()));
-        }
+    if (is_recursive_type(descriptor, descriptor_stack)) {
+        return value_conversion_exception(
+          fmt::format(
+            "Recursive message types are not supported. Descriptor: {}",
+            descriptor.DebugString()));
+    }
+    if (descriptor_stack.size() > max_recursion_depth) {
+        return value_conversion_exception(
+          fmt::format(
+            "Exceeded maximum recursion depth. Descriptor: {}",
+            descriptor.DebugString()));
+    }
 
-        std::optional<iceberg::value> map_value;
-        auto value_field = map_entry_to_field(std::move(entry_v));
-        if (value_field.has_value()) {
-            const auto& value_descriptor
-              = *field_descriptor.message_type()->map_value();
-            auto value_result
-              = value_descriptor.type() == pb::FieldDescriptor::TYPE_MESSAGE
-                  ? co_await message_field_to_value(
-                      std::move(value_field), value_descriptor, stack)
-                  : co_await primitive_field_to_value(
-                      std::move(value_field), value_descriptor);
-            if (value_result.has_error()) {
-                co_return value_result.error();
+    descriptor_stack.push_back(&descriptor);
+    auto ret = std::make_unique<iceberg::struct_value>();
+    ret->fields.reserve(descriptor.field_count());
+    for (int i = 0; i < descriptor.field_count(); ++i) {
+        ret->fields.emplace_back();
+    }
+    auto* ret_ptr = ret.get();
+    *output = std::move(ret);
+
+    work.emplace_back(leave_message_work{});
+    for (int i = descriptor.field_count(); i > 0; --i) {
+        const auto* field_descriptor = descriptor.field(i - 1);
+        auto it = message->fields.find(field_descriptor->number());
+        auto field = it == message->fields.end()
+                       ? std::nullopt
+                       : std::make_optional<parsed::message::field>(
+                           std::move(it->second));
+        if (
+          !field_descriptor->is_map() && !field_descriptor->is_repeated()
+          && field_descriptor->type() != pb::FieldDescriptor::TYPE_MESSAGE) {
+            auto result = primitive_field_to_value_impl(
+              std::move(field), *field_descriptor);
+            if (result.has_error()) {
+                return result.error();
             }
-            map_value = std::move(value_result.value());
+            ret_ptr->fields[i - 1] = std::move(result.value());
+            continue;
         }
-
-        ret->kvs.push_back(
-          iceberg::kv_value{
-            .key = std::move(*key_result.value()),
-            .val = std::move(map_value)});
+        work.emplace_back(
+          field_work{
+            .field = std::move(field),
+            .descriptor = field_descriptor,
+            .output = &ret_ptr->fields[i - 1]});
     }
+    return std::nullopt;
+}
 
-    co_return ret;
+void push_repeated_work(
+  parsed::repeated repeated,
+  const pb::FieldDescriptor& field_descriptor,
+  std::optional<iceberg::value>* output,
+  conversion_work_stack& work) {
+    auto ret = std::make_unique<iceberg::list_value>();
+    auto* ret_ptr = ret.get();
+    *output = std::move(ret);
+
+    ss::visit(
+      std::move(repeated.elements),
+      [&field_descriptor, ret_ptr, &work](auto elements) {
+          ret_ptr->elements.reserve(elements.size());
+          for (size_t i = 0; i < elements.size(); ++i) {
+              ret_ptr->elements.emplace_back();
+          }
+          for (size_t i = elements.size(); i > 0; --i) {
+              work.emplace_back(
+                field_work{
+                  .field = parsed::message::field{std::move(elements[i - 1])},
+                  .descriptor = &field_descriptor,
+                  .output = &ret_ptr->elements[i - 1],
+                  .is_repeated_element = true});
+          }
+      });
 }
 
 ss::future<optional_value_outcome>
@@ -408,54 +434,54 @@ convert_date(std::unique_ptr<parsed::message> message) {
     co_return iceberg::date_value{date};
 }
 
-ss::future<optional_value_outcome> primitive_field_to_value(
+optional_value_outcome primitive_field_to_value_impl(
   std::optional<parsed::message::field> field,
   const pb::FieldDescriptor& field_descriptor) {
     switch (field_descriptor.type()) {
     case pb::FieldDescriptor::TYPE_DOUBLE:
-        co_return convert<double, iceberg::double_value>(
+        return convert<double, iceberg::double_value>(
           std::move(field),
           field_descriptor,
           &pb::FieldDescriptor::default_value_double);
     case pb::FieldDescriptor::TYPE_FLOAT:
-        co_return convert<float, iceberg::float_value>(
+        return convert<float, iceberg::float_value>(
           std::move(field),
           field_descriptor,
           &pb::FieldDescriptor::default_value_float);
     case pb::FieldDescriptor::TYPE_UINT32:
     case pb::FieldDescriptor::TYPE_FIXED32:
         // casting uint32 to long value to prevent overflow
-        co_return convert<uint32_t, iceberg::long_value>(
+        return convert<uint32_t, iceberg::long_value>(
           std::move(field),
           field_descriptor,
           &pb::FieldDescriptor::default_value_uint32);
     case pb::FieldDescriptor::TYPE_SFIXED64:
     case pb::FieldDescriptor::TYPE_INT64:
     case pb::FieldDescriptor::TYPE_SINT64:
-        co_return convert<int64_t, iceberg::long_value>(
+        return convert<int64_t, iceberg::long_value>(
           std::move(field),
           field_descriptor,
           &pb::FieldDescriptor::default_value_int64);
     // unsigned 64 bit integers fallback to strings
     case pb::FieldDescriptor::TYPE_UINT64:
     case pb::FieldDescriptor::TYPE_FIXED64:
-        co_return convert_u64_as_string(
+        return convert_u64_as_string(
           std::move(field),
           field_descriptor,
           &pb::FieldDescriptor::default_value_uint64);
     case pb::FieldDescriptor::TYPE_INT32:
     case pb::FieldDescriptor::TYPE_SFIXED32:
     case pb::FieldDescriptor::TYPE_SINT32:
-        co_return convert<int32_t, iceberg::int_value>(
+        return convert<int32_t, iceberg::int_value>(
           std::move(field),
           field_descriptor,
           &pb::FieldDescriptor::default_value_int32);
     case pb::FieldDescriptor::TYPE_ENUM:
         if (!field.has_value()) {
             if (field_descriptor.has_presence()) {
-                co_return std::nullopt;
+                return std::nullopt;
             }
-            co_return iceberg::string_value(
+            return iceberg::string_value(
               iobuf::from(field_descriptor.default_value_enum()->name()));
         } else {
             auto enum_number = std::get<int32_t>(std::move(field.value()));
@@ -463,79 +489,150 @@ ss::future<optional_value_outcome> primitive_field_to_value(
               = field_descriptor.enum_type()->FindValueByNumber(enum_number);
             if (!enum_value_desc) {
                 // Use the default for invalid enum values (closed enums).
-                co_return iceberg::string_value(
+                return iceberg::string_value(
                   iobuf::from(field_descriptor.default_value_enum()->name()));
             }
-            co_return iceberg::string_value(
-              iobuf::from(enum_value_desc->name()));
+            return iceberg::string_value(iobuf::from(enum_value_desc->name()));
         }
     case pb::FieldDescriptor::TYPE_BOOL:
-        co_return convert<bool, iceberg::boolean_value>(
+        return convert<bool, iceberg::boolean_value>(
           std::move(field),
           field_descriptor,
           &pb::FieldDescriptor::default_value_bool);
     case pb::FieldDescriptor::TYPE_STRING:
-        co_return convert<iobuf, iceberg::string_value>(
+        return convert<iobuf, iceberg::string_value>(
           std::move(field),
           field_descriptor,
           &pb::FieldDescriptor::default_value_string);
     case pb::FieldDescriptor::TYPE_GROUP:
-        co_return type_conversion_error(field_descriptor);
+        return type_conversion_error(field_descriptor);
     case pb::FieldDescriptor::TYPE_MESSAGE:
-        co_return value_conversion_exception(
+        return value_conversion_exception(
           "Unexpected message field in primitive conversion");
     case pb::FieldDescriptor::TYPE_BYTES:
         if (!field.has_value()) {
             if (field_descriptor.has_presence()) {
-                co_return std::nullopt;
+                return std::nullopt;
             }
-            co_return iceberg::binary_value{};
+            return iceberg::binary_value{};
         }
-        co_return iceberg::binary_value(
-          std::get<iobuf>(std::move(field.value())));
+        return iceberg::binary_value(std::get<iobuf>(std::move(field.value())));
     }
 }
 
-ss::future<optional_value_outcome> message_field_to_value(
+ss::future<optional_value_outcome> primitive_field_to_value(
   std::optional<parsed::message::field> field,
-  const pb::FieldDescriptor& field_descriptor,
-  proto_descriptors_stack& stack) {
-    std::unique_ptr<parsed::message> msg_field = nullptr;
-    if (field.has_value()) {
-        msg_field = std::get<std::unique_ptr<parsed::message>>(
-          std::move(field.value()));
+  const pb::FieldDescriptor& field_descriptor) {
+    co_return primitive_field_to_value_impl(std::move(field), field_descriptor);
+}
+
+ss::future<result<std::monostate, value_conversion_exception>>
+process_field_work(
+  field_work item,
+  proto_descriptors_stack& descriptor_stack,
+  conversion_work_stack& work) {
+    const auto& field_descriptor = *item.descriptor;
+
+    if (field_descriptor.is_map()) {
+        if (!item.field.has_value()) {
+            *item.output = field_descriptor.has_presence()
+                             ? std::nullopt
+                             : std::optional<iceberg::value>{
+                                 std::make_unique<iceberg::map_value>()};
+            co_return std::monostate{};
+        }
+
+        auto parsed_map = std::get<parsed::map>(std::move(item.field.value()));
+        auto ret = std::make_unique<iceberg::map_value>();
+        ret->kvs.reserve(parsed_map.entries.size());
+        auto* ret_ptr = ret.get();
+        *item.output = std::move(ret);
+
+        for (auto& [entry_k, entry_v] : parsed_map.entries) {
+            auto key_result = co_await primitive_field_to_value(
+              map_entry_to_field(std::move(entry_k)),
+              *field_descriptor.message_type()->map_key());
+            if (key_result.has_error()) {
+                co_return key_result.error();
+            }
+            if (!key_result.value().has_value()) {
+                co_return value_conversion_exception(
+                  fmt::format(
+                    "Map key must exist. Map field {}",
+                    field_descriptor.DebugString()));
+            }
+
+            ret_ptr->kvs.push_back(
+              iceberg::kv_value{
+                .key = std::move(*key_result.value()), .val = std::nullopt});
+            auto value_field = map_entry_to_field(std::move(entry_v));
+            if (value_field.has_value()) {
+                work.emplace_back(
+                  field_work{
+                    .field = std::move(value_field),
+                    .descriptor = field_descriptor.message_type()->map_value(),
+                    .output = &ret_ptr->kvs.back().val});
+            }
+        }
+        co_return std::monostate{};
     }
+
+    if (field_descriptor.is_repeated() && !item.is_repeated_element) {
+        if (!item.field.has_value()) {
+            *item.output = field_descriptor.has_presence()
+                             ? std::nullopt
+                             : std::optional<iceberg::value>{
+                                 std::make_unique<iceberg::list_value>()};
+            co_return std::monostate{};
+        }
+        push_repeated_work(
+          std::get<parsed::repeated>(std::move(item.field.value())),
+          field_descriptor,
+          item.output,
+          work);
+        co_return std::monostate{};
+    }
+
+    if (field_descriptor.type() != pb::FieldDescriptor::TYPE_MESSAGE) {
+        auto result = co_await primitive_field_to_value(
+          std::move(item.field), field_descriptor);
+        if (result.has_error()) {
+            co_return result.error();
+        }
+        *item.output = std::move(result.value());
+        co_return std::monostate{};
+    }
+
+    std::unique_ptr<parsed::message> msg_field = nullptr;
+    if (item.field.has_value()) {
+        msg_field = std::get<std::unique_ptr<parsed::message>>(
+          std::move(item.field.value()));
+    }
+    optional_value_outcome result = std::nullopt;
     if (
       field_descriptor.message_type()->well_known_type()
       == pb::Descriptor::WELLKNOWNTYPE_TIMESTAMP) {
-        co_return co_await convert_timestamp(std::move(msg_field));
-    }
-    if (
+        result = co_await convert_timestamp(std::move(msg_field));
+    } else if (
       field_descriptor.message_type()->well_known_type()
       == pb::Descriptor::WELLKNOWNTYPE_STRUCT) {
-        co_return co_await convert_struct_to_json(std::move(msg_field), stack);
-    }
-    if (
+        result = co_await convert_struct_to_json(
+          std::move(msg_field), descriptor_stack);
+    } else if (
       field_descriptor.message_type()->well_known_type()
       == pb::Descriptor::WELLKNOWNTYPE_VALUE) {
-        co_return co_await convert_value_to_json(std::move(msg_field), stack);
-    }
-    if (
+        result = co_await convert_value_to_json(
+          std::move(msg_field), descriptor_stack);
+    } else if (
       field_descriptor.message_type()->well_known_type()
       == pb::Descriptor::WELLKNOWNTYPE_LISTVALUE) {
-        co_return co_await convert_list_value_to_json(
-          std::move(msg_field), stack);
-    }
-    if (
+        result = co_await convert_list_value_to_json(
+          std::move(msg_field), descriptor_stack);
+    } else if (
       field_descriptor.message_type()->full_name()
       == protobuf::datalake_date_type) {
-        co_return co_await convert_date(std::move(msg_field));
-    }
-    // Fail on any other redpanda.datalake.* types. This ensures that we don't
-    // fallback to struct type for any custom types that we may add in the
-    // future and break compatibility. We reserve the right to add support for
-    // specific types under redpanda.datalake.* as needed.
-    if (
+        result = co_await convert_date(std::move(msg_field));
+    } else if (
       field_descriptor.message_type()->full_name().starts_with(
         protobuf::datalake_well_known_type_prefix)) {
         co_return value_conversion_exception(
@@ -544,68 +641,53 @@ ss::future<optional_value_outcome> message_field_to_value(
             "redpanda.datalake type {}",
             field_descriptor.DebugString(),
             field_descriptor.message_type()->full_name()));
+    } else {
+        if (
+          auto err = push_message_work(
+            std::move(msg_field),
+            *field_descriptor.message_type(),
+            item.output,
+            descriptor_stack,
+            work);
+          err.has_value()) {
+            co_return std::move(*err);
+        }
+        co_return std::monostate{};
     }
-    co_return co_await message_to_value(
-      std::move(msg_field), *field_descriptor.message_type(), stack);
+
+    if (result.has_error()) {
+        co_return result.error();
+    }
+    *item.output = std::move(result.value());
+    co_return std::monostate{};
 }
 
 ss::future<optional_value_outcome> message_to_value(
   std::unique_ptr<parsed::message> message,
   const pb::Descriptor& descriptor,
-  proto_descriptors_stack& stack) {
-    if (message == nullptr) {
-        co_return std::nullopt;
+  proto_descriptors_stack& descriptor_stack) {
+    std::optional<iceberg::value> ret;
+    conversion_work_stack work;
+    if (
+      auto err = push_message_work(
+        std::move(message), descriptor, &ret, descriptor_stack, work);
+      err.has_value()) {
+        co_return std::move(*err);
     }
 
-    if (is_recursive_type(descriptor, stack)) {
-        co_return value_conversion_exception(
-          fmt::format(
-            "Recursive message types are not supported. Descriptor: {}",
-            descriptor.DebugString()));
-    }
-    if (stack.size() > max_recursion_depth) {
-        co_return value_conversion_exception(
-          fmt::format(
-            "Exceeded maximum recursion depth. Descriptor: {}",
-            descriptor.DebugString()));
-    }
-
-    stack.push_back(&descriptor);
-    auto pop_stack = ss::defer([&stack] { stack.pop_back(); });
-    auto ret = std::make_unique<iceberg::struct_value>();
-    ret->fields.reserve(descriptor.field_count());
-    /**
-     * The conversion is driven by walking through the message descriptor as
-     * some field with default values are skipped in parsed result.
-     */
-    for (int i = 0; i < descriptor.field_count(); ++i) {
-        auto field_descriptor = descriptor.field(i);
-        auto it = message->fields.find(field_descriptor->number());
-        auto field = it == message->fields.end()
-                       ? std::nullopt
-                       : std::make_optional<parsed::message::field>(
-                           std::move(it->second));
-
-        optional_value_outcome result = std::nullopt;
-        if (field_descriptor->is_map()) {
-            result = co_await convert_map(
-              std::move(field), *field_descriptor, stack);
-        } else if (field_descriptor->is_repeated()) {
-            result = co_await convert_repeated(
-              std::move(field), *field_descriptor, stack);
-        } else if (
-          field_descriptor->type() == pb::FieldDescriptor::TYPE_MESSAGE) {
-            result = co_await message_field_to_value(
-              std::move(field), *field_descriptor, stack);
-        } else {
-            result = co_await primitive_field_to_value(
-              std::move(field), *field_descriptor);
+    while (!work.empty()) {
+        auto item = std::move(work.back());
+        work.pop_back();
+        if (std::holds_alternative<leave_message_work>(item)) {
+            descriptor_stack.pop_back();
+            continue;
         }
 
+        auto result = co_await process_field_work(
+          std::get<field_work>(std::move(item)), descriptor_stack, work);
         if (result.has_error()) {
             co_return result.error();
         }
-        ret->fields.push_back(std::move(result.value()));
     }
     co_return ret;
 }

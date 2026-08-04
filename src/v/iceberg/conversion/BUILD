@@ -154,6 +154,7 @@ redpanda_cc_library(
         "//src/v/serde/json:writer",
         "//src/v/serde/protobuf",
         "//src/v/ssx:future_util",
+        "@abseil-cpp//absl/container:inlined_vector",
         "@abseil-cpp//absl/time",
         "@fmt",
         "@protobuf",
