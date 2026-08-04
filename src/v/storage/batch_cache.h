@@ -565,8 +565,6 @@ public:
     batch_cache_index& operator=(const batch_cache_index&) = delete;
 
     ss::future<> clear_async();
-    // Requires that a `lock_guard` for `this` is held elsewhere.
-    ss::future<> clear_async_unlocked();
     bool empty() const { return _index.empty(); }
 
     void
@@ -676,8 +674,7 @@ public:
 
     // Leaves the batch_cache_index in a fully clean, re-usable state.
     ss::future<> reset() {
-        lock_guard lk(*this);
-        co_await clear_async_unlocked();
+        co_await clear_async();
         _small_batches_range = nullptr;
     }
 

@@ -14,12 +14,12 @@
 #include "model/adl_serde.h"
 #include "model/fundamental.h"
 #include "resource_mgmt/available_memory.h"
-#include "ssx/async_algorithm.h"
 #include "ssx/future-util.h"
 #include "utils/to_string.h" // NOLINT(misc-include-cleaner) fmt::formatter for optionals
 
 #include <seastar/core/coroutine.hh>
 #include <seastar/core/gate.hh>
+#include <seastar/coroutine/maybe_yield.hh>
 #include <seastar/util/defer.hh>
 
 namespace storage {
@@ -530,21 +530,23 @@ void batch_cache_index::mark_clean(model::offset up_to_inclusive) {
 
     _dirty_tracker.mark_clean(up_to_inclusive);
 }
-ss::future<> batch_cache_index::clear_async_unlocked() {
+ss::future<> batch_cache_index::clear_async() {
     vassert(
       _dirty_tracker.clean(),
       "Destroying batch_cache_index ({}) tracking dirty batches.",
       *this);
-    co_await ssx::async_for_each(
-      _index.begin(), _index.end(), [this](index_type::value_type& value) {
-          _cache->evict(std::move(value.second.range()));
-      });
-    _index.clear();
-}
-
-ss::future<> batch_cache_index::clear_async() {
-    lock_guard lk(*this);
-    co_await clear_async_unlocked();
+    /*
+     * clear in bounded chunks, restarting from the beginning of the index at
+     * each scheduling point, so that no btree iterator lives across a yield.
+     */
+    while (!_index.empty()) {
+        auto it = _index.begin();
+        do {
+            _cache->evict(std::move(it->second.range()));
+            it = _index.erase(it);
+        } while (it != _index.end() && !ss::need_preempt());
+        co_await ss::coroutine::maybe_yield();
+    }
 }
 
 void batch_cache::background_reclaimer::start() {
