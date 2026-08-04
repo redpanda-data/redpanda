@@ -16,6 +16,7 @@
 #include <seastar/util/defer.hh>
 
 #include <fmt/format.h>
+#include <gmock/gmock.h>
 
 #include <unordered_map>
 
@@ -358,6 +359,52 @@ TEST_P(BasicConsumerFixture, TestBogusPartitionIds) {
               model::offset(2 * n - 1));
         }
     }
+}
+
+// A subscription that is torn down and recreated while the source partition is
+// idle must still learn the source partition's offsets. The shadow-link status
+// API derives source_high_watermark from these, and a replicator restart
+// (leadership change / partition move) recreates the subscription with
+// default-initialized offsets.
+TEST_P(BasicConsumerFixture, TestSourceOffsetsAfterIdleReassign) {
+    constexpr auto n = size_t{100};
+    const auto tp = model::topic_partition{topic, model::partition_id{0}};
+    const auto tp_view = model::topic_partition_view{tp.topic, tp.partition};
+
+    assign_partitions(make_assignment(topic, {0}));
+    produce_to_partition(topic, 0, n).get();
+
+    // Drain, so the fetch offset sits at the source high watermark and the
+    // broker's fetch session has cached that state.
+    fetch_until_empty(*consumer);
+
+    ASSERT_THAT(
+      consumer->get_source_offsets(tp_view),
+      testing::Optional(
+        testing::Field(
+          &source_partition_offsets::high_watermark, kafka::offset(n))));
+
+    // Simulate the replicator restart: resubscribe at the offset already
+    // reached, and produce nothing afterwards.
+    unassign_partition(tp);
+    assign_partitions(make_assignment(topic, {0}, kafka::offset(n)));
+
+    fetch_until_empty(*consumer);
+
+    EXPECT_THAT(
+      consumer->get_source_offsets(tp_view),
+      testing::Optional(
+        testing::AllOf(
+          testing::Field(
+            &source_partition_offsets::log_start_offset, kafka::offset(0)),
+          testing::Field(
+            &source_partition_offsets::high_watermark, kafka::offset(n)),
+          testing::Field(
+            &source_partition_offsets::last_stable_offset,
+            testing::Ne(model::offset_cast(model::invalid_lso))),
+          testing::Field(
+            &source_partition_offsets::last_offset_update_timestamp,
+            testing::Ne(ss::lowres_clock::time_point{})))));
 }
 
 using session_config = kafka::client::tests::session_config;
