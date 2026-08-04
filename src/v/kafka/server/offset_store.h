@@ -26,6 +26,7 @@
 #include "kafka/server/group_probe.h"
 #include "kafka/server/offset_writer.h"
 #include "kafka/server/stages.h"
+#include "kafka/server/tx_coordinator_client.h"
 #include "model/fundamental.h"
 #include "model/timestamp.h"
 #include "ssx/mutex.h"
@@ -184,7 +185,7 @@ public:
       ss::lw_shared_ptr<ss::rwlock> catchup_lock,
       std::unique_ptr<offset_writer> writer,
       model::term_id term,
-      ss::sharded<cluster::tx_gateway_frontend>& tx_frontend,
+      std::unique_ptr<tx_coordinator_client> tx_coordinator,
       ss::sharded<features::feature_table>& feature_table,
       group_is_dead_t group_is_dead);
 
@@ -415,7 +416,7 @@ private:
     ss::lw_shared_ptr<ss::rwlock> _catchup_lock;
     std::unique_ptr<offset_writer> _writer;
     model::term_id _term;
-    ss::sharded<cluster::tx_gateway_frontend>& _tx_frontend;
+    std::unique_ptr<tx_coordinator_client> _tx_coordinator;
     ss::sharded<features::feature_table>& _feature_table;
     group_is_dead_t _group_is_dead;
     prefix_logger _ctxlog;

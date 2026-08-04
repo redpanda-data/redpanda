@@ -127,7 +127,7 @@ group::group(
       std::move(catchup_lock),
       std::make_unique<partition_offset_writer>(_partition),
       term,
-      tx_frontend,
+      std::make_unique<routed_tx_coordinator_client>(tx_frontend),
       feature_table,
       [this] { return in_state(group_state::dead); })
   , _probe(_members, _static_members, offsets(), _lag_metrics)
@@ -167,7 +167,7 @@ group::group(
       std::move(catchup_lock),
       std::make_unique<partition_offset_writer>(_partition),
       term,
-      tx_frontend,
+      std::make_unique<routed_tx_coordinator_client>(tx_frontend),
       feature_table,
       [this] { return in_state(group_state::dead); })
   , _probe(_members, _static_members, offsets(), _lag_metrics)
@@ -3328,12 +3328,8 @@ offset_store::do_try_abort_old_tx(model::producer_identity pid) {
       producer_tx.tx_seq,
       producer_tx.coordinator_partition);
     auto tx_seq = producer_tx.tx_seq;
-    auto r = co_await _tx_frontend.local().route_globally(
-      cluster::try_abort_request(
-        producer_tx.coordinator_partition,
-        pid,
-        producer_tx.tx_seq,
-        config::shard_local_cfg().internal_rpc_request_timeout_ms.value()));
+    auto r = co_await _tx_coordinator->try_abort(
+      producer_tx.coordinator_partition, pid, producer_tx.tx_seq);
 
     if (r.ec != cluster::tx::errc::none) {
         co_return r.ec;
@@ -3750,7 +3746,7 @@ offset_store::offset_store(
   ss::lw_shared_ptr<ss::rwlock> catchup_lock,
   std::unique_ptr<offset_writer> writer,
   model::term_id term,
-  ss::sharded<cluster::tx_gateway_frontend>& tx_frontend,
+  std::unique_ptr<tx_coordinator_client> tx_coordinator,
   ss::sharded<features::feature_table>& feature_table,
   group_is_dead_t group_is_dead)
   : _id(std::move(id))
@@ -3758,7 +3754,7 @@ offset_store::offset_store(
   , _catchup_lock(std::move(catchup_lock))
   , _writer(std::move(writer))
   , _term(term)
-  , _tx_frontend(tx_frontend)
+  , _tx_coordinator(std::move(tx_coordinator))
   , _feature_table(feature_table)
   , _group_is_dead(std::move(group_is_dead))
   , _ctxlog(cg_klog, ssx::sformat("[N:{}]", _id()))
