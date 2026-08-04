@@ -4405,3 +4405,167 @@ class AuditLogUpgradeTest(AuditLogTestBase):
         )
 
         self._test_audit_on_all_nodes("post_upgrade_restart")
+
+
+class AuditLogInitFailureTest(AuditLogTestBase):
+    """
+    Covers the failure mode where the audit client cannot initialize
+    (here: audit_log_replication_factor larger than the cluster while the
+    audit topic does not exist yet).
+
+    The audit sink arms the per-shard drain timer only after
+    audit_client::initialize() succeeds, so a persistently failing
+    initialization used to leave the per-shard queues undrained: they would
+    fill up and every request that must be audited -- including
+    authentication -- would be rejected on an otherwise healthy cluster,
+    recoverable only by a restart.
+
+    Now a persistently failing initialization marks the sink unavailable,
+    which applies audit_failure_policy at enqueue time: queues do not fill,
+    reject refuses auditable requests explicitly, permit lets them through,
+    and the sink recovers automatically once initialization succeeds.
+    """
+
+    ARG_FAILURE_POLICY = "audit_failure_policy"
+
+    def __init__(self, test_context):
+        policy = AuditFailurePolicy.REJECT
+        if test_context.injected_args:
+            policy = test_context.injected_args.get(
+                self.ARG_FAILURE_POLICY, AuditFailurePolicy.REJECT
+            )
+        super(AuditLogInitFailureTest, self).__init__(
+            test_context=test_context,
+            audit_log_config=AuditLogConfig(
+                enabled=False,
+                event_types=["management", "authenticate", "admin"],
+                failure_policy=policy,
+            ),
+            # Small per-shard queue (needs_restart=yes, so it must be set at
+            # bootstrap): if the sink-unavailable gate regressed, undrained
+            # queues would visibly fill up ("Unable to enqueue audit event")
+            # within a single spray below.
+            extra_rp_conf={"audit_queue_max_buffer_size_per_shard": 16384},
+        )
+        self.policy = policy
+
+    NUM_LATE_USERS = 4
+
+    def _spray_admin_events(self, count: int, node):
+        """Generate `count` distinct api_activity audit events on `node`.
+
+        api_activity events are deduplicated by a hash that includes the
+        request URL, so vary a query parameter to make each event unique. The
+        endpoint itself is on the audit escape-hatch allow list, so these
+        requests succeed regardless of audit state.
+        """
+        for _ in range(count):
+            self._fill_seq += 1
+            self.admin._request(
+                "GET", f"cluster_config/status?fill={self._fill_seq}", node=node
+            )
+
+    @skip_fips_mode
+    @cluster(
+        num_nodes=4,
+        log_allow_list=AUDIT_LOG_ALLOW_LIST
+        + [
+            r".*Audit sink unavailable.*",
+            r".*Audit log client failed to initialize.*",
+            r".*Error creating audit log topic.*",
+            r".*invalid replication factor on audit topic.*",
+            r".*Failed to audit authentication request for endpoint.*",
+            r".*was not audited due to audit queues being full.*",
+        ],
+    )
+    @matrix(
+        audit_transport_mode=get_audit_modes(),
+        audit_failure_policy=[AuditFailurePolicy.REJECT, AuditFailurePolicy.PERMIT],
+    )
+    def test_init_failure_applies_policy(
+        self, audit_transport_mode, audit_failure_policy
+    ):
+        self._fill_seq = 0
+        mech = self.security.user_creds[2]
+        # Fresh users, created up front and never authenticated: identical
+        # authn events deduplicate into a counter without consuming queue
+        # budget, so only a previously-unseen user exercises the enqueue
+        # decision under test.
+        for i in range(self.NUM_LATE_USERS):
+            self.super_rpk.sasl_create_user(f"late-user-{i}", "pass123", mech)
+
+        # Impossible replication factor: create_internal_topic() fails with
+        # invalid_replication_factor on every initialize() attempt. This is
+        # classified as a permanent config error, so the sink is marked
+        # unavailable immediately, with no grace window.
+        self._modify_cluster_config({"audit_log_replication_factor": 5})
+        self.modify_audit_enabled(True)
+
+        wait_until(
+            lambda: self.redpanda.search_log_any("Audit sink unavailable"),
+            timeout_sec=60,
+            backoff_sec=2,
+            err_msg="expected the audit sink to be marked unavailable",
+        )
+        assert not self.redpanda.search_log_any("Auditing fibers started"), (
+            "drain fibers must not start while initialization fails"
+        )
+
+        # The sink-unavailable gate applies the failure policy at enqueue
+        # time: events must not accumulate in queues that nothing drains.
+        for node in self.redpanda.nodes:
+            self._spray_admin_events(60, node)
+        assert not self.redpanda.search_log_any("Unable to enqueue audit event"), (
+            "audit queues must not fill up while the sink is unavailable"
+        )
+
+        def _fresh_user_authn(i: int) -> bool:
+            rpk = self.get_rpk_credentials(f"late-user-{i}", "pass123", mech)
+            try:
+                rpk.list_topics()
+                return True
+            except RpkException:
+                return False
+
+        if self.policy == AuditFailurePolicy.REJECT:
+            # The incident symptom, now explicit and immediate: a client with
+            # valid credentials is refused because its authentication cannot
+            # be audited.
+            def _authn_rejected():
+                _fresh_user_authn(0)
+                return self.redpanda.search_log_any(
+                    "Failed to append authentication event to audit log"
+                )
+
+            wait_until(
+                _authn_rejected,
+                timeout_sec=60,
+                backoff_sec=1,
+                err_msg="expected authentication to be refused under reject",
+            )
+        else:
+            assert _fresh_user_authn(0), (
+                "authentication must succeed under permit while the sink is unavailable"
+            )
+
+        # Fixing the configuration must recover the sink automatically:
+        # initialization succeeds, the drain fibers start and auditable
+        # requests are served again, with audit logging still enabled.
+        self._modify_cluster_config({"audit_log_replication_factor": 3})
+        wait_until(
+            lambda: self.redpanda.search_log_any("Auditing fibers started"),
+            # initialize() retries with exponential backoff capped at
+            # 300 * 250ms, so the next attempt may be over a minute out.
+            timeout_sec=180,
+            backoff_sec=5,
+            err_msg="expected the audit sink to recover after the config fix",
+        )
+        wait_until(
+            lambda: _fresh_user_authn(1),
+            timeout_sec=60,
+            backoff_sec=1,
+            err_msg="expected authentication to work after sink recovery",
+        )
+        assert self.audit_log in self.super_rpk.list_topics(), (
+            "audit topic should exist after recovery"
+        )
