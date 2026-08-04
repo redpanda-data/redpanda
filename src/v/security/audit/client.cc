@@ -113,29 +113,31 @@ public:
           adtlog.info,
           "Creating audit log topic with settings: {}",
           audit_topic_props);
-        const auto ec = co_await _rpc_client->create_topic(
-          model::kafka_audit_logging_nt,
-          std::move(audit_topic_props),
-          config::shard_local_cfg().audit_log_num_partitions(),
-          replication_factor);
-        if (ec == cluster::errc::success) {
-            vlog(
-              adtlog.debug,
-              "Auditing: created audit log topic: {}",
-              model::kafka_audit_logging_topic);
-        } else if (ec == cluster::errc::topic_already_exists) {
-            vlog(adtlog.debug, "Auditing: topic already exists");
-        } else {
-            if (ec == cluster::errc::topic_invalid_replication_factor) {
+        cluster::errc ec{};
+        try {
+            ec = co_await _rpc_client->create_topic(
+              model::kafka_audit_logging_nt,
+              std::move(audit_topic_props),
+              config::shard_local_cfg().audit_log_num_partitions(),
+              replication_factor);
+        } catch (const kafka::data::rpc::topic_create_exception& e) {
+            if (e.errc() == cluster::errc::topic_invalid_replication_factor) {
                 vlog(
                   adtlog.warn,
                   "Auditing: invalid replication factor on audit topic, "
                   "check/modify settings, then disable and re-enable "
                   "'audit_enabled'");
+                throw permanent_config_error(e.what());
             }
-            throw std::runtime_error(
-              fmt::format(
-                "Error creating audit log topic - error_code: {}", ec));
+            throw;
+        }
+        if (ec == cluster::errc::success) {
+            vlog(
+              adtlog.debug,
+              "Auditing: created audit log topic: {}",
+              model::kafka_audit_logging_topic);
+        } else {
+            vlog(adtlog.debug, "Auditing: topic already exists");
         }
     }
 
@@ -401,6 +403,10 @@ private:
             vlog(adtlog.debug, "Auditing: topic already exists");
             co_await _client.update_metadata();
         } else {
+            const auto msg = fmt::format(
+              "{} - error_code: {}",
+              topic.error_message.value_or("<no_err_msg>"),
+              topic.error_code);
             if (
               topic.error_code
               == kafka::error_code::invalid_replication_factor) {
@@ -409,12 +415,9 @@ private:
                   "Auditing: invalid replication factor on audit topic, "
                   "check/modify settings, then disable and re-enable "
                   "'audit_enabled'");
+                throw permanent_config_error(msg);
             }
-            const auto msg = topic.error_message.has_value()
-                               ? *topic.error_message
-                               : "<no_err_msg>";
-            throw std::runtime_error(
-              fmt::format("{} - error_code: {}", msg, topic.error_code));
+            throw std::runtime_error(msg);
         }
     }
 };
@@ -479,20 +482,49 @@ audit_client::audit_client(audit_sink* sink, cluster::controller* controller)
 
 ss::future<> audit_client::initialize() {
     static const auto base_backoff = 250ms;
+    /// Grace window during which initialization failures are presumed
+    /// transient and events keep accumulating in the per-shard queues. Past
+    /// it, the sink is marked unavailable so the audit_failure_policy is
+    /// applied at enqueue time instead of silently filling queues that
+    /// nothing drains until initialization succeeds.
+    static constexpr auto mark_unavailable_after = 60s;
     exp_backoff_policy backoff_policy;
+    const auto started = ss::lowres_clock::now();
+    bool marked_unavailable = false;
     while (!_as.abort_requested()) {
+        std::optional<ss::sstring> unavailable_reason;
         try {
             co_await configure();
             _is_initialized = true;
             break;
+        } catch (const permanent_config_error& e) {
+            /// Deterministic misconfiguration: retrying cannot succeed until
+            /// the configuration changes, so surface it immediately.
+            if (!marked_unavailable) {
+                unavailable_reason = e.what();
+            }
         } catch (...) {
             /// Sleep, then try again
+            if (
+              !marked_unavailable
+              && ss::lowres_clock::now() - started > mark_unavailable_after) {
+                unavailable_reason = fmt::format(
+                  "{}", std::current_exception());
+            }
+        }
+        if (unavailable_reason.has_value()) {
+            marked_unavailable = true;
+            co_await sink()->update_sink_availability(
+              false, std::move(*unavailable_reason));
         }
         auto next = backoff_policy.next_backoff();
         co_await ss::sleep_abortable(base_backoff * next, _as)
           .handle_exception_type([](const ss::sleep_aborted&) {});
     }
     if (_is_initialized) {
+        if (marked_unavailable) {
+            co_await sink()->update_sink_availability(true, {});
+        }
         _probe = std::make_unique<client_probe>();
         _probe->setup_metrics([this]() {
             auto avail = static_cast<double>(_send_sem.available_units());
@@ -655,6 +687,14 @@ ss::future<> audit_sink::stop() {
     co_await _gate.close();
 }
 
+ss::future<>
+audit_sink::update_sink_availability(bool available, ss::sstring reason) {
+    return _audit_mgr->container().invoke_on_all(
+      [available, reason = std::move(reason)](audit_log_manager& mgr) {
+          mgr.set_sink_availability(available, reason);
+      });
+}
+
 ss::future<> audit_sink::produce(
   chunked_vector<partition_batch> records,
   std::optional<ss::timer<>::duration> timeout) {
@@ -757,6 +797,9 @@ ss::future<> audit_sink::do_toggle(bool enabled) {
         vlog(adtlog.info, "Auditing fibers stopped");
         co_await client()->shutdown();
         reset_client();
+        /// A fresh client starts with a clean slate; do not carry a stale
+        /// unavailability verdict across disable/enable cycles.
+        co_await update_sink_availability(true, {});
     } else {
         vlog(
           adtlog.info,

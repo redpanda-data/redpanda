@@ -19,10 +19,12 @@
 
 namespace security::audit {
 
-void audit_probe::setup_metrics(std::function<double()> get_usage_ratio) {
+void audit_probe::setup_metrics(
+  std::function<double()> get_usage_ratio,
+  std::function<double()> get_sink_available) {
     namespace sm = ss::metrics;
 
-    auto setup_common = [this]<typename MetricDef>(
+    auto setup_common = [this, &get_sink_available]<typename MetricDef>(
                           const std::vector<sm::label>& aggregate_labels) {
         std::vector<MetricDef> defs;
         if (ss::this_shard_id() == audit_log_manager::client_shard_id) {
@@ -33,6 +35,14 @@ void audit_probe::setup_metrics(std::function<double()> get_usage_ratio) {
                 sm::description(
                   "Timestamp of last successful publish on the "
                   "audit log (seconds since epoch)"))
+                .aggregate(aggregate_labels));
+            defs.emplace_back(
+              sm::make_gauge(
+                "sink_available",
+                [fn = get_sink_available] { return fn(); },
+                sm::description(
+                  "Whether the audit subsystem can deliver events to the "
+                  "audit log topic (1 = available, 0 = unavailable)"))
                 .aggregate(aggregate_labels));
         }
         defs.emplace_back(

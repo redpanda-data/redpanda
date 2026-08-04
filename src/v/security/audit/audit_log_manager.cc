@@ -78,10 +78,12 @@ audit_log_manager::audit_log_manager(
   , _config(&cfg)
   , _metadata_cache(metadata_cache)
   , _rpc_client(rpc_client) {
-    _probe.setup_metrics([this] {
-        return 1.0
-               - (static_cast<double>(_queue_bytes_sem.available_units()) / static_cast<double>(_max_queue_size_bytes));
-    });
+    _probe.setup_metrics(
+      [this] {
+          return 1.0
+                 - (static_cast<double>(_queue_bytes_sem.available_units()) / static_cast<double>(_max_queue_size_bytes));
+      },
+      [this] { return _sink_unavailable ? 0.0 : 1.0; });
     set_enabled_events();
     _audit_event_types.watch([this] { set_enabled_events(); });
     _audit_excluded_topics_binding.watch([this] {
@@ -357,6 +359,25 @@ audit_sink& audit_log_manager::sink() {
     return *_sink;
 }
 
+void audit_log_manager::set_sink_availability(
+  bool available, const ss::sstring& reason) {
+    const bool was_unavailable = _sink_unavailable;
+    _sink_unavailable = !available;
+    _sink_unavailable_reason = reason;
+    if (ss::this_shard_id() == client_shard_id) {
+        if (!available) {
+            vlog(
+              adtlog.error,
+              "Audit sink unavailable: {}. audit_failure_policy ({}) will be "
+              "applied to auditable requests",
+              reason,
+              _audit_log_reject_policy());
+        } else if (was_unavailable) {
+            vlog(adtlog.info, "Audit sink available again");
+        }
+    }
+}
+
 std::optional<audit_log_manager::audit_event_passthrough>
 audit_log_manager::should_enqueue_audit_event() const {
     if (recovery_mode_enabled() || !_audit_enabled()) {
@@ -387,6 +408,25 @@ audit_log_manager::should_enqueue_audit_event() const {
         vlog(
           adtlog.warn,
           "Audit message rejected due to misconfigured authorization");
+        return std::make_optional(
+          _audit_log_reject_policy() == config::audit_failure_policy::reject
+            ? audit_event_passthrough::no
+            : audit_event_passthrough::yes);
+    }
+    if (_sink_unavailable) {
+        /// The sink reported it cannot become operational. Apply the failure
+        /// policy immediately instead of queueing into a buffer that nothing
+        /// drains: the queues would fill up and reject with a misleading
+        /// "queue full" verdict, pinning memory until a restart.
+        static constexpr auto rate_limit = std::chrono::seconds(5);
+        static thread_local ss::logger::rate_limit rate(rate_limit);
+        vloglr(
+          adtlog,
+          ss::log_level::warn,
+          rate,
+          "Audit sink unavailable ({}), applying audit_failure_policy",
+          _sink_unavailable_reason);
+        _probe.audit_error();
         return std::make_optional(
           _audit_log_reject_policy() == config::audit_failure_policy::reject
             ? audit_event_passthrough::no

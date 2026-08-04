@@ -29,7 +29,9 @@ public:
     audit_probe& operator=(audit_probe&&) = delete;
     ~audit_probe() = default;
 
-    void setup_metrics(std::function<double()> get_usage_ratio);
+    void setup_metrics(
+      std::function<double()> get_usage_ratio,
+      std::function<double()> get_sink_available);
 
     void audit_event() { _last_event = clock_type::now(); }
     void audit_error() { ++_audit_error_count; }

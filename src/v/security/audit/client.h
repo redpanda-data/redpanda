@@ -25,7 +25,17 @@
 #include <seastar/core/future.hh>
 #include <seastar/core/gate.hh>
 
+#include <stdexcept>
+
 namespace security::audit {
+
+/// Raised by the configuration phase for errors that are a deterministic
+/// function of configuration (e.g. invalid replication factor): retrying
+/// cannot succeed until the configuration changes.
+class permanent_config_error final : public std::runtime_error {
+public:
+    using std::runtime_error::runtime_error;
+};
 
 struct partition_batch {
     model::partition_id pid;
@@ -68,6 +78,12 @@ public:
     /// Allocates and connects, or deallocates and shuts down the audit client
     void toggle(bool);
     bool active() { return _active; }
+
+    /// Propagates the sink availability state to the audit managers on all
+    /// shards, where it gates the enqueue path: while unavailable, the
+    /// audit_failure_policy is applied at enqueue time instead of letting
+    /// events accumulate in queues that nothing drains.
+    ss::future<> update_sink_availability(bool available, ss::sstring reason);
 
     using update_auth_fn = ss::noncopyable_function<ss::future<>(bool)>;
     static std::unique_ptr<audit_sink> make_kafka_sink(

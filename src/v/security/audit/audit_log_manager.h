@@ -319,6 +319,7 @@ private:
 
     audit_sink& sink();
     void set_auth_misconfigured(bool v) { _auth_misconfigured = v; }
+    void set_sink_availability(bool available, const ss::sstring& reason);
 
     bool is_audit_event_enabled(event_type) const;
     void set_enabled_events();
@@ -469,6 +470,13 @@ private:
     /// special permission to the audit client to do things like produce to the
     /// audit topic.
     bool _auth_misconfigured{false};
+
+    /// Set when the sink reports that it cannot become operational
+    /// (initialization persistently failing). Gates the enqueue path so the
+    /// audit_failure_policy is applied immediately instead of accumulating
+    /// events in a queue that nothing drains until initialization succeeds.
+    bool _sink_unavailable{false};
+    ss::sstring _sink_unavailable_reason;
 
     /// Represents whether the feature is actually active, not the
     /// representation of the config variable
