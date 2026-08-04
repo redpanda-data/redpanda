@@ -1235,6 +1235,9 @@ PERTURB_ACKNOWLEDGED_FEATURES = frozenset(
         # Iceberg extended-mode topic-config gate; exercising it needs Iceberg
         # topic setup orthogonal to the finalization behavior under test.
         "iceberg_extended_mode_config",
+        # The feature enables new health report exchange mechanism. The old one
+        # remains available for unfinalized upgrades and for rollbacks.
+        "health_dissemination",
     }
 )
 
