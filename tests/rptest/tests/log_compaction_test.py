@@ -905,7 +905,6 @@ class LogCompactionTxRemovalTestBase(
             "raft_recovery_concurrency_per_shard": math.ceil(
                 raft_max_recovery_memory / self.raft_learner_recovery_rate
             ),
-            "raft_recovery_default_read_size": self.raft_learner_recovery_rate,
             "health_monitor_max_metadata_age": 100,  # ms
             "enable_leader_balancer": False,
             "partition_autobalancing_mode": "off",
@@ -1151,16 +1150,21 @@ class LogCompactionTxRemovalUpgradeTestBase(LogCompactionTxRemovalTestBase):
 
         self.wait_for_all_tx_batches_removed(produce_func)
 
-    def nth_segment_recovered(self, n: int, node: int) -> bool:
-        reconfigurations = self.redpanda._admin.list_reconfigurations(
-            node=self.redpanda.get_node_by_id(node)
-        )
-        self.redpanda.logger.debug(f"reconfigurations: {reconfigurations}")
-        if not reconfigurations:
-            return False
-        bytes_moved = reconfigurations[0]["bytes_moved"]
-        assert bytes_moved <= 2 * n * self.segment_size, "node recovered too fast"
-        return bytes_moved >= n * self.segment_size
+    def learner_recovered_offset(
+        self, leader_node: int, learner_node: int
+    ) -> int | None:
+        """Offset the learner replica has been recovered up to, as reported by the
+        partition leader, or None while the leader does not list it as a follower."""
+        for replica in self.get_partition_state(
+            self.redpanda.get_node_by_id(leader_node)
+        ):
+            raft_state = replica["raft_state"]
+            if not raft_state["is_leader"]:
+                continue
+            for follower in raft_state.get("followers", []):
+                if follower["id"] == learner_node:
+                    return follower["match_index"]
+        return None
 
     def run_2segment_scenario(self):
         def produce_func():
@@ -1228,7 +1232,9 @@ class LogCompactionTxRemovalUpgradeTestBase(LogCompactionTxRemovalTestBase):
             err_msg="timed out waiting for MTRO to advance",
         )
 
-        # init a replica and let it recover the first 2 segments only
+        # init a replica and let it recover the beginning of the log only: it needs
+        # the open transaction from segment 1 but not the commit batch that follows
+        # segment 8, so any offset in between will do
         new_replica_node = leader_node % len(self.redpanda.nodes) + 1
         self.redpanda._admin.set_partition_replicas(
             topic=self.topic_spec.name,
@@ -1238,8 +1244,18 @@ class LogCompactionTxRemovalUpgradeTestBase(LogCompactionTxRemovalTestBase):
                 {"node_id": new_replica_node, "core": 0},
             ],
         )
+        max_partially_recovered_offset = 7 * messages_per_segment
+
+        def partially_recovered() -> bool:
+            offset = self.learner_recovered_offset(leader_node, new_replica_node)
+            self.redpanda.logger.debug(f"learner recovered up to offset {offset}")
+            if offset is None:
+                return False
+            assert offset < max_partially_recovered_offset, "node recovered too fast"
+            return offset > messages_per_segment
+
         wait_until(
-            lambda: self.nth_segment_recovered(2, leader_node),
+            partially_recovered,
             timeout_sec=60,
             backoff_sec=1,
             err_msg="timed out waiting for partial recovery",
@@ -1267,7 +1283,10 @@ class LogCompactionTxRemovalUpgradeTestBase(LogCompactionTxRemovalTestBase):
         )
 
         # make sure the replica didn't recover much further
-        assert not self.nth_segment_recovered(7, leader_node)
+        offset = self.learner_recovered_offset(leader_node, new_replica_node)
+        assert offset is not None and offset < max_partially_recovered_offset, (
+            f"learner recovered too far, up to offset {offset}"
+        )
 
         # temporarily disable tx removal
         self.redpanda.set_cluster_config(
