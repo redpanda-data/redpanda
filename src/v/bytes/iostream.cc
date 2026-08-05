@@ -54,29 +54,21 @@ ss::output_stream<char> make_iobuf_ref_output_stream(iobuf& io) {
 }
 
 ss::future<iobuf> read_iobuf_exactly(ss::input_stream<char>& in, size_t n) {
-    return ss::do_with(iobuf{}, n, [&in](iobuf& b, size_t& n) {
-        return ss::do_until(
-                 [&n] { return n == 0; },
-                 [&n, &in, &b] {
-                     return in.read_up_to(n).then(
-                       [&n, &b](ss::temporary_buffer<char> buf) {
-                           if (buf.empty()) {
-                               n = 0;
-                               return;
-                           }
-                           n -= buf.size();
-                           b.append(std::move(buf));
-                       });
-                 })
-          .then([&b] { return std::move(b); });
-    });
+    iobuf result;
+    while (n > 0) {
+        auto buffer = co_await in.read_up_to(n);
+        if (buffer.empty()) {
+            break;
+        }
+        n -= buffer.size();
+        result.append(std::move(buffer));
+    }
+    co_return result;
 }
 
 ss::future<>
 write_iobuf_to_output_stream(iobuf buf, ss::output_stream<char>& output) {
-    return ss::do_with(std::move(buf), [&output](iobuf& buf) {
-        return ss::do_for_each(buf, [&output](iobuf::fragment& f) {
-            return output.write(f.get(), f.size());
-        });
-    });
+    for (const auto& fragment : buf) {
+        co_await output.write(fragment.get(), fragment.size());
+    }
 }
