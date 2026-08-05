@@ -22,6 +22,27 @@
 
 namespace cluster {
 
+namespace controller_snapshot_parts {
+struct security_t;
+}
+
+/**
+ * Replace this shard's security state with the snapshot's, atomically with
+ * respect to authentication and authorization running on the same shard.
+ *
+ * All three stores are staged off to the side (which yields freely, leaving the
+ * live stores untouched) and only then published, back to back with no
+ * intervening yield.
+ *
+ * Exposed for testing, production callers go through
+ * security_manager::apply_snapshot().
+ */
+ss::future<> apply_security_snapshot_to_shard(
+  security::credential_store&,
+  security::authorizer&,
+  security::role_store&,
+  const controller_snapshot_parts::security_t&);
+
 class security_manager final {
 public:
     explicit security_manager(

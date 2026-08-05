@@ -16,8 +16,11 @@
 #include "security/authorizer.h"
 #include "security/role.h"
 #include "security/role_store.h"
+#include "test_utils/test.h"
 #include "utils/base64.h"
 
+#include <seastar/core/coroutine.hh>
+#include <seastar/core/loop.hh>
 #include <seastar/util/defer.hh>
 
 #include <boost/algorithm/string.hpp>
@@ -3632,6 +3635,78 @@ TEST(AUTHORIZER_TEST, prefix_index_remove_then_readd) {
 
     grant();
     EXPECT_TRUE(idx_allows(store, "tz-events", alice));
+}
+
+namespace {
+
+acl_binding literal_read_allow(std::string_view name, const acl_principal& p) {
+    return acl_binding(
+      resource_pattern(
+        resource_type::topic, ss::sstring{name}, pattern_type::literal),
+      acl_entry(p, idx_any_host, acl_operation::read, acl_permission::allow));
+}
+
+} // namespace
+
+// reset_bindings() must never be observable in a partial state.
+//
+// The refill is not a single reactor task: ss::do_for_each defers the remainder
+// once the task quota expires, and on the controller snapshot apply path
+// authorization checks run on this shard in exactly those gaps. An in-place
+// clear-then-refill therefore hands an empty (or half-built) store to those
+// checks and denies principals that do hold the ACL -- observed in production
+// as transient TOPIC_AUTHORIZATION_FAILED on a correctly-ACLed consumer while a
+// controller snapshot was installed, which the client saw as a fatal error.
+//
+// The grant under test is placed LAST in the replacement set so that a partial
+// store cannot happen to contain it: under the old implementation the very
+// first interleaved check fails.
+TEST_CORO(AUTHORIZER_TEST, reset_bindings_not_observable_as_partial) {
+    const acl_principal alice(principal_type::user, "alice");
+    constexpr std::string_view granted_topic = "stable-topic";
+
+    acl_store store;
+    chunked_vector<acl_binding> initial;
+    initial.push_back(literal_read_allow(granted_topic, alice));
+    store.add_bindings(initial);
+    ASSERT_TRUE_CORO(idx_allows(store, granted_topic, alice));
+
+    // Large enough that the refill is certain to exceed the task quota and
+    // yield at least once, with the grant under test rebuilt only at the end.
+    constexpr size_t bulk = 50'000;
+    chunked_vector<acl_binding> replacement;
+    replacement.reserve(bulk + 1);
+    for (size_t i = 0; i < bulk; ++i) {
+        replacement.push_back(
+          literal_read_allow(fmt::format("filler-{:06}", i), alice));
+    }
+    replacement.push_back(literal_read_allow(granted_topic, alice));
+
+    bool reset_complete = false;
+    auto reset = store.reset_bindings(replacement).then([&reset_complete] {
+        reset_complete = true;
+    });
+
+    // Interleave authorization checks with the rebuild.
+    size_t checks = 0;
+    size_t denials = 0;
+    while (!reset_complete) {
+        if (!idx_allows(store, granted_topic, alice)) {
+            ++denials;
+        }
+        ++checks;
+        co_await ss::yield();
+    }
+    co_await std::move(reset);
+
+    // Guards against the test passing trivially: if the rebuild never yielded,
+    // nothing interleaved and the race was not exercised at all.
+    ASSERT_GT_CORO(checks, 1);
+    ASSERT_EQ_CORO(denials, 0);
+
+    // The replacement is fully visible once the future resolves.
+    ASSERT_TRUE_CORO(idx_allows(store, granted_topic, alice));
+    ASSERT_TRUE_CORO(idx_allows(store, "filler-000000", alice));
 }
 
 } // namespace security
