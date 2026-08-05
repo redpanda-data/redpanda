@@ -24,6 +24,7 @@
 #include "model/fundamental.h"
 #include "model/namespace.h"
 #include "serde/rw/rw.h"
+#include "test_utils/async.h"
 #include "test_utils/scoped_config.h"
 
 using namespace cloud_topics::l1;
@@ -1196,6 +1197,54 @@ TEST_P(ReplicatedMetastoreTest, TestRestoreCreatesCorrectPartitionCount) {
     auto cfg = tp_state.get_topic_cfg(model::l1_metastore_nt);
     ASSERT_TRUE(cfg.has_value());
     ASSERT_EQ(cfg->partition_count, expected_partitions);
+}
+
+TEST_P(ReplicatedMetastoreTest, TestFlushWithUnhealthyPartition) {
+    if (GetParam() == metastore_backend::simple) {
+        GTEST_SKIP() << "Flush not supported with simple backend";
+    }
+    auto& app = get_ct_app(model::node_id{0});
+    auto& meta = app.get_sharded_replicated_metastore()->local();
+    auto num_partitions = app.get_sharded_l1_metastore_router()
+                            ->local()
+                            .num_metastore_partitions();
+    ASSERT_TRUE(num_partitions.has_value());
+    ASSERT_GE(*num_partitions, 2);
+
+    // Enough topic partitions that every metastore partition has rows to
+    // persist. Nothing has flushed yet, so no domain has a manifest.
+    ASSERT_NO_FATAL_FAILURE(add_initial_objects(meta, 100, 99).get());
+
+    // Take the domain manager away from metastore partition 0, so its flush
+    // fails with not_leader.
+    auto unhealthy_ntp = model::ntp{
+      model::kafka_internal_namespace,
+      model::l1_metastore_topic,
+      model::partition_id{0}};
+    auto [leader_fx, leader_p] = get_leader(unhealthy_ntp);
+    ASSERT_NE(leader_fx, nullptr);
+    auto* sup
+      = leader_fx->app.cloud_topics_app->get_sharded_l1_domain_supervisor();
+    sup
+      ->invoke_on_all([&unhealthy_ntp](domain_supervisor& s) {
+          s.on_domain_leadership_change(unhealthy_ntp, {});
+      })
+      .get();
+    RPTEST_REQUIRE_EVENTUALLY(
+      10s, [&] { return sup->local().get(unhealthy_ntp) == nullptr; });
+
+    auto res = meta.flush().get();
+    EXPECT_FALSE(res.has_value()) << "flush should report partition 0";
+
+    EXPECT_FALSE(persisted_seqno(model::partition_id{0}).has_value())
+      << "partition 0 was expected to be unhealthy, but it flushed";
+
+    // The healthy partitions should have flushed anyway: each one persists its
+    // own manifest, which is what gates its L1 GC.
+    for (int pid = 1; pid < *num_partitions; ++pid) {
+        EXPECT_TRUE(persisted_seqno(model::partition_id(pid)).has_value())
+          << "partition " << pid << " was skipped";
+    }
 }
 
 TEST_P(ReplicatedMetastoreTest, TestPeriodicFlushSkipsRecentlyFlushedDomains) {

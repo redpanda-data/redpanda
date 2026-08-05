@@ -46,7 +46,11 @@ private:
         const auto retry_interval = ssx::duration::seconds(10);
         while (!as_.abort_requested()) {
             auto start = ssx::instant::from_chrono(ss::lowres_clock::now());
-            auto res = co_await metastore_->flush();
+            // Periodic flushes let a domain that flushed recently decline, so
+            // that retries after a failed partition don't force every healthy
+            // domain to persist a small SST every retry interval.
+            auto res = co_await metastore_->flush(
+              metastore::flush_type::skip_if_recent);
             auto finish = ssx::instant::from_chrono(ss::lowres_clock::now());
 
             ssx::duration sleep_duration;
