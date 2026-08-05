@@ -9,8 +9,13 @@
  * by the Apache License, Version 2.0
  */
 
-// Compares crc::crc32c, which src/v/hashing wraps around google/crc32c, against
-// the CRC32C abseil ships as absl::ExtendCrc32c and absl::MemcpyCrc32c.
+// Compares google/crc32c against the CRC32C abseil ships as
+// absl::ExtendCrc32c and absl::MemcpyCrc32c.
+//
+// crc::crc32c is backed by abseil, so it is not benchmarked here; the google
+// side calls crc32c::Extend directly. This is kept as the evidence for that
+// choice and to re-evaluate it -- notably once abseil's CPU detection covers
+// this host, which currently falls back to no PCLMULQDQ streams.
 //
 // Every case reports the cost of *one whole checksum*, not one byte: perf_tests
 // never scales below nanoseconds, and per-byte figures round to two decimals
@@ -26,12 +31,13 @@
 #include "base/vassert.h"
 #include "bytes/bytes.h"
 #include "bytes/iobuf.h"
-#include "hashing/crc32c.h"
 #include "test_utils/random_bytes.h"
 
 #include <seastar/core/byteorder.hh>
 #include <seastar/core/temporary_buffer.hh>
 #include <seastar/testing/perf_tests.hh>
+
+#include <crc32c/crc32c.h>
 
 #include <algorithm>
 #include <cstdint>
@@ -69,10 +75,10 @@ std::string_view as_view(const bytes& b) {
     return {reinterpret_cast<const char*>(b.data()), b.size()};
 }
 
-uint32_t crc32c_hashing(std::string_view buf) {
-    crc::crc32c crc;
-    crc.extend(buf.data(), buf.size());
-    return crc.value();
+uint32_t crc32c_google(std::string_view buf) {
+    // NOLINTNEXTLINE(*-reinterpret-cast)
+    const auto* p = reinterpret_cast<const uint8_t*>(buf.data());
+    return crc32c::Extend(0, p, buf.size());
 }
 
 uint32_t crc32c_abseil(std::string_view buf) {
@@ -90,20 +96,20 @@ struct crc_bench {
 
     crc_bench()
       : _data(tests::random_bytes(Size)) {
-        auto hashing = crc32c_hashing(data());
+        auto google = crc32c_google(data());
         auto abseil = crc32c_abseil(data());
         vassert(
-          hashing == abseil,
-          "crc32c disagreement at {} bytes: hashing={:#010x} abseil={:#010x}",
+          google == abseil,
+          "crc32c disagreement at {} bytes: google={:#010x} abseil={:#010x}",
           Size,
-          hashing,
+          google,
           abseil);
     }
 
     std::string_view data() const { return as_view(_data); }
 
-    [[gnu::noinline]] size_t run_crc32c_hashing() {
-        return measure<inner_iters>([this] { return crc32c_hashing(data()); });
+    [[gnu::noinline]] size_t run_crc32c_google() {
+        return measure<inner_iters>([this] { return crc32c_google(data()); });
     }
 
     [[gnu::noinline]] size_t run_crc32c_abseil() {
@@ -161,10 +167,15 @@ constexpr size_t batch_header_bytes = [] {
 }();
 static_assert(batch_header_bytes == 57);
 
-uint32_t header_crc32c_hashing(const batch_header& h) {
-    crc::crc32c crc;
-    for_each_field(h, [&crc](auto field) { crc.extend(ss::cpu_to_le(field)); });
-    return crc.value();
+uint32_t header_crc32c_google(const batch_header& h) {
+    uint32_t crc = 0;
+    for_each_field(h, [&crc](auto field) {
+        auto le = ss::cpu_to_le(field);
+        // NOLINTNEXTLINE(*-reinterpret-cast)
+        const auto* p = reinterpret_cast<const uint8_t*>(&le);
+        crc = crc32c::Extend(crc, p, sizeof(le));
+    });
+    return crc;
 }
 
 uint32_t header_crc32c_abseil(const batch_header& h) {
@@ -184,19 +195,19 @@ struct crc_batch_header {
       1, bytes_per_run / batch_header_bytes);
 
     crc_batch_header() {
-        auto hashing = header_crc32c_hashing(_header);
+        auto google = header_crc32c_google(_header);
         auto abseil = header_crc32c_abseil(_header);
         vassert(
-          hashing == abseil,
-          "crc32c disagreement over batch header: hashing={:#010x} "
+          google == abseil,
+          "crc32c disagreement over batch header: google={:#010x} "
           "abseil={:#010x}",
-          hashing,
+          google,
           abseil);
     }
 
-    [[gnu::noinline]] size_t run_crc32c_hashing() {
+    [[gnu::noinline]] size_t run_crc32c_google() {
         return measure<inner_iters>(
-          [this] { return header_crc32c_hashing(_header); });
+          [this] { return header_crc32c_google(_header); });
     }
 
     [[gnu::noinline]] size_t run_crc32c_abseil() {
@@ -225,10 +236,16 @@ private:
 // fragmented iobuf
 // ---------------------------------------------------------------------------
 
-uint32_t iobuf_crc32c_hashing(const iobuf& buf) {
-    crc::crc32c crc;
-    crc_extend_iobuf(crc, buf);
-    return crc.value();
+uint32_t iobuf_crc32c_google(const iobuf& buf) {
+    uint32_t crc = 0;
+    auto in = iobuf::iterator_consumer(buf.cbegin(), buf.cend());
+    (void)in.consume(buf.size_bytes(), [&crc](const char* src, size_t sz) {
+        // NOLINTNEXTLINE(*-reinterpret-cast)
+        const auto* p = reinterpret_cast<const uint8_t*>(src);
+        crc = crc32c::Extend(crc, p, sz);
+        return ss::stop_iteration::no;
+    });
+    return crc;
 }
 
 uint32_t iobuf_crc32c_abseil(const iobuf& buf) {
@@ -262,23 +279,23 @@ struct crc_iobuf_bench {
     crc_iobuf_bench()
       : _data(tests::random_bytes(Size))
       , _buf(make_fragmented(as_view(_data), FragSize)) {
-        auto contiguous = crc32c_hashing(as_view(_data));
-        auto hashing = iobuf_crc32c_hashing(_buf);
+        auto contiguous = crc32c_google(as_view(_data));
+        auto google = iobuf_crc32c_google(_buf);
         auto abseil = iobuf_crc32c_abseil(_buf);
         vassert(
-          hashing == contiguous && abseil == contiguous,
+          google == contiguous && abseil == contiguous,
           "crc32c disagreement over {} bytes in {} byte fragments: "
-          "hashing={:#010x} abseil={:#010x} contiguous={:#010x}",
+          "google={:#010x} abseil={:#010x} contiguous={:#010x}",
           Size,
           FragSize,
-          hashing,
+          google,
           abseil,
           contiguous);
     }
 
-    [[gnu::noinline]] size_t run_crc32c_hashing() {
+    [[gnu::noinline]] size_t run_crc32c_google() {
         return measure<inner_iters>(
-          [this] { return iobuf_crc32c_hashing(_buf); });
+          [this] { return iobuf_crc32c_google(_buf); });
     }
 
     [[gnu::noinline]] size_t run_crc32c_abseil() {
@@ -300,11 +317,9 @@ private:
 // passes. Note that it switches to non-temporal stores for large buffers, which
 // is a win here but bypasses the cache the copy's consumer may want.
 
-uint32_t memcpy_crc32c_hashing(char* dst, std::string_view src) {
+uint32_t memcpy_crc32c_google(char* dst, std::string_view src) {
     std::memcpy(dst, src.data(), src.size());
-    crc::crc32c crc;
-    crc.extend(dst, src.size());
-    return crc.value();
+    return crc32c_google({dst, src.size()});
 }
 
 uint32_t memcpy_crc32c_abseil(char* dst, std::string_view src) {
@@ -320,22 +335,22 @@ struct crc_memcpy_bench {
     crc_memcpy_bench()
       : _src(tests::random_bytes(Size))
       , _dst(Size) {
-        auto expected = crc32c_hashing(as_view(_src));
-        auto hashing = memcpy_crc32c_hashing(_dst.data(), as_view(_src));
+        auto expected = crc32c_google(as_view(_src));
+        auto google = memcpy_crc32c_google(_dst.data(), as_view(_src));
         auto abseil = memcpy_crc32c_abseil(_dst.data(), as_view(_src));
         vassert(
-          hashing == expected && abseil == expected,
-          "crc32c disagreement over a {} byte copy: hashing={:#010x} "
+          google == expected && abseil == expected,
+          "crc32c disagreement over a {} byte copy: google={:#010x} "
           "abseil={:#010x} expected={:#010x}",
           Size,
-          hashing,
+          google,
           abseil,
           expected);
     }
 
-    [[gnu::noinline]] size_t run_hashing() {
+    [[gnu::noinline]] size_t run_google() {
         return measure<inner_iters>(
-          [this] { return memcpy_crc32c_hashing(_dst.data(), as_view(_src)); });
+          [this] { return memcpy_crc32c_google(_dst.data(), as_view(_src)); });
     }
 
     [[gnu::noinline]] size_t run_abseil() {
@@ -354,9 +369,7 @@ private:
 
 #define CRC_BENCH(size)                                                        \
     struct crc_##size##b : crc_bench<size> {};                                 \
-    PERF_TEST_F(crc_##size##b, crc32c_hashing) {                               \
-        return run_crc32c_hashing();                                           \
-    }                                                                          \
+    PERF_TEST_F(crc_##size##b, crc32c_google) { return run_crc32c_google(); }  \
     PERF_TEST_F(crc_##size##b, crc32c_abseil) { return run_crc32c_abseil(); }
 
 // 57 is the batch header and 128 is just past the 64 byte buffer below which
@@ -380,14 +393,14 @@ CRC_BENCH(16256)
 CRC_BENCH(16384)
 CRC_BENCH(65536)
 
-PERF_TEST_F(crc_batch_header, crc32c_hashing) { return run_crc32c_hashing(); }
+PERF_TEST_F(crc_batch_header, crc32c_google) { return run_crc32c_google(); }
 PERF_TEST_F(crc_batch_header, crc32c_abseil) { return run_crc32c_abseil(); }
 
 #define CRC_IOBUF_BENCH(size, frag_size)                                       \
     struct crc_iobuf_##size##b_##frag_size##b_frags                            \
       : crc_iobuf_bench<size, frag_size> {};                                   \
-    PERF_TEST_F(crc_iobuf_##size##b_##frag_size##b_frags, crc32c_hashing) {    \
-        return run_crc32c_hashing();                                           \
+    PERF_TEST_F(crc_iobuf_##size##b_##frag_size##b_frags, crc32c_google) {     \
+        return run_crc32c_google();                                            \
     }                                                                          \
     PERF_TEST_F(crc_iobuf_##size##b_##frag_size##b_frags, crc32c_abseil) {     \
         return run_crc32c_abseil();                                            \
@@ -398,8 +411,8 @@ CRC_IOBUF_BENCH(65536, 16384)
 
 #define CRC_MEMCPY_BENCH(size)                                                 \
     struct crc_memcpy_##size##b : crc_memcpy_bench<size> {};                   \
-    PERF_TEST_F(crc_memcpy_##size##b, hashing_two_pass) {                      \
-        return run_hashing();                                                  \
+    PERF_TEST_F(crc_memcpy_##size##b, google_two_pass) {                       \
+        return run_google();                                                   \
     }                                                                          \
     PERF_TEST_F(crc_memcpy_##size##b, abseil_fused) { return run_abseil(); }
 
