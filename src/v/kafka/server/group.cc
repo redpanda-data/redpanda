@@ -1375,8 +1375,10 @@ void group::remove_pending_member(kafka::member_id member_id) {
 
 void group::pre_shutdown() {
     _probe.reset();
-    for (auto& p : _offsets) {
-        p.second->probe.reset();
+    for (auto& t : _offsets) {
+        for (auto& p : t.second) {
+            p.second->probe.reset();
+        }
     }
 }
 
@@ -2170,7 +2172,8 @@ void group::update_store_offset_builder(
 }
 bool group::try_upsert_offset(
   const model::topic_partition& tp, offset_metadata md) {
-    if (auto o_it = _offsets.find(tp); o_it != _offsets.end()) {
+    auto& partitions = _offsets[tp.topic];
+    if (auto o_it = partitions.find(tp.partition); o_it != partitions.end()) {
         if (o_it->second->metadata.log_offset < md.log_offset) {
             if (o_it->second->metadata.offset > md.offset) [[unlikely]] {
                 vlog(
@@ -2186,8 +2189,8 @@ bool group::try_upsert_offset(
         }
         return false;
     } else {
-        _offsets.emplace(
-          tp,
+        partitions.emplace(
+          tp.partition,
           std::make_unique<offset_metadata_with_probe>(
             std::move(md),
             _id,
@@ -2198,7 +2201,8 @@ bool group::try_upsert_offset(
     }
 }
 
-group::offset_commit_stages group::store_offsets(offset_commit_request&& r) {
+std::optional<group::prepared_offset_commits>
+group::prepare_offset_commits(const offset_commit_request& r) {
     cluster::simple_batch_builder builder(
       model::record_batch_type::raft_data, model::offset(0));
 
@@ -2261,13 +2265,25 @@ group::offset_commit_stages group::store_offsets(offset_commit_request&& r) {
         }
     }
     if (builder.empty()) {
+        return std::nullopt;
+    }
+    return prepared_offset_commits{
+      .batch = std::move(builder).build(),
+      .commits = std::move(offset_commits),
+    };
+}
+
+group::offset_commit_stages group::store_offsets(offset_commit_request&& r) {
+    auto prepared = prepare_offset_commits(r);
+    if (!prepared) {
         vlog(_ctxlog.debug, "Empty offsets committed request");
         return offset_commit_stages(
           offset_commit_response(r, error_code::none));
     }
+    auto offset_commits = std::move(prepared->commits);
 
     auto replicate_stages = _partition->raft()->replicate_in_stages(
-      chunked_vector<model::record_batch>::single(std::move(builder).build()),
+      chunked_vector<model::record_batch>::single(std::move(prepared->batch)),
       raft::replicate_options(raft::consistency_level::quorum_ack, _term));
 
     auto f = replicate_stages.replicate_finished.then(
@@ -2473,55 +2489,64 @@ group::handle_offset_commit(offset_commit_request&& r) {
     }
 }
 
-ss::future<offset_fetch_response_group>
+offset_fetch_response_group
 group::handle_offset_fetch(offset_fetch_request_group r, bool require_stable) {
     if (in_state(group_state::dead)) {
-        co_return offset_fetch_response::make_group(std::move(r));
+        return offset_fetch_response::make_group(std::move(r));
     }
 
     offset_fetch_response_group resp{
       .group_id = r.group_id, .error_code = error_code::none};
 
+    /*
+     * a partition's offset can only be unstable when there is a pending
+     * commit or an open transaction.
+     */
+    const bool check_unstable
+      = require_stable
+        && (!_pending_offset_commits.empty() || has_transactions_in_progress());
+
     // retrieve all topics available
     if (!r.topics) {
-        chunked_hash_map<
-          model::topic,
-          chunked_vector<offset_fetch_response_partitions>>
-          tmp;
-        for (const auto& e : _offsets) {
-            offset_fetch_response_partitions p = {
-              .partition_index = e.first.partition,
-              .committed_offset = model::offset(-1),
-              .metadata = "",
-              .error_code = error_code::none,
-            };
+        resp.topics.reserve(_offsets.size());
+        for (const auto& [topic, partitions] : _offsets) {
+            offset_fetch_response_topics t;
+            t.name = topic;
+            t.partitions.reserve(partitions.size());
+            for (const auto& [id, md] : partitions) {
+                offset_fetch_response_partitions p = {
+                  .partition_index = id,
+                  .committed_offset = model::offset(-1),
+                  .metadata = "",
+                  .error_code = error_code::none,
+                };
 
-            if (require_stable && has_pending_transaction(e.first)) {
-                p.error_code = error_code::unstable_offset_commit;
-            } else {
-                p.committed_offset = e.second->metadata.offset;
-                p.committed_leader_epoch
-                  = e.second->metadata.committed_leader_epoch;
-                p.metadata = e.second->metadata.metadata;
+                if (
+                  check_unstable
+                  && has_pending_transaction(
+                    model::topic_partition(topic, id))) {
+                    p.error_code = error_code::unstable_offset_commit;
+                } else {
+                    p.committed_offset = md->metadata.offset;
+                    p.committed_leader_epoch
+                      = md->metadata.committed_leader_epoch;
+                    p.metadata = md->metadata.metadata;
+                }
+                t.partitions.push_back(std::move(p));
             }
-            tmp[e.first.topic].push_back(std::move(p));
+            resp.topics.push_back(std::move(t));
         }
 
-        for (auto& e : tmp) {
-            resp.topics.push_back(
-              {.name = e.first, .partitions = std::move(e.second)});
-        }
-
-        co_return resp;
+        return resp;
     }
 
     // retrieve for the topics specified in the request
     for (const auto& topic : *r.topics) {
         offset_fetch_response_topics t;
         t.name = topic.name;
+        t.partitions.reserve(topic.partition_indexes.size());
+        const auto t_it = _offsets.find(topic.name);
         for (auto id : topic.partition_indexes) {
-            model::topic_partition tp(topic.name, id);
-
             offset_fetch_response_partitions p = {
               .partition_index = id,
               .committed_offset = model::offset(-1),
@@ -2529,16 +2554,19 @@ group::handle_offset_fetch(offset_fetch_request_group r, bool require_stable) {
               .error_code = error_code::none,
             };
 
-            if (require_stable && has_pending_transaction(tp)) {
+            if (
+              check_unstable
+              && has_pending_transaction(
+                model::topic_partition(topic.name, id))) {
                 p.error_code = error_code::unstable_offset_commit;
-            } else {
-                auto res = offset(tp);
-                if (res) {
-                    p.partition_index = id;
-                    p.committed_offset = res->offset;
-                    p.committed_leader_epoch = res->committed_leader_epoch;
-                    p.metadata = res->metadata;
-                    p.error_code = error_code::none;
+            } else if (t_it != _offsets.end()) {
+                if (
+                  auto p_it = t_it->second.find(id);
+                  p_it != t_it->second.end()) {
+                    p.committed_offset = p_it->second->metadata.offset;
+                    p.committed_leader_epoch
+                      = p_it->second->metadata.committed_leader_epoch;
+                    p.metadata = p_it->second->metadata.metadata;
                 }
             }
             t.partitions.push_back(std::move(p));
@@ -2546,7 +2574,7 @@ group::handle_offset_fetch(offset_fetch_request_group r, bool require_stable) {
         resp.topics.push_back(std::move(t));
     }
 
-    co_return resp;
+    return resp;
 }
 
 kafka::member_id group::generate_member_id(const join_group_request& r) {
@@ -2631,8 +2659,11 @@ ss::future<error_code> group::remove() {
     storage::record_batch_builder builder(
       model::record_batch_type::raft_data, model::offset(0));
 
-    for (auto& offset : _offsets) {
-        add_offset_tombstone_record(_id, offset.first, builder);
+    for (const auto& [topic, partitions] : _offsets) {
+        for (const auto& [pid, md] : partitions) {
+            add_offset_tombstone_record(
+              _id, model::topic_partition(topic, pid), builder);
+        }
     }
 
     // build group tombstone
@@ -2681,9 +2712,13 @@ ss::future<> group::remove_topic_partitions(
     chunked_vector<std::pair<model::topic_partition, offset_metadata>> removed;
     for (const auto& tp : tps) {
         _pending_offset_commits.erase(tp);
-        if (auto offset = _offsets.extract(tp); offset) {
-            removed.emplace_back(
-              std::move(offset->first), std::move(offset->second->metadata));
+        if (auto t_it = _offsets.find(tp.topic); t_it != _offsets.end()) {
+            if (auto offset = t_it->second.extract(tp.partition); offset) {
+                if (t_it->second.empty()) {
+                    _offsets.erase(t_it);
+                }
+                removed.emplace_back(tp, std::move(offset->second->metadata));
+            }
         }
     }
 
@@ -3485,41 +3520,43 @@ chunked_vector<model::topic_partition> group::filter_expired_offsets(
 
     const auto now = model::timestamp::now();
     chunked_vector<model::topic_partition> offsets;
-    for (const auto& offset : _offsets) {
-        if (offset.second->metadata.non_reclaimable) {
-            continue;
-        }
-
-        /*
-         * an offset won't be removed if its topic has an active subscription or
-         * there are pending offset commits for the offset's topic.
-         */
-        if (
-          subscribed(offset.first.topic)
-          || _pending_offset_commits.contains(offset.first)) {
-            continue;
-        }
-
-        if (offset.second->metadata.expiry_timestamp.has_value()) {
-            /*
-             * the old way is explicit expiration time point per offset
-             */
-            const auto& expires
-              = offset.second->metadata.expiry_timestamp.value();
-            if (expires > now) {
+    for (const auto& [topic, partitions] : _offsets) {
+        const auto topic_subscribed = subscribed(topic);
+        for (const auto& [pid, offset] : partitions) {
+            if (offset->metadata.non_reclaimable) {
                 continue;
             }
-        } else {
+
+            model::topic_partition tp(topic, pid);
             /*
-             * the new way is a configurable global retention duration
+             * an offset won't be removed if its topic has an active
+             * subscription or there are pending offset commits for the
+             * offset's topic.
              */
-            const auto expires = effective_expires(offset.second->metadata);
-            if (model::timestamp(now() - expires()) < retain_for) {
+            if (topic_subscribed || _pending_offset_commits.contains(tp)) {
                 continue;
             }
-        }
 
-        offsets.push_back(offset.first);
+            if (offset->metadata.expiry_timestamp.has_value()) {
+                /*
+                 * the old way is explicit expiration time point per offset
+                 */
+                const auto& expires = offset->metadata.expiry_timestamp.value();
+                if (expires > now) {
+                    continue;
+                }
+            } else {
+                /*
+                 * the new way is a configurable global retention duration
+                 */
+                const auto expires = effective_expires(offset->metadata);
+                if (model::timestamp(now() - expires()) < retain_for) {
+                    continue;
+                }
+            }
+
+            offsets.push_back(std::move(tp));
+        }
     }
 
     return offsets;
@@ -3621,7 +3658,7 @@ group::delete_expired_offsets(std::chrono::seconds retention_period) {
     auto offsets = get_expired_offsets(retention_period);
     for (const auto& offset : offsets) {
         vlog(_ctxlog.debug, "Expiring group offset {}", offset);
-        _offsets.erase(offset);
+        erase_offset(offset);
     }
 
     /*
@@ -3644,7 +3681,7 @@ group::delete_offsets(const chunked_vector<model::topic_partition>& offsets) {
     for (const auto& offset : offsets) {
         if (!subscribed(offset.topic)) {
             vlog(_ctxlog.debug, "Deleting group offset {}", offset);
-            _offsets.erase(offset);
+            erase_offset(offset);
             _pending_offset_commits.erase(offset);
             deleted_offsets.push_back(offset);
         }

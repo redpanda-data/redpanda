@@ -276,6 +276,11 @@ public:
         absl::node_hash_map<model::topic_partition, offset_metadata> offsets;
     };
 
+    using partition_offsets_map = chunked_hash_map<
+      model::partition_id,
+      std::unique_ptr<offset_metadata_with_probe>>;
+    using offsets_map = chunked_hash_map<model::topic, partition_offsets_map>;
+
     group(
       kafka::group_id id,
       group_state s,
@@ -605,8 +610,12 @@ public:
 
     std::optional<offset_metadata>
     offset(const model::topic_partition& tp) const {
-        if (auto it = _offsets.find(tp); it != _offsets.end()) {
-            return it->second->metadata;
+        if (auto t_it = _offsets.find(tp.topic); t_it != _offsets.end()) {
+            if (
+              auto p_it = t_it->second.find(tp.partition);
+              p_it != t_it->second.end()) {
+                return p_it->second->metadata;
+            }
         }
         return std::nullopt;
     }
@@ -634,6 +643,18 @@ public:
     ss::future<txn_offset_commit_response>
     store_txn_offsets(txn_offset_commit_request r);
 
+    struct prepared_offset_commits {
+        model::record_batch batch;
+        chunked_vector<std::pair<model::topic_partition, offset_metadata>>
+          commits;
+    };
+
+    /// Builds the record batch for an offset commit request and registers the
+    /// offsets as pending commits. Returns std::nullopt if the request
+    /// contains no offsets.
+    std::optional<prepared_offset_commits>
+    prepare_offset_commits(const offset_commit_request& r);
+
     offset_commit_stages store_offsets(offset_commit_request&& r);
 
     ss::future<txn_offset_commit_response>
@@ -650,15 +671,17 @@ public:
     ss::future<cluster::commit_group_tx_reply>
     handle_commit_tx(cluster::commit_group_tx_request r);
 
-    ss::future<offset_fetch_response_group>
+    offset_fetch_response_group
     handle_offset_fetch(offset_fetch_request_group r, bool require_stable);
 
     void insert_offset(const model::topic_partition& tp, offset_metadata md) {
-        if (auto o_it = _offsets.find(tp); o_it != _offsets.end()) {
-            o_it->second->metadata = std::move(md);
+        auto& partitions = _offsets[tp.topic];
+        if (
+          auto p_it = partitions.find(tp.partition); p_it != partitions.end()) {
+            p_it->second->metadata = std::move(md);
         } else {
-            _offsets.emplace(
-              tp,
+            partitions.emplace(
+              tp.partition,
               std::make_unique<offset_metadata_with_probe>(
                 std::move(md),
                 _id,
@@ -666,6 +689,21 @@ public:
                 _conf.enable_consumer_group_metrics.bind(
                   std::function{enabled_metrics::from_vector})));
         }
+    }
+
+    /// removes a tracked offset; empty per-topic maps are erased so that
+    /// _offsets.empty() means "no offsets" and iteration never visits
+    /// offset-less topics
+    bool erase_offset(const model::topic_partition& tp) {
+        auto t_it = _offsets.find(tp.topic);
+        if (t_it == _offsets.end()) {
+            return false;
+        }
+        const auto erased = t_it->second.erase(tp.partition) > 0;
+        if (t_it->second.empty()) {
+            _offsets.erase(t_it);
+        }
+        return erased;
     }
 
     bool
@@ -877,11 +915,7 @@ private:
     bool has_transactions_in_progress() const;
 
     bool has_pending_transaction(const model::topic_partition& tp) {
-        if (
-          std::any_of(
-            _pending_offset_commits.begin(),
-            _pending_offset_commits.end(),
-            [&tp](const auto& tp_info) { return tp_info.first == tp; })) {
+        if (_pending_offset_commits.contains(tp)) {
             return true;
         }
 
@@ -973,15 +1007,9 @@ private:
     config::configuration& _conf;
     ss::lw_shared_ptr<ss::rwlock> _catchup_lock;
     ss::lw_shared_ptr<cluster::partition> _partition;
-    chunked_hash_map<
-      model::topic_partition,
-      std::unique_ptr<offset_metadata_with_probe>>
-      _offsets;
+    offsets_map _offsets;
     consumer_lag_metrics _lag_metrics;
-    group_probe<
-      model::topic_partition,
-      std::unique_ptr<offset_metadata_with_probe>>
-      _probe;
+    group_probe<model::topic, partition_offsets_map> _probe;
     ctx_log _ctxlog;
     ctx_log _ctx_txlog;
     /**

@@ -1352,3 +1352,23 @@ redpanda_cc_btest(
         "@seastar//:testing",
     ],
 )
+
+redpanda_cc_bench(
+    name = "group_offset_commit_rpbench",
+    srcs = [
+        "group_offset_commit_bench.cc",
+    ],
+    memory = "2GiB",
+    deps = [
+        "//src/v/cluster",
+        "//src/v/config",
+        "//src/v/container:chunked_vector",
+        "//src/v/kafka/protocol",
+        "//src/v/kafka/protocol:offset_commit",
+        "//src/v/kafka/server",
+        "//src/v/model",
+        "@fmt",
+        "@seastar",
+        "@seastar//:benchmark",
+    ],
+)
