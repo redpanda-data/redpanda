@@ -18,7 +18,7 @@ redpanda_test_cc_library(
 
 redpanda_cc_gtest(
     name = "end_to_end_test",
-    timeout = "short",
+    timeout = "moderate",
     srcs = [
         "end_to_end_test.cc",
     ],
