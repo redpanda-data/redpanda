@@ -244,6 +244,22 @@ class RandomNodeOperationsBase(PreallocNodesTest):
                     # Tune down the leveling interval so leveling actually runs
                     # (and is exercised by node operations) within the test.
                     "cloud_topics_leveling_interval_ms": 5000,
+                    # Exercise incremental commits of compaction and leveling
+                    # output. Commits only happen at source extent boundaries
+                    # once a commit interval's worth of output is pending, so
+                    # the reconciler's objects must also be small enough for a
+                    # job to see several extents at this test's data volume.
+                    #
+                    # Each commit interval matches its sink's output object
+                    # size, so a commit cuts an object that is already full.
+                    # An interval below the object size would cut every
+                    # object short of `min_extent_size_ratio` of the
+                    # reconciler's size, leaving leveling's own output
+                    # undersized and its ranges eligible forever.
+                    "cloud_topics_reconciliation_max_object_size": 8 * 1024 * 1024,
+                    "cloud_topics_compaction_max_object_size": 4 * 1024 * 1024,
+                    "cloud_topics_compaction_commit_interval_bytes": 4 * 1024 * 1024,
+                    "cloud_topics_leveling_commit_interval_bytes": 8 * 1024 * 1024,
                 },
             )
 
