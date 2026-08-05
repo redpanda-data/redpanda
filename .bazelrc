@@ -139,6 +139,15 @@ build --host_per_file_copt=external/ragel.*@-Wno-return-type
 build --per_file_copt=external/.*@-Wno-attribute-alias
 build --host_per_file_copt=external/.*@-Wno-attribute-alias
 
+# All C/C++ compiles build with -Werror, including external modules: the
+# suppressions above keep them warning-free, and this stops new warnings
+# (e.g. from toolchain bumps) from scrolling by unnoticed. per_file_copt
+# rather than --copt because --copt leaks into the CFLAGS/CXXFLAGS of
+# rules_foreign_cc builds (openssl, krb5, hwloc), which are not
+# warning-clean and where -Werror can also break configure feature checks.
+build --per_file_copt=.*@-Werror
+build --host_per_file_copt=.*@-Werror
+
 # -base configs generally aren't meant to be used directly but are
 # helpers to DRY later user-facing configs
 
