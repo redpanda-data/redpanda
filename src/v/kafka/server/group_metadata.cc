@@ -324,6 +324,30 @@ iobuf maybe_unwrap_from_iobuf(iobuf buffer) {
     }
     return buffer;
 }
+
+template<typename KV>
+group_metadata_serializer::key_value to_kv_impl(KV md) {
+    group_metadata_serializer::key_value ret;
+    ret.key = metadata_to_iobuf(md.key);
+    if (md.value) {
+        ret.value = metadata_to_iobuf(*md.value);
+    }
+    return ret;
+}
+
+template<typename KV>
+KV decode_kv(model::record record) {
+    KV ret;
+    using key_type = decltype(ret.key);
+    using value_type = typename decltype(ret.value)::value_type;
+    protocol::decoder k_reader(maybe_unwrap_from_iobuf(record.release_key()));
+    ret.key = key_type::decode(k_reader);
+    if (record.has_value()) {
+        protocol::decoder v_reader(record.release_value());
+        ret.value = value_type::decode(v_reader);
+    }
+    return ret;
+}
 } // namespace
 
 fmt::iterator group_block_info::format_to(fmt::iterator it) const {
@@ -362,48 +386,16 @@ group_metadata_type get_metadata_type(iobuf buffer) {
     return decode_metadata_type(reader);
 };
 
-key_value to_kv(group_metadata_kv md) {
-    key_value ret;
-    ret.key = metadata_to_iobuf(md.key);
-    if (md.value) {
-        ret.value = metadata_to_iobuf(*md.value);
-    }
+key_value to_kv(group_metadata_kv md) { return to_kv_impl(std::move(md)); }
 
-    return ret;
-}
-
-key_value to_kv(offset_metadata_kv md) {
-    group_metadata_serializer::key_value ret;
-    ret.key = metadata_to_iobuf(md.key);
-    if (md.value) {
-        ret.value = metadata_to_iobuf(*md.value);
-    }
-
-    return ret;
-}
+key_value to_kv(offset_metadata_kv md) { return to_kv_impl(std::move(md)); }
 
 group_metadata_kv decode_group_metadata(model::record record) {
-    group_metadata_kv ret;
-    protocol::decoder k_reader(maybe_unwrap_from_iobuf(record.release_key()));
-    ret.key = group_metadata_key::decode(k_reader);
-    if (record.has_value()) {
-        protocol::decoder v_reader(record.release_value());
-        ret.value = group_metadata_value::decode(v_reader);
-    }
-
-    return ret;
+    return decode_kv<group_metadata_kv>(std::move(record));
 }
 
 offset_metadata_kv decode_offset_metadata(model::record record) {
-    offset_metadata_kv ret;
-    protocol::decoder k_reader(maybe_unwrap_from_iobuf(record.release_key()));
-    ret.key = offset_metadata_key::decode(k_reader);
-    if (record.has_value()) {
-        protocol::decoder v_reader(record.release_value());
-        ret.value = offset_metadata_value::decode(v_reader);
-    }
-
-    return ret;
+    return decode_kv<offset_metadata_kv>(std::move(record));
 }
 } // namespace group_metadata_serializer
 
