@@ -297,18 +297,15 @@ func validateCloudSecrets(ctx context.Context, prof *config.RpkProfile, slCfg *S
 	if err != nil {
 		return err
 	}
-	secrets, err := dpClient.Secret.ListSecrets(ctx, connect.NewRequest(&dataplanev1.ListSecretsRequest{
-		PageSize: 500, // 500 is a reasonable upper limit for now.
-		Filter: &dataplanev1.ListSecretsFilter{
-			Scopes: []dataplanev1.Scope{dataplanev1.Scope_SCOPE_REDPANDA_CLUSTER},
-		},
-	}))
+	secrets, err := dpClient.ListAllSecrets(ctx, &dataplanev1.ListSecretsFilter{
+		Scopes: []dataplanev1.Scope{dataplanev1.Scope_SCOPE_REDPANDA_CLUSTER},
+	})
 	if err != nil {
 		return fmt.Errorf("unable to list secrets at REDPANDA_CLUSTER scope: %v", err)
 	}
 
 	secretRefs := make(map[string]struct{})
-	for _, secret := range secrets.Msg.GetSecrets() {
+	for _, secret := range secrets {
 		secretRefs[fmt.Sprintf("%s%s}", secretsPrefix, secret.Id)] = struct{}{}
 	}
 

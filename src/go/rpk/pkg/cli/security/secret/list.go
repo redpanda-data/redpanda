@@ -14,7 +14,6 @@ import (
 	"strings"
 
 	dataplanev1 "buf.build/gen/go/redpandadata/dataplane/protocolbuffers/go/redpanda/api/dataplane/v1"
-	"connectrpc.com/connect"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/out"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/publicapi"
@@ -48,17 +47,14 @@ func newListCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 			cl, err := publicapi.NewDataPlaneClientSet(url, p.CurrentAuth().AuthToken)
 			out.MaybeDie(err, "unable to initialize cloud client: %v", err)
 
-			request := &dataplanev1.ListSecretsRequest{
-				Filter: &dataplanev1.ListSecretsFilter{
-					NameContains: nameContains,
-				},
-			}
-			response, err := cl.Secret.ListSecrets(cmd.Context(), connect.NewRequest(request))
+			secrets, err := cl.ListAllSecrets(cmd.Context(), &dataplanev1.ListSecretsFilter{
+				NameContains: nameContains,
+			})
 			out.MaybeDie(err, "unable to list secrets: %v", err)
 
 			tw := out.NewTable("NAME", "SCOPES")
 			defer tw.Flush()
-			for _, secret := range response.Msg.Secrets {
+			for _, secret := range secrets {
 				var secretScopes []string
 				for _, scope := range secret.Scopes {
 					name, ok := mapScopeToName()[scope]
