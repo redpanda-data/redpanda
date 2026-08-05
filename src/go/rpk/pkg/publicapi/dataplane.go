@@ -139,6 +139,25 @@ func DataplaneClientFromRpkProfile(p *config.RpkProfile, opts ...connect.ClientO
 	return NewDataPlaneClientSet(url, p.CurrentAuth().AuthToken, opts...)
 }
 
+// ListAllSecrets returns all the Secrets matching the given filter using the
+// pagination feature to traverse all pages of the list. The filter may be nil
+// to list every secret.
+func (dpCl *DataPlaneClientSet) ListAllSecrets(ctx context.Context, filter *dataplanev1.ListSecretsFilter) ([]*dataplanev1.Secret, error) {
+	fetchPage := func(ctx context.Context, pageToken string) ([]*dataplanev1.Secret, string, error) {
+		req := connect.NewRequest(&dataplanev1.ListSecretsRequest{
+			Filter:    filter,
+			PageToken: pageToken,
+			PageSize:  100,
+		})
+		resp, err := dpCl.Secret.ListSecrets(ctx, req)
+		if err != nil {
+			return nil, "", err
+		}
+		return resp.Msg.GetSecrets(), resp.Msg.GetNextPageToken(), nil
+	}
+	return Paginate(ctx, maxPages, fetchPage)
+}
+
 // ListAllShadowLinkTopics returns all the ShadowTopics for a given shadow link
 // using the pagination feature to traverse all pages of the list.
 func (dpCl *DataPlaneClientSet) ListAllShadowLinkTopics(ctx context.Context, shadowLinkName string) ([]*dataplanev1.ShadowTopic, error) {
