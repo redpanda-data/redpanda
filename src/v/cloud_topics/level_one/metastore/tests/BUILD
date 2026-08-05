@@ -98,6 +98,7 @@ redpanda_cc_gtest(
         "//src/v/cloud_storage:remote_label",
         "//src/v/cloud_topics:app",
         "//src/v/cloud_topics/level_one/metastore:domain_uuid",
+        "//src/v/cloud_topics/level_one/metastore:leader_router",
         "//src/v/cloud_topics/level_one/metastore:manifest_io",
         "//src/v/cloud_topics/level_one/metastore:metastore_manifest",
         "//src/v/cloud_topics/level_one/metastore:replicated_metastore",
@@ -120,6 +121,7 @@ redpanda_cc_gtest(
         "//src/v/model",
         "//src/v/serde",
         "//src/v/test_utils:gtest",
+        "//src/v/test_utils:scoped_config",
         "@googletest//:gtest",
     ],
 )

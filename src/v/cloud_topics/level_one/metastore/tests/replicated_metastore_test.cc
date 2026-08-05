@@ -10,6 +10,7 @@
 
 #include "cloud_storage/remote_label.h"
 #include "cloud_topics/level_one/metastore/domain_uuid.h"
+#include "cloud_topics/level_one/metastore/leader_router.h"
 #include "cloud_topics/level_one/metastore/manifest_io.h"
 #include "cloud_topics/level_one/metastore/metastore_manifest.h"
 #include "cloud_topics/level_one/metastore/replicated_metastore.h"
@@ -22,6 +23,7 @@
 #include "lsm/lsm.h"
 #include "model/fundamental.h"
 #include "model/namespace.h"
+#include "test_utils/scoped_config.h"
 
 using namespace cloud_topics::l1;
 
@@ -57,6 +59,21 @@ public:
             add_node(fixture_cfg());
         }
         wait_for_all_members(5s).get();
+    }
+
+    // The seqno of the given partition's last flushed manifest, or nullopt if
+    // it hasn't flushed.
+    std::optional<lsm::sequence_number>
+    persisted_seqno(model::partition_id pid) {
+        auto stm = get_l1_lsm_stm(pid);
+        if (!stm) {
+            return std::nullopt;
+        }
+        const auto& manifest = stm->state().persisted_manifest;
+        if (!manifest.has_value()) {
+            return std::nullopt;
+        }
+        return manifest->get_last_seqno();
     }
 
     // For simple_stm, this returns the state directly.
@@ -1392,6 +1409,58 @@ TEST_P(ReplicatedMetastoreTest, TestGetLevelingInfo) {
 
         EXPECT_THAT(res.ranges, ::testing::ElementsAreArray(c.expected_ranges))
           << c.name;
+    }
+}
+
+TEST_P(ReplicatedMetastoreTest, TestPeriodicFlushSkipsRecentlyFlushedDomains) {
+    if (GetParam() == metastore_backend::simple) {
+        GTEST_SKIP() << "Flush not supported with simple backend";
+    }
+    // Make "flushed recently" (half the flush interval) cover the whole test.
+    scoped_config cfg;
+    cfg.get("cloud_topics_long_term_flush_interval")
+      .set_value(std::chrono::milliseconds(2h));
+
+    auto& app = get_ct_app(model::node_id{0});
+    auto& meta = app.get_sharded_replicated_metastore()->local();
+    auto num_partitions = app.get_sharded_l1_metastore_router()
+                            ->local()
+                            .num_metastore_partitions();
+    ASSERT_TRUE(num_partitions.has_value());
+
+    ASSERT_NO_FATAL_FAILURE(add_initial_objects(meta, 100, 99).get());
+
+    // A forced flush always persists.
+    auto forced = meta.flush().get();
+    ASSERT_TRUE(forced.has_value()) << fmt::to_string(forced.error());
+    std::vector<lsm::sequence_number> before;
+    for (int pid = 0; pid < *num_partitions; ++pid) {
+        auto seqno = persisted_seqno(model::partition_id(pid));
+        ASSERT_TRUE(seqno.has_value())
+          << "partition " << pid << " never persisted a manifest";
+        before.push_back(*seqno);
+    }
+
+    // More writes, so every partition has something new it could persist.
+    ASSERT_NO_FATAL_FAILURE(add_objects_for_topics(meta, 60, 99).get());
+
+    // A periodic flush should decline on every partition, since they all
+    // flushed moments ago. It still reports success: the metadata is durable as
+    // of that flush, just not as of this call.
+    auto skipped = meta.flush(metastore::flush_type::skip_if_recent).get();
+    ASSERT_TRUE(skipped.has_value()) << fmt::to_string(skipped.error());
+    for (int pid = 0; pid < *num_partitions; ++pid) {
+        EXPECT_EQ(persisted_seqno(model::partition_id(pid)), before[pid])
+          << "partition " << pid << " persisted despite flushing recently";
+    }
+
+    // A forced flush ignores the guard.
+    auto forced_again = meta.flush().get();
+    ASSERT_TRUE(forced_again.has_value())
+      << fmt::to_string(forced_again.error());
+    for (int pid = 0; pid < *num_partitions; ++pid) {
+        EXPECT_GT(persisted_seqno(model::partition_id(pid)), before[pid])
+          << "partition " << pid << " did not persist on a forced flush";
     }
 }
 

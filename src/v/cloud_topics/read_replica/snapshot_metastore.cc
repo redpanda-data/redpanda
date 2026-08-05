@@ -337,7 +337,7 @@ snapshot_metastore::get_extent_metadata_backwards(
 }
 
 ss::future<std::expected<std::nullopt_t, l1::metastore::errc>>
-snapshot_metastore::flush() {
+snapshot_metastore::flush(flush_type) {
     co_return std::unexpected(errc::invalid_request);
 }
 
