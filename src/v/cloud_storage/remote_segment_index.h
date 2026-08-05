@@ -78,6 +78,12 @@ private:
     size_t _window{0};
     size_t _sampling_step;
     std::vector<model::record_batch_type> _filter;
+    /// Running max timestamp over all data batches seen so far. Written to
+    /// the index instead of the sampled batch's own max timestamp so that
+    /// the time index stays monotonic even when producers use
+    /// non-monotonic CreateTime timestamps, keeping timestamp seeks safe
+    /// (see offset_index::find_timestamp).
+    model::timestamp _running_max_timestamp{model::timestamp::missing()};
     /// Collected stats
     std::optional<std::reference_wrapper<segment_record_stats>> _stats;
 };
