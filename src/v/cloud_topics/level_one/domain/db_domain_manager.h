@@ -143,6 +143,10 @@ private:
     ss::future<> gc_loop();
     ss::lowres_clock::duration gc_interval() const;
 
+    // Whether this domain flushed recently enough in this term that a
+    // skippable flush can decline to persist again.
+    bool flushed_recently() const;
+
     struct gate_read_lock {
         ss::gate::holder gate;
         ss::rwlock::holder db_lock;
@@ -267,6 +271,14 @@ private:
     entity_lock_map<object_id> object_locks_{"l1/domain/object"};
 
     config::binding<std::chrono::milliseconds> gc_interval_;
+    config::binding<std::chrono::milliseconds> flush_interval_;
+
+    // When this domain last successful call to flush_domain, used to let
+    // periodic flushes skip a if we flushed recently. Empty until the first
+    // flush of this term.
+    // NOTE: doesn't account for flushes outside of flush_domain, e.g. those
+    // triggered by memtable limits.
+    std::optional<ss::lowres_clock::time_point> last_flush_;
     // This semaphore is used as a way to signal a change to
     // `cloud_topics_long_term_garbage_collection_interval` during the `wait()`
     // operation in the main garbage collection loop.

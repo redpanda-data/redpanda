@@ -107,7 +107,8 @@ public:
       kafka::offset,
       size_t) override;
 
-    ss::future<std::expected<std::nullopt_t, errc>> flush() override;
+    ss::future<std::expected<std::nullopt_t, errc>>
+      flush(flush_type = flush_type::force) override;
 
     ss::future<std::expected<std::nullopt_t, errc>>
     restore(const cloud_storage::remote_label&) override;
