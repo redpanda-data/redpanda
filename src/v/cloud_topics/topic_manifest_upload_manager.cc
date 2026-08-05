@@ -13,8 +13,11 @@
 #include "cloud_io/remote.h"
 #include "cloud_storage/topic_path_provider.h"
 #include "cloud_topics/logger.h"
+#include "cloud_topics/state_accessors.h"
 #include "cloud_topics/topic_manifest_uploader.h"
+#include "cluster/metadata_cache.h"
 #include "cluster/partition.h"
+#include "cluster/topic_configuration.h"
 #include "ssx/actor.h"
 #include "utils/retry_chain_node.h"
 
@@ -70,25 +73,35 @@ protected:
 private:
     ss::future<std::expected<void, topic_manifest_uploader::error>>
     upload_once() {
-        auto topic_cfg_opt = _partition->get_topic_config();
-        if (!topic_cfg_opt.has_value()) {
-            // Topic config may not yet be set if we raced with partition
-            // creation. Retry after backoff.
+        // Read the config from the topic table (metadata_cache reads through
+        // to the shard-local topic table): the partition's cached copy is
+        // updated asynchronously by controller backend reconciliation and
+        // may not yet reflect the update that signalled us.
+        auto* metadata_cache
+          = _partition->get_cloud_topics_state()->local().get_metadata_cache();
+        std::optional<cluster::topic_configuration> topic_cfg_opt
+          = metadata_cache->get_topic_cfg(
+            model::topic_namespace_view(_partition->ntp()));
+        if (
+          !topic_cfg_opt.has_value()
+          || topic_cfg_opt->tp_id != _tidp.topic_id) {
+            // Topic was deleted, or recreated under the same name; the loop
+            // will be stopped by the deletion notification. Retry until then.
             co_return std::unexpected(
               topic_manifest_uploader::error{
                 topic_manifest_uploader::errc::io_error,
                 fmt::format(
-                  "topic config not yet set on partition 0: {}", _tidp)});
+                  "no topic with matching id in topic table: {} ({})",
+                  _partition->ntp(),
+                  _tidp)});
         }
+        auto& topic_cfg = *topic_cfg_opt;
 
         // Tweak the replication factor based on the current number of
         // replicas, matching the behavior in tiered storage.
         // TODO: probably not needed?
-        auto& topic_cfg = topic_cfg_opt->get();
-        auto replication_factor = cluster::replication_factor(
+        topic_cfg.replication_factor = cluster::replication_factor(
           _partition->raft()->config().current_config().voters.size());
-        auto cfg_copy = topic_cfg;
-        cfg_copy.replication_factor = replication_factor;
 
         cloud_storage::topic_path_provider path_provider(
           topic_cfg.properties.remote_label,
@@ -99,7 +112,7 @@ private:
 
         vlog(cd_log.info, "Uploading topic manifest for {}", _tidp);
         co_return co_await _uploader.upload_manifest(
-          path_provider, cfg_copy, rev, fib);
+          path_provider, topic_cfg, rev, fib);
     }
 
     // Retries uploading until it succeeds or until we're shutting down.
