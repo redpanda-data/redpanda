@@ -129,7 +129,8 @@ public:
       kafka::offset,
       size_t) override;
 
-    ss::future<std::expected<std::nullopt_t, errc>> flush() override {
+    ss::future<std::expected<std::nullopt_t, errc>>
+    flush(flush_type = flush_type::force) override {
         co_return std::unexpected(errc::transport_error);
     }
 

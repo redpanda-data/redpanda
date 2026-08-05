@@ -965,7 +965,7 @@ replicated_metastore::get_extent_metadata_backwards(
 }
 
 ss::future<std::expected<std::nullopt_t, metastore::errc>>
-replicated_metastore::flush() {
+replicated_metastore::flush(flush_type type) {
     auto num_partitions = fe_.num_metastore_partitions();
     if (!num_partitions.has_value()) {
         vlog(cd_log.warn, "Unable to get num metastore partitions for flush");
@@ -982,7 +982,8 @@ replicated_metastore::flush() {
     domains.reserve(*num_partitions);
     for (int pid = 0; pid < *num_partitions; ++pid) {
         rpc::flush_domain_request req{
-          .metastore_partition = model::partition_id{pid}};
+          .metastore_partition = model::partition_id{pid},
+          .skip_if_recent = type == flush_type::skip_if_recent};
 
         auto reply_fut = co_await ss::coroutine::as_future(
           fe_.flush_domain(std::move(req)));
