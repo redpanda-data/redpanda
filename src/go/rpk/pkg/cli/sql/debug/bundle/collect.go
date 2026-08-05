@@ -19,6 +19,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/debug/debugbundle"
@@ -45,6 +46,9 @@ type Options struct {
 	LogSinceUnixMs    int64
 	LogSizeLimitBytes uint64
 	MetricsPort       uint16
+	MetricsSamples    int
+	MetricsInterval   time.Duration
+	Namespace         string
 	ToolVersion       string
 }
 
@@ -52,7 +56,7 @@ type Options struct {
 type collectionResult struct {
 	Node      string `json:"node"`
 	RPC       string `json:"rpc"`
-	Status    string `json:"status"` // "ok" | "error"
+	Status    string `json:"status"` // "ok" | "error" | "skipped"
 	ElapsedMs int64  `json:"elapsed_ms"`
 	Error     string `json:"error,omitempty"`
 }
@@ -85,9 +89,12 @@ func writeBundle(ctx context.Context, out io.Writer, opts Options) error {
 }
 
 type bundle struct {
-	zw       *zip.Writer
-	opts     Options
-	hc       *http.Client
+	zw   *zip.Writer
+	opts Options
+	hc   *http.Client
+
+	// mu guards zw, results, errs, and versions during the per-node fan-out.
+	mu       sync.Mutex
 	results  []collectionResult
 	errs     []string
 	versions map[string]string // endpoint -> version
@@ -107,9 +114,16 @@ func (b *bundle) client(endpoint string) *Client {
 func (b *bundle) collect(ctx context.Context) {
 	endpoints, clusterCl := b.discover(ctx)
 	b.clusterCalls(ctx, clusterCl)
+	var wg sync.WaitGroup
 	for _, ep := range endpoints {
-		b.nodeCalls(ctx, ep)
+		wg.Add(1)
+		go func(ep string) {
+			defer wg.Done()
+			b.nodeCalls(ctx, ep)
+		}(ep)
 	}
+	wg.Wait()
+	b.k8sResources(ctx)
 }
 
 // discover resolves the node list from the first seed that answers
@@ -152,8 +166,6 @@ func (b *bundle) clusterCalls(ctx context.Context, cl *Client) {
 	dir := bundleRoot + "/cluster/"
 
 	b.grabJSON(ctx, cl, node, "GetOxlaHomeListing", emptyRequest, dir+"redpanda_sql_home_listing.json")
-	b.grabJSON(ctx, cl, node, "GetRecentQueries",
-		getRecentQueriesRequest{IncludeSQLText: b.opts.SQLTextMode}, dir+"recent_queries.json")
 
 	if head := (getCatalogHeadResponse{}); b.call(ctx, cl, node, "GetCatalogHead", emptyRequest, &head) {
 		b.add(dir+"catalog_head.pb", head.CatalogHead)
@@ -171,7 +183,9 @@ func (b *bundle) nodeCalls(ctx context.Context, endpoint string) {
 	if raw, ok := b.grabJSON(ctx, cl, endpoint, "GetVersion", emptyRequest, dir+"version.json"); ok {
 		var v getVersionResponse
 		if json.Unmarshal(raw, &v) == nil {
+			b.mu.Lock()
 			b.versions[endpoint] = v.Version
+			b.mu.Unlock()
 		}
 	}
 	// config.yaml is per-node (env overrides, host_name, ports differ), so collect
@@ -181,6 +195,8 @@ func (b *bundle) nodeCalls(ctx context.Context, endpoint string) {
 	}
 	b.grabJSON(ctx, cl, endpoint, "GetActiveQueries",
 		getActiveQueriesRequest{IncludeSQLText: b.opts.SQLTextMode}, dir+"active_queries.json")
+	b.grabJSON(ctx, cl, endpoint, "GetRecentQueries",
+		getRecentQueriesRequest{IncludeSQLText: b.opts.SQLTextMode}, dir+"recent_queries.json")
 
 	b.resourceUsage(ctx, cl, endpoint, dir)
 
@@ -198,28 +214,31 @@ func (b *bundle) nodeCalls(ctx context.Context, endpoint string) {
 			b.add(dir+"cpu_profile.pprof.gz", cp.PprofGzip)
 		}
 	}
-	b.scrapeMetrics(ctx, endpoint, dir)
+	b.scrapeMetrics(ctx, endpoint)
 }
 
-// scrapeMetrics pulls the node's Prometheus /metrics endpoint twice ~1s apart so
-// the bundle carries a short time series for rate/delta analysis. Metrics are
-// served by a separate plain-HTTP server (config `metrics.port`), not the admin
-// API, so this uses http:// on that port and neither TLS nor auth.
-func (b *bundle) scrapeMetrics(ctx context.Context, node, dir string) {
+// scrapeMetrics pulls the node's plain-HTTP Prometheus /metrics endpoint
+// MetricsSamples times, MetricsInterval apart (no TLS or auth on that port).
+func (b *bundle) scrapeMetrics(ctx context.Context, node string) {
 	host := node
 	if i := strings.LastIndex(node, ":"); i >= 0 {
 		host = node[:i]
 	}
 	url := fmt.Sprintf("http://%s:%d/metrics", host, b.opts.MetricsPort)
+	dir := fmt.Sprintf("%s/metrics/%s/", bundleRoot, debugbundle.SanitizeName(node))
 
-	scrape := func(suffix string) {
+	for i := 0; i < b.opts.MetricsSamples; i++ {
+		if i > 0 {
+			select {
+			case <-ctx.Done():
+				return
+			case <-time.After(b.opts.MetricsInterval):
+			}
+		}
 		start := time.Now()
-		err := b.httpGetToFile(ctx, url, dir+"metrics_"+suffix+".txt")
+		err := b.httpGetToFile(ctx, url, fmt.Sprintf("%smetrics_t%d.txt", dir, i))
 		b.record(node, "GET /metrics", start, err)
 	}
-	scrape("t0")
-	time.Sleep(time.Second)
-	scrape("t1")
 }
 
 // httpGetToFile GETs url and writes the body to name in the bundle. Non-200 is an
@@ -358,6 +377,8 @@ func (b *bundle) call(ctx context.Context, cl *Client, node, method string, req,
 
 func (b *bundle) record(node, rpc string, start time.Time, err error) {
 	res := collectionResult{Node: node, RPC: rpc, Status: "ok", ElapsedMs: time.Since(start).Milliseconds()}
+	b.mu.Lock()
+	defer b.mu.Unlock()
 	if err != nil {
 		res.Status = "error"
 		res.Error = err.Error()
@@ -367,6 +388,8 @@ func (b *bundle) record(node, rpc string, start time.Time, err error) {
 }
 
 func (b *bundle) add(name string, data []byte) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
 	f, err := b.zw.Create(name)
 	if err != nil {
 		b.errs = append(b.errs, fmt.Sprintf("zip create %s: %v", name, err))
