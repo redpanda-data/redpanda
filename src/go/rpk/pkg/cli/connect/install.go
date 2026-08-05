@@ -141,12 +141,15 @@ func downloadAndInstallConnect(ctx context.Context, fs afero.Fs, installPath, do
 // validateVersion validates that the provided version in the flag is either
 // 'latest' or it's a full semantic version.
 func validateVersion(version string) error {
-	// This simple regexp just matches that a semver is in the string, it may
-	// be prefixed with 'v' and contain anything after. Nothing to capture.
+	// The version may be prefixed with 'v' and carry a prerelease or build
+	// suffix (e.g. '4.102.0-rc1'), which is forwarded to the manifest for
+	// lookup; the manifest is the source of truth for what is published.
+	// Segments are unbounded in width: Connect minor versions passed 99 in
+	// 4.100.0.
 	if version == "latest" {
 		return nil
 	}
-	vMatch := regexp.MustCompile(`^v?\d{1,2}\.\d{1,2}\.\d{1,2}`).MatchString(version)
+	vMatch := regexp.MustCompile(`^v?\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$`).MatchString(version)
 	if !vMatch {
 		return fmt.Errorf("provided version %q is not valid. Ensure is either 'latest' or it follows the format MAJOR.MINOR.PATCH (e.g., 2.1.3)", version)
 	}
