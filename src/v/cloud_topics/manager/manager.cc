@@ -84,6 +84,8 @@ ss::future<> cloud_topics_manager::start() {
               model::topic_id_partition tidp{it->second, ntp.tp.partition};
               topic_id_mapping_.erase(it);
               on_leadership_change(ntp, tidp, /*is_leader=*/false);
+              on_leadership_or_properties_change(
+                ntp, tidp, /*is_leader=*/false);
               return;
           }
           if (
