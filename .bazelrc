@@ -133,6 +133,12 @@ build --host_per_file_copt=external/.*@-Wno-unused-template
 build --per_file_copt=external/ragel.*@-Wno-return-type
 build --host_per_file_copt=external/ragel.*@-Wno-return-type
 
+# New default-on warning in clang-23: lksctp intentionally aliases the
+# sctp_connectx compat symbols to __sctp_connectx with a different signature
+# as part of its symbol-versioning scheme (src/lib/connectx.c)
+build --per_file_copt=external/.*@-Wno-attribute-alias
+build --host_per_file_copt=external/.*@-Wno-attribute-alias
+
 # -base configs generally aren't meant to be used directly but are
 # helpers to DRY later user-facing configs
 
