@@ -747,7 +747,15 @@ void segment_appender::dispatch_background_head_write() {
                       }
                       return maybe_advance_stable_offset(w);
                   })
-                  .finally([u = std::move(u)] {});
+                  .finally([u = std::move(u)] {
+                      // You might be tempted to release head_sem's units in
+                      // the continuation above, once dma_write completes,
+                      // rather than after a potential flush (part of
+                      // `maybe_advance_stable_offset`). Holding them delays
+                      // the next write for the same chunk, so more appends
+                      // merge into that write. Benchmarks show higher
+                      // throughput and lower latency.
+                  });
             })
             .finally([head_sem] {});
       })
