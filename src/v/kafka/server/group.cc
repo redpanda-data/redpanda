@@ -2984,14 +2984,6 @@ ss::future<cluster::abort_group_tx_reply> offset_store::do_abort(
         co_return cluster::abort_group_tx_reply(
           cluster::tx::errc::request_rejected);
     }
-
-    if (producer.transaction == nullptr) {
-        vlog(
-          _ctx_txlog.trace,
-          "unable to find transaction for {}, probably already aborted",
-          pid);
-        co_return cluster::abort_group_tx_reply(cluster::tx::errc::none);
-    }
     auto& producer_tx = *producer.transaction;
     if (producer_tx.tx_seq > tx_seq) {
         // rare situation:
@@ -3094,16 +3086,6 @@ ss::future<cluster::commit_group_tx_reply> offset_store::do_commit(
           producer.epoch);
         co_return cluster::commit_group_tx_reply(
           cluster::tx::errc::request_rejected);
-    }
-
-    if (producer.transaction == nullptr) {
-        vlog(
-          _ctx_txlog.trace,
-          "do_commit_tx request: producer: {} - can not find "
-          "ongoing transaction, it was "
-          "most likely already committed",
-          pid);
-        co_return cluster::commit_group_tx_reply(cluster::tx::errc::none);
     }
     auto& producer_tx = *producer.transaction;
     if (producer_tx.tx_seq > sequence) {
