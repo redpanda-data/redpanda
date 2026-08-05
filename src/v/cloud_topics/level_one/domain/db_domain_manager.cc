@@ -258,6 +258,8 @@ db_domain_manager::db_domain_manager(
   , gc_interval_(
       config::shard_local_cfg()
         .cloud_topics_long_term_garbage_collection_interval)
+  , flush_interval_(
+      config::shard_local_cfg().cloud_topics_long_term_flush_interval)
   , probe_(probe) {
     gc_interval_.watch([this]() { sem_.signal(); });
 }
@@ -1996,11 +1998,30 @@ db_domain_manager::restore_domain(rpc::restore_domain_request req) {
     };
 }
 
+bool db_domain_manager::flushed_recently() const {
+    if (!last_flush_.has_value()) {
+        return false;
+    }
+    // Half the flush interval, so a domain still persists on roughly the
+    // configured cadence while retries in between don't each force a new SST.
+    return ss::lowres_clock::now() - *last_flush_ < flush_interval_() / 2;
+}
+
 ss::future<rpc::flush_domain_reply>
 db_domain_manager::flush_domain(rpc::flush_domain_request req) {
     auto gl_res = co_await gate_and_open_reads();
     if (!gl_res.has_value()) {
         co_return rpc::flush_domain_reply{.ec = gl_res.error()};
+    }
+    if (req.skip_if_recent && flushed_recently()) {
+        vlog(
+          cd_log.debug,
+          "Skipping flush of domain {}, last flushed recently",
+          db_->get_domain_uuid());
+        co_return rpc::flush_domain_reply{
+          .ec = rpc::errc::ok,
+          .uuid = db_->get_domain_uuid(),
+        };
     }
     auto flush_res = co_await db_->flush(30s);
     if (!flush_res.has_value()) {
@@ -2008,6 +2029,7 @@ db_domain_manager::flush_domain(rpc::flush_domain_request req) {
           .ec = log_and_convert(flush_res.error(), "Failed to flush domain: "),
         };
     }
+    last_flush_ = ss::lowres_clock::now();
     co_return rpc::flush_domain_reply{
       .ec = rpc::errc::ok,
       .uuid = db_->get_domain_uuid(),

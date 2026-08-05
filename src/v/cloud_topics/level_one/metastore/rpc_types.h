@@ -537,11 +537,17 @@ struct flush_domain_reply
 struct flush_domain_request
   : serde::envelope<
       flush_domain_request,
-      serde::version<0>,
+      serde::version<1>,
       serde::compat_version<0>> {
     using resp_t = flush_domain_reply;
-    auto serde_fields() { return std::tie(metastore_partition); }
+    auto serde_fields() {
+        return std::tie(metastore_partition, skip_if_recent);
+    }
     model::partition_id metastore_partition;
+
+    // When set, the domain may no-op if it flushed within half of
+    // cloud_topics_long_term_flush_interval.
+    bool skip_if_recent{false};
 };
 
 struct preregister_objects_reply
