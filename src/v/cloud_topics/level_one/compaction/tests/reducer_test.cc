@@ -945,6 +945,86 @@ TEST_F(ReducerTestFixture, MinCompactionLagMsReducerInterleavedTimestamps) {
       std::move(output_batches));
 }
 
+// An extent's max timestamp may be ahead of the local clock: producers may set
+// create-time up to log_message_timestamp_after_max_ms (1h by default) in the
+// future, and the system clock may step backwards. With min.compaction.lag.ms
+// set, such an extent is held back until the clock catches up (as in Kafka's
+// `largestTimestamp > now - minCompactionLagMs`), but with the lag unset the
+// timestamp must not be consulted at all and the extent must still compact.
+TEST_F(ReducerTestFixture, MinCompactionLagMsUnsetTimestampsInFuture) {
+    auto [ntp, tidp] = make_ntidp("test_topic");
+    int num_produce_rounds = 4;
+    int num_batches = 10;
+    int num_records = 10;
+    kafka::offset start_offset{0};
+    kafka::offset last_offset{
+      (num_produce_rounds * num_batches * num_records) - 1};
+    auto gen = linear_int_kv_batch_generator();
+
+    const auto future_ts = model::timestamp(
+      model::timestamp::now().value() + std::chrono::milliseconds{1h}.count());
+
+    for (int i = 0; i < num_produce_rounds; ++i) {
+        model::test::record_batch_spec spec{
+          .allow_compression = true,
+          .count = num_records,
+          .timestamp = future_ts,
+          .all_records_have_same_timestamp = true};
+        auto batches = gen(spec, num_batches);
+        std::vector<tidp_batches_t> tidp_batches;
+        tidp_batches.emplace_back(tidp, std::move(batches));
+        make_l1_objects(std::move(tidp_batches)).get();
+    }
+
+    auto info_spec = l1::metastore::compaction_info_spec{
+      .tidp = tidp,
+      .tombstone_removal_upper_bound_ts = model::timestamp::max()};
+
+    // With a lag configured, the future timestamps hold every extent back.
+    auto compaction_info = _metastore.get_compaction_info(info_spec).get();
+    ASSERT_TRUE(compaction_info.has_value());
+    ASSERT_TRUE(compaction_info->offsets_response.dirty_ranges.covers(
+      start_offset, last_offset));
+    do_compact(
+      tidp,
+      ntp,
+      std::move(compaction_info->offsets_response),
+      compaction_info->compaction_epoch,
+      compaction_info->start_offset,
+      &_metastore,
+      &_io,
+      /*min_compaction_lag_ms=*/1h)
+      .get();
+
+    compaction_info = _metastore.get_compaction_info(info_spec).get();
+    ASSERT_TRUE(compaction_info.has_value());
+    ASSERT_TRUE(compaction_info->offsets_response.dirty_ranges.covers(
+      start_offset, last_offset));
+
+    // With the lag unset, the same extents compact despite the future
+    // timestamps.
+    do_compact(
+      tidp,
+      ntp,
+      std::move(compaction_info->offsets_response),
+      compaction_info->compaction_epoch,
+      compaction_info->start_offset,
+      &_metastore,
+      &_io,
+      /*min_compaction_lag_ms=*/0ms)
+      .get();
+
+    compaction_info = _metastore.get_compaction_info(info_spec).get();
+    ASSERT_TRUE(compaction_info.has_value());
+    ASSERT_FLOAT_EQ(compaction_info->dirty_ratio, 0.0);
+    ASSERT_TRUE(compaction_info->offsets_response.dirty_ranges.empty());
+
+    auto reader = make_reader(ntp, tidp);
+    auto output_batches = read_all(std::move(reader));
+    linear_int_kv_batch_generator::validate_post_compaction(
+      std::move(output_batches));
+}
+
 TEST_F(ReducerTestFixture, MaxCompactibleOffsetReducer) {
     // This test verifies that compaction respects the max_compactible_offset
     // boundary. We create multiple extents and set max_compactible_offset to
