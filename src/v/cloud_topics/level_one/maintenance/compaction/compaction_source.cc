@@ -119,12 +119,14 @@ void align_extent_to_dirty_range(
 bool should_compact_extent(
   const metastore::extent_metadata& extent,
   std::chrono::milliseconds min_compaction_lag_ms) {
+    // As in Kafka's LogCleanerManager::cleanableOffsets, the timestamp check is
+    // skipped entirely when the lag is unset.
+    if (min_compaction_lag_ms <= std::chrono::milliseconds{0}) {
+        return true;
+    }
     const auto now = to_time_point(model::timestamp::now());
     const auto max_extent_ts = to_time_point(extent.max_timestamp);
-    if (now - max_extent_ts < min_compaction_lag_ms) {
-        return false;
-    }
-    return true;
+    return now - max_extent_ts >= min_compaction_lag_ms;
 }
 
 } // namespace
