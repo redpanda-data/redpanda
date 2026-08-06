@@ -88,6 +88,11 @@ class FailureInjectorBase:
         self.redpanda.logger.info(f"injecting failure: {spec}")
         try:
             self._start_func(spec.type)(spec.node)
+            if spec.length is None and spec.type in (
+                FailureSpec.FAILURE_KILL,
+                FailureSpec.FAILURE_TERMINATE,
+            ):
+                self._mark_permanently_stopped(spec.node)
         except Exception as e:
             self.redpanda.logger.info(f"injecting failure error: {e}")
             if spec.type == FailureSpec.FAILURE_TERMINATE and isinstance(
@@ -175,6 +180,9 @@ class FailureInjectorBase:
     def _kill(self, node):
         pass
 
+    def _mark_permanently_stopped(self, node):
+        pass
+
     def _isolate(self, node):
         pass
 
@@ -237,6 +245,9 @@ class FailureInjector(FailureInjectorBase):
             timeout_sec=timeout_sec,
             err_msg="Redpanda failed to kill in %d seconds" % timeout_sec,
         )
+
+    def _mark_permanently_stopped(self, node):
+        self.redpanda.remove_from_started_nodes(node, "permanent failure injected")
 
     def _isolate(self, node):
         self.redpanda.logger.info(f"isolating node {node.account.hostname}")
