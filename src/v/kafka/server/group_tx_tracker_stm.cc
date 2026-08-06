@@ -219,6 +219,15 @@ ss::future<> group_tx_tracker_stm::handle_raft_data(model::record_batch batch) {
         switch (record_type) {
         case offset_commit:
         case noop:
+        // Consumer-protocol group state belongs to consumer_group_stm, which
+        // bounds those groups' open transactions itself. This STM registers a
+        // group only from a classic group_metadata record, so it never matches
+        // a fence against one.
+        case consumer_group_metadata:
+        case consumer_group_member_metadata:
+        case consumer_group_target_assignment_metadata:
+        case consumer_group_target_assignment_member:
+        case consumer_group_current_member_assignment:
             return;
         case group_metadata:
             handle_group_metadata(

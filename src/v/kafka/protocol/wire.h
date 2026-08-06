@@ -150,6 +150,15 @@ public:
         if (unlikely(n == 0)) {
             throw std::out_of_range("Asked to read a negative byte string");
         }
+        // Checked before read_bytes, which allocates the length it is given
+        // before discovering the bytes are not there.
+        if (unlikely(static_cast<size_t>(n - 1) > _parser.bytes_left())) {
+            throw std::out_of_range(
+              fmt::format(
+                "Flex bytes length {} exceeds remaining bytes {}",
+                n - 1,
+                _parser.bytes_left()));
+        }
         return _parser.read_bytes(n - 1);
     }
 
@@ -477,6 +486,21 @@ public:
         return write_flex(std::string_view(*v));
     }
 
+    /// Writes an optional named_type as a nullable compact string: an unsigned
+    /// varint of length + 1 followed by the characters, or a single zero varint
+    /// when absent.
+    ///
+    /// Exists so the string is passed by reference. Without it the argument
+    /// converts to optional<ss::sstring>, which builds a second optional and
+    /// copies the string into it.
+    template<typename Tag>
+    uint32_t write_flex(const std::optional<named_type<ss::sstring, Tag>>& v) {
+        if (!v) {
+            return write_unsigned_varint(0);
+        }
+        return write_flex((*v)());
+    }
+
     uint32_t write(std::optional<std::string_view> v) {
         if (!v) {
             return serialize_int<int16_t>(-1);
@@ -489,6 +513,20 @@ public:
             return serialize_int<int16_t>(-1);
         }
         return write(std::string_view(*v));
+    }
+
+    /// Writes an optional named_type as a nullable string: an int16 length
+    /// followed by the characters, or an int16 of -1 when absent.
+    ///
+    /// Exists so the string is passed by reference. Without it the argument
+    /// converts to optional<ss::sstring>, which builds a second optional and
+    /// copies the string into it.
+    template<typename Tag>
+    uint32_t write(const std::optional<named_type<ss::sstring, Tag>>& v) {
+        if (!v) {
+            return serialize_int<int16_t>(-1);
+        }
+        return write((*v)());
     }
 
     uint32_t write(uuid_t id) {
@@ -644,6 +682,21 @@ public:
 
     template<typename C, typename ElementWriter>
     requires requires(
+      ElementWriter writer, encoder& rw, const typename C::value_type& elem) {
+        requires SizedContainer<C>;
+        { writer(elem, rw) } -> std::same_as<void>;
+    }
+    uint32_t write_flex_array(const C& v, ElementWriter&& writer) {
+        auto start_size = uint32_t(_out->size_bytes());
+        write_unsigned_varint(v.size() + 1);
+        for (const auto& elem : v) {
+            writer(elem, *this);
+        }
+        return _out->size_bytes() - start_size;
+    }
+
+    template<typename C, typename ElementWriter>
+    requires requires(
       ElementWriter writer, encoder& rw, typename C::value_type& elem) {
         { writer(elem, rw) } -> std::same_as<void>;
     }
@@ -697,7 +750,7 @@ public:
     }
 
     // Only relevent when writing flex responses
-    uint32_t write_tags(tagged_fields&& tags) {
+    uint32_t write_tags(const tagged_fields& tags) {
         auto start_size = uint32_t(_out->size_bytes());
         const auto n = tags().size();
         write_unsigned_varint(n); // write total number of tags

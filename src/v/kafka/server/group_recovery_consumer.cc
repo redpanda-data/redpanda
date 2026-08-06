@@ -203,6 +203,14 @@ void group_recovery_consumer::handle_record(model::record r) {
         case noop:
             // ignore noops, they are handled for backward compatibility
             return;
+        // Recovery here rebuilds classic groups only; consumer-protocol groups
+        // recover by log replay through consumer_group_stm::do_apply.
+        case consumer_group_metadata:
+        case consumer_group_member_metadata:
+        case consumer_group_target_assignment_metadata:
+        case consumer_group_target_assignment_member:
+        case consumer_group_current_member_assignment:
+            return;
         }
         __builtin_unreachable();
     } catch (...) {

@@ -134,6 +134,20 @@ SEASTAR_THREAD_TEST_CASE(read_flex_bytes_length_exceeds_buffer) {
     BOOST_CHECK_THROW(reader.read_flex_bytes(), std::out_of_range);
 }
 
+/// Test that read_flex_bytes rejects a huge length before allocating. The case
+/// above throws either way: read_bytes sizes its buffer, then finds the bytes
+/// missing.
+SEASTAR_THREAD_TEST_CASE(read_flex_bytes_huge_length) {
+    iobuf buf;
+    kafka::protocol::encoder writer(buf);
+    writer.write_unsigned_varint(1U << 30); // ~1 GiB
+    buf.append("abc", 3);                   // Only 3 bytes
+
+    kafka::protocol::decoder reader(std::move(buf));
+
+    BOOST_CHECK_THROW(reader.read_flex_bytes(), std::out_of_range);
+}
+
 /// Test that read_string throws when length exceeds remaining bytes
 SEASTAR_THREAD_TEST_CASE(read_string_length_exceeds_buffer) {
     iobuf buf;

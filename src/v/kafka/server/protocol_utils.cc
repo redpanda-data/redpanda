@@ -127,7 +127,7 @@ scattered_buffer response_as_scattered(response_ptr response) {
     if (response->is_flexible()) {
         protocol::encoder writer(tags_header);
         vassert(response->tags(), "If flexible, tags should be filled");
-        writer.write_tags(std::move(*response->tags()));
+        writer.write_tags(*response->tags());
     }
     const auto size = static_cast<int32_t>(
       sizeof(response->correlation()) + tags_header.size_bytes()
