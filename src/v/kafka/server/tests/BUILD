@@ -686,6 +686,7 @@ redpanda_cc_btest(
         "//src/v/model",
         "//src/v/random:generators",
         "//src/v/reflection:adl",
+        "//src/v/serde",
         "//src/v/storage:record_batch_builder",
         "//src/v/test_utils:random_bytes",
         "//src/v/test_utils:seastar_boost",
