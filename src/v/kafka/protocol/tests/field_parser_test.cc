@@ -59,7 +59,7 @@ SEASTAR_THREAD_TEST_CASE(serde_tags) {
     /// Re-serialize these tags to compare against the previous
     iobuf result;
     kafka::protocol::encoder end_writer(result);
-    end_writer.write_tags(std::move(deser_tags));
+    end_writer.write_tags(deser_tags);
 
     /// Perform checks against serialized copies
     BOOST_REQUIRE_EQUAL(result.size_bytes(), copy.size_bytes());

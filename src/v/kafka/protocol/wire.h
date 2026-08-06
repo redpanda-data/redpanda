@@ -750,7 +750,7 @@ public:
     }
 
     // Only relevent when writing flex responses
-    uint32_t write_tags(tagged_fields&& tags) {
+    uint32_t write_tags(const tagged_fields& tags) {
         auto start_size = uint32_t(_out->size_bytes());
         const auto n = tags().size();
         write_unsigned_varint(n); // write total number of tags

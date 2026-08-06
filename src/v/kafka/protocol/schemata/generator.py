@@ -1662,7 +1662,7 @@ writer.write_tags(tagged_fields(std::move(tags_to_encode)));
 {%- if obj != "" %}
 {%- set tf = obj + '.unknown_tags' %}
 {%- endif %}
-{{ writer }}.write_tags(std::move({{ tf }}));
+{{ writer }}.write_tags({{ tf }});
 {%- else %}
 {
 {{- tag_encoder_impl(tag_definitions, obj) | indent }}
@@ -1862,7 +1862,7 @@ void {{ struct.name }}::decode(iobuf buf, [[maybe_unused]] api_version version) 
 {%- if first_flex > 0 %}
 void {{ struct.name }}::encode(protocol::encoder& writer, api_version version) {
     if (version >= api_version({{ first_flex }})) {
-        writer.write_tags(std::move(unknown_tags));
+        writer.write_tags(unknown_tags);
     }
 }
 void {{ struct.name }}::decode(protocol::decoder& reader, api_version version) {
@@ -1878,7 +1878,7 @@ void {{ struct.name }}::decode(protocol::decoder&, api_version) {}
 {%- if first_flex > 0 %}
 void {{ struct.name }}::encode(protocol::encoder& writer, api_version version) {
     if (version >= api_version({{ first_flex }})) {
-        write.write_tags(std::move(unknown_tags));
+        writer.write_tags(unknown_tags);
     }
 }
 void {{ struct.name }}::decode(iobuf buf, api_version version) {
