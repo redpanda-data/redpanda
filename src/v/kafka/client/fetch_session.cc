@@ -40,10 +40,12 @@ void fetch_session::reseed(
 }
 
 void fetch_session::update_session_state(const fetch_response& res) {
-    if (_id == invalid_fetch_session_id) {
-        _id = fetch_session_id{res.data.session_id};
+    const auto res_id = fetch_session_id{res.data.session_id};
+
+    if (!has_session()) {
+        _id = res_id;
     }
-    vassert(res.data.session_id == _id, "session mismatch: {}", *this);
+    vassert(res_id == _id, "session mismatch: {}", *this);
     ++_epoch;
 }
 

@@ -85,6 +85,8 @@ private:
     /// happens to the response on our side.
     void update_session_state(const fetch_response& res);
 
+    bool has_session() const { return _id != kafka::invalid_fetch_session_id; }
+
     /// \brief Compact each partition-offset map to its current size, e.g.
     /// after reseed() or apply() may have grown it.
     void rehash_offsets();
