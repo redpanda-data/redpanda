@@ -111,10 +111,25 @@ disk_log_appender::operator()(model::record_batch& batch) {
             co_await initialize();
         }
         auto stop = co_await append_batch_to_segment(batch);
+        if constexpr (finjector::honey_badger::is_enabled()) {
+            // simulates a failure after the batch became visible in the log
+            // but before the offset translator processes it
+            co_await _log._failure_probes.append();
+        }
         _log.offset_translator().process(batch);
         co_return stop;
     } catch (...) {
         release_lock();
+        // The batch may have become visible in the log before the failure:
+        // the segment's offset tracker advances before the index and batch
+        // cache updates, any of which can throw. A visible batch that the
+        // offset translator never processes would corrupts offset
+        // translation on this replica (a retried append will skip batches
+        // that are already present in the log without re-processing them),
+        // so account for it before propagating the error.
+        if (_log.offsets().dirty_offset >= batch.last_offset()) {
+            _log.offset_translator().process(batch);
+        }
         auto e = std::current_exception();
         vlogl(
           stlog,

@@ -512,6 +512,7 @@ redpanda_cc_gtest(
         "//src/v/raft",
         "//src/v/raft/tests:raft_fixture",
         "//src/v/random:generators",
+        "//src/v/storage",
         "//src/v/storage:record_batch_builder",
         "//src/v/test_utils:gtest",
         "@fmt",

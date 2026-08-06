@@ -160,6 +160,7 @@ public:
     ss::future<> force_roll() override;
 
     probe& get_probe() override { return *_probe; }
+    failure_probes& get_failure_probes() { return _failure_probes; }
     model::term_id term() const;
     segment_set& segments() override { return _segs; }
     const segment_set& segments() const override { return _segs; }

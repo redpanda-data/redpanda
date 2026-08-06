@@ -529,6 +529,7 @@ redpanda_cc_gtest(
     ],
     cpu = 1,
     deps = [
+        "//src/v/finjector",
         "//src/v/model",
         "//src/v/raft",
         "//src/v/random:generators",

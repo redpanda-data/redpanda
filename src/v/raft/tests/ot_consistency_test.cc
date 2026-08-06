@@ -24,6 +24,8 @@
 #include "raft/tests/raft_fixture.h"
 #include "raft/types.h"
 #include "random/generators.h"
+#include "storage/disk_log_impl.h"
+#include "test_utils/async.h"
 #include "test_utils/test.h"
 
 #include <seastar/core/coroutine.hh>
@@ -276,5 +278,126 @@ TEST_F_CORO(raft_fixture, offset_translator_consistency_under_churn) {
           counted,
           lstats.start_offset,
           lstats.dirty_offset);
+    }
+}
+
+// End-to-end reproduction of translator divergence from an append that
+// fails on a follower after the batch became visible in its log.
+//
+// A leadership change makes the new leader replicate a raft_configuration
+// batch. With the append failure injected on one follower, that batch lands
+// in the follower's log but the append reports failure; the leader's retry
+// skip-matches the already-present batch without re-appending it. Without
+// the storage-side fix the follower's offset translator permanently misses
+// the gap and its deltas diverge from its peers' (the production symptom:
+// "Offset translator state inconsistency detected").
+TEST_F_CORO(raft_fixture, follower_append_failure_keeps_translation) {
+    static constexpr auto node_count = 3;
+    enable_offset_translation();
+    co_await create_simple_group(node_count);
+    auto leader = co_await wait_for_leader(10s);
+
+    auto res = co_await node(leader).raft()->replicate(
+      make_batches({{"k0", "v0"}, {"k1", "v1"}}),
+      replicate_options(consistency_level::quorum_ack));
+    ASSERT_TRUE_CORO(res.has_value());
+    co_await wait_for_committed_offset(res.value().last_offset, 10s);
+
+    // inject append failures on one follower; batches keep becoming visible
+    // in its log, but every append reports failure
+    auto follower = model::node_id((leader() + 1) % node_count);
+    auto& follower_log = dynamic_cast<storage::disk_log_impl&>(
+      *node(follower).underlying_log());
+    follower_log.get_failure_probes().set_exception("append");
+
+    // force a leadership change to the healthy follower (if the armed
+    // follower won the election instead, its own failed config append would
+    // later be conflict-truncated and re-appended, healing the translator
+    // as a side effect and masking the hazard): the new leader replicates
+    // its configuration batch (a filtered batch) to the armed follower,
+    // where the append fails after the batch became visible
+    auto dirty_before = node(follower).raft()->dirty_offset();
+    auto target = model::node_id((leader() + 2) % node_count);
+    auto transfer_reply = co_await node(leader).raft()->transfer_leadership(
+      transfer_leadership_request{
+        .group = node(leader).raft()->group(),
+        .target = target,
+      });
+    ASSERT_TRUE_CORO(transfer_reply.success);
+    co_await wait_for_leader(10s);
+
+    // wait until the new leader's configuration batch became visible in the
+    // follower's log through a failed append, then stop injecting so the
+    // group can converge
+    RPTEST_REQUIRE_EVENTUALLY_CORO(10s, [&] {
+        return node(follower).raft()->dirty_offset() > dirty_before;
+    });
+    follower_log.get_failure_probes().unset("append");
+
+    // the leadership may still be settling; retry until a functional leader
+    // accepts writes (a plain loop: a capturing coroutine lambda passed to a
+    // retry helper is a use-after-free hazard)
+    model::offset committed{};
+    for (int attempt = 0; attempt < 100 && committed == model::offset{};
+         ++attempt) {
+        if (auto l = get_leader(); l.has_value()) {
+            auto r = co_await node(*l).raft()->replicate(
+              make_batches({{"k2", "v2"}}),
+              replicate_options(consistency_level::quorum_ack));
+            if (r.has_value()) {
+                committed = r.value().last_offset;
+                break;
+            }
+        }
+        co_await ss::sleep(100ms);
+    }
+    ASSERT_GT_CORO(committed, model::offset{});
+    // wait until every replica has the full log (wait_for_committed_offset
+    // is satisfied by a quorum, which may exclude the injected follower)
+    RPTEST_REQUIRE_EVENTUALLY_CORO(30s, [&] {
+        for (auto i = 0; i < node_count; ++i) {
+            if (
+              node(model::node_id(i)).raft()->committed_offset() < committed) {
+                return false;
+            }
+        }
+        return true;
+    });
+
+    // one more append past the injected batch: this is what makes raft's
+    // validate_offset_translator_delta compare deltas at the divergent
+    // offset on the follower (and emit "Offset translator state
+    // inconsistency detected" when the translator state was corrupted)
+    if (auto l = get_leader(); l.has_value()) {
+        auto r = co_await node(*l).raft()->replicate(
+          make_batches({{"k3", "v3"}}),
+          replicate_options(consistency_level::quorum_ack));
+        if (r.has_value()) {
+            committed = r.value().last_offset;
+            RPTEST_REQUIRE_EVENTUALLY_CORO(30s, [&] {
+                for (auto i = 0; i < node_count; ++i) {
+                    if (
+                      node(model::node_id(i)).raft()->committed_offset()
+                      < committed) {
+                        return false;
+                    }
+                }
+                return true;
+            });
+        }
+    }
+
+    // every replica must agree on the offset translator delta at every
+    // committed offset
+    for (auto o = model::offset(0); o <= committed; o = model::next_offset(o)) {
+        std::optional<model::offset_delta> expected;
+        for (auto i = 0; i < node_count; ++i) {
+            auto d = node(model::node_id(i)).raft()->log()->offset_delta(o);
+            if (expected) {
+                ASSERT_EQ_CORO(d, *expected) << fmt::format(
+                  "delta divergence at offset {} on node {}", o, i);
+            }
+            expected = d;
+        }
     }
 }
