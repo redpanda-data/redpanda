@@ -44,9 +44,9 @@ def data_dependency():
     http_archive(
         name = "c-ares",
         build_file = "//bazel/thirdparty:c-ares.BUILD",
-        sha256 = "912dd7cc3b3e8a79c52fd7fb9c0f4ecf0aaa73e45efda880266a2d6e26b84ef5",
-        strip_prefix = "c-ares-1.34.6",
-        url = "https://vectorized-public.s3.amazonaws.com/dependencies/c-ares-1.34.6.tar.gz",
+        sha256 = "556f781dd188ad932dc8263fee0ad3aaba675b4cd8e54d86908681b43ce3e327",
+        strip_prefix = "c-ares-1.34.7",
+        url = "https://vectorized-public.s3.amazonaws.com/dependencies/c-ares-1.34.7.tar.gz",
     )
 
     http_archive(
