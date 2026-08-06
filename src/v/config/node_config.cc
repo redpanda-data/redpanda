@@ -112,11 +112,14 @@ node_config::node_config() noexcept
   , kafka_api(
       *this,
       "kafka_api",
-      "IP address and port of the Kafka API endpoint that handles requests.",
+      "IP address and port of the Kafka API endpoint that handles requests. "
+      "To expose an AF_UNIX (Unix Domain Socket) listener, set `unix_path` to "
+      "an absolute filesystem path instead of `address` and `port`.",
       {.visibility = visibility::user},
       {config::broker_authn_endpoint{
         .address = net::unresolved_address("127.0.0.1", 9092),
-        .authn_method = std::nullopt}})
+        .authn_method = std::nullopt}},
+      config::validate_broker_authn_endpoints)
   , kafka_api_tls(
       *this,
       "kafka_api_tls",
@@ -326,6 +329,12 @@ void validate_multi_node_property_config(
         if (err) {
             errors.emplace("advertised_kafka_api", ssx::sformat("{}", *err));
         }
+    }
+
+    if (auto err = validate_kafka_uds_constraints(
+          cfg.kafka_api(), cfg.kafka_api_tls(), cfg.advertised_kafka_api());
+        err) {
+        errors.emplace("kafka_api", *err);
     }
 
     auto rpc_err = model::broker_endpoint::validate_not_is_addr_any(
