@@ -101,22 +101,29 @@ ss::future<> kvstore::start() {
     _started = true;
 
     // Flushing background fiber
-    ssx::spawn_with_gate(_gate, [this] {
-        return ss::do_until(
-          [this] { return _gate.is_closed(); },
-          [this] {
-              // semaphore used here instead of condition variable so that
-              // we don't lose wake-ups if they occur while flushing.
-              // consume at least one unit to avoid spinning on wait(0).
-              auto units = std::max(_sem.current(), size_t(1));
-              return _sem.wait(units).then([this] {
-                  if (_gate.is_closed()) {
-                      return ss::now();
-                  }
-                  return roll().then([this] { return flush_and_apply_ops(); });
-              });
+    ssx::repeat_until_gate_closed(
+      _gate,
+      [this] {
+          // semaphore used here instead of condition variable so that
+          // we don't lose wake-ups if they occur while flushing.
+          // consume at least one unit to avoid spinning on wait(0).
+          auto units = std::max(_sem.current(), size_t(1));
+          return _sem.wait(units).then([this] {
+              if (_gate.is_closed()) {
+                  return ss::now();
+              }
+              return roll().then([this] { return flush_and_apply_ops(); });
           });
-    });
+      },
+      [](const std::exception_ptr& e) {
+          // an error mid roll/flush leaves the segment, pending ops and
+          // _next_offset in an unknown state, so neither retrying nor
+          // exiting the fiber is safe (the latter would hang all future
+          // puts). on-disk state is crash-safe, so terminate and recover.
+          if (!ssx::is_shutdown_exception(e)) {
+              vunreachable("kvstore flush fiber failed: {}", e);
+          }
+      });
 }
 
 ss::future<> kvstore::stop() {
