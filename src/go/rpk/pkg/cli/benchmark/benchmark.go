@@ -10,12 +10,18 @@
 package benchmark
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"os"
 	"os/signal"
+	"sort"
+	"strconv"
+	"strings"
+	"sync"
 	"sync/atomic"
 	"syscall"
 	"time"
@@ -27,6 +33,7 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/twmb/franz-go/pkg/kadm"
 	"github.com/twmb/franz-go/pkg/kerr"
+	"golang.org/x/time/rate"
 )
 
 type stats struct {
@@ -35,10 +42,104 @@ type stats struct {
 	errors   atomic.Uint64
 }
 
+// latencyHistogram collects per-request latency samples for percentile
+// computation. Samples are appended lock-free to per-goroutine slices
+// and merged at the end.
+type latencyHistogram struct {
+	mu      sync.Mutex
+	samples []float64 // microseconds
+}
+
+func (h *latencyHistogram) add(d time.Duration) {
+	us := float64(d.Nanoseconds()) / 1e3
+	h.mu.Lock()
+	h.samples = append(h.samples, us)
+	h.mu.Unlock()
+}
+
+func (h *latencyHistogram) percentile(p float64) float64 {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if len(h.samples) == 0 {
+		return 0
+	}
+	sort.Float64s(h.samples)
+	idx := int(math.Ceil(p/100*float64(len(h.samples)))) - 1
+	if idx < 0 {
+		idx = 0
+	}
+	if idx >= len(h.samples) {
+		idx = len(h.samples) - 1
+	}
+	return h.samples[idx]
+}
+
+func (h *latencyHistogram) max() float64 {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if len(h.samples) == 0 {
+		return 0
+	}
+	sort.Float64s(h.samples)
+	return h.samples[len(h.samples)-1]
+}
+
+func (h *latencyHistogram) count() int {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return len(h.samples)
+}
+
+// cpuSnapshot captures user and system CPU time from /proc/self/stat.
+type cpuSnapshot struct {
+	userTicks   uint64
+	systemTicks uint64
+}
+
+func readCPU() cpuSnapshot {
+	f, err := os.Open("/proc/self/stat")
+	if err != nil {
+		return cpuSnapshot{}
+	}
+	defer f.Close()
+	scanner := bufio.NewScanner(f)
+	if !scanner.Scan() {
+		return cpuSnapshot{}
+	}
+	// /proc/self/stat fields: pid (comm) state ... field 14=utime, 15=stime
+	line := scanner.Text()
+	// Skip past the command name in parens.
+	idx := strings.LastIndex(line, ") ")
+	if idx < 0 {
+		return cpuSnapshot{}
+	}
+	fields := strings.Fields(line[idx+2:])
+	// After ") ", field 0=state, so utime=field[11], stime=field[12]
+	if len(fields) < 13 {
+		return cpuSnapshot{}
+	}
+	utime, _ := strconv.ParseUint(fields[11], 10, 64)
+	stime, _ := strconv.ParseUint(fields[12], 10, 64)
+	return cpuSnapshot{userTicks: utime, systemTicks: stime}
+}
+
+func (s cpuSnapshot) sub(other cpuSnapshot) (userSec, sysSec float64) {
+	ticksPerSec := 100.0 // sysconf(_SC_CLK_TCK) is 100 on Linux
+	userSec = float64(s.userTicks-other.userTicks) / ticksPerSec
+	sysSec = float64(s.systemTicks-other.systemTicks) / ticksPerSec
+	return
+}
+
 type finalMetrics struct {
 	RequestsPerSec float64 `json:"requests_per_sec"`
 	MBPerSec       float64 `json:"mb_per_sec"`
 	Errors         uint64  `json:"errors"`
+	P50LatencyUs   float64 `json:"p50_latency_us"`
+	P99LatencyUs   float64 `json:"p99_latency_us"`
+	P999LatencyUs  float64 `json:"p999_latency_us"`
+	MaxLatencyUs   float64 `json:"max_latency_us"`
+	CpuUserSec     float64 `json:"cpu_user_sec"`
+	CpuSysSec      float64 `json:"cpu_sys_sec"`
 }
 
 type benchmarkConfig struct {
@@ -52,6 +153,8 @@ type benchmarkConfig struct {
 	durationS              int
 	metricsJSON            string
 	waitLeadershipBalanced bool
+	targetRateMBps         float64
+	maxRecords             int64
 }
 
 type benchmarkTiming struct {
@@ -76,6 +179,7 @@ type benchmarkRun struct {
 const (
 	statsReqWidth = 12
 	statsMBWidth  = 8
+	statsLatWidth = 12
 	statsErrWidth = 8
 )
 
@@ -90,6 +194,8 @@ func (cfg *benchmarkConfig) addFlags(cmd *cobra.Command) {
 	cmd.Flags().IntVar(&cfg.durationS, "duration", 60, "Measurement duration in seconds")
 	cmd.Flags().StringVar(&cfg.metricsJSON, "metrics-json", "", "Optional path to write final metrics JSON")
 	cmd.Flags().BoolVar(&cfg.waitLeadershipBalanced, "wait-leadership-balanced", true, "Wait for topic leadership to become balanced before starting the benchmark")
+	cmd.Flags().Float64Var(&cfg.targetRateMBps, "target-rate", 0, "Target throughput in MB/s (0 = unlimited)")
+	cmd.Flags().Int64Var(&cfg.maxRecords, "max-records", 0, "Stop after this many records are transferred post-warmup (0 = run for --duration); when set, --duration acts as a safety timeout. Transfer a fixed volume with e.g. 1 GiB = 1073741824/record-size records")
 	cmd.MarkFlagsMutuallyExclusive("reset-topic", "use-existing-topic")
 }
 
@@ -114,18 +220,42 @@ func (cfg benchmarkConfig) validate() error {
 	if cfg.durationS <= 0 {
 		return fmt.Errorf("invalid --duration %d, must be > 0", cfg.durationS)
 	}
+	if cfg.maxRecords < 0 {
+		return fmt.Errorf("invalid --max-records %d, must be >= 0", cfg.maxRecords)
+	}
 	return nil
 }
 
-func computeMetrics(s *stats, now, measureStart time.Time) finalMetrics {
+// newRateLimiter returns a token-bucket rate limiter constrained to
+// targetMBps megabytes per second, or nil if targetMBps <= 0.
+func newRateLimiter(targetMBps float64) *rate.Limiter {
+	if targetMBps <= 0 {
+		return nil
+	}
+	bytesPerSec := targetMBps * 1024 * 1024
+	burst := int(bytesPerSec)
+	if burst < 1 {
+		burst = 1
+	}
+	return rate.NewLimiter(rate.Limit(bytesPerSec), burst)
+}
+
+func computeMetrics(s *stats, now, measureStart time.Time, hist *latencyHistogram, cpuStart, cpuEnd cpuSnapshot) finalMetrics {
 	elapsed := now.Sub(measureStart).Seconds()
 	if elapsed <= 0 {
 		elapsed = 1e-9
 	}
+	userSec, sysSec := cpuEnd.sub(cpuStart)
 	return finalMetrics{
 		RequestsPerSec: float64(s.requests.Load()) / elapsed,
 		MBPerSec:       (float64(s.bytes.Load()) / (1024 * 1024)) / elapsed,
 		Errors:         s.errors.Load(),
+		P50LatencyUs:   hist.percentile(50),
+		P99LatencyUs:   hist.percentile(99),
+		P999LatencyUs:  hist.percentile(99.9),
+		MaxLatencyUs:   hist.max(),
+		CpuUserSec:     userSec,
+		CpuSysSec:      sysSec,
 	}
 }
 
@@ -133,18 +263,22 @@ func printStatsHeader(tw *out.TabWriter) {
 	tw.Print(
 		fmt.Sprintf("%*s", statsReqWidth, "REQUESTS/S"),
 		fmt.Sprintf("%*s", statsMBWidth, "MB/S"),
+		fmt.Sprintf("%*s", statsLatWidth, "p99 LAT(us)"),
 		fmt.Sprintf("%*s", statsErrWidth, "ERRORS"),
 	)
 	_ = tw.Flush()
 }
 
-func printStats(tw *out.TabWriter, s *stats, now, measureStart time.Time) {
-	m := computeMetrics(s, now, measureStart)
-
+func printStats(tw *out.TabWriter, s *stats, now, measureStart time.Time, hist *latencyHistogram) {
+	elapsed := now.Sub(measureStart).Seconds()
+	if elapsed <= 0 {
+		elapsed = 1e-9
+	}
 	tw.Print(
-		fmt.Sprintf("%12.2f", m.RequestsPerSec),
-		fmt.Sprintf("%8.2f", m.MBPerSec),
-		fmt.Sprintf("%8d", m.Errors),
+		fmt.Sprintf("%12.2f", float64(s.requests.Load())/elapsed),
+		fmt.Sprintf("%8.2f", (float64(s.bytes.Load())/(1024*1024))/elapsed),
+		fmt.Sprintf("%12.0f", hist.percentile(99)),
+		fmt.Sprintf("%8d", s.errors.Load()),
 	)
 	_ = tw.Flush()
 }
@@ -281,12 +415,14 @@ func runBenchmarkReporter(
 	ctx context.Context,
 	timing benchmarkTiming,
 	stats *stats,
+	hist *latencyHistogram,
 	metricsJSON string,
 	wait func(),
 ) error {
 	statsTable := out.NewTable()
 
 	waitForWarmup(ctx, timing.warmup)
+	cpuStart := readCPU()
 	printStatsHeader(statsTable)
 
 	ticker := time.NewTicker(time.Second)
@@ -295,18 +431,28 @@ func runBenchmarkReporter(
 	for {
 		select {
 		case <-timing.runCtx.Done():
+			// Measure elapsed to the actual stop, not measureEnd: with
+			// --max-records the run ends early once the volume target is
+			// hit, so using measureEnd would understate throughput. Clamp
+			// to measureEnd so the duration-based path is unchanged (its
+			// deadline fires a hair past measureEnd).
+			endTime := time.Now()
+			if endTime.After(timing.measureEnd) {
+				endTime = timing.measureEnd
+			}
 			wait()
+			cpuEnd := readCPU()
 			if ctx.Err() == nil {
-				printStats(statsTable, stats, timing.measureEnd, timing.measureStart)
+				printStats(statsTable, stats, endTime, timing.measureStart, hist)
 			}
 			if metricsJSON != "" {
-				if err := writeMetricsJSON(metricsJSON, computeMetrics(stats, timing.measureEnd, timing.measureStart)); err != nil {
+				if err := writeMetricsJSON(metricsJSON, computeMetrics(stats, endTime, timing.measureStart, hist, cpuStart, cpuEnd)); err != nil {
 					return err
 				}
 			}
 			return nil
 		case <-ticker.C:
-			printStats(statsTable, stats, time.Now(), timing.measureStart)
+			printStats(statsTable, stats, time.Now(), timing.measureStart, hist)
 		}
 	}
 }
@@ -510,6 +656,7 @@ func NewCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 	}
 
 	cmd.AddCommand(newProduceCommand(fs, p))
+	cmd.AddCommand(newConsumeCommand(fs, p))
 
 	return cmd
 }

@@ -4,6 +4,7 @@ go_library(
     name = "benchmark",
     srcs = [
         "benchmark.go",
+        "consume.go",
         "produce.go",
     ],
     importpath = "github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/benchmark",
@@ -17,5 +18,6 @@ go_library(
         "@com_github_twmb_franz_go//pkg/kerr",
         "@com_github_twmb_franz_go//pkg/kgo",
         "@com_github_twmb_franz_go_pkg_kadm//:kadm",
+        "@org_golang_x_time//rate",
     ],
 )
