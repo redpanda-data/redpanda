@@ -150,6 +150,15 @@ public:
         if (unlikely(n == 0)) {
             throw std::out_of_range("Asked to read a negative byte string");
         }
+        // Checked before read_bytes, which allocates the length it is given
+        // before discovering the bytes are not there.
+        if (unlikely(static_cast<size_t>(n - 1) > _parser.bytes_left())) {
+            throw std::out_of_range(
+              fmt::format(
+                "Flex bytes length {} exceeds remaining bytes {}",
+                n - 1,
+                _parser.bytes_left()));
+        }
         return _parser.read_bytes(n - 1);
     }
 
