@@ -224,6 +224,13 @@ public:
     segment_appender::stats_ptr get_appender_stats() const;
     compacted_index_writer& compaction_index();
     const compacted_index_writer& compaction_index() const;
+
+    /// Test hook: fail the next compaction index update, simulating a
+    /// failure (e.g. an allocation error) while indexing a batch whose data
+    /// write succeeded. Compiled out of release builds.
+    void fail_next_compaction_index_batch() {
+        _fail_next_compaction_index_batch = true;
+    }
     // We currently use `max_removable_local_log_offset` to control both
     // deletion/eviction, and compaction.
     bool is_compactible(const compaction::compaction_config& cfg) const;
@@ -320,6 +327,10 @@ private:
       std::optional<std::unique_ptr<compacted_index_writer>>);
     ss::future<> compaction_index_batch(const model::record_batch&);
     ss::future<> do_compaction_index_batch(const model::record_batch&);
+    /// Closes the compaction index with the `incomplete` footer flag set, so
+    /// that compaction rebuilds it from the segment data instead of trusting
+    /// it.
+    ss::future<> close_compaction_index_as_incomplete();
     void release_appender_in_background(readers_cache* readers_cache);
 
     ss::future<size_t> remove_persistent_state(std::filesystem::path);
@@ -353,6 +364,7 @@ private:
     // size of the compaction index is needed (e.g. estimating total seg size).
     std::optional<size_t> _compaction_index_size;
     std::optional<std::unique_ptr<compacted_index_writer>> _compaction_index;
+    bool _fail_next_compaction_index_batch{false};
 
     std::optional<batch_cache_index> _cache;
     ss::rwlock _destructive_ops;
