@@ -112,11 +112,27 @@ private:
     cluster::topic_configuration _cfg{};
 };
 
-// A fake offset provider which always returns kafka::offset::max().
+// A fake offset provider which reports every NTP as fully compactible.
 class fake_offset_provider : public l1::max_compactible_offset_provider {
 public:
     ss::future<> fill_max_compactible_offsets(
-      chunked_hash_map<model::ntp, kafka::offset>&) const final {
+      chunked_hash_map<model::ntp, kafka::offset>& offsets) const final {
+        for (auto& [_, offset] : offsets) {
+            offset = kafka::offset::max();
+        }
+        co_return;
+    }
+};
+
+// A fake offset provider which reports every NTP as having nothing compactible,
+// as an STM pinning from offset 0 does.
+class fake_pinned_offset_provider : public l1::max_compactible_offset_provider {
+public:
+    ss::future<> fill_max_compactible_offsets(
+      chunked_hash_map<model::ntp, kafka::offset>& offsets) const final {
+        for (auto& [_, offset] : offsets) {
+            offset = kafka::offset::min();
+        }
         co_return;
     }
 };
@@ -159,6 +175,40 @@ TEST_F(LogInfoCollectorTestFixture, TestInfoCollector) {
         ASSERT_FLOAT_EQ(sample->info_and_ts.info.dirty_ratio, 1.0);
         ASSERT_TRUE(sample->info_and_ts.info.earliest_dirty_ts.has_value());
     }
+}
+
+// A log whose data is entirely pinned (nothing at or below
+// `max_compactible_offset`) must not be queued: the job could only build its
+// compaction map and find every extent filtered out.
+TEST_F(LogInfoCollectorTestFixture, TestInfoCollectorSkipsFullyPinnedLog) {
+    auto cfg_provider = std::make_unique<fake_cfg_provider>();
+    auto offset_provider = std::make_unique<fake_pinned_offset_provider>();
+    l1::log_info_collector log_info_collector(
+      &_metastore, std::move(cfg_provider), std::move(offset_provider));
+
+    auto [ntp, tidp] = make_ntidp("topic_a");
+
+    l1::log_set_t logs;
+    l1::log_list_t logs_list;
+    auto [it, success] = logs.emplace(
+      ss::make_lw_shared<l1::log_compaction_meta>(tidp, ntp));
+    ASSERT_TRUE(success);
+    logs_list.push_back(*it->get());
+
+    l1::compaction_queue cached_metadata(
+      [](const l1::compaction_job_ptr& a, const l1::compaction_job_ptr& b) {
+          return a->meta->ntp < b->meta->ntp;
+      });
+
+    std::vector<tidp_batches_t> tidp_batches;
+    tidp_batches.emplace_back(
+      tidp, model::test::make_random_batches(model::offset{0}, 10).get());
+    make_l1_objects(std::move(tidp_batches)).get();
+
+    log_info_collector.collect_compaction_info(logs, logs_list, cached_metadata)
+      .get();
+
+    ASSERT_TRUE(cached_metadata.empty());
 }
 
 TEST_F(LogInfoCollectorTestFixture, TestSampleLevelingInfo) {
