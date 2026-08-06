@@ -29,6 +29,12 @@ class RpkBenchmarkMetrics:
     requests_per_sec: float
     mb_per_sec: float
     errors: int
+    p50_latency_us: float = 0.0
+    p99_latency_us: float = 0.0
+    p999_latency_us: float = 0.0
+    max_latency_us: float = 0.0
+    cpu_user_sec: float = 0.0
+    cpu_sys_sec: float = 0.0
 
 
 class RpkBenchmarkService(Service):
@@ -58,9 +64,11 @@ class RpkBenchmarkService(Service):
         warmup_s: int = 5,
         duration_s: int = 30,
         wait_for_stable_leadership: bool = True,
+        brokers_override: str | None = None,
+        target_rate: float = 0,
     ):
         super().__init__(context, num_nodes=1)
-        if mode != "produce":
+        if mode not in ("produce", "consume"):
             raise ValueError(f"unsupported rpk benchmark mode: {mode}")
         self._redpanda = redpanda
         self._topic = topic
@@ -72,16 +80,30 @@ class RpkBenchmarkService(Service):
         self._warmup_s = warmup_s
         self._duration_s = duration_s
         self._wait_for_stable_leadership = wait_for_stable_leadership
+        self._brokers_override = brokers_override
+        self._target_rate = target_rate
         self._pids: dict[str, int] = {}
 
     def _build_cmd(self) -> str:
-        return (
-            f"{self._redpanda.find_binary('rpk')} -X brokers={self._redpanda.brokers()} benchmark {self._mode} "
-            f"--topic {self._topic} --partitions {self._partitions} --replicas {self._replicas} "
-            f"--clients {self._clients} --record-size {self._record_size} "
+        brokers = self._brokers_override or self._redpanda.brokers()
+        cmd = (
+            f"{self._redpanda.find_binary('rpk')} -X brokers={brokers} benchmark {self._mode} "
+            f"--topic {self._topic} "
+            f"--clients {self._clients} "
             f"--warmup {self._warmup_s} --duration {self._duration_s} "
-            f"--metrics-json {self.METRICS_PATH} --wait-leadership-balanced={str(self._wait_for_stable_leadership).lower()}"
+            f"--metrics-json {self.METRICS_PATH} "
+            f"--wait-leadership-balanced={str(self._wait_for_stable_leadership).lower()}"
         )
+        if self._mode == "produce":
+            cmd += (
+                f" --partitions {self._partitions} --replicas {self._replicas}"
+                f" --record-size {self._record_size}"
+            )
+            if self._target_rate > 0:
+                cmd += f" --target-rate {self._target_rate}"
+        elif self._mode == "consume":
+            cmd += " --use-existing-topic"
+        return cmd
 
     def start_node(self, node: ClusterNode, **kwargs: Any) -> None:
         self.clean_node(node, **kwargs)
@@ -145,4 +167,10 @@ class RpkBenchmarkService(Service):
             requests_per_sec=float(metrics["requests_per_sec"]),
             mb_per_sec=float(metrics["mb_per_sec"]),
             errors=int(metrics["errors"]),
+            p50_latency_us=float(metrics.get("p50_latency_us", 0)),
+            p99_latency_us=float(metrics.get("p99_latency_us", 0)),
+            p999_latency_us=float(metrics.get("p999_latency_us", 0)),
+            max_latency_us=float(metrics.get("max_latency_us", 0)),
+            cpu_user_sec=float(metrics.get("cpu_user_sec", 0)),
+            cpu_sys_sec=float(metrics.get("cpu_sys_sec", 0)),
         )
