@@ -17,6 +17,7 @@ import (
 	controlplanev1 "buf.build/gen/go/redpandadata/cloud/protocolbuffers/go/redpanda/api/controlplane/v1"
 	"connectrpc.com/connect"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/oauth/providers/auth0"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/publicapi"
 	"github.com/spf13/afero"
 	"github.com/spf13/cobra"
@@ -56,6 +57,17 @@ cluster metadata.
 	p.InstallAdminFlags(cmd)
 	p.InstallSASLFlags(cmd)
 	return cmd
+}
+
+// newCloudClientSet builds the validated control-plane client set for the
+// profile's current cloud auth.
+func newCloudClientSet(cfg *config.Config, prof *config.RpkProfile) (*publicapi.CloudClientSet, error) {
+	return publicapi.NewValidatedCloudClientSet(
+		cfg.DevOverrides().PublicAPIURL,
+		prof.CurrentAuth().AuthToken,
+		auth0.NewClient(cfg.DevOverrides()).Audience(),
+		[]string{prof.CurrentAuth().ClientID},
+	)
 }
 
 // waitForOperation is a shared function to poll for the completion of an async
