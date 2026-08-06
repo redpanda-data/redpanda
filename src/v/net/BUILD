@@ -27,6 +27,22 @@ redpanda_cc_library(
 )
 
 redpanda_cc_library(
+    name = "uds_path",
+    srcs = [
+        "uds_path.cc",
+    ],
+    hdrs = [
+        "uds_path.h",
+    ],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//src/v/base",
+        "@fmt",
+        "@seastar",
+    ],
+)
+
+redpanda_cc_library(
     name = "net",
     srcs = [
         "batched_output_stream.cc",
