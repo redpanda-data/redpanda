@@ -133,7 +133,7 @@ disk_log_appender::operator()(model::record_batch& batch) {
         auto e = std::current_exception();
         vlogl(
           stlog,
-          ssx::is_shutdown_exception(e) ? ss::log_level::debug
+          ssx::is_shutdown_exception(e) ? ss::log_level::warn
                                         : ss::log_level::error,
           "Could not append batch: {} - {}",
           e,
