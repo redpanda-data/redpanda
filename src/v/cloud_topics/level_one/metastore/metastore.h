@@ -523,8 +523,25 @@ public:
       const model::topic_id_partition&, kafka::offset, kafka::offset, size_t)
       = 0;
 
-    // Flushes all metastore partitions to cloud storage.
-    virtual ss::future<std::expected<std::nullopt_t, errc>> flush() = 0;
+    enum class flush_type {
+        // Persists every metastore partition, regardless of when it last
+        // flushed. On success, all metadata is durable as of the call.
+        force,
+
+        // Lets partitions that flushed within half of
+        // cloud_topics_long_term_flush_interval decline to persist again. On
+        // success, all metadata is durable as of some point within that
+        // window, rather than as of the call.
+        skip_if_recent,
+    };
+
+    // Flushes all metastore partitions to cloud storage. Flushes every
+    // partition even if some fail, returning the first error encountered.
+    //
+    // Defaults to `force` so that callers needing a barrier get one without
+    // having to ask; `skip_if_recent` must be requested explicitly.
+    virtual ss::future<std::expected<std::nullopt_t, errc>>
+      flush(flush_type = flush_type::force) = 0;
 
     // Restores metastore state from a previously flushed manifest in the given
     // cluster's cloud storage. This downloads the metastore topic manifest,
