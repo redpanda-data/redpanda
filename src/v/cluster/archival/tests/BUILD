@@ -185,6 +185,23 @@ redpanda_cc_btest(
 )
 
 redpanda_cc_btest(
+    name = "spillover_tail_test",
+    timeout = "short",
+    srcs = [
+        "spillover_tail_test.cc",
+    ],
+    cpu = 1,
+    deps = [
+        "//src/v/cloud_storage",
+        "//src/v/cluster",
+        "//src/v/model",
+        "//src/v/test_utils:seastar_boost",
+        "@seastar",
+        "@seastar//:testing",
+    ],
+)
+
+redpanda_cc_btest(
     name = "retention_strategy_test",
     timeout = "short",
     srcs = [

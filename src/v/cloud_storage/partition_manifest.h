@@ -387,7 +387,7 @@ public:
 
     /// Return 'true' if the spillover manifest can be added to
     /// the manifest without creating a gap
-    bool safe_spillover_manifest(const segment_meta& meta);
+    bool safe_spillover_manifest(const segment_meta& meta) const;
 
     /// \brief Set start offset without removing any data from the
     /// manifest.

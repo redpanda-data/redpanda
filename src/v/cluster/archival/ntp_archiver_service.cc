@@ -3146,36 +3146,18 @@ ss::future<> ntp_archiver::apply_spillover() {
         }
         return manifest().size() < manifest_max_segments.value() * 2;
     };
-    auto spillover_complete = [&](
-                                const cloud_storage::spillover_manifest& tail) {
-        // Don't allow empty spillover manifests even if the limit
-        // is too low.
-        if (manifest_size_limit.has_value()) {
-            return tail.segments_metadata_bytes() >= manifest_size_limit.value()
-                   && tail.size() > 0;
-        }
-        return tail.size() >= manifest_max_segments.value() && tail.size() > 0;
-    };
     while (!stop_condition()) {
-        auto tail = [&]() {
-            cloud_storage::spillover_manifest tail(_ntp, _rev);
-            for (const auto& meta : manifest()) {
-                vlog(
-                  _rtclog.trace,
-                  "Adding segment {} to the spillover manifest that starts at "
-                  "{}",
-                  meta,
-                  tail.get_start_offset().value_or(model::offset{}));
-                tail.add(meta);
-                // No performance impact since all writes here are
-                // sequential.
-                tail.flush_write_buffer();
-                if (spillover_complete(tail)) {
-                    break;
-                }
-            }
-            return tail;
-        }();
+        auto tail = make_spillover_tail(
+          manifest(), manifest_size_limit, manifest_max_segments);
+        if (tail.empty()) {
+            vlog(
+              _rtclog.warn,
+              "Can't apply spillover, the manifest with {} segments and {} "
+              "bytes can't be split",
+              manifest().size(),
+              manifest().segments_metadata_bytes());
+            co_return;
+        }
         vlog(
           _rtclog.info,
           "Preparing spillover: manifest has {} segments and {} bytes, "
@@ -3199,6 +3181,17 @@ ss::future<> ntp_archiver::apply_spillover() {
           first,
           last,
           spillover_meta);
+
+        // Replicating a spillover command that the STM will reject on
+        // apply would fail housekeeping and leak the uploaded manifest,
+        // so validate it upfront the same way the STM does.
+        if (!manifest().safe_spillover_manifest(spillover_meta)) {
+            vlog(
+              _rtclog.error,
+              "Aborting spillover, the command won't be applicable: {}",
+              spillover_meta);
+            co_return;
+        }
 
         retry_chain_node upload_rtc(
           manifest_upload_timeout, manifest_upload_backoff, &_rtcnode);
@@ -3260,6 +3253,43 @@ ss::future<> ntp_archiver::apply_spillover() {
         // Reset fence for the next iteration
         fence = emit_rw_fence();
     }
+}
+
+cloud_storage::spillover_manifest make_spillover_tail(
+  const cloud_storage::partition_manifest& manifest,
+  std::optional<size_t> size_limit,
+  std::optional<size_t> max_segments) {
+    cloud_storage::spillover_manifest tail(
+      manifest.get_ntp(), manifest.get_revision_id());
+    auto tail_complete = [&] {
+        // Don't allow empty spillover manifests even if the limit
+        // is too low.
+        if (size_limit.has_value()) {
+            return tail.segments_metadata_bytes() >= size_limit.value()
+                   && tail.size() > 0;
+        }
+        return max_segments.has_value() && tail.size() >= max_segments.value()
+               && tail.size() > 0;
+    };
+    auto remaining = manifest.size();
+    for (const auto& meta : manifest) {
+        // The limits are not guaranteed to be reachable: the manifest
+        // measures its own metadata size differently from a freshly
+        // encoded copy of the same segments, so the tail may measure
+        // smaller than the manifest it was carved from. The last segment
+        // has to stay behind regardless.
+        if (remaining == 1) {
+            break;
+        }
+        tail.add(meta);
+        // No performance impact since all writes here are sequential.
+        tail.flush_write_buffer();
+        --remaining;
+        if (tail_complete()) {
+            break;
+        }
+    }
+    return tail;
 }
 
 flush_result ntp_archiver::flush() {

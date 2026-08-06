@@ -15,6 +15,7 @@
 #include "cloud_storage/remote.h"
 #include "cloud_storage/remote_path_provider.h"
 #include "cloud_storage/remote_segment_index.h"
+#include "cloud_storage/spillover_manifest.h"
 #include "cloud_storage/types.h"
 #include "cluster/archival/archival_policy.h"
 #include "cluster/archival/probe.h"
@@ -836,5 +837,20 @@ private:
 
     friend class archiver_fixture;
 };
+
+/// Build the section of the STM manifest that will be offloaded to the
+/// cloud as a spillover manifest. Segments are consumed from the front of
+/// the manifest until the tail reaches 'size_limit' bytes of metadata (or
+/// 'max_segments' elements if the size limit is not set).
+///
+/// The tail never covers the entire manifest: at least one segment is
+/// always left behind, otherwise the resulting spillover command would be
+/// rejected by 'partition_manifest::safe_spillover_manifest' which
+/// requires the manifest to remain non-empty after the spillover range is
+/// removed.
+cloud_storage::spillover_manifest make_spillover_tail(
+  const cloud_storage::partition_manifest& manifest,
+  std::optional<size_t> size_limit,
+  std::optional<size_t> max_segments);
 
 } // namespace archival

@@ -1260,6 +1260,14 @@ public:
         return _frames.back().get_current_stream_pos();
     }
 
+    /// Number of elements in the last (currently appended to) frame
+    size_t last_frame_size() const {
+        if (_frames.empty()) {
+            return 0;
+        }
+        return _frames.back().size();
+    }
+
     struct column_tx_t {
         using frame_tx_t = typename frame_t::frame_tx_t;
         using frame_list_t = std::list<frame_t>;

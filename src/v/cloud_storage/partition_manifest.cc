@@ -1173,7 +1173,8 @@ segment_meta partition_manifest::make_manifest_metadata() const {
     };
 }
 
-bool partition_manifest::safe_spillover_manifest(const segment_meta& meta) {
+bool partition_manifest::safe_spillover_manifest(
+  const segment_meta& meta) const {
     // New spillover manifest should connect with previous spillover manifests
     // and *this manifest. The manifest is not truncated yet so meta.base_offset
     // should be equal to start offset and the meta.committed_offset + 1 should
