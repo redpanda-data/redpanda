@@ -58,6 +58,7 @@
 #include "kafka/server/snc_quota_manager.h"
 #include "net/dns.h"
 #include "net/tls_certificate_probe.h"
+#include "net/uds_path.h"
 #include "raft/coordinated_recovery_throttle.h"
 #include "raft/group_manager.h"
 #include "redpanda/application.h"
@@ -71,6 +72,7 @@
 
 #include <seastar/core/seastar.hh>
 #include <seastar/core/smp.hh>
+#include <seastar/net/api.hh>
 
 // Forward declarations (defined in application_config.cc)
 storage::backlog_controller_config
@@ -948,6 +950,15 @@ void application::wire_up_redpanda_services(
                   // if tls is configured for this endpoint build reloadable
                   // credentials
                   if (it != tls_config.end()) {
+                      // TLS on an AF_UNIX listener is rejected by
+                      // validate_kafka_uds_constraints(). The vassert is a
+                      // defense-in-depth guard in case the validator is
+                      // bypassed.
+                      vassert(
+                        !ep.is_unix_domain(),
+                        "TLS is not supported on UDS kafka_api listener "
+                        "'{}'",
+                        ep.name);
                       syschecks::systemd_message(
                         "Building TLS credentials for kafka")
                         .get();
@@ -965,8 +976,21 @@ void application::wire_up_redpanda_services(
                             .get();
                   }
 
-                  c.addrs.emplace_back(
-                    ep.name, net::resolve_dns(ep.address).get(), credentials);
+                  ss::socket_address saddr;
+                  if (ep.is_unix_domain()) {
+                      // Stale-socket detection, parent-dir checks, and the
+                      // sibling advisory lock are performed once on shard
+                      // 0 before any shard attempts to bind. Remaining
+                      // shards skip these filesystem operations.
+                      if (ss::this_shard_id() == 0) {
+                          net::prepare_uds_path(*ep.unix_path).get();
+                      }
+                      saddr = ss::socket_address(
+                        ss::unix_domain_addr(std::string(*ep.unix_path)));
+                  } else {
+                      saddr = net::resolve_dns(ep.address).get();
+                  }
+                  c.addrs.emplace_back(ep.name, saddr, credentials);
               }
 
               c.disable_metrics = net::metrics_disabled(

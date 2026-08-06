@@ -38,6 +38,7 @@
 #include "metrics/prometheus_sanitize.h"
 #include "migrations/migrators.h"
 #include "net/tls_certificate_probe.h"
+#include "net/uds_path.h"
 #include "pandaproxy/rest/api.h"
 #include "pandaproxy/rest/configuration.h"
 #include "pandaproxy/schema_registry/api.h"
@@ -224,6 +225,15 @@ void application::shutdown() {
         shutdown_with_watchdog(_kafka_server, [](auto& kafka_server) {
             return kafka_server.stop();
         });
+        // Remove AF_UNIX socket files and their sibling advisory lockfiles
+        // now that the listener is fully stopped. Best-effort: errors are
+        // logged inside cleanup_uds_path() but not propagated — shutdown
+        // must proceed.
+        for (const auto& ep : config::node().kafka_api()) {
+            if (ep.is_unix_domain()) {
+                net::cleanup_uds_path(*ep.unix_path).get();
+            }
+        }
     }
 
     // Shutdown cloud topics _after_ partitions have been shut down to ensure
