@@ -217,6 +217,28 @@ struct ntp_produce_request {
     model::compression compression_type;
 };
 
+std::optional<ss::sstring> batch_exceeds_max_bytes(
+  const ntp_produce_request& req, bool after_recompression) {
+    const auto batch_size = req.batch->size_bytes();
+    if (static_cast<uint32_t>(batch_size) <= req.batch_max_bytes) {
+        return std::nullopt;
+    }
+    auto msg = after_recompression
+                 ? ssx::sformat(
+                     "batch size {} after applying topic compression type {} "
+                     "exceeds max {}",
+                     batch_size,
+                     req.compression_type,
+                     req.batch_max_bytes)
+                 : ssx::sformat(
+                     "batch size {} exceeds max {}",
+                     batch_size,
+                     req.batch_max_bytes);
+    thread_local static ss::logger::rate_limit rate(1s);
+    vloglr(klog, ss::log_level::warn, rate, "{}", msg);
+    return msg;
+}
+
 // Applies the topic's effective `compression.type` policy to a produced batch
 // (broker-side compression): a batch whose codec differs from the policy is
 // recompressed (or decompressed, for a policy of `none`) before being
@@ -285,6 +307,17 @@ ss::future<produce_response::partition> do_produce_topic_partition(
   ntp_produce_request req,
   std::unique_ptr<ss::promise<>> dispatched) {
     auto start = std::chrono::steady_clock::now();
+    if (
+      auto msg = batch_exceeds_max_bytes(req, /*after_recompression=*/false);
+      msg.has_value()) {
+        co_return finalize_request_with_error_code(
+          error_code::message_too_large,
+          std::move(dispatched),
+          req.ntp,
+          ss::this_shard_id(),
+          std::move(msg));
+    }
+
     auto validate_batch_res = co_await validate_batch(
       {.batch = *req.batch,
        .timestamp_type = req.timestamp_type,
@@ -301,20 +334,6 @@ ss::future<produce_response::partition> do_produce_topic_partition(
           req.ntp,
           ss::this_shard_id(),
           std::move(validate_batch_res.error->msg));
-    }
-
-    auto batch_size = req.batch->size_bytes();
-    if (static_cast<uint32_t>(batch_size) > req.batch_max_bytes) {
-        auto msg = ssx::sformat(
-          "batch size {} exceeds max {}", batch_size, req.batch_max_bytes);
-        thread_local static ss::logger::rate_limit rate(1s);
-        vloglr(klog, ss::log_level::warn, rate, "{}", msg);
-        co_return finalize_request_with_error_code(
-          error_code::message_too_large,
-          std::move(dispatched),
-          req.ntp,
-          ss::this_shard_id(),
-          std::move(msg));
     }
 
     if (auto& validator = req.schema_id_validator) {
@@ -351,6 +370,7 @@ ss::future<produce_response::partition> do_produce_topic_partition(
     }
 
     auto m = octx.rctx.probe().auto_produce_measurement();
+    const auto batch_size = req.batch->size_bytes();
     octx.rctx.probe().record_batch(
       batch_size, req.batch->header().attrs.compression());
     octx.rctx.connection()->attributes().produce_bytes.record(batch_size);
@@ -367,6 +387,20 @@ ss::future<produce_response::partition> do_produce_topic_partition(
           req.ntp,
           ss::this_shard_id(),
           std::move(recompress_res->msg));
+    }
+
+    // Recompression can grow the batch beyond the size accepted above, so the
+    // limit is enforced again on the batch that is actually replicated and
+    // stored.
+    if (
+      auto msg = batch_exceeds_max_bytes(req, /*after_recompression=*/true);
+      msg.has_value()) {
+        co_return finalize_request_with_error_code(
+          error_code::message_too_large,
+          std::move(dispatched),
+          req.ntp,
+          ss::this_shard_id(),
+          std::move(msg));
     }
 
     auto timeout = octx.request.data.timeout_ms;

@@ -1591,6 +1591,78 @@ FIXTURE_TEST(test_broker_side_compression_disabled, prod_consume_fixture) {
     BOOST_CHECK(kvs_from_batch(batches.front()) == records);
 }
 
+// `batch_max_bytes` applies to the batch as stored: a batch whose
+// client-compressed size is within the limit but whose recompressed size is
+// not (here: decompressed by a `compression.type` of `none`) must be
+// rejected.
+FIXTURE_TEST(test_broker_side_compression_max_bytes, prod_consume_fixture) {
+    scoped_config cfg;
+    cfg.get("kafka_produce_enable_batch_compression").set_value(true);
+    wait_for_controller_leadership().get();
+
+    constexpr uint32_t batch_max_bytes = 4_KiB;
+    const model::topic_namespace none_tp_ns{
+      model::ns("kafka"), model::topic("compress-none")};
+    const model::topic_namespace producer_tp_ns{
+      model::ns("kafka"), model::topic("compress-producer")};
+    auto make_topic = [&](
+                        const model::topic_namespace& tp_ns,
+                        model::compression compression_type) {
+        cluster::topic_properties props;
+        props.compression = compression_type;
+        props.batch_max_bytes = batch_max_bytes;
+        add_topic(tp_ns, 1, props).get();
+        wait_for_leader(model::ntp(tp_ns.ns, tp_ns.tp, model::partition_id(0)))
+          .get();
+    };
+    make_topic(none_tp_ns, model::compression::none);
+    make_topic(producer_tp_ns, model::compression::producer);
+
+    auto transport = make_kafka_client().get();
+    transport.connect().get();
+    auto deferred_t_close = ss::defer([&transport] { transport.stop().get(); });
+
+    // A highly compressible payload much larger than the batch size limit:
+    // compressed it fits within the limit, decompressed it does not.
+    const std::vector<kv_t> records{kv_t("key", ss::sstring(16_KiB, 'a'))};
+    auto produce_batch = [&](const model::topic& topic) {
+        auto batch = tests::batch_from_kvs(
+          records,
+          model::offset(0),
+          model::timestamp::now(),
+          model::compression::zstd);
+        BOOST_REQUIRE_LT(batch.size_bytes(), batch_max_bytes);
+
+        kafka::produce_request::partition partition;
+        partition.partition_index = model::partition_id(0);
+        partition.records.emplace(std::move(batch));
+        chunked_vector<kafka::produce_request::partition> partitions;
+        partitions.push_back(std::move(partition));
+        kafka::produce_request::topic tp;
+        tp.name = topic;
+        tp.partitions = std::move(partitions);
+        chunked_vector<kafka::produce_request::topic> topics;
+        topics.push_back(std::move(tp));
+        kafka::produce_request req(std::nullopt, 1, std::move(topics));
+        req.data.timeout_ms = std::chrono::seconds(2);
+        req.has_idempotent = false;
+        req.has_transactional = false;
+        auto resp
+          = transport.dispatch(std::move(req), kafka::api_version(7)).get();
+        BOOST_REQUIRE_EQUAL(resp.data.responses.size(), 1);
+        BOOST_REQUIRE_EQUAL(resp.data.responses[0].partitions.size(), 1);
+        return resp.data.responses[0].partitions[0].error_code;
+    };
+
+    // Under `producer` the batch is stored with the client's codec, within
+    // the limit.
+    BOOST_CHECK_EQUAL(
+      produce_batch(producer_tp_ns.tp), kafka::error_code::none);
+    // Under `none` the stored (decompressed) batch exceeds the limit.
+    BOOST_CHECK_EQUAL(
+      produce_batch(none_tp_ns.tp), kafka::error_code::message_too_large);
+}
+
 // The broker-set `max_timestamp` and timestamp type of a `LogAppendTime`
 // topic must be carried into the recompressed batch.
 FIXTURE_TEST(test_broker_side_compression_append_time, prod_consume_fixture) {
