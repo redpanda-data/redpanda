@@ -406,9 +406,11 @@ struct fuzz_checker {
           = batch_base_offsets[random_generators::get_int(
             batch_base_offsets.size() - 1)];
 
-        co_await _tr->truncate(truncate_at);
+        co_await _tr->prepare_truncate(truncate_at);
 
         co_await _log->truncate(storage::truncate_config(truncate_at));
+
+        co_await _tr->complete_truncate(truncate_at);
 
         if (_log->offsets().dirty_offset() < 0) {
             _kafka_offsets.clear();
