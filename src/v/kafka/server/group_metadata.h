@@ -21,7 +21,16 @@
 #include "model/metadata.h"
 #include "model/record.h"
 #include "model/timestamp.h"
+#include "serde/rw/bytes.h"
+#include "serde/rw/chrono.h"
+#include "serde/rw/enum.h"
+#include "serde/rw/envelope.h"
+#include "serde/rw/named_type.h"
+#include "serde/rw/optional.h"
 #include "serde/rw/rw.h"
+#include "serde/rw/sstring.h"
+#include "serde/rw/uuid.h"
+#include "serde/rw/vector.h"
 #include "utils/named_type.h"
 
 #include <seastar/util/noncopyable_function.hh>
@@ -184,19 +193,17 @@ inline group_metadata_version read_metadata_version(protocol::decoder& reader) {
 }
 
 /*
- * The ConsumerGroup* records, lifted from Kafka's coordinator record schemas.
- * They share __consumer_offsets with the classic records above and use the same
- * key-version discriminator, but are framed differently. A key is prefixed with
- * its record type and is not flexible. A value is prefixed with its own version
- * and is flexible, so it carries compact strings and arrays plus a trailing
- * tagged-fields section. Each value keeps `unknown_tags` so tags written by a
- * newer version survive a round-trip.
+ * The ConsumerGroup* records. They share __consumer_offsets with the classic
+ * records above and use the same key-version discriminator, but only the keys
+ * are Kafka wire format: a key is prefixed with its record type and is not
+ * flexible, which is what makes the type discriminable. The values are serde
+ * envelopes, so their field set follows Kafka's without the encoding doing so.
  */
 
 /// A member's state in the reconciliation FSM, as persisted in
-/// `consumer_group_current_member_assignment_value::state`. Byte values are
-/// Kafka's (org.apache.kafka.coordinator.group.modern.MemberState). An
-/// unrecognized byte decodes to itself rather than being rejected.
+/// `consumer_group_current_member_assignment_value::state`. Values are Kafka's
+/// (org.apache.kafka.coordinator.group.modern.MemberState). An unrecognized
+/// value decodes to itself rather than being rejected.
 enum class consumer_group_member_state : int8_t {
     stable = 0,
     unrevoked_partitions = 1,
@@ -219,50 +226,54 @@ struct consumer_group_metadata_key {
 };
 
 /// The group epoch, and the hash that detects subscription-metadata changes.
-struct consumer_group_metadata_value {
-    static constexpr group_metadata_version version{0};
+struct consumer_group_metadata_value
+  : serde::envelope<
+      consumer_group_metadata_value,
+      serde::version<0>,
+      serde::compat_version<0>> {
     int32_t epoch{0};
     /// Hash over the subscribed topics' metadata, which detects subscription
-    /// changes. Tagged field 0; not written when 0.
+    /// changes.
     int64_t metadata_hash{0};
-    tagged_fields unknown_tags;
 
+    auto serde_fields() { return std::tie(epoch, metadata_hash); }
     fmt::iterator format_to(fmt::iterator it) const;
     friend bool operator==(
       const consumer_group_metadata_value&,
       const consumer_group_metadata_value&) = default;
-    static consumer_group_metadata_value decode(protocol::decoder&);
-    static void
-    encode(protocol::encoder&, const consumer_group_metadata_value&);
 };
 
 /// One protocol a classic-protocol member supports. Not written until
 /// classic-to-consumer migration exists.
-struct classic_protocol {
+struct classic_protocol
+  : serde::
+      envelope<classic_protocol, serde::version<0>, serde::compat_version<0>> {
     kafka::protocol_name name;
     bytes metadata;
-    tagged_fields unknown_tags;
 
+    auto serde_fields() { return std::tie(name, metadata); }
     fmt::iterator format_to(fmt::iterator it) const;
     friend bool
     operator==(const classic_protocol&, const classic_protocol&) = default;
-    static classic_protocol decode(protocol::decoder&);
-    static void encode(protocol::encoder&, const classic_protocol&);
 };
 
 /// A classic-protocol member's session timeout and supported protocols. Absent
 /// for a consumer-protocol member.
-struct classic_member_metadata {
+struct classic_member_metadata
+  : serde::envelope<
+      classic_member_metadata,
+      serde::version<0>,
+      serde::compat_version<0>> {
     std::chrono::milliseconds session_timeout{};
     chunked_vector<classic_protocol> supported_protocols;
-    tagged_fields unknown_tags;
 
+    auto serde_fields() {
+        return std::tie(session_timeout, supported_protocols);
+    }
     classic_member_metadata copy() const;
     fmt::iterator format_to(fmt::iterator it) const;
     friend bool operator==(
       const classic_member_metadata&, const classic_member_metadata&) = default;
-    static classic_member_metadata decode(protocol::decoder&);
-    static void encode(protocol::encoder&, const classic_member_metadata&);
 };
 
 struct consumer_group_member_metadata_key {
@@ -280,8 +291,11 @@ struct consumer_group_member_metadata_key {
 };
 
 /// A member's subscription, rack, and chosen assignor.
-struct consumer_group_member_metadata_value {
-    static constexpr group_metadata_version version{0};
+struct consumer_group_member_metadata_value
+  : serde::envelope<
+      consumer_group_member_metadata_value,
+      serde::version<0>,
+      serde::compat_version<0>> {
     std::optional<kafka::group_instance_id> instance_id;
     std::optional<model::rack_id> rack_id;
     kafka::client_id client_id;
@@ -290,19 +304,26 @@ struct consumer_group_member_metadata_value {
     std::optional<ss::sstring> subscribed_topic_regex;
     std::chrono::milliseconds rebalance_timeout{-1};
     std::optional<ss::sstring> server_assignor;
-    /// Tagged field 0. Null is written explicitly and the default is omitted,
-    /// so the default here must be present for an omitted tag to round-trip.
-    std::optional<classic_member_metadata> classic_metadata{std::in_place};
-    tagged_fields unknown_tags;
+    /// Absent for a consumer-protocol member.
+    std::optional<classic_member_metadata> classic_metadata;
 
+    auto serde_fields() {
+        return std::tie(
+          instance_id,
+          rack_id,
+          client_id,
+          client_host,
+          subscribed_topic_names,
+          subscribed_topic_regex,
+          rebalance_timeout,
+          server_assignor,
+          classic_metadata);
+    }
     consumer_group_member_metadata_value copy() const;
     fmt::iterator format_to(fmt::iterator it) const;
     friend bool operator==(
       const consumer_group_member_metadata_value&,
       const consumer_group_member_metadata_value&) = default;
-    static consumer_group_member_metadata_value decode(protocol::decoder&);
-    static void
-    encode(protocol::encoder&, const consumer_group_member_metadata_value&);
 };
 
 struct consumer_group_target_assignment_metadata_key {
@@ -320,38 +341,38 @@ struct consumer_group_target_assignment_metadata_key {
 };
 
 /// The group epoch the current target assignment was computed at.
-struct consumer_group_target_assignment_metadata_value {
-    static constexpr group_metadata_version version{0};
+struct consumer_group_target_assignment_metadata_value
+  : serde::envelope<
+      consumer_group_target_assignment_metadata_value,
+      serde::version<0>,
+      serde::compat_version<0>> {
     int32_t assignment_epoch{0};
-    /// Tagged field 0; not written when 0.
     int64_t assignment_timestamp{0};
-    tagged_fields unknown_tags;
 
+    auto serde_fields() {
+        return std::tie(assignment_epoch, assignment_timestamp);
+    }
     fmt::iterator format_to(fmt::iterator it) const;
     friend bool operator==(
       const consumer_group_target_assignment_metadata_value&,
       const consumer_group_target_assignment_metadata_value&) = default;
-    static consumer_group_target_assignment_metadata_value
-    decode(protocol::decoder&);
-    static void encode(
-      protocol::encoder&,
-      const consumer_group_target_assignment_metadata_value&);
 };
 
 /// One topic's share of a member's target assignment.
-struct target_assignment_topic_partitions {
+struct target_assignment_topic_partitions
+  : serde::envelope<
+      target_assignment_topic_partitions,
+      serde::version<0>,
+      serde::compat_version<0>> {
     model::topic_id topic_id;
     chunked_vector<model::partition_id> partitions;
-    tagged_fields unknown_tags;
 
+    auto serde_fields() { return std::tie(topic_id, partitions); }
     target_assignment_topic_partitions copy() const;
     fmt::iterator format_to(fmt::iterator it) const;
     friend bool operator==(
       const target_assignment_topic_partitions&,
       const target_assignment_topic_partitions&) = default;
-    static target_assignment_topic_partitions decode(protocol::decoder&);
-    static void
-    encode(protocol::encoder&, const target_assignment_topic_partitions&);
 };
 
 struct consumer_group_target_assignment_member_key {
@@ -370,41 +391,41 @@ struct consumer_group_target_assignment_member_key {
 };
 
 /// The partitions the assignor wants a member to own.
-struct consumer_group_target_assignment_member_value {
-    static constexpr group_metadata_version version{0};
+struct consumer_group_target_assignment_member_value
+  : serde::envelope<
+      consumer_group_target_assignment_member_value,
+      serde::version<0>,
+      serde::compat_version<0>> {
     chunked_vector<target_assignment_topic_partitions> topic_partitions;
-    tagged_fields unknown_tags;
 
+    auto serde_fields() { return std::tie(topic_partitions); }
     consumer_group_target_assignment_member_value copy() const;
     fmt::iterator format_to(fmt::iterator it) const;
     friend bool operator==(
       const consumer_group_target_assignment_member_value&,
       const consumer_group_target_assignment_member_value&) = default;
-    static consumer_group_target_assignment_member_value
-    decode(protocol::decoder&);
-    static void encode(
-      protocol::encoder&, const consumer_group_target_assignment_member_value&);
 };
 
 /// One topic's share of a member's current assignment. `assignment_epochs` is
 /// parallel to `partitions`, holding the epoch each was assigned at, which
 /// fences a stale offset commit.
-struct current_assignment_topic_partitions {
+struct current_assignment_topic_partitions
+  : serde::envelope<
+      current_assignment_topic_partitions,
+      serde::version<0>,
+      serde::compat_version<0>> {
     model::topic_id topic_id;
     chunked_vector<model::partition_id> partitions;
-    /// Tagged field 0. Null is written explicitly and empty is omitted, so the
-    /// default here must be present for an omitted tag to round-trip.
-    std::optional<chunked_vector<int32_t>> assignment_epochs{std::in_place};
-    tagged_fields unknown_tags;
+    chunked_vector<int32_t> assignment_epochs;
 
+    auto serde_fields() {
+        return std::tie(topic_id, partitions, assignment_epochs);
+    }
     current_assignment_topic_partitions copy() const;
     fmt::iterator format_to(fmt::iterator it) const;
     friend bool operator==(
       const current_assignment_topic_partitions&,
       const current_assignment_topic_partitions&) = default;
-    static current_assignment_topic_partitions decode(protocol::decoder&);
-    static void
-    encode(protocol::encoder&, const current_assignment_topic_partitions&);
 };
 
 struct consumer_group_current_member_assignment_key {
@@ -424,8 +445,11 @@ struct consumer_group_current_member_assignment_key {
 
 /// How far a member has converged on its target, and what it still owes. Its
 /// epoch reaches the assignment epoch only once it owes nothing.
-struct consumer_group_current_member_assignment_value {
-    static constexpr group_metadata_version version{0};
+struct consumer_group_current_member_assignment_value
+  : serde::envelope<
+      consumer_group_current_member_assignment_value,
+      serde::version<0>,
+      serde::compat_version<0>> {
     int32_t member_epoch{0};
     /// The epoch to accept if the member never saw the last bump.
     int32_t previous_member_epoch{0};
@@ -433,18 +457,20 @@ struct consumer_group_current_member_assignment_value {
     chunked_vector<current_assignment_topic_partitions> assigned_partitions;
     chunked_vector<current_assignment_topic_partitions>
       partitions_pending_revocation;
-    tagged_fields unknown_tags;
 
+    auto serde_fields() {
+        return std::tie(
+          member_epoch,
+          previous_member_epoch,
+          state,
+          assigned_partitions,
+          partitions_pending_revocation);
+    }
     consumer_group_current_member_assignment_value copy() const;
     fmt::iterator format_to(fmt::iterator it) const;
     friend bool operator==(
       const consumer_group_current_member_assignment_value&,
       const consumer_group_current_member_assignment_value&) = default;
-    static consumer_group_current_member_assignment_value
-    decode(protocol::decoder&);
-    static void encode(
-      protocol::encoder&,
-      const consumer_group_current_member_assignment_value&);
 };
 
 /*

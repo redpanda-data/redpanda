@@ -86,12 +86,12 @@ consumer_group_current_member_assignment_kv::copy() const {
  * members]
  *
  * KIP-848 adds the consumer-protocol records below. Their key version is
- * Kafka's record apiKey; the value carries its own version. Key version 4
- * (ConsumerGroupPartitionMetadata) is absent because Kafka deprecated it in
- * favour of ConsumerGroupMetadata's MetadataHash and Redpanda never writes it.
+ * Kafka's record apiKey; their values are serde envelopes, which carry their
+ * own version. Key version 4 (ConsumerGroupPartitionMetadata) is absent because
+ * Kafka deprecated it in favour of ConsumerGroupMetadata's MetadataHash and
+ * Redpanda never writes it.
  *
  * key version 3:       consumer group metadata
- *    -> value version 0:       [epoch, (metadata_hash)]
  * key version 5:       consumer group member metadata
  * key version 6:       consumer group target assignment metadata
  * key version 7:       consumer group target assignment member
@@ -162,76 +162,6 @@ void validate_key_version(
       read_version);
 }
 
-/// Encodes one known tagged field into `tags`, ready for `write_tags`.
-template<typename PayloadWriter>
-void add_tag(tagged_fields::type& tags, uint32_t id, PayloadWriter&& write) {
-    iobuf payload;
-    protocol::encoder writer(payload);
-    write(writer);
-    tags.emplace(tag_id(id), iobuf_to_bytes(payload));
-}
-
-/// Reads a flexible value's trailing tagged-fields section. `handler` is given
-/// each tag id and returns whether it consumed the payload; whatever it
-/// declines is retained in `unknown`.
-///
-/// Both the tag count and each payload size are rejected if they need more than
-/// the bytes remaining. The size check matters beyond reporting a corrupt
-/// record early: `consume_unknown_tag` reads the payload with `read_bytes`,
-/// which allocates the length taken off the wire before anything bounds-checks
-/// it.
-template<typename Handler>
-void read_tagged_fields(
-  protocol::decoder& reader, tagged_fields& unknown, Handler&& handler) {
-    auto fits = [&reader](size_t needed, std::string_view what) {
-        if (unlikely(needed > reader.bytes_left())) {
-            throw std::out_of_range(
-              fmt::format(
-                "tagged fields: {} needs {} bytes, {} remain",
-                what,
-                needed,
-                reader.bytes_left()));
-        }
-    };
-
-    auto num_tags = reader.read_unsigned_varint();
-    // An entry costs at least an id varint and a size varint before any
-    // payload, so two bytes per tag is the floor.
-    fits(size_t{2} * num_tags, "count");
-
-    int64_t prev_tag = -1;
-    while (num_tags-- > 0) {
-        auto tag = reader.read_unsigned_varint();
-        if (unlikely(tag <= prev_tag)) {
-            throw std::out_of_range(
-              fmt::format(
-                "tagged fields must be serialized in ascending order with no "
-                "duplicates, tag: {}",
-                tag));
-        }
-        prev_tag = tag;
-
-        auto size = reader.read_unsigned_varint();
-        fits(size, "payload");
-
-        auto before = reader.bytes_left();
-        if (!handler(tag)) {
-            reader.consume_unknown_tag(unknown, tag, size);
-        }
-        // A handler that reads the wrong amount would otherwise leave the loop
-        // mid-payload, where the next bytes decode as a plausible tag id and
-        // size and land in `unknown` to be re-emitted on the next encode.
-        auto consumed = before - reader.bytes_left();
-        if (unlikely(consumed != size)) {
-            throw std::out_of_range(
-              fmt::format(
-                "tagged fields: tag {} declared {} bytes, consumed {}",
-                tag,
-                size,
-                consumed));
-        }
-    }
-}
 } // namespace
 
 group_metadata_key group_metadata_key::decode(protocol::decoder& reader) {
@@ -400,80 +330,11 @@ consumer_group_metadata_key::decode(protocol::decoder& reader) {
     return ret;
 }
 
-void consumer_group_metadata_value::encode(
-  protocol::encoder& writer, const consumer_group_metadata_value& v) {
-    writer.write(v.version);
-    writer.write(v.epoch);
-    tagged_fields::type tags{v.unknown_tags()};
-    if (v.metadata_hash != 0) {
-        add_tag(
-          tags, 0, [&](protocol::encoder& w) { w.write(v.metadata_hash); });
-    }
-    writer.write_tags(tagged_fields(std::move(tags)));
-}
-
-consumer_group_metadata_value
-consumer_group_metadata_value::decode(protocol::decoder& reader) {
-    consumer_group_metadata_value ret;
-    validate_version_range(
-      read_metadata_version(reader),
-      "consumer_group_metadata_value",
-      consumer_group_metadata_value::version);
-    ret.epoch = reader.read_int32();
-    read_tagged_fields(reader, ret.unknown_tags, [&](uint32_t tag) {
-        if (tag != 0) {
-            return false;
-        }
-        ret.metadata_hash = reader.read_int64();
-        return true;
-    });
-    return ret;
-}
-
-void classic_protocol::encode(
-  protocol::encoder& writer, const classic_protocol& v) {
-    writer.write_flex(v.name);
-    writer.write_flex(v.metadata);
-    writer.write_tags(v.unknown_tags);
-}
-
-classic_protocol classic_protocol::decode(protocol::decoder& reader) {
-    classic_protocol ret;
-    ret.name = kafka::protocol_name(reader.read_flex_string());
-    ret.metadata = reader.read_flex_bytes();
-    ret.unknown_tags = reader.read_tags();
-    return ret;
-}
-
 classic_member_metadata classic_member_metadata::copy() const {
     return classic_member_metadata{
       .session_timeout = session_timeout,
       .supported_protocols = supported_protocols.copy(),
-      .unknown_tags = unknown_tags,
     };
-}
-
-void classic_member_metadata::encode(
-  protocol::encoder& writer, const classic_member_metadata& v) {
-    writer.write(v.session_timeout);
-    writer.write_flex_array(
-      v.supported_protocols,
-      [](const classic_protocol& p, protocol::encoder& w) {
-          classic_protocol::encode(w, p);
-      });
-    writer.write_tags(v.unknown_tags);
-}
-
-classic_member_metadata
-classic_member_metadata::decode(protocol::decoder& reader) {
-    classic_member_metadata ret;
-    ret.session_timeout = std::chrono::milliseconds(reader.read_int32());
-    ret.supported_protocols = reader.read_flex_array<chunked_vector>(
-      [](protocol::decoder& reader) {
-          return classic_protocol::decode(reader);
-      });
-    ret.unknown_tags = reader.read_tags();
-    return ret;
 }
 
 void consumer_group_member_metadata_key::encode(
@@ -506,76 +367,10 @@ consumer_group_member_metadata_value::copy() const {
       .subscribed_topic_regex = subscribed_topic_regex,
       .rebalance_timeout = rebalance_timeout,
       .server_assignor = server_assignor,
-      .unknown_tags = unknown_tags,
     };
     if (classic_metadata) {
         ret.classic_metadata = classic_metadata->copy();
     }
-    return ret;
-}
-
-void consumer_group_member_metadata_value::encode(
-  protocol::encoder& writer, const consumer_group_member_metadata_value& v) {
-    writer.write(v.version);
-    writer.write_flex(v.instance_id);
-    writer.write_flex(v.rack_id);
-    writer.write_flex(v.client_id);
-    writer.write_flex(v.client_host);
-    writer.write_flex_array(
-      v.subscribed_topic_names,
-      [](const model::topic& t, protocol::encoder& w) { w.write_flex(t); });
-    writer.write_flex(v.subscribed_topic_regex);
-    writer.write(v.rebalance_timeout);
-    writer.write_flex(v.server_assignor);
-    tagged_fields::type tags{v.unknown_tags()};
-    // Tag 0, following ConsumerGroupMemberMetadataValue's generated write.
-    if (!v.classic_metadata) {
-        add_tag(tags, 0, [](protocol::encoder& w) {
-            w.write_unsigned_varint(0); // null
-        });
-    } else if (*v.classic_metadata != classic_member_metadata{}) {
-        add_tag(tags, 0, [&](protocol::encoder& w) {
-            w.write_unsigned_varint(1); // present
-            classic_member_metadata::encode(w, *v.classic_metadata);
-        });
-    } // else omit the tag, indicating "present and default"
-    writer.write_tags(tagged_fields(std::move(tags)));
-}
-
-consumer_group_member_metadata_value
-consumer_group_member_metadata_value::decode(protocol::decoder& reader) {
-    consumer_group_member_metadata_value ret;
-    validate_version_range(
-      read_metadata_version(reader),
-      "consumer_group_member_metadata_value",
-      consumer_group_member_metadata_value::version);
-    if (auto instance_id = reader.read_nullable_flex_string(); instance_id) {
-        ret.instance_id = kafka::group_instance_id(std::move(*instance_id));
-    }
-    if (auto rack_id = reader.read_nullable_flex_string(); rack_id) {
-        ret.rack_id = model::rack_id(std::move(*rack_id));
-    }
-    ret.client_id = kafka::client_id(reader.read_flex_string());
-    ret.client_host = kafka::client_host(reader.read_flex_string());
-    ret.subscribed_topic_names = reader.read_flex_array<chunked_vector>(
-      [](protocol::decoder& reader) {
-          return model::topic(reader.read_flex_string());
-      });
-    ret.subscribed_topic_regex = reader.read_nullable_flex_string();
-    ret.rebalance_timeout = std::chrono::milliseconds(reader.read_int32());
-    ret.server_assignor = reader.read_nullable_flex_string();
-    read_tagged_fields(reader, ret.unknown_tags, [&](uint32_t tag) {
-        if (tag != 0) {
-            return false;
-        }
-        // A leading zero varint marks the struct absent.
-        if (reader.read_unsigned_varint() == 0) {
-            ret.classic_metadata = std::nullopt;
-        } else {
-            ret.classic_metadata = classic_member_metadata::decode(reader);
-        }
-        return true;
-    });
     return ret;
 }
 
@@ -598,67 +393,12 @@ consumer_group_target_assignment_metadata_key::decode(
     return ret;
 }
 
-void consumer_group_target_assignment_metadata_value::encode(
-  protocol::encoder& writer,
-  const consumer_group_target_assignment_metadata_value& v) {
-    writer.write(v.version);
-    writer.write(v.assignment_epoch);
-    tagged_fields::type tags{v.unknown_tags()};
-    if (v.assignment_timestamp != 0) {
-        add_tag(tags, 0, [&](protocol::encoder& w) {
-            w.write(v.assignment_timestamp);
-        });
-    }
-    writer.write_tags(tagged_fields(std::move(tags)));
-}
-
-consumer_group_target_assignment_metadata_value
-consumer_group_target_assignment_metadata_value::decode(
-  protocol::decoder& reader) {
-    consumer_group_target_assignment_metadata_value ret;
-    validate_version_range(
-      read_metadata_version(reader),
-      "consumer_group_target_assignment_metadata_value",
-      consumer_group_target_assignment_metadata_value::version);
-    ret.assignment_epoch = reader.read_int32();
-    read_tagged_fields(reader, ret.unknown_tags, [&](uint32_t tag) {
-        if (tag != 0) {
-            return false;
-        }
-        ret.assignment_timestamp = reader.read_int64();
-        return true;
-    });
-    return ret;
-}
-
 target_assignment_topic_partitions
 target_assignment_topic_partitions::copy() const {
     return target_assignment_topic_partitions{
       .topic_id = topic_id,
       .partitions = partitions.copy(),
-      .unknown_tags = unknown_tags,
     };
-}
-
-void target_assignment_topic_partitions::encode(
-  protocol::encoder& writer, const target_assignment_topic_partitions& v) {
-    writer.write(v.topic_id);
-    writer.write_flex_array(
-      v.partitions,
-      [](model::partition_id p, protocol::encoder& w) { w.write(p); });
-    writer.write_tags(v.unknown_tags);
-}
-
-target_assignment_topic_partitions
-target_assignment_topic_partitions::decode(protocol::decoder& reader) {
-    target_assignment_topic_partitions ret;
-    ret.topic_id = model::topic_id(reader.read_uuid());
-    ret.partitions = reader.read_flex_array<chunked_vector>(
-      [](protocol::decoder& reader) {
-          return model::partition_id(reader.read_int32());
-      });
-    ret.unknown_tags = reader.read_tags();
-    return ret;
 }
 
 void consumer_group_target_assignment_member_key::encode(
@@ -683,8 +423,7 @@ consumer_group_target_assignment_member_key::decode(protocol::decoder& reader) {
 
 consumer_group_target_assignment_member_value
 consumer_group_target_assignment_member_value::copy() const {
-    consumer_group_target_assignment_member_value ret{
-      .unknown_tags = unknown_tags};
+    consumer_group_target_assignment_member_value ret;
     ret.topic_partitions.reserve(topic_partitions.size());
     for (const auto& tp : topic_partitions) {
         ret.topic_partitions.push_back(tp.copy());
@@ -692,87 +431,13 @@ consumer_group_target_assignment_member_value::copy() const {
     return ret;
 }
 
-void consumer_group_target_assignment_member_value::encode(
-  protocol::encoder& writer,
-  const consumer_group_target_assignment_member_value& v) {
-    writer.write(v.version);
-    writer.write_flex_array(
-      v.topic_partitions,
-      [](const target_assignment_topic_partitions& tp, protocol::encoder& w) {
-          target_assignment_topic_partitions::encode(w, tp);
-      });
-    writer.write_tags(v.unknown_tags);
-}
-
-consumer_group_target_assignment_member_value
-consumer_group_target_assignment_member_value::decode(
-  protocol::decoder& reader) {
-    consumer_group_target_assignment_member_value ret;
-    validate_version_range(
-      read_metadata_version(reader),
-      "consumer_group_target_assignment_member_value",
-      consumer_group_target_assignment_member_value::version);
-    ret.topic_partitions = reader.read_flex_array<chunked_vector>(
-      [](protocol::decoder& reader) {
-          return target_assignment_topic_partitions::decode(reader);
-      });
-    ret.unknown_tags = reader.read_tags();
-    return ret;
-}
-
 current_assignment_topic_partitions
 current_assignment_topic_partitions::copy() const {
-    current_assignment_topic_partitions ret{
+    return current_assignment_topic_partitions{
       .topic_id = topic_id,
       .partitions = partitions.copy(),
-      .unknown_tags = unknown_tags,
+      .assignment_epochs = assignment_epochs.copy(),
     };
-    if (assignment_epochs) {
-        ret.assignment_epochs = assignment_epochs->copy();
-    }
-    return ret;
-}
-
-void current_assignment_topic_partitions::encode(
-  protocol::encoder& writer, const current_assignment_topic_partitions& v) {
-    writer.write(v.topic_id);
-    writer.write_flex_array(
-      v.partitions,
-      [](model::partition_id p, protocol::encoder& w) { w.write(p); });
-    tagged_fields::type tags{v.unknown_tags()};
-    // Tag 0, following ConsumerGroupCurrentMemberAssignmentValue's generated
-    // TopicPartitions::write.
-    if (!v.assignment_epochs) {
-        add_tag(tags, 0, [](protocol::encoder& enc) {
-            enc.write_unsigned_varint(0); // null
-        });
-    } else if (!v.assignment_epochs->empty()) {
-        add_tag(tags, 0, [&](protocol::encoder& enc) {
-            enc.write_flex_array(
-              *v.assignment_epochs,
-              [](int32_t epoch, protocol::encoder& w) { w.write(epoch); });
-        });
-    } // else omit the tag, indicating "present and default"
-    writer.write_tags(tagged_fields(std::move(tags)));
-}
-
-current_assignment_topic_partitions
-current_assignment_topic_partitions::decode(protocol::decoder& reader) {
-    current_assignment_topic_partitions ret;
-    ret.topic_id = model::topic_id(reader.read_uuid());
-    ret.partitions = reader.read_flex_array<chunked_vector>(
-      [](protocol::decoder& reader) {
-          return model::partition_id(reader.read_int32());
-      });
-    read_tagged_fields(reader, ret.unknown_tags, [&](uint32_t tag) {
-        if (tag != 0) {
-            return false;
-        }
-        ret.assignment_epochs = reader.read_nullable_flex_array<chunked_vector>(
-          [](protocol::decoder& reader) { return reader.read_int32(); });
-        return true;
-    });
-    return ret;
 }
 
 void consumer_group_current_member_assignment_key::encode(
@@ -817,47 +482,7 @@ consumer_group_current_member_assignment_value::copy() const {
       .assigned_partitions = copy_topic_partitions(assigned_partitions),
       .partitions_pending_revocation = copy_topic_partitions(
         partitions_pending_revocation),
-      .unknown_tags = unknown_tags,
     };
-}
-
-void consumer_group_current_member_assignment_value::encode(
-  protocol::encoder& writer,
-  const consumer_group_current_member_assignment_value& v) {
-    auto write_partitions =
-      [](const current_assignment_topic_partitions& tp, protocol::encoder& w) {
-          current_assignment_topic_partitions::encode(w, tp);
-      };
-    writer.write(v.version);
-    writer.write(v.member_epoch);
-    writer.write(v.previous_member_epoch);
-    writer.write(v.state);
-    writer.write_flex_array(v.assigned_partitions, write_partitions);
-    writer.write_flex_array(v.partitions_pending_revocation, write_partitions);
-    writer.write_tags(v.unknown_tags);
-}
-
-consumer_group_current_member_assignment_value
-consumer_group_current_member_assignment_value::decode(
-  protocol::decoder& reader) {
-    auto read_partitions = [](protocol::decoder& reader) {
-        return reader.read_flex_array<chunked_vector>(
-          [](protocol::decoder& reader) {
-              return current_assignment_topic_partitions::decode(reader);
-          });
-    };
-    consumer_group_current_member_assignment_value ret;
-    validate_version_range(
-      read_metadata_version(reader),
-      "consumer_group_current_member_assignment_value",
-      consumer_group_current_member_assignment_value::version);
-    ret.member_epoch = reader.read_int32();
-    ret.previous_member_epoch = reader.read_int32();
-    ret.state = static_cast<consumer_group_member_state>(reader.read_int8());
-    ret.assigned_partitions = read_partitions(reader);
-    ret.partitions_pending_revocation = read_partitions(reader);
-    ret.unknown_tags = reader.read_tags();
-    return ret;
 }
 
 namespace {
@@ -941,12 +566,20 @@ iobuf maybe_unwrap_from_iobuf(iobuf buffer) {
     return buffer;
 }
 
+/// Keys are always Kafka wire, since their version is the record-type
+/// discriminator. Values are Kafka wire for the classic records and serde for
+/// the `ConsumerGroup*` ones.
 template<typename KV>
 group_metadata_serializer::key_value to_kv_impl(KV md) {
     group_metadata_serializer::key_value ret;
     ret.key = metadata_to_iobuf(md.key);
     if (md.value) {
-        ret.value = metadata_to_iobuf(*md.value);
+        if constexpr (
+          serde::is_envelope<typename decltype(md.value)::value_type>) {
+            ret.value = serde::to_iobuf(std::move(*md.value));
+        } else {
+            ret.value = metadata_to_iobuf(*md.value);
+        }
     }
     return ret;
 }
@@ -959,8 +592,12 @@ KV decode_kv(model::record record) {
     protocol::decoder k_reader(maybe_unwrap_from_iobuf(record.release_key()));
     ret.key = key_type::decode(k_reader);
     if (record.has_value()) {
-        protocol::decoder v_reader(record.release_value());
-        ret.value = value_type::decode(v_reader);
+        if constexpr (serde::is_envelope<value_type>) {
+            ret.value = serde::from_iobuf<value_type>(record.release_value());
+        } else {
+            protocol::decoder v_reader(record.release_value());
+            ret.value = value_type::decode(v_reader);
+        }
     }
     return ret;
 }
@@ -1210,10 +847,10 @@ fmt::iterator
 current_assignment_topic_partitions::format_to(fmt::iterator it) const {
     return fmt::format_to(
       it,
-      "{{topic_id: {}, partition_count: {}, has_assignment_epochs: {}}}",
+      "{{topic_id: {}, partition_count: {}, assignment_epoch_count: {}}}",
       topic_id,
       partitions.size(),
-      assignment_epochs.has_value());
+      assignment_epochs.size());
 }
 
 fmt::iterator consumer_group_current_member_assignment_key::format_to(
