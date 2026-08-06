@@ -43,6 +43,7 @@
 #include "kafka/server/usage_manager.h"
 #include "kafka/server/write_at_offset_stm.h"
 #include "migrations/migrators.h"
+#include "net/uds_path.h"
 #include "raft/group_manager.h"
 #include "raft/service.h"
 #include "redpanda/admin/kafka_connections_service.h"
@@ -297,6 +298,17 @@ void application::start_kafka(
     }
 
     _kafka_server.start().get();
+    // Apply configured filesystem mode to any AF_UNIX listener sockets now
+    // that bind()+listen() have created the inode. chmod is a single-inode
+    // operation; we only do it on shard 0. After chmod, verify the inode
+    // we bound is actually our socket (defense-in-depth against an inode
+    // swap between prepare and bind).
+    for (const auto& ep : config::node().kafka_api()) {
+        if (ep.is_unix_domain()) {
+            net::chmod_uds_path(*ep.unix_path, ep.unix_socket_mode).get();
+            net::verify_uds_bound(*ep.unix_path).get();
+        }
+    }
     vlog(
       _log.info,
       "Started Kafka API server listening at {}",

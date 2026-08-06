@@ -159,13 +159,16 @@ public:
             std::vector<model::broker_endpoint> eps;
             auto api = kafka_api();
             eps.reserve(api.size());
-            std::transform(
-              std::make_move_iterator(api.begin()),
-              std::make_move_iterator(api.end()),
-              std::back_inserter(eps),
-              [](auto ep) {
-                  return model::broker_endpoint{ep.name, ep.address};
-              });
+            for (auto& ep : api) {
+                // UDS listeners are local-only and must never appear in the
+                // advertised list seen by remote clients. Skip them during
+                // auto-derivation.
+                if (ep.is_unix_domain()) {
+                    continue;
+                }
+                eps.push_back(
+                  model::broker_endpoint{std::move(ep.name), ep.address});
+            }
             return eps;
         }
         return _advertised_kafka_api();
