@@ -195,6 +195,41 @@ TEST_F(kvstore_test_fixture, kvstore) {
     kvs->stop().get();
 }
 
+TEST_F(kvstore_test_fixture, stop_flushes_pending_ops) {
+    set_configuration("disable_metrics", true);
+
+    // a commit interval far beyond the test duration, so that the flush timer
+    // never fires and every put stays queued until stop()
+    auto kvs = make_kvstore(std::chrono::hours(1));
+    kvs->start().get();
+
+    std::unordered_map<bytes, iobuf> truth;
+    std::vector<ss::future<>> puts;
+    for (int i = 0; i < 10; i++) {
+        auto key = tests::random_bytes(8);
+        auto value = bytes_to_iobuf(tests::random_bytes(100));
+        truth[key] = value.copy();
+        puts.push_back(kvs->put(
+          storage::kvstore::key_space::testing, key, std::move(value)));
+    }
+
+    kvs->stop().get();
+    // Expect that the puts were flushed by stop()
+    for (auto& f : puts) {
+        EXPECT_NO_THROW(f.get());
+    }
+    kvs.reset(nullptr);
+
+    kvs = make_kvstore();
+    kvs->start().get();
+    for (auto& e : truth) {
+        EXPECT_EQ(
+          kvs->get(storage::kvstore::key_space::testing, e.first).value(),
+          e.second);
+    }
+    kvs->stop().get();
+}
+
 // persist_pre_start() durably writes a key on a fresh (empty) kvstore, before
 // start(), and the value survives a restart.
 TEST_F(kvstore_test_fixture, persist_pre_start_empty) {

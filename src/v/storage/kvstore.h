@@ -208,6 +208,13 @@ private:
     ss::future<> roll();
     ss::future<> save_snapshot();
 
+    /**
+     * Background fiber which periodically rolls and flushes queued ops. Exits
+     * once an abort has been requested and no ops remain queued, so that ops
+     * queued concurrently with the abort are persisted rather than cancelled.
+     */
+    ss::future<> flush_loop();
+
     /*
      * Recovery (recover() itself is a public entry point declared above)
      *

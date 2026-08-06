@@ -39,6 +39,14 @@ public:
           _kv_config, ss::this_shard_id(), resources, _feature_table);
     }
 
+    std::unique_ptr<storage::kvstore>
+    make_kvstore(std::chrono::milliseconds commit_interval) {
+        auto cfg = _kv_config;
+        cfg.commit_interval = config::mock_binding(std::move(commit_interval));
+        return std::make_unique<storage::kvstore>(
+          cfg, ss::this_shard_id(), resources, _feature_table);
+    }
+
     ~kvstore_test_fixture() {
         _feature_table.stop().get();
         resources.stop().get();

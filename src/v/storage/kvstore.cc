@@ -100,30 +100,57 @@ ss::future<> kvstore::start() {
 
     _started = true;
 
-    // Flushing background fiber
-    ssx::repeat_until_gate_closed(
-      _gate,
-      [this] {
-          // semaphore used here instead of condition variable so that
-          // we don't lose wake-ups if they occur while flushing.
-          // consume at least one unit to avoid spinning on wait(0).
-          auto units = std::max(_sem.current(), size_t(1));
-          return _sem.wait(units).then([this] {
-              if (_gate.is_closed()) {
-                  return ss::now();
-              }
-              return roll().then([this] { return flush_and_apply_ops(); });
-          });
-      },
-      [](const std::exception_ptr& e) {
-          // an error mid roll/flush leaves the segment, pending ops and
-          // _next_offset in an unknown state, so neither retrying nor
-          // exiting the fiber is safe (the latter would hang all future
-          // puts). on-disk state is crash-safe, so terminate and recover.
-          if (!ssx::is_shutdown_exception(e)) {
-              vunreachable("kvstore flush fiber failed: {}", e);
-          }
-      });
+    ssx::spawn_with_gate(_gate, [this] { return flush_loop(); });
+}
+
+ss::future<> kvstore::flush_loop() {
+    while (true) {
+        try {
+            // don't wait once shutting down: stop() signals the semaphore only
+            // once, but ops may have been queued after the flush that consumed
+            // that signal, and those still need to be written.
+            if (!_as.abort_requested()) {
+                // semaphore used here instead of condition variable so that
+                // we don't lose wake-ups if they occur while flushing.
+                // consume at least one unit to avoid spinning on wait(0).
+                auto units = std::max(_sem.current(), size_t(1));
+                co_await _sem.wait(units);
+            }
+            co_await roll();
+            co_await flush_and_apply_ops();
+        } catch (...) {
+            // an error mid roll/flush leaves the segment, pending ops and
+            // _next_offset in an unknown state, so neither retrying nor
+            // exiting the fiber is safe (the latter would hang all future
+            // puts). on-disk state is crash-safe, so terminate and recover.
+            auto e = std::current_exception();
+            if (!ssx::is_shutdown_exception(e)) {
+                vunreachable("kvstore flush fiber failed: {}", e);
+            }
+
+            vlog(
+              lg.warn,
+              "kvstore flush fiber exiting with {} unresolved op(s): {} - dir "
+              "{}",
+              _ops.size(),
+              e,
+              _ntpc.work_directory());
+
+            for (auto& op : _ops) {
+                op.done.set_exception(ss::gate_closed_exception());
+            }
+            _ops.clear();
+
+            co_return;
+        }
+
+        // checked after flushing so that ops which were queued before the abort
+        // are persisted instead of cancelled. at most one more drain pass is
+        // needed.
+        if (_as.abort_requested() && _ops.empty()) {
+            co_return;
+        }
+    }
 }
 
 ss::future<> kvstore::stop() {
@@ -131,28 +158,22 @@ ss::future<> kvstore::stop() {
 
     _probe.metrics.clear();
 
-    _as.request_abort();
-
-    // prevent new ops, signal flusher to exit
+    // prevent new ops, signal the flusher to drain _ops and exit
     auto f = _gate.close();
+    _as.request_abort();
     _sem.signal();
+    co_await std::move(f);
 
-    // it's ok for the flusher to run concurrently with stop() because the
-    // flusher only operates on a snapshot of the pending ops that it takes when
-    // it starts these ops begin cancelled would be ops that arrived between the
-    // start of a flush and this service being stopped.
-    for (auto& op : _ops) {
-        op.done.set_exception(ss::gate_closed_exception());
+    vassert(
+      _ops.empty(),
+      "Stopped kvstore with {} inflight ops still queued but not flushed",
+      _ops.size());
+
+    // the flusher might have created _segment
+    if (_segment) {
+        co_await _segment->flush();
+        co_await _segment->close();
     }
-    _ops.clear();
-
-    return f.then([this] {
-        // wait until the flusher exists--it might create _segment
-        if (_segment) {
-            return _segment->flush().then([this] { return _segment->close(); });
-        }
-        return ss::now();
-    });
 }
 
 /*
