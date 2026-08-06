@@ -502,6 +502,26 @@ redpanda_cc_gtest(
 )
 
 redpanda_cc_gtest(
+    name = "ot_consistency_test",
+    timeout = "moderate",
+    srcs = [
+        "ot_consistency_test.cc",
+    ],
+    deps = [
+        "//src/v/model",
+        "//src/v/raft",
+        "//src/v/raft/tests:raft_fixture",
+        "//src/v/random:generators",
+        "//src/v/storage:record_batch_builder",
+        "//src/v/test_utils:gtest",
+        "@fmt",
+        "@googletest//:gtest",
+        "@seastar",
+        "@seastar//:testing",
+    ],
+)
+
+redpanda_cc_gtest(
     name = "compaction_recovery_test",
     timeout = "short",
     srcs = [
