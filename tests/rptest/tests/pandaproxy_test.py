@@ -2317,6 +2317,59 @@ class PandaProxyConsumerGroupTest(PandaProxyEndpoints):
         do_consumer_offset_commit(new_offset=1)
 
     @cluster(num_nodes=3)
+    def test_concurrent_fetches_on_one_consumer(self):
+        """
+        Two concurrent fetches on the same consumer instance must not corrupt
+        the consumer's fetch session or crash the node hosting the proxy.
+
+        The kafka client tracks one incremental fetch session per broker. A
+        fresh consumer's first fetch is built with session epoch 0, which asks
+        the broker to create a new session. Two overlapping first fetches both
+        go out with epoch 0, the broker creates two sessions, and the second
+        response to arrive used to trip the client's session-mismatch
+        assertion, taking down the whole node. Overlapping fetches need no
+        adversarial client: an HTTP client (or load balancer) whose request
+        timeout is shorter than the fetch long-poll retries while the original
+        fetch is still in flight.
+        """
+        group_id = f"pandaproxy-group-{uuid.uuid4()}"
+
+        self.logger.info("Create a consumer group")
+        cc_res = self._create_consumer(group_id)
+        assert cc_res.status_code == requests.codes.ok
+        c0 = Consumer(cc_res.json(), self.logger)
+
+        self.logger.info(f"Subscribe consumer to topic: {self.topic}")
+        sc_res = c0.subscribe([self.topic])
+        assert sc_res.status_code == requests.codes.no_content
+
+        # Long-poll fetches on an empty topic: both requests stay in flight
+        # for the full timeout, so both are dispatched with fetch session
+        # epoch 0.
+        self.logger.info("Issue two concurrent fetches")
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            futures = [
+                executor.submit(
+                    c0.fetch,
+                    headers=HTTP_CONSUMER_FETCH_JSON_V2_HEADERS,
+                    params={"timeout": 5000},
+                )
+                for _ in range(2)
+            ]
+            results = [f.result() for f in futures]
+
+        for res in results:
+            assert res.status_code == requests.codes.ok, (
+                f"Expected 200, got {res.status_code}: {res.text}"
+            )
+
+        # The consumer must remain usable afterwards.
+        cf_res = c0.fetch(headers=HTTP_CONSUMER_FETCH_JSON_V2_HEADERS)
+        assert cf_res.status_code == requests.codes.ok, (
+            f"Expected 200, got {cf_res.status_code}: {cf_res.text}"
+        )
+
+    @cluster(num_nodes=3)
     def test_consumer_group_fetch_after_prefix_trim(self):
         """
         CORE-16844: a fresh consumer group must recover once retention
