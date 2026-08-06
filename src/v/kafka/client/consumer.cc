@@ -264,6 +264,8 @@ ss::future<> consumer::stop() {
     _inactive_timer.set_callback([]() {});
 
     _on_stopped(name());
+
+    _fetch_mutex.broken();
     if (_as.abort_requested()) {
         return ss::now();
     }
@@ -543,11 +545,19 @@ consumer::dispatch_fetch(broker_reqs_t::value_type br) {
 
     // Session state is deliberately not applied here: whether the tracked
     // offsets may advance depends on the responses of ALL brokers, which
-    // only consumer::fetch() has in hand.
+    // only consumer::fetch() has in hand. This coupling is also why fetch()
+    // serializes whole polls rather than taking per-broker locks: one
+    // broker's apply-or-discard decision depends on the others' outcomes.
     co_return res;
 }
 
 ss::future<> consumer::seed_positions_from_committed() {
+    // Runs under _fetch_mutex, necessarily: has_offset() is read before the
+    // OffsetFetch suspension and reseed() written after it, so an
+    // unserialized peer could advance a position in between, and the stale
+    // write would rewind it past records already delivered -- re-delivering
+    // them and regressing the group's committed offset at the next commit.
+    //
     // Collect the assigned partitions that have no fetch position yet --
     // freshly (re)assigned ones. A partition that already carries an in-RAM
     // position (e.g. a same-instance rebalance) is left untouched: that
@@ -733,6 +743,29 @@ ss::future<fetch_response> consumer::fetch(
   std::chrono::milliseconds timeout, std::optional<int32_t> max_bytes) {
     refresh_inactivity_timer();
 
+    // The deadline is computed before acquiring the mutex so that time spent
+    // waiting behind an in-flight fetch counts against this caller's budget;
+    // the round loop below always runs at least one round, which is then
+    // non-blocking (max_wait_ms=0).
+    const auto deadline = ss::lowres_clock::now() + timeout;
+
+    // Overlapping fetches wait their turn: a round snapshots each session's
+    // id, epoch and offsets (build_fetch_requests), suspends dispatching to
+    // the brokers, and writes the state back (fetch_session::apply). Two
+    // overlapping first fetches would both snapshot epoch 0 and make the
+    // broker mint two sessions; the second response then flips the session
+    // id mid-stream (see fetch_session::update_session_state). Overlap needs
+    // no adversarial caller: a pandaproxy HTTP client (or load balancer)
+    // whose request timeout is shorter than the fetch long-poll retries
+    // while the original fetch is still in flight.
+    //
+    // The scope is the whole poll rather than anything smaller: seeding
+    // rewinds live fetch positions if it races a fetch (see
+    // seed_positions_from_committed), and a round's responses are applied
+    // all-or-nothing across brokers (see dispatch_fetch), so no per-broker
+    // critical section could complete independently anyway.
+    auto units = co_await _fetch_mutex.get_units(_as);
+
     // Before fetching, seed any freshly (re)assigned partition from the group's
     // committed offset so a fresh consumer instance resumes where the group
     // left off, mirroring the Java consumer's updateFetchPositions at the start
@@ -754,7 +787,6 @@ ss::future<fetch_response> consumer::fetch(
     // must still issue one (non-blocking, max_wait_ms=0) fetch rather than give
     // up with an empty response. The deadline is therefore checked after the
     // round, not before.
-    const auto deadline = ss::lowres_clock::now() + timeout;
     for (;;) {
         const auto remaining = std::max(
           deadline - ss::lowres_clock::now(),

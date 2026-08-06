@@ -386,3 +386,121 @@ FIXTURE_TEST(consumer_group, kafka_client_fixture) {
         }
     }
 }
+
+namespace {
+
+// Collect every record offset carried by a consumer fetch response. A
+// no-data response may either omit the partition or include it with an empty
+// record set, so both shapes yield no offsets.
+//
+// The response is drained: reading a batch moves the buffer out of the record
+// set, so a second call on the same response yields nothing.
+std::vector<model::offset> consume_record_offsets(kafka::fetch_response& res) {
+    std::vector<model::offset> offsets;
+    for (const auto& part : res) {
+        auto& p = *part.partition_response;
+        BOOST_REQUIRE_EQUAL(p.error_code, kafka::error_code::none);
+        if (!p.records) {
+            continue;
+        }
+        while (!p.records->empty()) {
+            auto adapter = p.records->consume_batch();
+            BOOST_REQUIRE(adapter.batch.has_value());
+            adapter.batch->for_each_record([&](const model::record& r) {
+                offsets.push_back(
+                  adapter.batch->base_offset()
+                  + model::offset_delta{r.offset_delta()});
+            });
+        }
+    }
+    return offsets;
+}
+
+} // namespace
+
+// A consumer is not safe for concurrent fetches, but pandaproxy can deliver
+// them: an HTTP client (or load balancer) whose request timeout is shorter
+// than the fetch long-poll retries while the original fetch is still in
+// flight, and both requests land on the same consumer. Unserialized, two
+// overlapping fetches on a fresh consumer would both dispatch
+// session-creating (epoch 0) requests, making the broker mint two fetch
+// sessions for a consumer that tracks only one per broker (see
+// fetch_session::update_session_state).
+//
+// consumer::fetch() serializes concurrent callers instead: both fetches
+// succeed, and each record is delivered to exactly one of them -- the
+// serialized second fetch resumes from the first fetch's end position rather
+// than re-reading the same records.
+FIXTURE_TEST(consumer_group_concurrent_fetch, kafka_client_fixture) {
+    using namespace std::chrono_literals;
+
+    info("Waiting for leadership");
+    wait_for_controller_leadership().get();
+
+    info("Connecting client");
+    auto client = make_connected_client();
+    client.set_retry_base_backoff(10ms);
+    client.set_max_retries(size_t(10));
+    client.connect().get();
+    auto stop_client = ss::defer([&client]() { client.stop().get(); });
+
+    info("Adding known topic");
+    auto tp_ns = create_topic(1);
+    wait_for_lso(
+      model::ntp(tp_ns.ns, tp_ns.tp, model::partition_id{0}), model::offset{0})
+      .get();
+
+    info("Producing to topic");
+    const auto tp = model::topic_partition(tp_ns.tp, model::partition_id{0});
+    for (auto b = 0; b < 2; ++b) {
+        auto res = client
+                     .produce_record_batch(tp, make_batch(model::offset{0}, 2))
+                     .get();
+        BOOST_REQUIRE_EQUAL(res.error_code, kafka::error_code::none);
+    }
+
+    kafka::group_id group_id{"test_group_concurrent_fetch"};
+
+    info("Joining consumer");
+    auto member = client.create_consumer(group_id).get();
+    auto remove_consumer = ss::defer([&]() {
+        client.remove_consumer(group_id, member)
+          .handle_exception([](std::exception_ptr) {})
+          .get();
+    });
+
+    info("Subscribing consumer");
+    client.subscribe_consumer(group_id, member, {tp_ns.tp}).get();
+    tests::cooperative_spin_wait_with_timeout(10s, [&] {
+        return client.consumer_assignment(group_id, member)
+          .then([](kc::assignment a) { return a.size() == 1; });
+    }).get();
+
+    info("Issuing two concurrent fetches");
+    auto [res_a, res_b]
+      = ss::when_all_succeed(
+          client.consumer_fetch(group_id, member, 200ms, 1_MiB),
+          client.consumer_fetch(group_id, member, 200ms, 1_MiB))
+          .get();
+    BOOST_REQUIRE_EQUAL(res_a.data.error_code, kafka::error_code::none);
+    BOOST_REQUIRE_EQUAL(res_b.data.error_code, kafka::error_code::none);
+
+    // Each record is delivered to exactly one of the two fetches: were they
+    // not serialized, both would read from the same start position and
+    // deliver the same records twice. Either fetch may deliver any part of
+    // the log (a round need not drain everything), so assert the invariant
+    // itself: together the fetches cover every produced record, and no
+    // record appears in both.
+    auto all_offsets = consume_record_offsets(res_a);
+    all_offsets.append_range(consume_record_offsets(res_b));
+    std::ranges::sort(all_offsets);
+    const std::vector<model::offset> expected{
+      model::offset{0}, model::offset{1}, model::offset{2}, model::offset{3}};
+    BOOST_REQUIRE_EQUAL_COLLECTIONS(
+      all_offsets.begin(), all_offsets.end(), expected.begin(), expected.end());
+
+    // The consumer must remain usable afterwards.
+    auto res_c = client.consumer_fetch(group_id, member, 200ms, 1_MiB).get();
+    BOOST_REQUIRE_EQUAL(res_c.data.error_code, kafka::error_code::none);
+    BOOST_REQUIRE(consume_record_offsets(res_c).empty());
+}

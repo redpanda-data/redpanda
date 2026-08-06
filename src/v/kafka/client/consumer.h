@@ -26,6 +26,7 @@
 #include "kafka/protocol/fetch.h"
 #include "kafka/protocol/offset_commit.h"
 #include "kafka/protocol/offset_fetch.h"
+#include "ssx/mutex.h"
 
 #include <seastar/core/shared_ptr.hh>
 
@@ -210,6 +211,14 @@ private:
     std::unique_ptr<assignment_plan> _plan{};
     assignment_t _assignment{};
     absl::node_hash_map<shared_broker_t, fetch_session> _fetch_sessions;
+    /// \brief Serializes fetch() calls: one poll at a time per consumer.
+    /// All mutation of _fetch_sessions happens inside fetch(), under this
+    /// mutex; every other access may only read it synchronously (as
+    /// offset_commit() does), which is safe without the mutex. Even a
+    /// synchronous mutation elsewhere would interleave with a fetch
+    /// suspended mid-round. See fetch() for why the critical section
+    /// spans the whole poll.
+    ssx::mutex _fetch_mutex{"consumer::fetch"};
     ss::noncopyable_function<void(const kafka::member_id&)> _on_stopped;
     ss::noncopyable_function<ss::future<>(std::exception_ptr)>
       _external_mitigate;
