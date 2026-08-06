@@ -59,12 +59,12 @@ require (
 	github.com/stretchr/testify v1.11.1
 	github.com/tidwall/sjson v1.2.5
 	github.com/tklauser/go-sysconf v0.3.16
-	github.com/twmb/avro v1.3.4
-	github.com/twmb/franz-go v1.21.2
+	github.com/twmb/avro v1.7.2
+	github.com/twmb/franz-go v1.21.5
 	github.com/twmb/franz-go/pkg/kadm v1.18.0
-	github.com/twmb/franz-go/pkg/kfake v0.0.0-20251024215757-aea970d4d0d2
+	github.com/twmb/franz-go/pkg/kfake v0.0.0-20260804154521-adb3a18abe14
 	github.com/twmb/franz-go/pkg/kmsg v1.13.1
-	github.com/twmb/franz-go/pkg/sr v1.7.0
+	github.com/twmb/franz-go/pkg/sr v1.8.0
 	github.com/twmb/franz-go/plugin/kzap v1.1.2
 	github.com/twmb/tlscfg v1.3.0
 	github.com/twmb/types v1.2.0
@@ -150,7 +150,7 @@ require (
 	github.com/modern-go/reflect2 v1.0.3-0.20250322232337-35a7c28c31ee // indirect
 	github.com/morikuni/aec v1.0.0 // indirect
 	github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822 // indirect
-	github.com/pierrec/lz4/v4 v4.1.26 // indirect
+	github.com/pierrec/lz4/v4 v4.1.28 // indirect
 	github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2 // indirect
 	github.com/redpanda-data/common-go/api v0.0.0-20260805234448-c124c21fdb6b // indirect
 	github.com/redpanda-data/common-go/net v0.1.0 // indirect
