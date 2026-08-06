@@ -13,9 +13,11 @@
 
 #include "base/seastarx.h"
 
+#include <cstddef>
 #include <cstdint>
 #include <cstring>
 #include <functional>
+#include <span>
 #include <string_view>
 #include <xxhash.h>
 
@@ -77,6 +79,10 @@ public:
 
     void update(const char* src, const std::size_t sz) {
         Traits::update(&_state, src, sz);
+    }
+
+    void update(std::span<const std::byte> bytes) {
+        Traits::update(&_state, bytes.data(), bytes.size());
     }
 
     // string override
