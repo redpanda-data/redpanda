@@ -351,7 +351,7 @@ ss::future<size_t> group_manager::delete_offsets(
           "Preparing tombstone for expired group offset {}:{}",
           group,
           offset);
-        group->add_offset_tombstone_record(group->id(), offset, builder);
+        group->add_offset_tombstone_record(offset, builder);
     }
 
     if (group->in_state(group_state::dead)) {

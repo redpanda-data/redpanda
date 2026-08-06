@@ -582,7 +582,7 @@ TEST_F(offset_store_test, expiry_honours_a_per_offset_expiry_timestamp) {
 TEST_F(offset_store_test, tombstone_record_carries_no_value) {
     storage::record_batch_builder builder(
       model::record_batch_type::raft_data, model::offset(0));
-    store.add_offset_tombstone_record(test_group, tp("t", 3), builder);
+    store.add_offset_tombstone_record(tp("t", 3), builder);
     auto batch = std::move(builder).build();
 
     ASSERT_EQ(batch.record_count(), 1);

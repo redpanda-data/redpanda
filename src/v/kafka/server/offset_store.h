@@ -339,7 +339,6 @@ public:
         effective_expires) const;
 
     void add_offset_tombstone_record(
-      const kafka::group_id& group,
       const model::topic_partition& tp,
       storage::record_batch_builder& builder) const;
 
@@ -376,15 +375,11 @@ private:
 
     void gc_tx_lock(model::producer_id pid);
 
-    ss::future<cluster::abort_group_tx_reply> do_abort(
-      kafka::group_id group_id,
-      model::producer_identity pid,
-      model::tx_seq tx_seq);
+    ss::future<cluster::abort_group_tx_reply>
+    do_abort(model::producer_identity pid, model::tx_seq tx_seq);
 
-    ss::future<cluster::commit_group_tx_reply> do_commit(
-      kafka::group_id group_id,
-      model::producer_identity pid,
-      model::tx_seq sequence);
+    ss::future<cluster::commit_group_tx_reply>
+    do_commit(model::producer_identity pid, model::tx_seq sequence);
 
     void start_abort_timer() {
         _auto_abort_timer.set_callback([this] { abort_old_txes(); });

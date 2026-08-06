@@ -577,10 +577,9 @@ public:
     ss::future<> shutdown();
 
     void add_offset_tombstone_record(
-      const kafka::group_id& group,
       const model::topic_partition& tp,
       storage::record_batch_builder& builder) const {
-        _offset_store.add_offset_tombstone_record(group, tp, builder);
+        _offset_store.add_offset_tombstone_record(tp, builder);
     }
 
     void add_group_tombstone_record(

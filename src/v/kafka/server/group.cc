@@ -1834,7 +1834,7 @@ void offset_store::insert_ongoing_tx(
 ss::future<cluster::commit_group_tx_reply>
 offset_store::commit_tx(cluster::commit_group_tx_request r) {
     vlog(_ctx_txlog.trace, "processing commit_tx request: {}", r);
-    co_return co_await do_commit(r.group_id, r.pid, r.tx_seq);
+    co_return co_await do_commit(r.pid, r.tx_seq);
 }
 
 ss::future<cluster::begin_group_tx_reply>
@@ -1952,7 +1952,7 @@ offset_store::begin_tx(cluster::begin_group_tx_request r) {
 ss::future<cluster::abort_group_tx_reply>
 offset_store::abort_tx(cluster::abort_group_tx_request r) {
     vlog(_ctxlog.trace, "processing abort_tx request: {}", r);
-    co_return co_await do_abort(r.group_id, r.pid, r.tx_seq);
+    co_return co_await do_abort(r.pid, r.tx_seq);
 }
 
 cluster::tx::errc offset_store::map_tx_replication_error(std::error_code ec) {
@@ -1993,6 +1993,12 @@ cluster::tx::errc offset_store::map_tx_replication_error(std::error_code ec) {
 
 ss::future<txn_offset_commit_response>
 offset_store::store_txn_offsets(txn_offset_commit_request r) {
+    vassert(
+      r.data.group_id == _id,
+      "txn offset commit for group {} routed to the store for group {}",
+      r.data.group_id,
+      _id);
+
     // replaying the log, the term isn't set yet
     // we should use replay or not a leader error
     if (_writer->term() != _term) {
@@ -2054,7 +2060,7 @@ offset_store::store_txn_offsets(txn_offset_commit_request r) {
     }
 
     group_tx::offsets_metadata tx_entry{
-      .group_id = r.data.group_id,
+      .group_id = _id,
       .pid = pid,
       .tx_seq = producer_tx.tx_seq,
       .offsets = {offsets.begin(), offsets.end()},
@@ -2631,11 +2637,10 @@ described_group group::describe() const {
 }
 
 void offset_store::add_offset_tombstone_record(
-  const kafka::group_id& group,
   const model::topic_partition& tp,
   storage::record_batch_builder& builder) const {
     offset_metadata_key key{
-      .group_id = group,
+      .group_id = _id,
       .topic = tp.topic,
       .partition = tp.partition,
     };
@@ -2682,7 +2687,7 @@ ss::future<error_code> group::remove() {
     for (const auto& [topic, partitions] : offsets()) {
         for (const auto& [pid, md] : partitions) {
             add_offset_tombstone_record(
-              _id, model::topic_partition(topic, pid), builder);
+              model::topic_partition(topic, pid), builder);
         }
     }
 
@@ -2757,7 +2762,7 @@ ss::future<> group::remove_topic_partitions(
           "Removing offset for group {} tp {}",
           _id,
           offset.first);
-        add_offset_tombstone_record(_id, offset.first, builder);
+        add_offset_tombstone_record(offset.first, builder);
     }
 
     // gc the group?
@@ -2937,10 +2942,8 @@ void group::add_pending_member(
     res.first->second.arm(timeout);
 }
 
-ss::future<cluster::abort_group_tx_reply> offset_store::do_abort(
-  kafka::group_id group_id,
-  model::producer_identity pid,
-  model::tx_seq tx_seq) {
+ss::future<cluster::abort_group_tx_reply>
+offset_store::do_abort(model::producer_identity pid, model::tx_seq tx_seq) {
     vlog(
       _ctxlog.trace,
       "processing do_abort_tx request: producer: {}, sequence: {}",
@@ -3013,7 +3016,7 @@ ss::future<cluster::abort_group_tx_reply> offset_store::do_abort(
         co_return cluster::abort_group_tx_reply(
           cluster::tx::errc::request_rejected);
     }
-    auto tx = group_tx::abort_metadata{.group_id = group_id, .tx_seq = tx_seq};
+    auto tx = group_tx::abort_metadata{.group_id = _id, .tx_seq = tx_seq};
 
     auto batch = make_tx_batch(
       model::record_batch_type::group_abort_tx,
@@ -3040,10 +3043,8 @@ ss::future<cluster::abort_group_tx_reply> offset_store::do_abort(
     co_return cluster::abort_group_tx_reply(cluster::tx::errc::none);
 }
 
-ss::future<cluster::commit_group_tx_reply> offset_store::do_commit(
-  kafka::group_id group_id,
-  model::producer_identity pid,
-  model::tx_seq sequence) {
+ss::future<cluster::commit_group_tx_reply>
+offset_store::do_commit(model::producer_identity pid, model::tx_seq sequence) {
     vlog(
       _ctx_txlog.trace,
       "processing do_commit_tx request: pid: {}, seq: {}",
@@ -3151,7 +3152,7 @@ ss::future<cluster::commit_group_tx_reply> offset_store::do_commit(
     }
 
     group_tx::commit_metadata commit_tx;
-    commit_tx.group_id = group_id;
+    commit_tx.group_id = _id;
     auto batch = make_tx_batch(
       model::record_batch_type::group_commit_tx,
       commit_tx_record_version,
@@ -3324,7 +3325,7 @@ offset_store::do_try_abort_old_tx(model::producer_identity pid) {
       r.aborted);
 
     if (r.commited) {
-        auto res = co_await do_commit(_id, pid, tx_seq);
+        auto res = co_await do_commit(pid, tx_seq);
         if (res.ec != cluster::tx::errc::none) {
             vlog(
               _ctxlog.warn,
@@ -3336,7 +3337,7 @@ offset_store::do_try_abort_old_tx(model::producer_identity pid) {
     }
 
     if (r.aborted) {
-        auto res = co_await do_abort(_id, pid, producer_tx.tx_seq);
+        auto res = co_await do_abort(pid, producer_tx.tx_seq);
         if (res.ec != cluster::tx::errc::none) {
             vlog(
               _ctxlog.warn,
