@@ -581,12 +581,32 @@ guess_peer_listener(request_context& ctx, const cluster::node_metadata& nm) {
     }
 
     if (my_port == 0) {
-        // Should never happen: if we're listening with a given
-        // name, that name must have been in config.
-        vlog(
-          klog.error,
-          "Request on listener '{}' but not found in node_config",
-          ctx.listener());
+        // A UDS Kafka listener is never advertised (the cross-list
+        // validator forbids advertising it), so it has no entry in
+        // advertised_kafka_api and no meaningful "my_port" to match on.
+        // Check kafka_api directly to confirm this is a known listener
+        // of that shape before falling through to the generic
+        // "first listener of peer" fallback.
+        const auto my_kafka_api = config::node().kafka_api();
+        const auto is_uds_listener = std::any_of(
+          my_kafka_api.begin(), my_kafka_api.end(), [&](const auto& l) {
+              return l.name == ctx.listener() && l.is_unix_domain();
+          });
+        if (!is_uds_listener) {
+            // Should never happen: if we're listening with a given
+            // name, that name must have been in config.
+            vlog(
+              klog.error,
+              "Request on listener '{}' but not found in node_config",
+              ctx.listener());
+            return std::nullopt;
+        }
+        // UDS request: skip port-based matching and return the peer's
+        // first advertised (TCP) listener so the client can reconnect
+        // over TCP for cross-broker communication.
+        if (!nm.broker.kafka_advertised_listeners().empty()) {
+            return nm.broker.kafka_advertised_listeners()[0];
+        }
         return std::nullopt;
     }
 
