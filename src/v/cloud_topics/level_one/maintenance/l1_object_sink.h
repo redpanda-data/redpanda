@@ -101,6 +101,9 @@ protected:
     // not been committed yet.
     ss::future<> finalize_inflight(bool success);
 
+    // Returns the commit interval, never below `max_object_size`.
+    size_t effective_commit_interval_bytes() const;
+
 protected:
     model::topic_id_partition _tp;
     io* _io;

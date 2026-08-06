@@ -223,6 +223,52 @@ TEST_F(LevelingReducerTest, RewritesLevelableRange) {
     ASSERT_LT(extents_after, extents_before);
 }
 
+// A commit interval below the target object size must not be honoured
+// literally: cutting the inflight object at every extent boundary would make
+// each output extent undersized, so leveling would rewrite the same run into
+// an equally undersized run on every pass. The interval is raised to the
+// target object size, so the run still consolidates.
+TEST_F(LevelingReducerTest, ClampsCommitIntervalToObjectSize) {
+    auto [ntp, tidp] = make_ntidp("test_topic");
+    const int records_per_batch = 10;
+    const int batches_per_extent = 5;
+    const int num_extents = 4;
+    const int records_per_extent = batches_per_extent * records_per_batch;
+
+    for (int i = 0; i < num_extents; ++i) {
+        upload_batches(
+          tidp,
+          model::offset{i * records_per_extent},
+          batches_per_extent,
+          records_per_batch);
+    }
+
+    auto before = count_batches_and_records(ntp, tidp);
+    auto extents_before = count_extents(tidp);
+    ASSERT_EQ(extents_before, static_cast<size_t>(num_extents));
+
+    auto leveling_info = get_all_leveling_info(tidp, 100_KiB);
+    ASSERT_FALSE(leveling_info.ranges.empty());
+
+    // The whole ~220 KiB run fits in one 128 MiB output object, so with the
+    // interval clamped up there is a single commit and a single output extent.
+    // Honouring the 512 byte interval literally would instead cut at every
+    // extent boundary, leaving as many extents as it started with.
+    do_level(
+      ntp,
+      tidp,
+      std::move(leveling_info.ranges),
+      leveling_info.epoch,
+      &_metastore,
+      &_io,
+      /*max_object_size=*/128_MiB,
+      /*commit_interval_bytes=*/512)
+      .get();
+
+    ASSERT_EQ(count_batches_and_records(ntp, tidp), before);
+    ASSERT_LT(count_extents(tidp), extents_before);
+}
+
 // Every input record must be byte-for-byte present in the output after
 // leveling.
 TEST_F(LevelingReducerTest, PreservesBatchData) {

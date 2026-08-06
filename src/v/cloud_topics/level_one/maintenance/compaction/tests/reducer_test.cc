@@ -1262,6 +1262,80 @@ TEST_F(ReducerTestFixture, CommitIntervalGovernsCommitCadence) {
       num_extents * batches_per_extent);
 }
 
+// A commit interval below the target object size is raised to it, for
+// compaction as well as leveling: a commit cuts the inflight object, so
+// honouring a sub-target interval literally would publish an undersized L1
+// extent at every boundary, which is what leveling then churns on. The
+// tradeoff is deliberate — it bounds how much preregistration-TTL headroom a
+// short interval can buy back, since a commit can no longer happen more often
+// than once per full object.
+TEST_F(ReducerTestFixture, CommitIntervalIsClampedToObjectSize) {
+    auto [ntp, tidp] = make_ntidp("test_topic");
+    constexpr int num_extents = 3;
+    constexpr int batches_per_extent = 8;
+    constexpr int records_per_batch = 5;
+    constexpr int total_records = num_extents * batches_per_extent
+                                  * records_per_batch;
+
+    latest_kv_map_t latest_kv_map;
+    auto batches = generate_batches(
+      num_extents * batches_per_extent,
+      /*cardinality=*/total_records,
+      records_per_batch,
+      /*starting_value=*/0,
+      /*produce_tombstones=*/false,
+      &latest_kv_map);
+    for (int i = 0; i < num_extents; ++i) {
+        chunked_circular_buffer<model::record_batch> extent_batches;
+        for (int j = 0; j < batches_per_extent; ++j) {
+            extent_batches.push_back(std::move(batches.front()));
+            batches.pop_front();
+        }
+        std::vector<tidp_batches_t> tidp_batches;
+        tidp_batches.emplace_back(tidp, std::move(extent_batches));
+        make_l1_objects(std::move(tidp_batches)).get();
+    }
+
+    auto info_spec = l1::metastore::compaction_info_spec{
+      .tidp = tidp,
+      .tombstone_removal_upper_bound_ts = model::timestamp::max()};
+    auto compaction_info = _metastore.get_compaction_info(info_spec).get();
+    ASSERT_TRUE(compaction_info.has_value());
+    auto initial_epoch = compaction_info->compaction_epoch;
+
+    // The job's whole output exceeds the 512 byte interval, so honouring it
+    // literally would cut and commit at every one of the three extent
+    // boundaries: three partial commits plus the metadata-only commit, four
+    // epoch bumps. Clamped to the 1 MiB object size — which the output never
+    // reaches — no boundary commit fires, leaving the finalize commit and the
+    // metadata-only commit: exactly two.
+    do_compact(
+      tidp,
+      ntp,
+      std::move(compaction_info->offsets_response),
+      initial_epoch,
+      compaction_info->start_offset,
+      &_metastore,
+      &_io,
+      0ms,
+      kafka::offset::max(),
+      /*max_object_size=*/1_MiB,
+      /*commit_interval_bytes=*/512)
+      .get();
+
+    compaction_info = _metastore.get_compaction_info(info_spec).get();
+    ASSERT_TRUE(compaction_info.has_value());
+    EXPECT_EQ(compaction_info->compaction_epoch(), initial_epoch() + 2);
+    EXPECT_TRUE(compaction_info->offsets_response.dirty_ranges.empty());
+
+    verify_compacted_log(
+      ntp,
+      tidp,
+      latest_kv_map,
+      total_records,
+      num_extents * batches_per_extent);
+}
+
 // After a partial commit cuts at an extent boundary, the next extent's
 // leading batches may be deduplicated away entirely (all their records
 // superseded later in the log), so the first batch reaching the sink sits
