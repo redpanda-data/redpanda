@@ -41,8 +41,30 @@ func NewFranzClient(fs afero.Fs, p *config.RpkProfile, extraOpts ...kgo.Opt) (*k
 		return nil, errors.New("no brokers specified and rpk.yaml is configured to not use a default cluster")
 	}
 
+	// Detect and rewrite any `unix:///path` seed brokers. Each `unix://`
+	// entry is replaced with a sentinel `host:port` placeholder that kgo
+	// accepts as a seed; the custom Dialer installed below recognises the
+	// sentinel and dials AF_UNIX to the corresponding path instead.
+	//
+	// Scope of UDS in the connection lifecycle: the UDS transport is used
+	// for the *initial* metadata fetch against a `unix://` seed. After
+	// that, kgo keys its per-broker connection pool on the NodeID and the
+	// addresses returned in the metadata response, and metadata only
+	// advertises TCP endpoints (UDS listeners are non-advertisable by
+	// design). So subsequent requests — including to the same broker
+	// that served the metadata — flow over the TCP address returned in
+	// metadata. UDS is not a drop-in replacement for the full client
+	// lifetime; it is a boot-strapping transport for colocated producers/
+	// consumers. Callers wanting to pin everything to UDS must accept the
+	// single-broker constraint and the fact that kgo may still TCP-dial
+	// based on metadata.
+	seedBrokers, udsPaths, err := rewriteUnixBrokers(k.Brokers)
+	if err != nil {
+		return nil, err
+	}
+
 	opts := []kgo.Opt{
-		kgo.SeedBrokers(k.Brokers...),
+		kgo.SeedBrokers(seedBrokers...),
 		kgo.ClientID("rpk"),
 
 		// We want our timeouts to be _short_ but still allow for
@@ -81,8 +103,19 @@ func NewFranzClient(fs afero.Fs, p *config.RpkProfile, extraOpts ...kgo.Opt) (*k
 	// We apply user overrides after our defaults above. Options are
 	// applied in order, so appending at the end overrides anything
 	// above.
-	if d := d.DialTimeout; d.Duration != 0 {
-		opts = append(opts, kgo.DialTimeout(d.Duration))
+	effectiveDialTimeout := 3 * time.Second
+	if td := d.DialTimeout; td.Duration != 0 {
+		opts = append(opts, kgo.DialTimeout(td.Duration))
+		effectiveDialTimeout = td.Duration
+	}
+	// Install the UDS-aware dialer whenever at least one `unix://` seed
+	// was provided. Installing it unconditionally would be harmless (it
+	// falls through to a plain net.Dialer for non-UDS addresses) but we
+	// keep the default path untouched when no UDS is in use so existing
+	// franz-go defaults (keepalive probing, happy-eyeballs, etc.) remain
+	// in effect.
+	if len(udsPaths) > 0 {
+		opts = append(opts, kgo.Dialer(UDSDialer(udsPaths, effectiveDialTimeout)))
 	}
 	if d := d.RequestTimeoutOverhead; d.Duration != 0 {
 		opts = append(opts, kgo.RequestTimeoutOverhead(d.Duration))

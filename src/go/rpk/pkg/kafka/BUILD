@@ -5,6 +5,7 @@ go_library(
     srcs = [
         "client_franz.go",
         "offsets.go",
+        "uds_dialer.go",
     ],
     importpath = "github.com/redpanda-data/redpanda/src/go/rpk/pkg/kafka",
     visibility = ["//visibility:public"],
@@ -28,7 +29,10 @@ go_library(
 go_test(
     name = "kafka_test",
     size = "small",
-    srcs = ["client_franz_test.go"],
+    srcs = [
+        "client_franz_test.go",
+        "uds_dialer_test.go",
+    ],
     embed = [":kafka"],
     deps = [
         "//src/go/rpk/pkg/config",
