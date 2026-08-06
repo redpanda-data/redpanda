@@ -48,7 +48,8 @@ void add_segments(
   int start_offset = 0,
   bool mark_compacted = true,
   bool may_have_tombstones = true,
-  std::optional<model::timestamp> clean_compacted_ts = std::nullopt) {
+  std::optional<model::timestamp> clean_compacted_ts = std::nullopt,
+  model::timestamp batch_ts = model::timestamp::min()) {
     auto& disk_log = b.get_disk_log_impl();
     for (int i = 0; i < num_segs; i++) {
         auto offset = start_offset + i * records_per_seg;
@@ -60,7 +61,7 @@ void add_segments(
             model::record_batch_type::raft_data,
             append_config(),
             disk_log_builder::should_flush_after::yes,
-            model::timestamp::min());
+            batch_ts);
     }
     for (auto& seg : disk_log.segments()) {
         if (mark_compacted) {
@@ -95,7 +96,8 @@ void build_segments(
   int start_offset = 0,
   bool mark_compacted = true,
   bool may_have_tombstones = true,
-  std::optional<model::timestamp> clean_compacted_ts = std::nullopt) {
+  std::optional<model::timestamp> clean_compacted_ts = std::nullopt,
+  model::timestamp batch_ts = model::timestamp::min()) {
     b | start();
     add_segments(
       b,
@@ -104,7 +106,8 @@ void build_segments(
       start_offset,
       mark_compacted,
       may_have_tombstones,
-      clean_compacted_ts);
+      clean_compacted_ts,
+      batch_ts);
 }
 
 TEST(FindSlidingRangeTest, TestCollectSegments) {
@@ -134,6 +137,81 @@ TEST(FindSlidingRangeTest, TestCollectSegments) {
               << ssx::sformat("{} to {}: {}", start, end, segs.size());
         }
     }
+}
+
+// A segment's retention timestamp may be ahead of the local clock: producers
+// may set create-time up to log_message_timestamp_after_max_ms (1h by default)
+// in the future, and the system clock may step backwards. With
+// min.compaction.lag.ms unset, such a segment must still be compactible, as in
+// Kafka's LogCleanerManager::cleanableOffsets.
+TEST(FindSlidingRangeTest, TestSegmentTimestampInFuture) {
+    storage::disk_log_builder b;
+    const auto num_segs = 3;
+    const auto future_ts = model::timestamp{
+      model::timestamp::now().value() + std::chrono::milliseconds{1h}.count()};
+    build_segments(
+      b,
+      num_segs,
+      /*records_per_seg=*/10,
+      /*start_offset=*/0,
+      /*mark_compacted=*/false,
+      /*may_have_tombstones=*/true,
+      /*clean_compacted_ts=*/std::nullopt,
+      future_ts);
+    auto cleanup = ss::defer([&] { b.stop().get(); });
+    auto& disk_log = b.get_disk_log_impl();
+    ASSERT_GE(
+      disk_log.segments().front()->index().retention_timestamp(), future_ts);
+
+    compaction::compaction_config cfg(
+      model::offset{30},
+      model::offset{30},
+      model::offset{30},
+      std::nullopt,
+      std::nullopt,
+      never_abort);
+
+    auto segs = disk_log.find_sliding_range(cfg);
+    ASSERT_EQ(segs.size(), num_segs);
+    ASSERT_TRUE(disk_log.sliding_window_compact(cfg).get());
+}
+
+// Conversely, when min.compaction.lag.ms is set, a retention timestamp in the
+// future holds the segment back until the clock catches up. Kafka does the same
+// (the lag is a guarantee about recent data, and a future timestamp trivially
+// satisfies `largestTimestamp > now - minCompactionLagMs`), so this is not
+// something to "correct" by clamping the timestamp.
+TEST(FindSlidingRangeTest, TestSegmentTimestampInFutureRespectsMinLag) {
+    storage::disk_log_builder b;
+    const auto num_segs = 3;
+    const auto future_ts = model::timestamp{
+      model::timestamp::now().value() + std::chrono::milliseconds{1h}.count()};
+    build_segments(
+      b,
+      num_segs,
+      /*records_per_seg=*/10,
+      /*start_offset=*/0,
+      /*mark_compacted=*/false,
+      /*may_have_tombstones=*/true,
+      /*clean_compacted_ts=*/std::nullopt,
+      future_ts);
+    auto cleanup = ss::defer([&] { b.stop().get(); });
+    auto& disk_log = b.get_disk_log_impl();
+
+    compaction::compaction_config cfg(
+      model::offset{30},
+      model::offset{30},
+      model::offset{30},
+      std::nullopt,
+      std::nullopt,
+      never_abort,
+      std::nullopt,
+      std::nullopt,
+      /*min_lag_ms=*/1h);
+
+    auto segs = disk_log.find_sliding_range(cfg);
+    ASSERT_EQ(segs.size(), 0);
+    ASSERT_FALSE(disk_log.sliding_window_compact(cfg).get());
 }
 
 TEST(FindSlidingRangeTest, TestCollectExcludesPrevious) {
