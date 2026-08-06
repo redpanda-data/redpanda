@@ -4405,3 +4405,75 @@ class AuditLogUpgradeTest(AuditLogTestBase):
         )
 
         self._test_audit_on_all_nodes("post_upgrade_restart")
+
+
+class AuditLogTopicExistsTest(AuditLogTestBase):
+    """
+    Covers both sides of the create-skip contract when the audit topic
+    already exists:
+
+    - RPC sink: re-enabling audit logging must initialize without re-issuing
+      CreateTopics (removing the controller-availability dependency) and
+      must still deliver events afterwards.
+    - Kafka-client sink: must deliberately KEEP issuing CreateTopics -- that
+      step's SASL failure is what triggers ephemeral-credential propagation
+      (inform) to the brokers, so skipping it there breaks authentication.
+    """
+
+    def __init__(self, test_context):
+        super(AuditLogTopicExistsTest, self).__init__(
+            test_context=test_context,
+            audit_log_config=AuditLogConfig(
+                enabled=True, event_types=["management", "admin"]
+            ),
+        )
+
+    @skip_fips_mode
+    @cluster(num_nodes=5, log_allow_list=AUDIT_LOG_ALLOW_LIST)
+    @matrix(audit_transport_mode=get_audit_modes())
+    def test_reenable_skips_topic_creation(self, audit_transport_mode):
+        # Bootstrap enabled auditing and created the topic.
+        assert self.audit_log in self.super_rpk.list_topics()
+
+        self.modify_audit_enabled(False)
+        wait_until(
+            lambda: self.redpanda.search_log_any("Auditing fibers stopped"),
+            timeout_sec=30,
+            backoff_sec=1,
+            err_msg="expected auditing to stop",
+        )
+
+        self.modify_audit_enabled(True)
+
+        # Re-enabled auditing must be functional in both modes: an event
+        # generated after the re-enable still reaches the audit topic.
+        marker_topic = "audit-skip-marker"
+        self.super_rpk.create_topic(marker_topic)
+        records = self.find_matching_record(
+            partial(
+                self.api_resource_match,
+                "create_topics",
+                {"name": marker_topic, "type": "topic"},
+                self.kafka_rpc_service_name,
+            ),
+            lambda cnt: cnt >= 1,
+            "management event produced after the create-skip re-enable",
+        )
+        assert len(records) > 0, (
+            "expected the post-re-enable management event in the audit log"
+        )
+
+        skip_logged = self.redpanda.search_log_any(
+            "Audit log topic already exists, skipping create"
+        )
+        if audit_transport_mode is AuditLogMode.RPC:
+            # The skip log exists only on the new path; without the fix a
+            # re-enable always goes through CreateTopics again.
+            assert skip_logged, "expected topic creation to be skipped on RPC re-enable"
+        else:
+            # The Kafka-client sink must NOT skip: its create is the first
+            # SASL contact, whose failure triggers ephemeral-credential
+            # propagation (inform). This assertion pins that contract.
+            assert not skip_logged, (
+                "the Kafka-client sink must keep issuing CreateTopics"
+            )
