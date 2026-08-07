@@ -13,20 +13,45 @@
 #include "model/fundamental.h"
 #include "utils/to_string.h"
 
+#include <algorithm>
+
 namespace cloud_topics {
 
 void ctp_stm_state::advance_max_seen_epoch(
   model::term_id term, cluster_epoch epoch) noexcept {
-    if (term >= _seen_window_term && epoch > _max_seen_epoch) {
-        if (term > _seen_window_term) {
-            // If this is a new term, reset the window.
-            _previous_seen_epoch = epoch;
-            _seen_window_term = term;
-        } else {
-            _previous_seen_epoch = _max_seen_epoch.value_or(epoch);
-        }
-        _max_seen_epoch = epoch;
+    if (term < _seen_window_term) {
+        return;
     }
+    if (term > _seen_window_term) {
+        // New term: drop a bump left over from a previous term. The
+        // admission window is the applied window which is always current.
+        _seen_window_term = term;
+        _max_seen_epoch.reset();
+    }
+    if (has_pending_seen_bump(term)) {
+        // An unresolved bump can never be overwritten: that would allow two
+        // outstanding bump batches whose landing order is not constrained,
+        // and only one of them can be accounted for by the admission rules.
+        // The caller (fence_epoch) serializes bumps and waits for the
+        // pending one to resolve, so this is a defensive no-op.
+        return;
+    }
+    if (epoch <= _max_applied_epoch.value_or(cluster_epoch::min())) {
+        return;
+    }
+    // The admission window is not widened here: the bump stays pending
+    // until the apply loop observes a batch with this (or a higher) epoch
+    // and the applied window catches up.
+    _max_seen_epoch = epoch;
+}
+
+bool ctp_stm_state::has_pending_seen_bump(model::term_id term) const noexcept {
+    if (term > _seen_window_term) {
+        return false;
+    }
+    return _max_seen_epoch.has_value()
+           && *_max_seen_epoch
+                > _max_applied_epoch.value_or(cluster_epoch::min());
 }
 
 std::optional<kafka::offset>
@@ -54,71 +79,33 @@ ctp_stm_state::get_previous_applied_epoch() const noexcept {
     return _previous_applied_epoch;
 }
 
-std::optional<cluster_epoch>
-ctp_stm_state::get_previous_seen_epoch(model::term_id term) const noexcept {
-    if (term > _seen_window_term) {
-        return std::nullopt;
-    }
-    return _previous_seen_epoch;
-}
-
 bool ctp_stm_state::epoch_in_window(
   model::term_id term, cluster_epoch epoch) const noexcept {
-    // If the term is newer then treat the window as unset.
-    if (term > _seen_window_term) {
-        auto end = _max_applied_epoch.value_or(cluster_epoch::min());
-        auto begin = _previous_applied_epoch.value_or(end);
-        return epoch >= begin && epoch <= end;
+    if (has_pending_seen_bump(term)) {
+        // The bump outcome is ambiguous; admit only epochs that are safe
+        // whether the bump batch lands or not: the current max, and the
+        // pending epoch itself (its batch resolves the ambiguity when it
+        // lands, so a retry of a failed bump self-heals the window).
+        if (epoch == *_max_seen_epoch) {
+            return true;
+        }
+        return _max_applied_epoch.has_value() && epoch == *_max_applied_epoch;
     }
-    // NOTE: the window should move forward with _max_seen_epoch.
-    // If _max_seen_epoch is greater than _max_applied_epoch then
-    // the window should be [_previous_seen_epoch, _max_seen_epoch].
-    // The window reflects in-flight requests. Write fence is required
-    // to move it forward.
-    auto end = _max_seen_epoch.value_or(
-      _max_applied_epoch.value_or(cluster_epoch::min()));
-    auto begin = _previous_seen_epoch.value_or(
-      _previous_applied_epoch.value_or(end));
-    if (epoch < begin || epoch > end) {
-        return false;
-    }
-    if (epoch == end) {
-        return true;
-    }
-    // A below-max epoch is only admissible if some epoch batch is known to
-    // precede the max-seen epoch's first batch in the log. The seen window
-    // alone can't prove this: a fence-time bump whose batch never lands (a
-    // failed replicate) leaves a lower bound with no counterpart in the log.
-    // If nothing precedes the max epoch's first batch, the log epoch window
-    // collapses to [max, max] when that batch applies, and a below-max batch
-    // landing after it violates the log invariant enforced by
-    // epoch_window_checker and may reference L0 objects the GC already
-    // considers inactive.
-    //
-    // Applied state gives positional evidence, since apply follows log order:
-    // - _max_applied_epoch < end: an applied batch sits at a lower log
-    //   position than any batch at the max-seen epoch (applied or not).
-    // - _max_applied_epoch == end: the max epoch applied; a batch preceded it
-    //   iff the applied window did not collapse to [end, end].
-    if (!_max_applied_epoch.has_value()) {
-        return false;
-    }
-    if (*_max_applied_epoch < end) {
-        return true;
-    }
-    return *_max_applied_epoch == end
-           && _previous_applied_epoch.value_or(end) < end;
+    // No bump is pending: every epoch admitted so far has been observed by
+    // the apply loop, so the applied window is backed by positional
+    // evidence in the log and every epoch in it can be replicated safely
+    // in any order.
+    auto end = _max_applied_epoch.value_or(cluster_epoch::min());
+    auto begin = _previous_applied_epoch.value_or(end);
+    return epoch >= begin && epoch <= end;
 }
 
 bool ctp_stm_state::epoch_above_window(
   model::term_id term, cluster_epoch epoch) const noexcept {
-    // If the term changed, treat it as unset.
-    if (term > _seen_window_term) {
-        auto end = _max_applied_epoch.value_or(cluster_epoch::min());
-        return epoch > end;
+    auto end = _max_applied_epoch.value_or(cluster_epoch::min());
+    if (term <= _seen_window_term && _max_seen_epoch.has_value()) {
+        end = std::max(end, *_max_seen_epoch);
     }
-    auto end = _max_seen_epoch.value_or(
-      _max_applied_epoch.value_or(cluster_epoch::min()));
     return epoch > end;
 }
 
@@ -128,6 +115,9 @@ ctp_stm_state::estimate_inactive_epoch() const noexcept {
 }
 
 void ctp_stm_state::advance_epoch(cluster_epoch epoch, model::offset offset) {
+    // NOTE: a pending seen-window bump resolves implicitly here: once the
+    // applied window catches up with _max_seen_epoch the bump is backed by
+    // a batch in the log and the ambiguity is gone.
     // Register new epoch
     if (epoch > _max_applied_epoch.value_or(cluster_epoch::min())) {
         // A new max epoch requires the sliding window of epoch values in flight
@@ -172,7 +162,15 @@ ctp_stm_state::get_max_seen_epoch(model::term_id term) const noexcept {
     if (term > _seen_window_term) {
         return std::nullopt;
     }
-    return _max_seen_epoch;
+    // This value is used as the epoch floor for new L0 uploads. It includes
+    // a pending bump: uploads taken at the pending epoch are admissible
+    // while the bump is unresolved (uploads at an interior epoch would be
+    // rejected by the fence).
+    if (_max_seen_epoch.has_value()) {
+        return std::max(
+          *_max_seen_epoch, _max_applied_epoch.value_or(*_max_seen_epoch));
+    }
+    return _max_applied_epoch;
 }
 
 model::offset ctp_stm_state::get_max_collectible_offset() const noexcept {
@@ -224,10 +222,9 @@ kafka::offset ctp_stm_state::get_min_allowed_local_threshold() const noexcept {
 fmt::iterator ctp_stm_state::format_to(fmt::iterator it) const {
     return fmt::format_to(
       it,
-      "{{seen_window=[{}, {}], applied_window=[{}, {}], "
+      "{{max_seen_epoch={}, applied_window=[{}, {}], "
       "epoch_window_offset={}, min_epoch_lower_bound={}, lro={}, lrlo={}, "
       "start_offset={}}}",
-      _previous_seen_epoch,
       _max_seen_epoch,
       _previous_applied_epoch,
       _max_applied_epoch,

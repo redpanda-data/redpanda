@@ -357,6 +357,8 @@ void ctp_stm::apply_advance_epoch(
     vlog(_log.debug, "Advancing epoch: {}", cmd.new_epoch);
     _epoch_checker.check_epoch(ntp(), cmd.new_epoch, base_offset);
     _state.advance_epoch(cmd.new_epoch, base_offset);
+    // A pending seen-window bump may have resolved.
+    _epoch_updated_cv.broadcast();
 }
 
 void ctp_stm::apply_reset_state(model::record record) {
@@ -385,6 +387,8 @@ void ctp_stm::apply_placeholder(const model::record_batch& batch) {
     auto id = placeholder.id;
     _epoch_checker.check_epoch(ntp(), id.epoch, batch.header().base_offset);
     _state.advance_epoch(id.epoch, batch.header().base_offset);
+    // A pending seen-window bump may have resolved.
+    _epoch_updated_cv.broadcast();
     _state.record_placeholder_size(
       batch.header().base_offset,
       static_cast<uint64_t>(placeholder.size_bytes));
@@ -469,6 +473,7 @@ ctp_stm::fence_epoch(cluster_epoch e, model::timeout_clock::duration timeout) {
         throw ss::timed_out_error{};
     }
     auto term = _raft->confirmed_term();
+    auto deadline = model::timeout_clock::now() + timeout;
     while (true) {
         if (_state.epoch_in_window(term, e)) {
             // Case 1.1. Same epoch, need to acquire read-lock.
@@ -483,10 +488,18 @@ ctp_stm::fence_epoch(cluster_epoch e, model::timeout_clock::duration timeout) {
         } else if (_state.epoch_above_window(term, e)) {
             // Case 2. New epoch, need to acquire write-lock.
             auto epoch_update_lock = _epoch_update_lock.try_get_units();
-            if (!epoch_update_lock) {
-                // Someone else is updating the epoch - wait for the update and
-                // then re-check.
-                co_await _epoch_updated_cv.wait();
+            if (!epoch_update_lock || _state.has_pending_seen_bump(term)) {
+                // Someone else is updating the epoch, or an earlier bump is
+                // not resolved yet (its batch has not been observed by the
+                // apply loop) - wait and re-check.
+                epoch_update_lock.reset();
+                try {
+                    co_await _epoch_updated_cv.wait(deadline);
+                } catch (const ss::condition_variable_timed_out&) {
+                    // Translate to the timeout error the fence_epoch
+                    // callers handle (mapped to a retryable produce error).
+                    throw ss::timed_out_error{};
+                }
                 continue;
             }
 
@@ -499,10 +512,10 @@ ctp_stm::fence_epoch(cluster_epoch e, model::timeout_clock::duration timeout) {
               _state.epoch_in_window(term, e)
               || _state.epoch_above_window(term, e)) {
                 vlog(_log.debug, "Bumping max seen epoch to {}", e);
+                // Records the bump as pending; the admission window only
+                // widens when the apply loop observes the bump batch (see
+                // ctp_stm_state).
                 _state.advance_max_seen_epoch(term, e);
-                // The fence keeps the full write lock; the caller releases
-                // the units when the batch is enqueued into raft and its
-                // position in the queue is fixed.
                 epoch_fence_opt.emplace(std::move(unit), term);
             }
 
@@ -519,11 +532,8 @@ ctp_stm::fence_epoch(cluster_epoch e, model::timeout_clock::duration timeout) {
         // If we reach here, it means that we need to discard the batch.
         co_return std::unexpected(
           stale_cluster_epoch{
-            .window_min = _state.get_previous_seen_epoch(term)
-                            .or_else([this] {
-                                return _state.get_previous_applied_epoch();
-                            })
-                            .value_or(cluster_epoch{-1}),
+            .window_min = _state.get_previous_applied_epoch().value_or(
+              cluster_epoch{-1}),
             .window_max = _state.get_max_seen_epoch(term)
                             .or_else(
                               [this] { return _state.get_max_applied_epoch(); })

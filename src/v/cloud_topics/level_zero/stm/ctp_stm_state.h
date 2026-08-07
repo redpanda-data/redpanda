@@ -48,9 +48,16 @@ public:
     void advance_epoch(cluster_epoch epoch, model::offset offset);
 
     /// This is invoked in the write path before the batch with new
-    /// epoch value is even replicated.
+    /// epoch value is even replicated. Records the epoch as a pending
+    /// window bump (see _max_seen_epoch). Must not be called while another
+    /// bump is pending in the same term (the caller serializes bumps and
+    /// waits for resolution).
     void
     advance_max_seen_epoch(model::term_id term, cluster_epoch epoch) noexcept;
+
+    /// Return true if there is an unresolved seen-window bump in this term:
+    /// the max seen epoch is ahead of the max applied epoch.
+    bool has_pending_seen_bump(model::term_id term) const noexcept;
 
     // Set the new start offset for the partition.
     //
@@ -85,10 +92,6 @@ public:
     /// \return max_seen_epoch epoch.
     std::optional<cluster_epoch>
     get_max_seen_epoch(model::term_id term) const noexcept;
-
-    /// Return the previous_seen_epoch epoch.
-    std::optional<cluster_epoch>
-      get_previous_seen_epoch(model::term_id) const noexcept;
 
     /// Estimate the minimum epoch referenced by this ctp_stm.
     /// \note This value might be stale.
@@ -172,24 +175,24 @@ public:
     fmt::iterator format_to(fmt::iterator) const;
 
 private:
-    /// The term at which the *_seen_epochs are for, due to the sliding window
-    /// having the ability to diverge, we only track it within a single term,
-    /// then reset the window to avoid nasty edge cases when leadership changes.
+    /// The term _max_seen_epoch is valid for. A bump left over from a
+    /// previous term is ignored (and dropped by the next bump): the
+    /// admission window is the applied window, which is always current.
     model::term_id _seen_window_term;
+
     /// The max epoch after the current in flight requests are applied.
     ///
-    /// This is required because of the pipelining of requests in the STM.
-    /// If present, we don't allow any replicated requests to have an epoch
-    /// that is lower than this value.
-    std::optional<cluster_epoch> _max_seen_epoch;
-
-    /// The previous epoch after the current in flight requests are applied.
-    /// Requests with epochs below this value are fenced and not allowed to be
-    /// applied to the STM.
+    /// It is larger than _max_applied_epoch while the batch that carries it
+    /// is in flight: this is an unresolved (pending) window bump whose
+    /// outcome is ambiguous - the batch may land, fail, or land after its
+    /// replication is reported failed, and the bump can't be rolled back.
+    /// While the bump is pending only epochs that are safe under both
+    /// outcomes are admissible (see epoch_in_window). The bump resolves
+    /// implicitly when the applied window catches up.
     ///
     /// Not persisted with the snapshot because it reflects the state of
-    /// in-flight requests.
-    std::optional<cluster_epoch> _previous_seen_epoch;
+    /// in-flight requests (leader-side, term-scoped state).
+    std::optional<cluster_epoch> _max_seen_epoch;
 
     /// The maximum epoch of applied batches to the STM.
     ///

@@ -42,9 +42,19 @@ TEST(ctp_stm_state_test, advance_max_seen_epoch) {
 
     state.advance_max_seen_epoch(term, epoch1);
     EXPECT_EQ(state.get_max_seen_epoch(term).value(), epoch1);
+    EXPECT_TRUE(state.has_pending_seen_bump(term));
 
+    // An unresolved bump can't be overwritten by a higher epoch.
+    state.advance_max_seen_epoch(term, epoch2);
+    EXPECT_EQ(state.get_max_seen_epoch(term).value(), epoch1);
+
+    // The bump resolves when its batch is applied; then the next bump can
+    // start.
+    state.advance_epoch(epoch1, model::offset{0});
+    EXPECT_FALSE(state.has_pending_seen_bump(term));
     state.advance_max_seen_epoch(term, epoch2);
     EXPECT_EQ(state.get_max_seen_epoch(term).value(), epoch2);
+    state.advance_epoch(epoch2, model::offset{1});
 
     // Should not go backwards
     state.advance_max_seen_epoch(term, epoch3);
@@ -231,15 +241,16 @@ TEST(ctp_stm_state_test, sliding_window_issue) {
 
     EXPECT_FALSE(state.epoch_in_window(term, 5_epoch));
 
-    // Epoch is bumped, our window should now be [2, 5]
+    // Epoch is bumped; the bump is pending until its batch applies
     state.advance_max_seen_epoch(term, 5_epoch);
 
     // This is our new epoch
     EXPECT_TRUE(state.epoch_in_window(term, 5_epoch));
     // Our previous epoch is good still
     EXPECT_TRUE(state.epoch_in_window(term, 2_epoch));
-    // And so is something in between (unlikely in real life, but just to show)
-    EXPECT_TRUE(state.epoch_in_window(term, 3_epoch));
+    // An epoch in between is not admissible while the bump is pending: its
+    // safety depends on the fate of the epoch-5 batch
+    EXPECT_FALSE(state.epoch_in_window(term, 3_epoch));
     // Something below is still bad
     EXPECT_FALSE(state.epoch_in_window(term, 1_epoch));
 
@@ -260,7 +271,8 @@ TEST(ctp_stm_state_test, sliding_window_issue) {
     state.advance_max_seen_epoch(term, 10_epoch);
     EXPECT_TRUE(state.epoch_in_window(term, 10_epoch));
     EXPECT_TRUE(state.epoch_in_window(term, 5_epoch));
-    EXPECT_TRUE(state.epoch_in_window(term, 8_epoch));
+    // Interior epochs wait for the bump to resolve
+    EXPECT_FALSE(state.epoch_in_window(term, 8_epoch));
     EXPECT_FALSE(state.epoch_in_window(term, 0_epoch));
     EXPECT_FALSE(state.epoch_in_window(term, 4_epoch));
 
@@ -278,7 +290,8 @@ TEST(ctp_stm_state_test, sliding_window_issue) {
     state.advance_max_seen_epoch(term, 15_epoch);
     EXPECT_TRUE(state.epoch_in_window(term, 10_epoch));
     EXPECT_TRUE(state.epoch_in_window(term, 15_epoch));
-    EXPECT_TRUE(state.epoch_in_window(term, 12_epoch));
+    // Interior epochs wait for the bump to resolve
+    EXPECT_FALSE(state.epoch_in_window(term, 12_epoch));
     EXPECT_FALSE(state.epoch_in_window(term, 9_epoch));
 
     EXPECT_EQ(estimate_inactive_epoch(), 4_epoch);
@@ -295,29 +308,45 @@ TEST(ctp_stm_state_test, sliding_window_issue) {
     EXPECT_EQ(estimate_inactive_epoch(), 9_epoch);
 }
 
-TEST(ctp_stm_state_test, below_max_fence_requires_applied_evidence) {
-    // A fenced epoch bump whose batch never lands leaves a phantom lower
-    // bound in the seen window. Admitting a below-max epoch is only sound if
-    // some epoch batch is known to precede the max-seen epoch's first batch
-    // in the log; otherwise the log's epoch window collapses to [max, max]
-    // when the max applies and the below-max batch violates it.
+TEST(ctp_stm_state_test, pending_bump_restricts_admission) {
+    // A fenced epoch bump whose batch has not landed yet is ambiguous: the
+    // window may become [old-max, bump] or stay as it was. While the bump
+    // is pending only epochs that are safe under both outcomes (the old max
+    // and the bump epoch itself) are admissible.
     ct::ctp_stm_state state;
     model::term_id term(1);
 
-    // Two fence-time bumps, no batch lands for either.
+    // First bump on an empty state: the old window is empty so only the
+    // pending epoch itself is admissible.
     state.advance_max_seen_epoch(term, 132_epoch);
+    EXPECT_TRUE(state.has_pending_seen_bump(term));
+    EXPECT_TRUE(state.epoch_in_window(term, 132_epoch));
+    EXPECT_FALSE(state.epoch_in_window(term, 131_epoch));
+    EXPECT_FALSE(state.epoch_in_window(term, 133_epoch));
+
+    // A second bump can't start while the first one is unresolved.
     state.advance_max_seen_epoch(term, 141_epoch);
+    EXPECT_EQ(state.get_max_seen_epoch(term).value(), 132_epoch);
 
-    // At-max admission is always sound.
-    EXPECT_TRUE(state.epoch_in_window(term, 141_epoch));
-    // Below-max admission has no applied evidence: reject.
-    EXPECT_FALSE(state.epoch_in_window(term, 132_epoch));
+    // The bump batch lands as the first batch in the log: the window is
+    // [132, 132] now.
+    state.advance_epoch(132_epoch, model::offset{0});
+    EXPECT_FALSE(state.has_pending_seen_bump(term));
+    EXPECT_TRUE(state.epoch_in_window(term, 132_epoch));
+    EXPECT_FALSE(state.epoch_in_window(term, 131_epoch));
 
-    // The max epoch lands as the first batch in the log: the log window is
-    // [141, 141], so 132 must still be rejected.
-    state.advance_epoch(141_epoch, model::offset{0});
-    EXPECT_FALSE(state.epoch_in_window(term, 132_epoch));
+    // Bump to 141: pending again. The old max and the pending epoch are
+    // admissible, the interior is not (its safety depends on the fate of
+    // the 141 batch).
+    state.advance_max_seen_epoch(term, 141_epoch);
     EXPECT_TRUE(state.epoch_in_window(term, 141_epoch));
+    EXPECT_TRUE(state.epoch_in_window(term, 132_epoch));
+    EXPECT_FALSE(state.epoch_in_window(term, 135_epoch));
+
+    // The bump batch lands: the whole [132, 141] window is admissible.
+    state.advance_epoch(141_epoch, model::offset{1});
+    EXPECT_TRUE(state.epoch_in_window(term, 135_epoch));
+    EXPECT_FALSE(state.epoch_in_window(term, 131_epoch));
 }
 
 TEST(ctp_stm_state_test, below_max_fence_allowed_with_applied_evidence) {
@@ -458,11 +487,18 @@ TEST(ctp_stm_state_test, l0_simulation) {
                 universe.uploaded_batches.pop_front();
                 // Mirror the fence_epoch branches: bump the window for an
                 // above-window epoch, replicate an in-window epoch, reject
-                // everything else. A below-max epoch is rejected while no
-                // applied batch proves that something precedes the max
-                // epoch's first batch in the log (the producer would retry
-                // with a fresh epoch).
+                // everything else. While a bump is pending only the old max
+                // and the pending epoch are admissible; a new bump waits
+                // for the resolution and times out (modeled as a rejection,
+                // the producer would retry with a fresh upload).
                 if (universe.stm.epoch_above_window(term, batch.epoch)) {
+                    if (universe.stm.has_pending_seen_bump(term)) {
+                        oplog.push_back(
+                          fmt::format(
+                            "rejected bump to epoch {} (bump pending)",
+                            batch.epoch));
+                        return;
+                    }
                     universe.stm.advance_max_seen_epoch(term, batch.epoch);
                     ASSERT_TRUE(
                       universe.stm.epoch_in_window(term, batch.epoch));
