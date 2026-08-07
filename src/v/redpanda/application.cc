@@ -19,6 +19,7 @@
 #include "cluster/cluster_discovery.h"
 #include "cluster/config_manager.h"
 #include "cluster/controller.h"
+#include "cluster/metrics_reporter.h"
 #include "cluster/node_isolation_watcher.h"
 #include "cluster/topic_recovery_service.h"
 #include "compression/async_stream_zstd.h"
@@ -61,6 +62,7 @@
 #include <seastar/core/prometheus.hh>
 #include <seastar/core/smp.hh>
 #include <seastar/core/thread.hh>
+#include <seastar/coroutine/as_future.hh>
 #include <seastar/util/defer.hh>
 
 #if __has_include(<google/protobuf/runtime_version.h>)
@@ -655,6 +657,29 @@ ss::future<> application::register_cluster_identity_metrics() {
         co_return;
     }
 
+    // The cluster metrics UUID identifies the cluster in metrics reports. It
+    // is generated deterministically from the first controller log batches
+    // (or restored from the controller snapshot) and is immutable for the
+    // life of the cluster, unlike the runtime-editable cluster_id config
+    // property that is merely initialized from it. It becomes available once
+    // the controller has caught up past the bootstrap batches; the waiter
+    // aborts at shutdown.
+    auto waited = co_await ss::coroutine::as_future(
+      controller->get_metrics_reporter().local().wait_cluster_info_initialized(
+        _as.local()));
+    if (waited.failed()) {
+        // condition variable broken at shutdown
+        waited.ignore_ready_future();
+        co_return;
+    }
+    const auto& cluster_info = controller->get_controller_stm()
+                                 .local()
+                                 .get_metrics_reporter_cluster_info();
+    if (!cluster_info.is_initialized()) {
+        // aborted at shutdown before the cluster info was initialized
+        co_return;
+    }
+
     _cluster_identity_metrics.add_group(
       "cluster",
       {sm::make_gauge(
@@ -662,7 +687,8 @@ ss::future<> application::register_cluster_identity_metrics() {
          [] { return 1; },
          sm::description("Redpanda cluster identity information"),
          {sm::label("cluster_uuid")(
-           ssx::sformat("{}", *storage.local().get_cluster_uuid()))})
+           ssx::sformat("{}", *storage.local().get_cluster_uuid())),
+          sm::label("cluster_metrics_uuid")(cluster_info.uuid)})
          .aggregate({sm::shard_label})});
 }
 

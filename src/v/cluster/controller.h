@@ -162,6 +162,10 @@ public:
     }
     ss::sharded<controller_stm>& get_controller_stm() { return _stm; }
 
+    ss::sharded<metrics_reporter>& get_metrics_reporter() {
+        return _metrics_reporter;
+    }
+
     ss::sharded<cluster_epoch_service<>>& get_cluster_epoch_generator() {
         return _epoch_service;
     }
