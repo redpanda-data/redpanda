@@ -301,10 +301,7 @@ public:
     auto with_pid_lock(model::producer_id pid, Func&& func) {
         return get_tx_lock(pid)
           ->with(std::forward<Func>(func))
-          .then([this, pid](auto reply) {
-              gc_tx_lock(pid);
-              return reply;
-          });
+          .finally([this, pid] { gc_tx_lock(pid); });
     }
 
     /// \brief Forget the offsets of deleted topic-partitions.
