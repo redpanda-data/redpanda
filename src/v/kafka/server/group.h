@@ -133,7 +133,6 @@ inline fmt::iterator format_to(group_state gs, fmt::iterator out) {
 
 ss::sstring group_state_to_kafka_name(group_state);
 std::optional<group_state> group_state_from_kafka_name(std::string_view);
-kafka::error_code map_store_offset_error_code(std::error_code);
 
 /// \brief A Kafka group.
 ///
@@ -494,45 +493,25 @@ public:
     kafka::error_code member_leave_group(
       const member_id&, const std::optional<group_instance_id>&);
 
-    std::optional<offset_metadata>
-    offset(const model::topic_partition& tp) const;
-
-    const auto& offsets() const { return _offsets; }
+    const offset_store::offsets_map& offsets() const {
+        return _offset_store.offsets();
+    }
 
     void complete_offset_commit(
-      const model::topic_partition& tp, const offset_metadata& md);
-
-    void fail_offset_commit(
-      const model::topic_partition& tp, const offset_metadata& md);
+      const model::topic_partition& tp, const offset_metadata& md) {
+        _offset_store.complete_offset_commit(tp, md);
+    }
 
     void reset_tx_state(model::term_id);
-    model::term_id term() const { return _term; }
-
-    ss::future<cluster::commit_group_tx_reply>
-    commit_tx(cluster::commit_group_tx_request r);
-
-    ss::future<cluster::begin_group_tx_reply>
-      begin_tx(cluster::begin_group_tx_request);
-
-    ss::future<cluster::abort_group_tx_reply>
-      abort_tx(cluster::abort_group_tx_request);
-
-    ss::future<txn_offset_commit_response>
-    store_txn_offsets(txn_offset_commit_request r);
-
-    struct prepared_offset_commits {
-        model::record_batch batch;
-        chunked_vector<std::pair<model::topic_partition, offset_metadata>>
-          commits;
-    };
+    model::term_id term() const { return _offset_store.term(); }
 
     /// Builds the record batch for an offset commit request and registers the
     /// offsets as pending commits. Returns std::nullopt if the request
     /// contains no offsets.
-    std::optional<prepared_offset_commits>
-    prepare_offset_commits(const offset_commit_request& r);
-
-    offset_commit_stages store_offsets(offset_commit_request&& r);
+    std::optional<offset_store::prepared_offset_commits>
+    prepare_offset_commits(const offset_commit_request& r) {
+        return _offset_store.prepare_offset_commits(r);
+    }
 
     ss::future<txn_offset_commit_response>
     handle_txn_offset_commit(txn_offset_commit_request r);
@@ -551,25 +530,23 @@ public:
     offset_fetch_response_group
     handle_offset_fetch(offset_fetch_request_group r, bool require_stable);
 
-    /// removes a tracked offset; empty per-topic maps are erased so that
-    /// _offsets.empty() means "no offsets" and iteration never visits
-    /// offset-less topics
-    bool erase_offset(const model::topic_partition& tp);
-
     bool
-    try_upsert_offset(const model::topic_partition& tp, offset_metadata md);
-
-    void
-    insert_ongoing_tx(model::producer_identity pid, ongoing_transaction tx);
-    void try_set_fence(model::producer_id id, model::producer_epoch epoch) {
-        auto [it, _] = _producers.try_emplace(id, epoch);
-        if (it->second.epoch < epoch) {
-            it->second.epoch = epoch;
-            it->second.transaction.reset();
-        }
+    try_upsert_offset(const model::topic_partition& tp, offset_metadata md) {
+        return _offset_store.try_upsert_offset(tp, std::move(md));
     }
 
-    const offset_store::producers_map& producers() const { return _producers; }
+    void
+    insert_ongoing_tx(model::producer_identity pid, ongoing_transaction tx) {
+        _offset_store.insert_ongoing_tx(pid, std::move(tx));
+    }
+
+    void try_set_fence(model::producer_id id, model::producer_epoch epoch) {
+        _offset_store.try_set_fence(id, epoch);
+    }
+
+    const offset_store::producers_map& producers() const {
+        return _offset_store.producers();
+    }
 
     // helper for the kafka api: describe groups
     described_group describe() const;
@@ -602,7 +579,9 @@ public:
     void add_offset_tombstone_record(
       const kafka::group_id& group,
       const model::topic_partition& tp,
-      storage::record_batch_builder& builder);
+      storage::record_batch_builder& builder) const {
+        _offset_store.add_offset_tombstone_record(group, tp, builder);
+    }
 
     void add_group_tombstone_record(
       const kafka::group_id& group, storage::record_batch_builder& builder);
@@ -632,7 +611,9 @@ public:
      *  If expired_only is false aborts all TXes.
      *  If expired_only is true aborts only expired TXes.
      */
-    ss::future<cluster::tx::errc> abort_txes(bool expired_only);
+    ss::future<cluster::tx::errc> abort_txes(bool expired_only) {
+        return _offset_store.abort_txes(expired_only);
+    }
 
     fmt::iterator format_to(fmt::iterator it) const;
 
@@ -719,20 +700,6 @@ private:
         const group& _group;
     };
 
-    ss::lw_shared_ptr<ssx::mutex> get_tx_lock(model::producer_id pid);
-
-    void gc_tx_lock(model::producer_id pid);
-
-    template<typename Func>
-    auto with_pid_lock(model::producer_id pid, Func&& func) {
-        return get_tx_lock(pid)
-          ->with(std::forward<Func>(func))
-          .then([this, pid](auto reply) {
-              gc_tx_lock(pid);
-              return reply;
-          });
-    }
-
     model::record_batch checkpoint(const assignments_type& assignments);
     model::record_batch checkpoint();
 
@@ -777,65 +744,11 @@ private:
 
     bool has_offsets() const;
 
-    bool has_transactions_in_progress() const;
-
-    bool has_pending_transaction(const model::topic_partition& tp);
-
-    void update_store_offset_builder(
-      cluster::simple_batch_builder& builder,
-      const model::topic& name,
-      model::partition_id partition,
-      model::offset commited_offset,
-      leader_epoch commited_leader_epoch,
-      const ss::sstring& metadata,
-      model::timestamp commited_timestemp,
-      std::optional<model::timestamp> expiry_timestamp);
-
-    ss::future<cluster::abort_group_tx_reply> do_abort(
-      kafka::group_id group_id,
-      model::producer_identity pid,
-      model::tx_seq tx_seq);
-
-    ss::future<cluster::commit_group_tx_reply> do_commit(
-      kafka::group_id group_id,
-      model::producer_identity pid,
-      model::tx_seq sequence);
-
-    void start_abort_timer() {
-        _auto_abort_timer.set_callback([this] { abort_old_txes(); });
-        try_arm(clock_type::now() + _abort_interval_ms);
-    }
-
-    void abort_old_txes();
-    ss::future<> do_abort_old_txes();
-    ss::future<cluster::tx::errc> try_abort_old_tx(model::producer_identity);
-    ss::future<cluster::tx::errc> do_try_abort_old_tx(model::producer_identity);
-    void try_arm(time_point_type);
-    void maybe_rearm_timer();
-
     void update_subscriptions();
     std::optional<absl::node_hash_set<model::topic>> _subscriptions;
 
-    chunked_vector<model::topic_partition> filter_expired_offsets(
-      std::chrono::seconds retention_period,
-      const std::function<bool(const model::topic&)>&,
-      const std::function<model::timestamp(const offset_metadata&)>&);
-
     chunked_vector<model::topic_partition>
     get_expired_offsets(std::chrono::seconds retention_period);
-
-    bool use_dedicated_batch_type_for_fence() const {
-        // Prior to this change group_tx_fence shared the fence record
-        // batch type with data partitions (tx_fence). This made compaction
-        // logic complicated particularly because different compaction rules
-        // applied for fence batch in groups and data partitions. With the new
-        // feature, group fence has a separate dedicated batch type so it is
-        // easy to diambiguate both fence types.
-        return _feature_table.local().is_active(
-          features::feature::group_tx_fence_dedicated_batch_type);
-    }
-
-    cluster::tx::errc map_tx_replication_error(std::error_code ec);
 
     void setup_metrics();
 
@@ -855,9 +768,8 @@ private:
     ss::timer<clock_type> _join_timer;
     bool _new_member_added;
     config::configuration& _conf;
-    ss::lw_shared_ptr<ss::rwlock> _catchup_lock;
     ss::lw_shared_ptr<cluster::partition> _partition;
-    offsets_map _offsets;
+    kafka::offset_store _offset_store;
     consumer_lag_metrics _lag_metrics;
     group_probe<model::topic, offset_store::partition_offsets_map> _probe;
     ctx_log _ctxlog;
@@ -870,20 +782,7 @@ private:
      */
     bool _initial_join_in_progress = false;
 
-    absl::flat_hash_map<model::producer_id, ss::lw_shared_ptr<ssx::mutex>>
-      _tx_locks;
-    model::term_id _term;
-    producers_map _producers;
-    chunked_hash_map<model::topic_partition, offset_metadata>
-      _pending_offset_commits;
     metrics_conversion_binding _enable_group_metrics;
-
-    ss::gate _gate;
-    ss::timer<clock_type> _auto_abort_timer;
-    std::chrono::milliseconds _abort_interval_ms;
-
-    ss::sharded<cluster::tx_gateway_frontend>& _tx_frontend;
-    ss::sharded<features::feature_table>& _feature_table;
 };
 
 using group_ptr = ss::lw_shared_ptr<group>;
