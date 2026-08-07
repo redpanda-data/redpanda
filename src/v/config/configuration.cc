@@ -5369,9 +5369,11 @@ configuration::configuration(ctor_key)
       "or any cluster where stability, data loss, or the ability to upgrade "
       "are a concern. To enable experimental features, set the value of this "
       "configuration option to the current unix epoch expressed in seconds. "
-      "The value must be within one hour of the current time on the broker."
+      "The value must be within one hour of the current time on the broker. "
       "Once experimental features are enabled they cannot be disabled.",
-      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
+      {.needs_restart = needs_restart::no,
+       .visibility = visibility::tunable,
+       .usable_before_ready = usable_before_ready::yes},
       "",
       [this](const ss::sstring& v) -> std::optional<ss::sstring> {
           if (development_features_enabled()) {
