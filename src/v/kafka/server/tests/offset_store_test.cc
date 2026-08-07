@@ -1452,3 +1452,33 @@ TEST_F(offset_store_test, expiry_skips_an_offset_a_transaction_staged) {
     ASSERT_EQ(expired.size(), 1);
     ASSERT_EQ(expired[0], idle);
 }
+
+// kafka commits the last value for a partition a request names twice, and one
+// record per partition keeps the offsets map and the log in agreement
+TEST_F(offset_store_test, a_duplicate_partition_commits_the_last_value) {
+    const auto partition = tp("t", 0);
+    auto req = commit_request(partition, model::offset(10));
+    req.data.topics.front().partitions.push_back(
+      offset_commit_request_partition{
+        .partition_index = partition.partition,
+        .committed_offset = model::offset(20),
+        .committed_leader_epoch = kafka::leader_epoch(1),
+        .commit_timestamp = -1,
+        .committed_metadata = "",
+      });
+
+    auto prepared = store.prepare_offset_commits(req);
+    ASSERT_TRUE(prepared.has_value());
+    ASSERT_EQ(prepared->batch.record_count(), 1);
+    ASSERT_EQ(prepared->commits.size(), 1);
+
+    // the replicate continuation stamps every commit with its batch's offset
+    for (auto& e : prepared->commits) {
+        e.second.log_offset = model::offset(100);
+        store.complete_offset_commit(e.first, e.second);
+    }
+
+    auto stored = store.offset(partition);
+    ASSERT_TRUE(stored.has_value());
+    ASSERT_EQ(stored->offset, model::offset(20));
+}
