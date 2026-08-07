@@ -81,6 +81,16 @@ struct group_manager_fixture
         return app._group_manager.local().txn_offset_commit(std::move(request));
     }
 
+    auto offset_commit(kafka::offset_commit_request request) {
+        return app._group_manager.local()
+          .offset_commit(std::move(request))
+          .result;
+    }
+
+    auto offset_fetch(kafka::offset_fetch_request request) {
+        return app._group_manager.local().offset_fetch(std::move(request));
+    }
+
     ss::shared_ptr<storage::log> consumer_offsets_log() {
         return app.storage.local().log_mgr().get(offsets_ntp);
     }
@@ -768,4 +778,70 @@ TEST_F_CORO(
       << " instead of committed_offset " << log->offsets().committed_offset
       << ". This indicates a stale open transaction from the snapshot was not "
          "resolved after compaction removed the commit batch.";
+}
+
+// a plain commit between a transaction's staging batch and its commit marker
+// is earlier in the log, so the transaction's value wins
+TEST_F_CORO(group_manager_fixture, test_tx_commit_beats_interleaved_plain) {
+    kafka::group_id gid{"tx-vs-plain-offset-commit"};
+    const auto pid = model::producer_identity{7, 0};
+    const auto seq = model::tx_seq{0};
+    const auto& topic = test_ntp.tp.topic;
+    const auto partition = model::partition_id{0};
+
+    const auto plain_offset = model::offset{10};
+    const auto tx_offset = model::offset{50};
+
+    // begin_tx creates the group, which stays empty, so the plain commit below
+    // takes the offsets-only path (generation_id defaults to -1)
+    auto bresult = co_await begin_tx(
+      cluster::begin_group_tx_request{
+        offsets_ntp, gid, pid, seq, no_timeout, model::partition_id{0}});
+    ASSERT_EQ_CORO(bresult.ec, cluster::tx::errc::none);
+
+    {
+        kafka::txn_offset_commit_request oreq;
+        oreq.ntp = offsets_ntp;
+        oreq.data.transactional_id = "tx.id";
+        oreq.data.group_id = gid;
+        oreq.data.producer_id = kafka::producer_id{pid.id};
+        oreq.data.producer_epoch = pid.epoch;
+        kafka::txn_offset_commit_request_topic tdata;
+        tdata.name = topic;
+        tdata.partitions.push_back(
+          {.partition_index = partition, .committed_offset = tx_offset});
+        oreq.data.topics.push_back(std::move(tdata));
+        auto oresult = co_await tx_offset_commit(std::move(oreq));
+        ASSERT_FALSE_CORO(oresult.data.errored());
+    }
+
+    {
+        kafka::offset_commit_request creq;
+        creq.ntp = offsets_ntp;
+        creq.data.group_id = gid;
+        kafka::offset_commit_request_topic tdata;
+        tdata.name = topic;
+        tdata.partitions.push_back(
+          {.partition_index = partition, .committed_offset = plain_offset});
+        creq.data.topics.push_back(std::move(tdata));
+        auto cresult = co_await offset_commit(std::move(creq));
+        ASSERT_FALSE_CORO(cresult.data.errored());
+    }
+
+    auto cresult = co_await commit_tx(
+      cluster::commit_group_tx_request{offsets_ntp, pid, seq, gid, no_timeout});
+    ASSERT_EQ_CORO(cresult.ec, cluster::tx::errc::none);
+
+    kafka::offset_fetch_request freq;
+    freq.ntp = offsets_ntp;
+    freq.data.groups.emplace_back().group_id = gid;
+    auto fresp = co_await offset_fetch(std::move(freq));
+
+    ASSERT_EQ_CORO(fresp.data.groups.size(), 1);
+    const auto& fetched = fresp.data.groups.front();
+    ASSERT_EQ_CORO(fetched.error_code, kafka::error_code::none);
+    ASSERT_EQ_CORO(fetched.topics.size(), 1);
+    ASSERT_EQ_CORO(fetched.topics.front().partitions.size(), 1);
+    ASSERT_EQ_CORO(
+      fetched.topics.front().partitions.front().committed_offset, tx_offset);
 }

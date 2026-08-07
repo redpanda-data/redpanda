@@ -3184,11 +3184,17 @@ offset_store::do_commit(model::producer_identity pid, model::tx_seq sequence) {
           cluster::tx::errc::unknown_server_error);
     }
 
+    /*
+     * try_upsert_offset keeps whichever value has the highest log offset, so
+     * stamp these with the commit batch's offset, which is above every commit
+     * that landed while the transaction was open. md.log_offset is the
+     * staging batch's, which is lower.
+     */
     for (const auto& [tp, md] : it->second.transaction->offsets) {
         try_upsert_offset(
           tp,
           offset_metadata{
-            .log_offset = md.log_offset,
+            .log_offset = result.value().last_offset,
             .offset = md.offset_metadata.offset,
             .metadata = md.offset_metadata.metadata.value_or(""),
             .committed_leader_epoch = kafka::leader_epoch(
