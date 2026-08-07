@@ -25,10 +25,39 @@ namespace cloud_topics::l1 {
 
 namespace {
 
+// Checks the provided compaction offsets response against the currently
+// reported max compactible offset to see if any of the compaction work reported
+// is actionable.
+inline bool has_compactible_work(
+  const metastore::compaction_offsets_response& offsets,
+  kafka::offset max_compactible_offset) {
+    auto lowest_base_offset =
+      [](const offset_interval_set& s) -> std::optional<kafka::offset> {
+        auto stream = s.make_stream();
+        if (!stream.has_next()) {
+            return std::nullopt;
+        }
+        return stream.next().base_offset;
+    };
+    for (const auto* ranges :
+         {&offsets.dirty_ranges, &offsets.removable_tombstone_ranges}) {
+        auto base = lowest_base_offset(*ranges);
+        if (base.has_value() && base.value() <= max_compactible_offset) {
+            return true;
+        }
+    }
+    return false;
+}
+
 inline bool needs_compaction(
-  const metastore::compaction_info_response& info,
+  const compaction_info_and_timestamp& info_and_ts,
   const cluster::topic_configuration& topic_cfg) {
+    const auto& info = info_and_ts.info;
     if (!topic_cfg.is_compacted()) {
+        return false;
+    }
+    if (!has_compactible_work(
+          info.offsets_response, info_and_ts.max_compactible_offset)) {
         return false;
     }
     auto& topic_mcdr = topic_cfg.properties.min_cleanable_dirty_ratio;
@@ -315,7 +344,7 @@ void log_info_collector::populate_logs_with_compaction_info(
 
         const auto& topic_cfg = topic_cfg_opt.value().get();
 
-        if (!needs_compaction(info_and_ts.info, topic_cfg)) {
+        if (!needs_compaction(info_and_ts, topic_cfg)) {
             continue;
         }
 

@@ -429,7 +429,6 @@ class CompactionPreregistrationTTLTest(CompactionStressBase):
                 "cloud_topics_compaction_max_object_size": 1024 * 1024,
                 "cloud_topics_reconciliation_max_object_size": 8 * 1024 * 1024,
                 "cloud_topics_compaction_commit_interval_bytes": 1024 * 1024,
-                "cloud_topics_leveling_commit_interval_bytes": 1024 * 1024,
             },
         )
 

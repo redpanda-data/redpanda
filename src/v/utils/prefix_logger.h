@@ -42,6 +42,26 @@ public:
         }
     }
 
+    /// Rate-limited variant.
+    template<typename... Args>
+    void log(
+      ss::log_level lvl,
+      ss::logger::rate_limit& rate,
+      ss::logger::format_info_t<Args...> format,
+      Args&&... args) const {
+        if (_logger->is_enabled(lvl)) {
+            ss::logger::lambda_log_writer writer(
+              [&](ss::internal::log_buf::inserter_iterator it) {
+                  it = fmt::format_to(it, "{} - ", _prefix);
+                  return fmt::format_to(
+                    it,
+                    fmt::runtime(format.format),
+                    std::forward<Args>(args)...);
+              });
+            _logger->log(lvl, rate, writer);
+        }
+    }
+
     template<typename... Args>
     void
     error(ss::logger::format_info_t<Args...> format, Args&&... args) const {

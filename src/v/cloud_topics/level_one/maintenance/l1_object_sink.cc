@@ -248,6 +248,25 @@ ss::future<> l1_object_sink::prepare_iteration(kafka::offset next_extent_base) {
     co_await initialize_builder(next_extent_base);
 }
 
+size_t l1_object_sink::effective_commit_interval_bytes() const {
+    auto configured = _commit_interval_bytes();
+    auto max_object_size = _max_object_size();
+    if (configured >= max_object_size) {
+        return configured;
+    }
+    static thread_local ss::logger::rate_limit rate(std::chrono::minutes{5});
+    vloglr(
+      _ctxlog,
+      ss::log_level::warn,
+      rate,
+      "Commit interval of {} bytes is below the target object size of {} "
+      "bytes; clamping commit interval to {} bytes instead.",
+      configured,
+      max_object_size,
+      max_object_size);
+    return max_object_size;
+}
+
 ss::future<> l1_object_sink::finish_iteration(
   kafka::offset prev_extent_base, kafka::offset prev_extent_last) {
     _processed_extents.insert(prev_extent_base, prev_extent_last);
@@ -258,7 +277,7 @@ ss::future<> l1_object_sink::finish_iteration(
     auto uncommitted_bytes
       = _pending_bytes
         + (_inflight_object ? _inflight_object->builder->file_size() : 0);
-    if (uncommitted_bytes < _commit_interval_bytes()) {
+    if (uncommitted_bytes < effective_commit_interval_bytes()) {
         co_return;
     }
     co_await flush(prev_extent_last);
