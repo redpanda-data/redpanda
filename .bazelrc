@@ -27,6 +27,11 @@ common --@toolchains_llvm//toolchain/config:compiler-rt=False
 build --linkopt --unwindlib=libgcc
 build --linkopt -stdlib=libc++
 
+# Statically linked binaries (mostly benches) are very large (up to ~4 GB in
+# debug), which isn't necessary in dev and debug modes: link dynamically by
+# default. Release overrides this back to static linking below.
+build --dynamic_mode=fully
+
 # Use Bash instead of system python for finding the hermetic interpreter
 # within Bazel due to the `python3` binary not being present on CI
 # (it has `python` version 3 but Bazel uses the `python3` executable).
@@ -325,6 +330,7 @@ build:secure --config=relro
 # --config=release doesn't create a _true_ release binary, that needs at
 # least --stamp=full and PGO-specific compile steps (outside of bazel).
 build:release --compilation_mode opt
+build:release --dynamic_mode=default
 build:release --config=secure
 build:release --@seastar//:stack_guards=False --@seastar//:debug=False
 build:release --copt -g --strip=never
