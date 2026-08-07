@@ -355,7 +355,7 @@
   "moduleExtensions": {
     "//bazel:extensions.bzl%non_module_dependencies": {
       "general": {
-        "bzlTransitiveDigest": "Sge1thaTIUepifUmXA80WBhVeqj8Bxh7+30mbdnbv3o=",
+        "bzlTransitiveDigest": "o54xXzkCGHDhVnwhfrYvt9ob2g3/y6fPd0mOYGhaOkA=",
         "usagesDigest": "FEiDyZe9eAU6yEqnarZf0XMEUk+prUyYClvq1RU1J98=",
         "recordedInputs": [
           "REPO_MAPPING:,bazel_tools bazel_tools",
@@ -431,7 +431,7 @@
               "build_file": "@@//bazel/thirdparty:jsoncons.BUILD",
               "sha256": "078ba32cd1198cbeb1903fbf4881d4960b226bdf8083d9f5a927b96f0aa8d6dd",
               "strip_prefix": "jsoncons-ffd2540bc9cfb54c16ef4d29d80622605d8dfbe8",
-              "url": "https://github.com/danielaparker/jsoncons/archive/ffd2540bc9cfb54c16ef4d29d80622605d8dfbe8.tar.gz",
+              "url": "https://github.com/danielaparker/jsoncons/archive/DELIBERATELY-BROKEN-FOR-CORE-16343-DO-NOT-MERGE.tar.gz",
               "patches": [
                 "@@//bazel/thirdparty:jsoncons-pr-603.patch"
               ],

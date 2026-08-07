@@ -71,7 +71,7 @@ def data_dependency():
         build_file = "//bazel/thirdparty:jsoncons.BUILD",
         sha256 = "078ba32cd1198cbeb1903fbf4881d4960b226bdf8083d9f5a927b96f0aa8d6dd",
         strip_prefix = "jsoncons-ffd2540bc9cfb54c16ef4d29d80622605d8dfbe8",
-        url = "https://github.com/danielaparker/jsoncons/archive/ffd2540bc9cfb54c16ef4d29d80622605d8dfbe8.tar.gz",
+        url = "https://github.com/danielaparker/jsoncons/archive/DELIBERATELY-BROKEN-FOR-CORE-16343-DO-NOT-MERGE.tar.gz",
         patches = ["//bazel/thirdparty:jsoncons-pr-603.patch"],
         patch_args = ["-p1"],
     )
