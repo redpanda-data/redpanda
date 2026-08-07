@@ -500,8 +500,9 @@ ctp_stm::fence_epoch(cluster_epoch e, model::timeout_clock::duration timeout) {
               || _state.epoch_above_window(term, e)) {
                 vlog(_log.debug, "Bumping max seen epoch to {}", e);
                 _state.advance_max_seen_epoch(term, e);
-                // Demote to reader lock after max_seen_epoch is updated.
-                unit.return_units(unit.count() - 1);
+                // The fence keeps the full write lock; the caller releases
+                // the units when the batch is enqueued into raft and its
+                // position in the queue is fixed.
                 epoch_fence_opt.emplace(std::move(unit), term);
             }
 

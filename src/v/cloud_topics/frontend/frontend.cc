@@ -822,10 +822,12 @@ ss::future<result<raft::replicate_result>> do_upload_and_replicate(
       batch_id, std::move(placeholders.batches.front()), opts);
     // Once the request is enqueued in raft and our order is guaranteed we can
     // release our ticket and further requests can be enqueued into the raft
-    // layer.
+    // layer. The fence units are released as well: the batch position in the
+    // raft queue is fixed so the batch can't be reordered anymore.
     auto enqueued_fut = co_await ss::coroutine::as_future(
       std::move(replicate_stages.request_enqueued));
 
+    fence->unit.return_all();
     ticket.release(); // always release the ticket
 
     if (enqueued_fut.failed()) {
