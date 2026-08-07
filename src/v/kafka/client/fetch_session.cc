@@ -9,6 +9,7 @@
 
 #include "kafka/client/fetch_session.h"
 
+#include "kafka/client/logger.h"
 #include "kafka/protocol/fetch.h"
 #include "kafka/protocol/schemata/offset_commit_request.h"
 
@@ -39,13 +40,30 @@ void fetch_session::reseed(
     _offsets[model::topic{tpv.topic}][tpv.partition] = new_offset;
 }
 
+void fetch_session::reset_session() {
+    _id = invalid_fetch_session_id;
+    _epoch = initial_fetch_session_epoch;
+}
+
 void fetch_session::update_session_state(const fetch_response& res) {
     const auto res_id = fetch_session_id{res.data.session_id};
 
     if (!has_session()) {
         _id = res_id;
+    } else if (res_id != _id) {
+        // This side and the broker no longer agree on the session, e.g. the
+        // broker dropped a session that went empty. The session is a
+        // disposable optimization and the consumed positions live in
+        // _offsets, so forget it and let the next fetch re-establish one.
+        vlog(
+          kclog.warn,
+          "fetch response session_id {} does not match session {}; resetting "
+          "session",
+          res_id,
+          *this);
+        reset_session();
+        return;
     }
-    vassert(res_id == _id, "session mismatch: {}", *this);
     ++_epoch;
 }
 

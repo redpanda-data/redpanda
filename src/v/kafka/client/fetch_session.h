@@ -85,6 +85,10 @@ private:
     /// happens to the response on our side.
     void update_session_state(const fetch_response& res);
 
+    /// \brief Forget the session, so the next fetch re-establishes one with a
+    /// full (epoch 0) fetch. The consumed positions in _offsets survive.
+    void reset_session();
+
     bool has_session() const { return _id != kafka::invalid_fetch_session_id; }
 
     /// \brief Compact each partition-offset map to its current size, e.g.

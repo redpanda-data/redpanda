@@ -231,6 +231,34 @@ redpanda_cc_btest(
     ],
 )
 
+redpanda_cc_gtest(
+    name = "fetch_session_broker_test",
+    timeout = "short",
+    srcs = [
+        "fetch_session_broker.cc",
+    ],
+    deps = [
+        "//src/v/cluster:client_quota_backend",
+        "//src/v/cluster:cluster_utils",
+        "//src/v/cluster:controller_log_limiter",
+        "//src/v/cluster:data_migration_table",
+        "//src/v/cluster:feature_backend",
+        "//src/v/cluster:leader_balancer_strategy",
+        "//src/v/cluster:node_status_backend",
+        "//src/v/cluster:self_test",
+        "//src/v/cluster:topic_metrics_watcher",
+        "//src/v/kafka/client",
+        "//src/v/kafka/client/test:fixture",
+        "//src/v/kafka/protocol",
+        "//src/v/kafka/protocol:fetch",
+        "//src/v/model",
+        "//src/v/redpanda/tests:fixture",
+        "//src/v/test_utils:gtest",
+        "@googletest//:gtest",
+        "@seastar",
+    ],
+)
+
 redpanda_cc_btest(
     name = "produce",
     timeout = "short",
