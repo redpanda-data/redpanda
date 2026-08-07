@@ -3489,6 +3489,25 @@ chunked_vector<model::topic_partition> offset_store::filter_expired_offsets(
         .count());
 
     const auto now = model::timestamp::now();
+
+    /*
+     * the partitions that open transactions stage a value for. the scan below
+     * runs in one reactor task, so it tests each offset with one lookup here.
+     * the keys are views over the transactions, which this function does not
+     * modify.
+     */
+    chunked_hash_set<model::topic_partition_view> staged;
+    for (const auto& producer : _producers) {
+        const auto& tx = producer.second.transaction;
+        if (tx == nullptr) {
+            continue;
+        }
+        for (const auto& o : tx->offsets) {
+            staged.insert(
+              model::topic_partition_view(o.first.topic, o.first.partition));
+        }
+    }
+
     chunked_vector<model::topic_partition> offsets;
     for (const auto& [topic, partitions] : _offsets) {
         const auto topic_subscribed = subscribed(topic);
@@ -3500,10 +3519,12 @@ chunked_vector<model::topic_partition> offset_store::filter_expired_offsets(
             model::topic_partition tp(topic, pid);
             /*
              * an offset won't be removed if its topic has an active
-             * subscription or there are pending offset commits for the
-             * offset's topic.
+             * subscription, if a plain commit for it is pending, or if an
+             * open transaction has a value staged for it.
              */
-            if (topic_subscribed || _pending_offset_commits.contains(tp)) {
+            if (
+              topic_subscribed || _pending_offset_commits.contains(tp)
+              || staged.contains(tp)) {
                 continue;
             }
 

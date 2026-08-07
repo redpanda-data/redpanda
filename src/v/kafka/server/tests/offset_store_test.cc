@@ -1427,3 +1427,28 @@ TEST_F_CORO(offset_store_test, the_timer_leaves_live_transactions_alone) {
     ASSERT_TRUE_CORO(timed.store->has_transactions_in_progress());
     ASSERT_TRUE_CORO(timed.coordinator->asked_about.empty());
 }
+
+// an open transaction stages its offsets on the producer, so the guard reads
+// there as well as in the pending commit map
+TEST_F(offset_store_test, expiry_skips_an_offset_a_transaction_staged) {
+    constexpr auto retention = 24h;
+    const auto retention_secs
+      = std::chrono::duration_cast<std::chrono::seconds>(retention);
+    const auto long_ago = model::timestamp(
+      model::timestamp::now().value()
+      - std::chrono::milliseconds(retention * 2).count());
+
+    const auto staged = tp("t", 0);
+    const auto idle = tp("t", 1);
+    store.try_upsert_offset(staged, committed(10, 100, long_ago));
+    store.try_upsert_offset(idle, committed(10, 100, long_ago));
+
+    open_tx(
+      model::producer_identity{7, 1}, staged_tx(model::tx_seq(1), staged));
+
+    auto expired = store.filter_expired_offsets(
+      retention_secs, none_subscribed, expires_at_commit);
+
+    ASSERT_EQ(expired.size(), 1);
+    ASSERT_EQ(expired[0], idle);
+}

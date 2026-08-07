@@ -92,6 +92,21 @@ static join_group_response join_resp() {
       kafka::member_id("m"));
 }
 
+// group exposes the offsets map rather than a single offset
+static std::optional<group::offset_metadata>
+committed_offset(const group& g, const model::topic_partition& tp) {
+    const auto& offsets = g.offsets();
+    auto t_it = offsets.find(tp.topic);
+    if (t_it == offsets.end()) {
+        return std::nullopt;
+    }
+    auto p_it = t_it->second.find(tp.partition);
+    if (p_it == t_it->second.end()) {
+        return std::nullopt;
+    }
+    return p_it->second->metadata;
+}
+
 SEASTAR_THREAD_TEST_CASE(id) {
     auto g = get();
     BOOST_TEST(g.id() == "g");
@@ -566,6 +581,90 @@ SEASTAR_THREAD_TEST_CASE(add_new_static_member) {
     BOOST_TEST(m2->client_host() == m2_client_host);
     BOOST_TEST(m2->session_timeout() == m2_session_timeout);
     BOOST_TEST(m2->rebalance_timeout() == m2_rebalance_timeout);
+}
+
+// an offset that an open transaction stages survives expiry, and the
+// unstaged offset beside it is reclaimed
+SEASTAR_THREAD_TEST_CASE(expiry_retains_offset_staged_by_open_transaction) {
+    auto g = get();
+
+    const model::topic topic("t");
+    const model::topic_partition staged(topic, model::partition_id(0));
+    const model::topic_partition unstaged(topic, model::partition_id(1));
+
+    // committed an hour ago, past the retention period applied below
+    const auto committed_at = model::timestamp(
+      model::timestamp::now()() - std::chrono::milliseconds(1h).count());
+
+    for (const auto& tp : {staged, unstaged}) {
+        g.try_upsert_offset(
+          tp,
+          group::offset_metadata{
+            .log_offset = model::offset(0),
+            .offset = model::offset(10),
+            .committed_leader_epoch = kafka::leader_epoch(1),
+            .commit_timestamp = committed_at,
+          });
+    }
+
+    group::ongoing_transaction tx(
+      model::tx_seq(0), model::partition_id(0), 30s, model::offset(1));
+    tx.offsets[staged] = group::pending_tx_offset{
+      .offset_metadata = group_tx::partition_offset{
+        .tp = staged,
+        .offset = model::offset(20),
+        .leader_epoch = 1,
+      },
+      .log_offset = model::offset(1)};
+    g.insert_ongoing_tx(model::producer_identity(1, 0), std::move(tx));
+
+    const auto expired = g.delete_expired_offsets(60s);
+
+    BOOST_REQUIRE(expired.size() == 1);
+    BOOST_REQUIRE(expired.front() == unstaged);
+    BOOST_TEST(committed_offset(g, staged).has_value());
+    BOOST_TEST(!committed_offset(g, unstaged).has_value());
+}
+
+// the same guard with no transaction open: a plain commit in flight keeps
+// its offset, and the idle offset beside it is reclaimed
+SEASTAR_THREAD_TEST_CASE(expiry_retains_offset_with_pending_commit) {
+    auto g = get();
+
+    const model::topic topic("t");
+    const model::topic_partition pending(topic, model::partition_id(0));
+    const model::topic_partition idle(topic, model::partition_id(1));
+
+    const auto committed_at = model::timestamp(
+      model::timestamp::now()() - std::chrono::milliseconds(1h).count());
+
+    for (const auto& tp : {pending, idle}) {
+        g.try_upsert_offset(
+          tp,
+          group::offset_metadata{
+            .log_offset = model::offset(0),
+            .offset = model::offset(10),
+            .committed_leader_epoch = kafka::leader_epoch(1),
+            .commit_timestamp = committed_at,
+          });
+    }
+
+    // records a pending commit for `pending` without replicating it
+    offset_commit_request req;
+    req.data.group_id = g.id();
+    auto& req_topic = req.data.topics.emplace_back(
+      offset_commit_request_topic{.name = topic});
+    req_topic.partitions.push_back(
+      {.partition_index = pending.partition,
+       .committed_offset = model::offset(20)});
+    BOOST_REQUIRE(g.prepare_offset_commits(req).has_value());
+
+    const auto expired = g.delete_expired_offsets(60s);
+
+    BOOST_REQUIRE(expired.size() == 1);
+    BOOST_REQUIRE(expired.front() == idle);
+    BOOST_TEST(committed_offset(g, pending).has_value());
+    BOOST_TEST(!committed_offset(g, idle).has_value());
 }
 
 } // namespace kafka
