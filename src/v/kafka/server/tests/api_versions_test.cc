@@ -8,6 +8,8 @@
 // by the Apache License, Version 2.0
 
 #include "features/feature_table.h"
+#include "kafka/protocol/consumer_group_describe.h"
+#include "kafka/protocol/consumer_group_heartbeat.h"
 #include "kafka/protocol/describe_redpanda_roles.h"
 #include "kafka/protocol/types.h"
 #include "kafka/server/handlers/api_versions.h"
@@ -15,6 +17,28 @@
 #include "test_utils/boost_fixture.h"
 
 #include <algorithm>
+
+namespace {
+
+/// The APIs a broker advertises. get_supported_apis() is built from the handler
+/// list alone, so it also carries the gated-off KIP-848 keys.
+///
+/// TODO(kip-848): delete once the protocol starts advertising; the tests below
+/// should then compare against get_supported_apis() directly.
+chunked_vector<kafka::api_versions_response_key> expected_advertised_apis() {
+    auto apis = kafka::get_supported_apis();
+    auto to_remove = std::ranges::remove_if(
+      apis,
+      [](kafka::api_key::type key) {
+          return key == kafka::consumer_group_heartbeat_api::key
+                 || key == kafka::consumer_group_describe_api::key;
+      },
+      &kafka::api_versions_response_key::api_key);
+    apis.erase_to_end(to_remove.begin());
+    return apis;
+}
+
+} // namespace
 
 // https://github.com/apache/kafka/blob/eaccb92/core/src/test/scala/unit/kafka/server/ApiVersionsRequestTest.scala
 
@@ -29,7 +53,7 @@ FIXTURE_TEST(validate_latest_version, redpanda_thread_fixture) {
     BOOST_TEST(response.data.error_code == kafka::error_code::none);
     client.stop().then([&client] { client.shutdown(); }).get();
 
-    auto expected = kafka::get_supported_apis();
+    auto expected = expected_advertised_apis();
     BOOST_TEST(response.data.api_keys == expected);
 }
 
@@ -42,7 +66,7 @@ FIXTURE_TEST(validate_v0, redpanda_thread_fixture) {
     BOOST_TEST(response.data.error_code == kafka::error_code::none);
     client.stop().then([&client] { client.shutdown(); }).get();
 
-    auto expected = kafka::get_supported_apis();
+    auto expected = expected_advertised_apis();
     BOOST_TEST(response.data.api_keys == expected);
 }
 
@@ -125,4 +149,31 @@ SEASTAR_THREAD_TEST_CASE(reserved_api_gated_by_feature) {
     auto r2 = make_resp();
     kafka::remove_unavailable_reserved_apis(r2, active);
     BOOST_CHECK(has_key(r2));
+}
+
+SEASTAR_THREAD_TEST_CASE(consumer_group_apis_gated) {
+    // Keys 68/69 must stay hidden even on a cluster with every feature active,
+    // since nothing can serve them yet.
+    auto make_resp = [] {
+        kafka::api_versions_response r;
+        for (auto key :
+             {kafka::consumer_group_heartbeat_api::key,
+              kafka::consumer_group_describe_api::key}) {
+            r.data.api_keys.push_back(
+              kafka::api_versions_response_key{
+                key, kafka::api_version{1}, kafka::api_version{1}});
+        }
+        return r;
+    };
+
+    features::feature_table inactive;
+    auto r1 = make_resp();
+    kafka::remove_unavailable_consumer_group_apis(r1, inactive);
+    BOOST_CHECK(r1.data.api_keys.empty());
+
+    features::feature_table active;
+    active.testing_activate_all();
+    auto r2 = make_resp();
+    kafka::remove_unavailable_consumer_group_apis(r2, active);
+    BOOST_CHECK(r2.data.api_keys.empty());
 }

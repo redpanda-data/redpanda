@@ -448,6 +448,34 @@ path_type_map = {
     "AlterUserScramCredentialsResponseData": {
         "Results": {"User": ("kafka::scram_user_name", "string")},
     },
+    "ConsumerGroupHeartbeatRequestData": {
+        "TopicPartitions": {
+            "TopicId": ("model::topic_id", "uuid"),
+        },
+    },
+    "ConsumerGroupHeartbeatResponseData": {
+        "Assignment": {
+            "TopicPartitions": {
+                "TopicId": ("model::topic_id", "uuid"),
+            },
+        },
+    },
+    "ConsumerGroupDescribeResponseData": {
+        "Groups": {
+            "Members": {
+                "Assignment": {
+                    "TopicPartitions": {
+                        "TopicId": ("model::topic_id", "uuid"),
+                    },
+                },
+                "TargetAssignment": {
+                    "TopicPartitions": {
+                        "TopicId": ("model::topic_id", "uuid"),
+                    },
+                },
+            },
+        },
+    },
 }
 
 # a few kafka field types specify an entity type
@@ -549,6 +577,33 @@ struct_renames = {
 
     ("FetchResponseData", "Responses", "Partitions", "DivergingEpoch"):
         ("EpochEndOffset", "DivergingEpochEndOffset"),
+
+    # KIP-848 (api keys 68/69). Every generated struct lands in namespace kafka,
+    # so these short Kafka-side names need qualifying: TopicPartitions and
+    # Assignment recur across the three schemata with differing fields,
+    # DescribedGroup is taken by describe_groups_response, and Member is too
+    # generic. Describe's Assignment and TargetAssignment map to one name
+    # because they are one struct and must generate one type.
+    ("ConsumerGroupHeartbeatRequestData", "TopicPartitions"):
+        ("TopicPartitions", "ConsumerGroupHeartbeatRequestTopicPartitions"),
+
+    ("ConsumerGroupHeartbeatResponseData", "Assignment"):
+        ("Assignment", "ConsumerGroupHeartbeatResponseAssignment"),
+    ("ConsumerGroupHeartbeatResponseData", "Assignment", "TopicPartitions"):
+        ("TopicPartitions", "ConsumerGroupHeartbeatResponseTopicPartitions"),
+
+    ("ConsumerGroupDescribeResponseData", "Groups"):
+        ("DescribedGroup", "ConsumerGroupDescribeResponseDescribedGroup"),
+    ("ConsumerGroupDescribeResponseData", "Groups", "Members"):
+        ("Member", "ConsumerGroupDescribeResponseMember"),
+    ("ConsumerGroupDescribeResponseData", "Groups", "Members", "Assignment"):
+        ("Assignment", "ConsumerGroupDescribeResponseAssignment"),
+    ("ConsumerGroupDescribeResponseData", "Groups", "Members", "TargetAssignment"):
+        ("Assignment", "ConsumerGroupDescribeResponseAssignment"),
+    ("ConsumerGroupDescribeResponseData", "Groups", "Members", "Assignment", "TopicPartitions"):
+        ("TopicPartitions", "ConsumerGroupDescribeResponseTopicPartitions"),
+    ("ConsumerGroupDescribeResponseData", "Groups", "Members", "TargetAssignment", "TopicPartitions"):
+        ("TopicPartitions", "ConsumerGroupDescribeResponseTopicPartitions"),
 }
 
 # extra header per type name
@@ -644,6 +699,8 @@ STRUCT_TYPES = [
     "ListedGroup",
     "DescribedGroup",
     "DescribedGroupMember",
+    "Member",
+    "TopicPartitions",
     "CreatableTopic",
     "CreatableTopicResult",
     "CreatableReplicaAssignment",
@@ -733,7 +790,7 @@ STRUCT_TYPES = [
 ]
 
 # A list of StructTypes that are allowed to be not arrays in the schema.
-ALLOWED_SINGULAR_STRUCT_TYPES = ["EpochEndOffset"]
+ALLOWED_SINGULAR_STRUCT_TYPES = ["EpochEndOffset", "Assignment"]
 
 DROP_STREAM_OPERATOR = [
     "metadata_response_data",
@@ -760,7 +817,13 @@ TAGGED_WITH_FIELDS = []
 # respective types are correctly not prefixed with [].
 # They must not be treated as ArrayTypes
 # This list is the names after struct_renames have been applied.
-SINGULAR_STRUCT_TYPES = ["DivergingEpochEndOffset", "LeaderIdAndEpoch", "SnapshotId"]
+SINGULAR_STRUCT_TYPES = [
+    "DivergingEpochEndOffset",
+    "LeaderIdAndEpoch",
+    "SnapshotId",
+    "ConsumerGroupHeartbeatResponseAssignment",
+    "ConsumerGroupDescribeResponseAssignment",
+]
 
 SCALAR_TYPES = list(basic_type_map.keys())
 ENTITY_TYPES = list(entity_type_map.keys())
@@ -949,19 +1012,46 @@ class StructType(FieldType):
         """Format string for output operator"""
         return " ".join(map(lambda f: f"{f.name}={{}}", self.fields))
 
+    def shape(self):
+        """
+        Everything the generated definition of this struct depends on. Two
+        structs sharing a generated name must agree on it to share a type.
+        """
+        return [
+            (f.name, f.type_name, f.nullable(), f.tag())
+            for f in self.fields + self.tags
+        ]
+
     def structs(self):
         """
-        Return all struct types reachable from this struct.
+        Return all struct types reachable from this struct, innermost first and
+        each named type once.
+
+        Callers render one C++ definition per element, so two fields carrying
+        the same struct type must collapse to a single entry (e.g.
+        ConsumerGroupDescribeResponse's Assignment and TargetAssignment).
+        Keeping the first occurrence preserves the innermost-first order that
+        makes each definition precede its uses.
         """
         res = []
+        seen = {}
         all_fields = self.fields + self.tags
         for field in all_fields:
             t = field.type()
             if isinstance(t, ArrayType):
                 t = t.value_type()  # unwrap value type
             if isinstance(t, StructType):
-                res += t.structs()
-                res.append(t)
+                for s in t.structs() + [t]:
+                    if s.name not in seen:
+                        seen[s.name] = s
+                        res.append(s)
+                    else:
+                        # The name is taken. Same struct: drop the duplicate.
+                        # Different struct: only the first would be rendered,
+                        # so rename one via struct_renames.
+                        assert seen[s.name].shape() == s.shape(), (
+                            f"conflicting definitions for struct '{s.name}'"
+                        )
         return res
 
     def headers(self, which):
@@ -1043,6 +1133,24 @@ class Field:
         if self._tagged_versions is not None:
             self._tagged_versions = VersionRange(self._tagged_versions)
         assert len(self._path)
+        # A null struct is marked with a plain int8 when the field is ordinary
+        # and with an unsigned varint when it is tagged. We emit only the int8
+        # form, which is all any schema needs today. Fail if a schema ever
+        # needs the other, rather than write bytes Kafka would misread.
+        assert not (self.is_tag and self.nullable() and self._type.is_struct), (
+            f"nullable tagged struct field is not supported: {self._path}"
+        )
+        if self._type.is_struct and self._nullable_versions is not None:
+            # Kafka writes the null marker only in the versions listed in
+            # nullableVersions. We write it in every version the field appears
+            # in, which produces the same bytes only where the two ranges are
+            # equal. They are equal for every nullable struct Kafka defines
+            # today. Fail if a schema ever makes them differ.
+            nullable, present = self._nullable_versions, self._versions
+            assert (nullable.min, nullable.max) == (present.min, present.max), (
+                f"struct nullable in only some of its versions is not "
+                f"supported: {self._path}"
+            )
 
     @staticmethod
     def create(field, path):
@@ -1499,6 +1607,17 @@ if ({{ cond }}) {
     {{ writer }}.write(v);
 {%- endif %}
 });
+{%- elif field.type().is_struct %}
+{%- if field.nullable() %}
+if (!{{ fname }}) {
+    {{ writer }}.write(int8_t(-1));
+} else {
+    {{ writer }}.write(int8_t(1));
+{{- struct_serde(field.type(), methods, "(*" ~ fname ~ ")", writer) | indent }}
+}
+{%- else %}
+{{- struct_serde(field.type(), methods, fname, writer) }}
+{%- endif %}
 {%- elif flex and field.type().potentially_flexible_type %}
 {{ writer }}.write_flex({{ fname }});
 {%- else %}
@@ -1534,7 +1653,16 @@ if ({{ cond }}) {
 });
 {%- else %}
 {%- if field.type().is_struct -%}
-{{- struct_serde(field.type(), methods, "v." ~ field.name) -}}
+{%- if field.nullable() %}
+if (reader.read_int8() < 0) {
+    {{ fname }} = std::nullopt;
+} else {
+    {{ fname }}.emplace();
+{{- struct_serde(field.type(), methods, "(*" ~ fname ~ ")") | indent }}
+}
+{%- else -%}
+{{- struct_serde(field.type(), methods, fname) -}}
+{%- endif %}
 {%- else -%}
 {%- set decoder, named_type = field.decoder(flex) %}
 {%- if named_type == None %}

@@ -40,4 +40,7 @@ chunked_vector<api_versions_response_key> get_supported_apis();
 void remove_unavailable_reserved_apis(
   api_versions_response& r, const features::feature_table& ft);
 
+void remove_unavailable_consumer_group_apis(
+  api_versions_response& r, const features::feature_table& ft);
+
 } // namespace kafka

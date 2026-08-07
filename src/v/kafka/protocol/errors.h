@@ -240,6 +240,20 @@ enum class error_code : int16_t {
     unknown_topic_id = 100,
     // The transactional_id could not be found for describe tx request.
     transactional_id_not_found = 105,
+    // The member epoch is fenced by the group coordinator. The member must
+    // abandon all its partitions and rejoin.
+    fenced_member_epoch = 110,
+    // The instance ID is still used by another member in the consumer group.
+    // That member must leave first.
+    unreleased_instance_id = 111,
+    // The assignor or its version range is not supported by the consumer
+    // group.
+    unsupported_assignor = 112,
+    // The member epoch is stale. The member must retry after receiving its
+    // updated member epoch via the ConsumerGroupHeartbeat API.
+    stale_member_epoch = 113,
+    // The regular expression is not valid.
+    invalid_regular_expression = 128,
 };
 
 std::string_view error_code_to_str(error_code error);

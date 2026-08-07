@@ -471,6 +471,8 @@ redpanda_cc_btest(
         "//src/v/cluster:topic_metrics_watcher",
         "//src/v/features",
         "//src/v/kafka/protocol",
+        "//src/v/kafka/protocol:consumer_group_describe",
+        "//src/v/kafka/protocol:consumer_group_heartbeat",
         "//src/v/kafka/protocol:describe_redpanda_roles",
         "//src/v/kafka/server",
         "//src/v/redpanda/tests:fixture",
