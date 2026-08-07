@@ -30,6 +30,7 @@
 #include "kafka/server/group_metadata.h"
 #include "kafka/server/group_probe.h"
 #include "kafka/server/member.h"
+#include "kafka/server/offset_store.h"
 #include "kafka/server/stages.h"
 #include "model/fundamental.h"
 #include "model/record.h"
@@ -143,121 +144,28 @@ public:
     using duration_type = clock_type::duration;
     using time_point_type = clock_type::time_point;
 
-    static constexpr int8_t fence_control_record_v0_version{0};
-    static constexpr int8_t fence_control_record_v1_version{1};
-    static constexpr int8_t fence_control_record_version{2};
-    static constexpr int8_t prepared_tx_record_version{0};
-    static constexpr int8_t commit_tx_record_version{0};
-    static constexpr int8_t aborted_tx_record_version{0};
+    static constexpr int8_t fence_control_record_v0_version{
+      offset_store::fence_control_record_v0_version};
+    static constexpr int8_t fence_control_record_v1_version{
+      offset_store::fence_control_record_v1_version};
+    static constexpr int8_t fence_control_record_version{
+      offset_store::fence_control_record_version};
+    static constexpr int8_t prepared_tx_record_version{
+      offset_store::prepared_tx_record_version};
+    static constexpr int8_t commit_tx_record_version{
+      offset_store::commit_tx_record_version};
+    static constexpr int8_t aborted_tx_record_version{
+      offset_store::aborted_tx_record_version};
 
     template<typename Result>
     using stages = kafka::stages<Result>;
     using offset_commit_stages = kafka::offset_commit_stages;
     using join_group_stages = kafka::join_group_stages;
     using sync_group_stages = kafka::sync_group_stages;
-    /**
-     * represents an offset that is to be stored as a part of transaction
-     */
-    struct pending_tx_offset {
-        group_tx::partition_offset offset_metadata;
-        model::offset log_offset;
-    };
-    /**
-     * In memory representation of active transaction. The transaction is added
-     * when a state machine executes begin transaction request. The transaction
-     * is removed when the state machine executes commit or abort transaction
-     * request. The transaction holds all pending offset commits.
-     */
-    struct ongoing_transaction {
-        ongoing_transaction(
-          model::tx_seq,
-          model::partition_id,
-          model::timeout_clock::duration,
-          model::offset);
 
-        model::tx_seq tx_seq;
-        model::partition_id coordinator_partition;
-
-        model::timeout_clock::duration timeout;
-        model::timeout_clock::time_point last_update;
-
-        bool is_expiration_requested{false};
-        model::offset begin_offset{-1};
-
-        model::timeout_clock::time_point deadline() const {
-            return last_update + timeout;
-        }
-
-        bool is_expired() const {
-            return is_expiration_requested || deadline() <= clock_type::now();
-        }
-
-        void update_last_update_time() {
-            last_update = model::timeout_clock::now();
-        }
-
-        chunked_hash_map<model::topic_partition, pending_tx_offset> offsets;
-    };
-
-    struct tx_producer {
-        explicit tx_producer(model::producer_epoch);
-
-        model::producer_epoch epoch;
-        std::unique_ptr<ongoing_transaction> transaction;
-    };
-
-    using producers_map = chunked_hash_map<model::producer_id, tx_producer>;
-
-    struct offset_metadata {
-        model::offset log_offset;
-        model::offset offset;
-        ss::sstring metadata;
-        kafka::leader_epoch committed_leader_epoch;
-        model::timestamp commit_timestamp;
-        std::optional<model::timestamp> expiry_timestamp;
-        /*
-         * this is an offset that was written prior to upgrading to redpanda
-         * with offset retention support. because these offsets did not
-         * persistent retention metadata we act conservatively and skip
-         * automatic reclaim. offset delete api can be used to remove them.
-         */
-        bool non_reclaimable{false};
-
-        fmt::iterator format_to(fmt::iterator it) const;
-    };
-
-    struct offset_metadata_with_probe {
-        offset_metadata metadata;
-        group_offset_probe probe;
-        metrics_conversion_binding enable_group_metrics;
-
-        offset_metadata_with_probe(
-          offset_metadata _metadata,
-          const kafka::group_id& group_id,
-          const model::topic_partition& tp,
-          metrics_conversion_binding _enable_group_metrics)
-          : metadata(std::move(_metadata))
-          , probe(metadata.offset)
-          , enable_group_metrics(std::move(_enable_group_metrics)) {
-            const auto metrics_registration = [this, group_id, tp]() {
-                if (enable_group_metrics().partition) {
-                    probe.register_metrics(group_id, tp);
-                    probe.register_public_metrics(group_id, tp);
-                } else {
-                    probe.deregister_metrics();
-                    probe.deregister_public_metrics();
-                }
-            };
-
-            enable_group_metrics.watch(metrics_registration);
-            metrics_registration();
-        }
-    };
-
-    using partition_offsets_map = chunked_hash_map<
-      model::partition_id,
-      std::unique_ptr<offset_metadata_with_probe>>;
-    using offsets_map = chunked_hash_map<model::topic, partition_offsets_map>;
+    using pending_tx_offset = offset_store::pending_tx_offset;
+    using ongoing_transaction = offset_store::ongoing_transaction;
+    using offset_metadata = offset_store::offset_metadata;
 
     group(
       kafka::group_id id,
@@ -661,7 +569,7 @@ public:
         }
     }
 
-    const producers_map& producers() const { return _producers; }
+    const offset_store::producers_map& producers() const { return _producers; }
 
     // helper for the kafka api: describe groups
     described_group describe() const;
@@ -951,7 +859,7 @@ private:
     ss::lw_shared_ptr<cluster::partition> _partition;
     offsets_map _offsets;
     consumer_lag_metrics _lag_metrics;
-    group_probe<model::topic, partition_offsets_map> _probe;
+    group_probe<model::topic, offset_store::partition_offsets_map> _probe;
     ctx_log _ctxlog;
     ctx_log _ctx_txlog;
     /**

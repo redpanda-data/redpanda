@@ -259,6 +259,7 @@ redpanda_cc_library(
         "handlers/txn_offset_commit.h",
         "kafka_probe.h",
         "member.h",
+        "offset_store.h",
         "protocol_utils.h",
         "queue_depth_monitor.h",
         "quota_manager.h",

@@ -216,7 +216,7 @@ bool group::valid_previous_state(group_state s) const {
     __builtin_unreachable();
 }
 
-group::ongoing_transaction::ongoing_transaction(
+offset_store::ongoing_transaction::ongoing_transaction(
   model::tx_seq tx_seq,
   model::partition_id coordinator_partition,
   model::timeout_clock::duration tx_timeout,
@@ -227,7 +227,7 @@ group::ongoing_transaction::ongoing_transaction(
   , last_update(model::timeout_clock::now())
   , begin_offset(begin_offset) {}
 
-group::tx_producer::tx_producer(model::producer_epoch epoch)
+offset_store::tx_producer::tx_producer(model::producer_epoch epoch)
   : epoch(epoch) {}
 
 namespace {
@@ -3415,7 +3415,7 @@ void group::try_arm(time_point_type deadline) {
     }
 }
 
-fmt::iterator group::offset_metadata::format_to(fmt::iterator it) const {
+fmt::iterator offset_store::metadata::format_to(fmt::iterator it) const {
     return fmt::format_to(
       it,
       "{{log_offset:{}, offset:{}, metadata:{}, "
