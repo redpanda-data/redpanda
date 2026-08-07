@@ -25,7 +25,7 @@ jobs:
           go-version: stable
           cache-dependency-path: src/go/rpk/go.mod
       - name: Run golangci-lint
-        uses: golangci/golangci-lint-action@v6
+        uses: golangci/golangci-lint-action@v9
         with:
           version: latest
           args: --timeout 10m --verbose
