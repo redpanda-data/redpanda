@@ -62,6 +62,14 @@ class ctp_stm final : public raft::persisted_stm<> {
 
     static constexpr auto sync_timeout = std::chrono::seconds(10);
 
+    /// Minimum time a fence attempt must be blocked on the same unresolved
+    /// seen-window bump before it gives up the leadership. Must not exceed
+    /// ctp_stm_api::default_fence_epoch_timeout: the housekeeper epoch
+    /// advance is the recovery trigger on partitions with no produce
+    /// traffic.
+    static constexpr auto default_stuck_bump_min_wait = std::chrono::seconds(
+      10);
+
 public:
     static constexpr const char* name = "ctp_stm";
 
@@ -128,6 +136,16 @@ public:
 private:
     ss::future<> do_apply(const model::record_batch&) override;
 
+    /// Give up the leadership if a fence attempt spent at least
+    /// _stuck_bump_min_wait blocked on the same unresolved seen-window
+    /// bump: nothing can resolve it anymore and only a new term (which
+    /// restarts the admission window from the applied state) can unblock
+    /// the partition.
+    ss::future<> maybe_recover_stuck_bump(
+      model::term_id term,
+      model::timeout_clock::time_point wait_start,
+      cluster_epoch observed_bump);
+
     void apply_placeholder(const model::record_batch&);
     void apply_advance_reconciled_offset(model::record);
     void apply_set_start_offset(model::record);
@@ -179,6 +197,10 @@ private:
     // updated by the holder of `_epoch_update_lock` (it is possible that the
     // lock holder may fail to update the epoch).
     ss::condition_variable _epoch_updated_cv;
+
+    /// Recovery floor for maybe_recover_stuck_bump, overridable in tests.
+    std::chrono::milliseconds _stuck_bump_min_wait
+      = default_stuck_bump_min_wait;
 
     /// Current in-memory state of the STM
     ctp_stm_state _state;

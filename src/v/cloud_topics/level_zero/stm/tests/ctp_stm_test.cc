@@ -52,6 +52,10 @@ struct ctp_stm_accessor {
         return stm._epoch_updated_cv.has_waiters();
     }
 
+    void set_stuck_bump_min_wait(ctp_stm& stm, std::chrono::milliseconds d) {
+        stm._stuck_bump_min_wait = d;
+    }
+
     model::offset max_removable_local_log_offset(ctp_stm& stm) {
         return stm.max_removable_local_log_offset();
     }
@@ -1133,12 +1137,17 @@ TEST_F_CORO(ctp_stm_fixture, test_below_max_fence_rejected_without_batches) {
     // Companion to test_failed_epoch_bump_replicate_poisons_seen_window:
     // while a bump is unresolved a higher bump can't start (fence_epoch
     // waits for the resolution and times out if it never comes) and interior
-    // epochs are rejected.
+    // epochs are rejected. A waiter that spends the recovery floor blocked
+    // on the same unresolved bump gives up the leadership and the next term
+    // restarts the admission window from the applied state.
     co_await start();
     co_await wait_for_leader(raft::default_timeout());
 
     auto& leader = node(*get_leader());
     auto leader_api = api(leader);
+    auto stm = get_stm<0>(leader);
+    ct::ctp_stm_accessor accessor;
+    auto initial_term = leader.raft()->term();
 
     // A fence-time bump; no batch lands for it.
     {
@@ -1159,14 +1168,53 @@ TEST_F_CORO(ctp_stm_fixture, test_below_max_fence_rejected_without_batches) {
     }
     ASSERT_TRUE_CORO(timed_out) << "expected timed_out_error";
 
+    // The wait stayed below the recovery floor: no leadership change.
+    ASSERT_EQ_CORO(leader.raft()->term(), initial_term);
+
     // An interior epoch is rejected outright while the bump is unresolved.
     auto stale_fence = co_await leader_api.fence_epoch(ct::cluster_epoch{120});
     ASSERT_FALSE_CORO(stale_fence.has_value())
       << "below-bump epoch admitted while no epoch batch has been applied";
 
     // A retry at the bump epoch is admissible (it would self-heal).
-    auto retry_fence = co_await leader_api.fence_epoch(ct::cluster_epoch{132});
-    ASSERT_TRUE_CORO(retry_fence.has_value());
+    {
+        auto retry_fence = co_await leader_api.fence_epoch(
+          ct::cluster_epoch{132});
+        ASSERT_TRUE_CORO(retry_fence.has_value());
+    }
+
+    // A waiter that spends the whole recovery floor blocked on the
+    // unresolved bump gives up the leadership.
+    accessor.set_stuck_bump_min_wait(*stm, std::chrono::milliseconds(100));
+    fence_fut = co_await ss::coroutine::as_future(leader_api.fence_epoch(
+      ct::cluster_epoch{141}, std::chrono::milliseconds(500)));
+    ASSERT_TRUE_CORO(fence_fut.failed());
+    fence_fut.ignore_ready_future();
+    RPTEST_REQUIRE_EVENTUALLY_CORO(10s, [&] {
+        auto l = get_leader();
+        return l.has_value() && node(*l).raft()->term() > initial_term;
+    });
+
+    // The new term admits epochs against the applied state: a bump that
+    // would have been blocked by the unresolved bump goes through. Retry
+    // while the leadership settles after the transfer.
+    bool ok = false;
+    for (int i = 0; i < 50 && !ok; ++i) {
+        auto l = get_leader();
+        if (l.has_value()) {
+            auto fut = co_await ss::coroutine::as_future(replicate_with_epoch(
+              node(*l), ct::cluster_epoch{141}, model::offset{0}, 0));
+            if (fut.failed()) {
+                fut.ignore_ready_future();
+            } else {
+                ok = fut.get();
+            }
+        }
+        if (!ok) {
+            co_await ss::sleep(200ms);
+        }
+    }
+    ASSERT_TRUE_CORO(ok);
 }
 
 TEST_F_CORO(ctp_stm_fixture, test_below_max_fence_allowed_after_epoch_landed) {

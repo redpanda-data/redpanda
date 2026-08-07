@@ -458,6 +458,44 @@ ss::future<iobuf> ctp_stm::take_raft_snapshot(model::offset snapshot_at) {
       ctp_stm_snapshot{.state = _state, .checker = _epoch_checker});
 }
 
+ss::future<> ctp_stm::maybe_recover_stuck_bump(
+  model::term_id term,
+  model::timeout_clock::time_point wait_start,
+  cluster_epoch observed_bump) {
+    if (model::timeout_clock::now() - wait_start < _stuck_bump_min_wait) {
+        co_return;
+    }
+    if (_raft->term() != term || !_raft->is_leader()) {
+        co_return;
+    }
+    if (
+      !_state.has_pending_seen_bump(term)
+      || _state.get_max_seen_epoch(term) != observed_bump) {
+        // The bump resolved or a new one started: progress is being made.
+        co_return;
+    }
+    vlog(
+      _log.warn,
+      "The seen-window bump to epoch {} is unresolved and blocks admission, "
+      "giving up the leadership to restart the window from the applied state",
+      observed_bump);
+    try {
+        // Prefer a graceful transfer: it elects the new leader immediately
+        // instead of waiting out election timeouts.
+        auto reply = co_await _raft->transfer_leadership(
+          raft::transfer_leadership_request{.group = _raft->group()});
+        if (!reply.success) {
+            co_await _raft->step_down_in_term(
+              term, "ctp seen-window bump unresolved");
+        }
+    } catch (...) {
+        vlog(
+          _log.debug,
+          "Failed to give up leadership: {}",
+          std::current_exception());
+    }
+}
+
 ss::future<std::expected<cluster_epoch_fence, stale_cluster_epoch>>
 ctp_stm::fence_epoch(cluster_epoch e, model::timeout_clock::duration timeout) {
     auto holder = _gate.hold();
@@ -473,7 +511,10 @@ ctp_stm::fence_epoch(cluster_epoch e, model::timeout_clock::duration timeout) {
         throw ss::timed_out_error{};
     }
     auto term = _raft->confirmed_term();
-    auto deadline = model::timeout_clock::now() + timeout;
+    auto wait_start = model::timeout_clock::now();
+    auto deadline = wait_start + timeout;
+    // The pending bump this request first found itself blocked on, if any.
+    std::optional<cluster_epoch> observed_bump;
     while (true) {
         if (_state.epoch_in_window(term, e)) {
             // Case 1.1. Same epoch, need to acquire read-lock.
@@ -492,10 +533,25 @@ ctp_stm::fence_epoch(cluster_epoch e, model::timeout_clock::duration timeout) {
                 // Someone else is updating the epoch, or an earlier bump is
                 // not resolved yet (its batch has not been observed by the
                 // apply loop) - wait and re-check.
+                if (
+                  !observed_bump.has_value()
+                  && _state.has_pending_seen_bump(term)) {
+                    observed_bump = _state.get_max_seen_epoch(term);
+                }
                 epoch_update_lock.reset();
+                bool timed_out = false;
                 try {
                     co_await _epoch_updated_cv.wait(deadline);
                 } catch (const ss::condition_variable_timed_out&) {
+                    timed_out = true;
+                }
+                if (timed_out) {
+                    // We spent the whole deadline blocked; if it was on a
+                    // single unresolved bump the partition may be wedged.
+                    if (observed_bump.has_value()) {
+                        co_await maybe_recover_stuck_bump(
+                          term, wait_start, *observed_bump);
+                    }
                     // Translate to the timeout error the fence_epoch
                     // callers handle (mapped to a retryable produce error).
                     throw ss::timed_out_error{};
