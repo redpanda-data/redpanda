@@ -276,19 +276,6 @@ struct background_t {
 } // namespace detail
 inline constexpr detail::background_t background;
 
-/// \brief Create a new future, handling common shutdown exception types.
-inline seastar::future<>
-ignore_shutdown_exceptions(seastar::future<> fut) noexcept {
-    try {
-        co_await std::move(fut);
-    } catch (const seastar::abort_requested_exception&) {
-    } catch (const seastar::gate_closed_exception&) {
-    } catch (const seastar::broken_semaphore&) {
-    } catch (const seastar::broken_promise&) {
-    } catch (const seastar::broken_condition_variable&) {
-    }
-}
-
 /// \brief Check if the exception is a commonly ignored shutdown exception.
 ///
 /// Also checks inside seastar::nested_exception for shutdown exceptions
@@ -314,12 +301,43 @@ inline bool is_shutdown_exception(const std::exception_ptr& e) {
     return false;
 }
 
+namespace detail {
+inline seastar::future<> filter_shutdown_exception(std::exception_ptr ep) {
+    if (is_shutdown_exception(ep)) {
+        return seastar::make_ready_future<>();
+    }
+    return seastar::make_exception_future<>(std::move(ep));
+}
+
+template<typename Future>
+inline seastar::future<> filter_shutdown_exceptions(Future fut) {
+    if (fut.failed()) {
+        return filter_shutdown_exception(fut.get_exception());
+    }
+    return seastar::make_ready_future<>();
+}
+} // namespace detail
+
+/// \brief Create a new future, handling common shutdown exception types.
+///
+/// On the fast path (the input future is already available and succeeded)
+/// the future is returned directly without any continuation.
+inline seastar::future<>
+ignore_shutdown_exceptions(seastar::future<> fut) noexcept {
+    if (fut.available() && !fut.failed()) {
+        return fut;
+    }
+    return std::move(fut).handle_exception([](std::exception_ptr ep) {
+        return detail::filter_shutdown_exception(std::move(ep));
+    });
+}
+
 /// \brief Create a future holding a gate, handling common shutdown exception
 /// types.  Returns the resulting future, onto which further exception handling
 /// may be chained.
 ///
-/// \param g Gate to enter, passed through to ss::try_with_gate
-/// \param func Function to invoke, passed through to ss::try_with_gate
+/// \param g Gate to hold while invoking func
+/// \param func Function to invoke while the gate is held
 ///
 /// This is an alternative to spawn_with_gate for when the caller wants to
 /// do extra exception handling, such as ignoring+logging all exceptions in
@@ -327,9 +345,16 @@ inline bool is_shutdown_exception(const std::exception_ptr& e) {
 /// gate_closed_exception or abort_requested_exception, avoiding log
 /// noise on shutdown if the caller is logging exceptions.
 template<typename Func>
-inline auto spawn_with_gate_then(seastar::gate& g, Func&& func) noexcept {
-    return ignore_shutdown_exceptions(
-      seastar::try_with_gate(g, std::forward<Func>(func)));
+inline seastar::future<>
+spawn_with_gate_then(seastar::gate& g, Func&& func) noexcept {
+    if (g.is_closed()) [[unlikely]] {
+        return seastar::make_ready_future<>();
+    }
+    auto gate_holder = g.hold();
+    return seastar::futurize_invoke(std::forward<Func>(func))
+      .then_wrapped([gate_holder = std::move(gate_holder)](auto fut) mutable {
+          return detail::filter_shutdown_exceptions(std::move(fut));
+      });
 }
 
 /// \brief Detach a fiber holding a gate, with exception handling to ignore
