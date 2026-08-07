@@ -64,7 +64,10 @@ void fetch_session::update_session_state(const fetch_response& res) {
         reset_session();
         return;
     }
-    ++_epoch;
+
+    if (has_session()) {
+        ++_epoch;
+    }
 }
 
 void fetch_session::rehash_offsets() {

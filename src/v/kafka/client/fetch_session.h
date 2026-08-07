@@ -79,10 +79,15 @@ public:
     fmt::iterator format_to(fmt::iterator it) const;
 
 private:
-    /// \brief Common session bookkeeping shared by apply() and
-    /// discard(): seed/validate the session id and advance the
-    /// epoch, since the broker has processed the request regardless of what
-    /// happens to the response on our side.
+    /// \brief Reconcile the tracked session with a response; shared by
+    /// apply() and discard(). The response is authoritative about the id:
+    /// adopt it when we hold no session, forget ours when it names a
+    /// different one. Then advance the epoch only while a session is held:
+    /// the broker advanced its side by processing the request (so discard()
+    /// advances too), but a broker may decline a session and answer
+    /// sessionless, and advancing without one would make the next request
+    /// an incremental fetch against a session that never existed, which the
+    /// broker rejects with fetch_session_id_not_found.
     void update_session_state(const fetch_response& res);
 
     /// \brief Forget the session, so the next fetch re-establishes one with a

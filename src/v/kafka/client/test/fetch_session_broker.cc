@@ -93,6 +93,40 @@ private:
     std::optional<kafka::client::transport> _client;
 };
 
+// Epoch -1 asks for a full fetch that opens no session, so the broker serves
+// records and answers with session id 0. A broker whose session cache is at its
+// memory cap answers the same way, having declined to open one.
+TEST_F(FetchSessionBrokerTest, SessionlessResponseStillDeliversRecords) {
+    connect_to_topic_with_data();
+
+    kc::fetch_session s;
+    auto res = fetch(
+      kafka::invalid_fetch_session_id,
+      kafka::final_fetch_session_epoch,
+      model::offset{0});
+    ASSERT_EQ(res.data.error_code, kafka::error_code::none);
+    EXPECT_EQ(res.data.session_id, kafka::invalid_fetch_session_id);
+    ASSERT_EQ(res.data.responses.size(), 1);
+    ASSERT_EQ(res.data.responses[0].partitions.size(), 1);
+    auto& part = res.data.responses[0].partitions[0];
+    ASSERT_EQ(part.error_code, kafka::error_code::none);
+    ASSERT_TRUE(part.records && !part.records->empty());
+    const auto delivered_through = part.records->last_offset();
+
+    s.apply(res);
+
+    // The records were delivered, so the position advances past them.
+    EXPECT_EQ(s.offset(tp()), delivered_through + model::offset{1});
+    // No session was opened though, so the epoch has to stay initial: the next
+    // request must still read as a full fetch, or the broker rejects it with
+    // fetch_session_id_not_found.
+    EXPECT_EQ(s.id(), kafka::invalid_fetch_session_id);
+    EXPECT_EQ(s.epoch(), kafka::initial_fetch_session_epoch);
+    const kafka::fetch_request next{
+      .data = {.session_id = s.id(), .session_epoch = s.epoch()}};
+    EXPECT_TRUE(next.is_full_fetch_request());
+}
+
 // Two full fetches each open their own session, which is what two overlapping
 // fetches on one consumer do: both snapshot epoch 0, so the second response
 // names a session this side never adopted.
