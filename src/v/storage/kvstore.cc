@@ -116,13 +116,18 @@ ss::future<> kvstore::start() {
           });
       },
       [](const std::exception_ptr& e) {
-          // an error mid roll/flush leaves the segment, pending ops and
-          // _next_offset in an unknown state, so neither retrying nor
+          if (ssx::is_shutdown_exception(e)) {
+              // leave the fiber instead of retrying, which would spin
+              // until the gate closes. the rethrown exception is discarded
+              // by spawn_with_gate.
+              vlog(lg.info, "kvstore flush fiber shutdown: {}", e);
+              std::rethrow_exception(e);
+          }
+          // any other error mid roll/flush leaves the segment, pending ops
+          // and _next_offset in an unknown state, so neither retrying nor
           // exiting the fiber is safe (the latter would hang all future
           // puts). on-disk state is crash-safe, so terminate and recover.
-          if (!ssx::is_shutdown_exception(e)) {
-              vunreachable("kvstore flush fiber failed: {}", e);
-          }
+          vunreachable("kvstore flush fiber failed: {}", e);
       });
 }
 
