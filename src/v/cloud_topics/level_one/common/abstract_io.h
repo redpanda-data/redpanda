@@ -15,6 +15,7 @@
 #include "cloud_storage_clients/multipart_upload.h"
 #include "cloud_topics/level_one/common/object_id.h"
 #include "container/chunked_vector.h"
+#include "model/record.h"
 
 #include <seastar/core/file.hh>
 #include <seastar/core/fstream.hh>
@@ -95,13 +96,34 @@ public:
       cloud_io::group_id g,
       bool skip_cache = false) = 0;
 
-    // The same as `read_object` except that instead of returning an input
-    // stream, the data is fully buffered into an `iobuf`.
-    virtual ss::future<std::expected<iobuf, errc>> read_object_as_iobuf(
+    // Read a native L1 object's footer region (the passed extent) fully
+    // buffered into an `iobuf`, so open_object can parse the footer index.
+    // Like read_object, may be served from or populate the cache unless
+    // `skip_cache` is set.
+    virtual ss::future<std::expected<iobuf, errc>> fetch_native_footer(
       object_extent,
       ss::abort_source*,
       cloud_io::group_id g,
       bool skip_cache = false);
+
+    // Fetch the raw serialized offset index (.index sidecar) of an imported
+    // tiered-storage segment. `extent.imported` identifies the segment. Returns
+    // cloud_missing_object when the segment has no .index (the caller falls
+    // back to a full-segment scan). The bytes are returned unparsed so this
+    // thin io seam stays free of the cloud_storage offset-index format;
+    // open_object deserializes them. Only meaningful for imported extents.
+    virtual ss::future<std::expected<iobuf, errc>>
+    fetch_ts_index(object_extent, ss::abort_source*) = 0;
+
+    // Fetch the aborted-transaction ranges of an imported tiered-storage
+    // segment (parsed from its .tx manifest sidecar), in raw log-offset space.
+    // `extent.imported` identifies the segment. Returns cloud_missing_object
+    // when the .tx object is absent. Ranges (rather than the manifest bytes)
+    // are returned so the cloud_storage manifest format stays behind the io
+    // seam; open_object assembles them into the aborted set. Only meaningful
+    // for imported extents.
+    virtual ss::future<std::expected<chunked_vector<model::tx_range>, errc>>
+    fetch_ts_tx(object_extent, ss::abort_source*) = 0;
 
     // Delete the specified objects from object storage.
     virtual ss::future<std::expected<void, errc>>

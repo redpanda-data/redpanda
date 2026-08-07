@@ -207,6 +207,7 @@ redpanda_cc_library(
         ":rpc_types",
         ":state_update",
         "//src/v/cloud_topics:logger",
+        "//src/v/cloud_topics/level_one/common:object_id",
     ],
     visibility = ["//visibility:public"],
     deps = [
