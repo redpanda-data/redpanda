@@ -154,6 +154,20 @@ redpanda_cc_gtest(
 )
 
 redpanda_cc_gtest(
+    name = "data_file_test",
+    timeout = "short",
+    srcs = ["data_file_test.cc"],
+    deps = [
+        "//src/v/bytes",
+        "//src/v/datalake:base_types",
+        "//src/v/datalake/coordinator:data_file",
+        "//src/v/datalake/coordinator:translated_offset_range",
+        "//src/v/test_utils:gtest",
+        "@googletest//:gtest",
+    ],
+)
+
+redpanda_cc_gtest(
     name = "state_machine_test",
     timeout = "short",
     srcs = [
@@ -169,9 +183,14 @@ redpanda_cc_gtest(
         "//src/v/datalake:record_schema_resolver",
         "//src/v/datalake/coordinator",
         "//src/v/datalake/coordinator:snapshot_remover",
+        "//src/v/datalake/coordinator:state_update",
         "//src/v/datalake/coordinator:stm",
+        "//src/v/datalake/coordinator:translated_offset_range",
+        "//src/v/model",
         "//src/v/raft/tests:stm_test_fixture",
+        "//src/v/serde",
         "//src/v/storage",
+        "//src/v/storage:record_batch_builder",
         "//src/v/test_utils:container_ostream",
         "@googletest//:gtest",
         "@seastar",

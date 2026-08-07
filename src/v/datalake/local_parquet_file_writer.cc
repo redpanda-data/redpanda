@@ -12,13 +12,58 @@
 
 #include "base/units.h"
 #include "base/vlog.h"
+#include "container/chunked_vector.h"
 #include "datalake/logger.h"
+#include "iceberg/datatypes.h"
+#include "serde/parquet/writer.h"
 
 #include <seastar/core/fstream.hh>
 #include <seastar/core/seastar.hh>
 #include <seastar/coroutine/as_future.hh>
 
+#include <type_traits>
+#include <variant>
+
 namespace datalake {
+
+namespace {
+
+// Matches seastar's default.
+constexpr size_t output_stream_buffer_size = 8_KiB;
+
+// How many buffered_column_writers the parquet writer will instantiate.
+size_t count_leaf_columns(const iceberg::struct_type& schema) {
+    size_t leaves = 0;
+    chunked_vector<const iceberg::field_type*> to_visit;
+    for (const auto& field : schema.fields) {
+        to_visit.push_back(&field->type);
+    }
+    while (!to_visit.empty()) {
+        const auto* type = to_visit.back();
+        to_visit.pop_back();
+        std::visit(
+          [&leaves, &to_visit](const auto& t) {
+              using T = std::decay_t<decltype(t)>;
+              if constexpr (std::is_same_v<T, iceberg::primitive_type>) {
+                  ++leaves;
+              } else if constexpr (std::is_same_v<T, iceberg::struct_type>) {
+                  for (const auto& field : t.fields) {
+                      to_visit.push_back(&field->type);
+                  }
+              } else if constexpr (std::is_same_v<T, iceberg::list_type>) {
+                  to_visit.push_back(&t.element_field->type);
+              } else {
+                  static_assert(std::is_same_v<T, iceberg::map_type>);
+                  to_visit.push_back(&t.key_field->type);
+                  to_visit.push_back(&t.value_field->type);
+              }
+          },
+          *type);
+    }
+    return leaves;
+}
+
+} // namespace
 
 local_parquet_file_writer::local_parquet_file_writer(
   local_path output_file_path,
@@ -47,7 +92,8 @@ local_parquet_file_writer::initialize(const iceberg::struct_type& schema) {
     }
 
     auto fut = co_await ss::coroutine::as_future(
-      ss::make_file_output_stream(std::move(output_file)));
+      ss::make_file_output_stream(
+        std::move(output_file), output_stream_buffer_size));
 
     if (fut.failed()) {
         auto ex = fut.get_exception();
@@ -145,11 +191,13 @@ local_parquet_file_writer::finish() {
     }
     try {
         auto f_size = co_await ss::file_size(_output_file_path().string());
+        auto col_stats = _writer->column_stats();
 
         co_return local_file_metadata{
           .path = _output_file_path,
           .row_count = _row_count,
           .size_bytes = f_size,
+          .column_stats = std::move(col_stats),
         };
     } catch (...) {
         vlog(
@@ -180,26 +228,12 @@ local_parquet_file_writer_factory::local_parquet_file_writer_factory(
 ss::future<result<std::unique_ptr<parquet_file_writer>, writer_error>>
 local_parquet_file_writer_factory::create_writer(
   const iceberg::struct_type& schema, ss::abort_source& as) {
-    // There is a per writer cost associated which includes stuff like
-    // - local path string
-    // - associated partition key
-    // - schema
-    // - stats tracked about the writer
-    // - data structure overhead
-    //
-    // This limit is in place to avoid an explosion of writer instances,
-    // example partition_by(offset) which creates a writer per offset.
-    //
-    // Additionally one other contributor per writer is the buffer used
-    // in the output stream which defaults to 8_KiB, which is only released
-    // on output stream close().
-    //
-    // TODO: This is just a conservative estimate to prevent pathological cases
-    // of too many writers, needs empirical evaluation to determine the correct
-    // sizing.
-    static constexpr size_t WRITER_RESERVATION_OVERHEAD = 10_KiB;
+    // Buffered row data is reserved separately as it is written.
+    const size_t reservation_bytes = output_stream_buffer_size
+                                     + serde::parquet::writer::estimated_memory(
+                                       count_leaf_columns(schema));
     auto reservation_err = co_await _mem_tracker.reserve_bytes(
-      WRITER_RESERVATION_OVERHEAD, as);
+      reservation_bytes, as);
     if (reservation_err != reservation_error::ok) {
         co_return map_to_writer_error(reservation_err);
     }

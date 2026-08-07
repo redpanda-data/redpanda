@@ -127,7 +127,8 @@ struct coordinator_node {
           commit_interval_ms.bind(),
           default_partition_spec.bind(),
           disable_snapshot_expiry.bind(),
-          max_pending_files.bind()) {}
+          max_pending_files.bind(),
+          max_pending_bytes.bind()) {}
 
     ss::future<checked<std::nullopt_t, coordinator::errc>>
     remove_tombstone(const model::topic&, model::revision_id) {
@@ -148,6 +149,7 @@ struct coordinator_node {
       "(hour(redpanda.timestamp))"};
     config::mock_property<bool> disable_snapshot_expiry{false};
     config::mock_property<size_t> max_pending_files{100000};
+    config::mock_property<size_t> max_pending_bytes{32ULL * 1024 * 1024};
     cluster::data_migrations::migrated_resources mr;
     cluster::topic_table topic_table;
     datalake::binary_type_resolver type_resolver;
@@ -895,4 +897,37 @@ TEST_F(CoordinatorChunkedLoopTest, TestDrainsBacklogWithoutSleeping) {
         return tp_state.has_value()
                && tp_state->get().last_committed == kafka::offset{499};
     });
+}
+
+TEST_F(CoordinatorTest, TestBackpressureByBytes) {
+    opt_ref leader_opt;
+    ASSERT_NO_FATAL_FAILURE(wait_for_leader(leader_opt).get());
+    auto& leader = leader_opt->get();
+    // Keep the file count effectively unbounded; shed on bytes instead.
+    leader.max_pending_files.update(1'000'000);
+    leader.max_pending_bytes.update(1);
+    const auto tp00 = tp(0, 0);
+    const model::revision_id rev0{1};
+    register_in_topic_tables(tp00.topic, rev0);
+    leader.ensure_table(tp00.topic, rev0);
+
+    // First add is under the (byte) threshold when checked, so it is accepted.
+    auto ok = leader.crd
+                .sync_add_files(
+                  tp00,
+                  rev0,
+                  make_pending_files({{0, 100}}, /*with_file=*/true))
+                .get();
+    ASSERT_FALSE(ok.has_error()) << ok.error();
+    wait_for_apply().get();
+
+    // Any pending bytes now exceed the 1-byte cap, so the next add is shed.
+    auto shed = leader.crd
+                  .sync_add_files(
+                    tp00,
+                    rev0,
+                    make_pending_files({{101, 200}}, /*with_file=*/true))
+                  .get();
+    ASSERT_TRUE(shed.has_error());
+    ASSERT_EQ(shed.error(), coordinator::errc::failed);
 }

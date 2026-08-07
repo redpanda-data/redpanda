@@ -494,16 +494,18 @@ TEST(CopyBoundedTest, TruncatesByControlOffsetWatermark) {
     // Fewer than available: truncated to a downward-closed prefix, metadata
     // preserved, and reported as bounded.
     bool bounded = false;
-    auto chunk = ts.copy_bounded(3, bounded);
+    auto chunk = ts.copy_bounded(3, 1'000'000'000, bounded);
     EXPECT_EQ(total_pending_entries(chunk), 3);
     EXPECT_TRUE(bounded);
     EXPECT_EQ(chunk.revision, rev);
 
     // Exactly the limit, and more than available (equivalent to copy()): not
     // bounded, nothing left out.
-    EXPECT_EQ(total_pending_entries(ts.copy_bounded(5, bounded)), 5);
+    EXPECT_EQ(
+      total_pending_entries(ts.copy_bounded(5, 1'000'000'000, bounded)), 5);
     EXPECT_FALSE(bounded);
-    EXPECT_EQ(total_pending_entries(ts.copy_bounded(100, bounded)), 5);
+    EXPECT_EQ(
+      total_pending_entries(ts.copy_bounded(100, 1'000'000'000, bounded)), 5);
     EXPECT_FALSE(bounded);
 }
 
@@ -527,7 +529,7 @@ TEST(CopyBoundedTest, IsDownwardClosedAcrossPartitions) {
     // ignored offset ordering would instead keep both of one partition's
     // entries (including offset 12) while dropping the other's offset-11 entry.
     bool bounded = false;
-    auto chunk = ts.copy_bounded(2, bounded);
+    auto chunk = ts.copy_bounded(2, 1'000'000'000, bounded);
     EXPECT_TRUE(bounded);
     ASSERT_EQ(total_pending_entries(chunk), 2);
     ASSERT_TRUE(chunk.pid_to_pending_files.contains(pid0));
@@ -540,6 +542,44 @@ TEST(CopyBoundedTest, IsDownwardClosedAcrossPartitions) {
     EXPECT_EQ(p1.front().added_pending_at, model::offset{11});
 }
 
+// The running totals on topics_state must match a from-scratch recompute
+// after each kind of apply.
+TEST(StateUpdateTest, PendingTotalsTrackAddAndCommit) {
+    const model::topic topic{"t"};
+    const model::partition_id pid{0};
+    const model::topic_partition tp{topic, pid};
+    const model::revision_id rev{1};
+
+    topics_state state;
+    state.topic_to_state[topic].revision = rev;
+
+    EXPECT_EQ(state.pending_files(), 0u);
+    EXPECT_EQ(state.pending_bytes(), 0u);
+
+    auto add = add_files_update::build(
+      state, tp, rev, make_pending_files({{0, 100}, {101, 200}}, true));
+    ASSERT_FALSE(add.has_error());
+    ASSERT_FALSE(add.value().apply(state, model::offset{10}).has_error());
+
+    EXPECT_EQ(state.pending_files(), 2u);
+    EXPECT_GT(state.pending_bytes(), 0u);
+
+    // Totals must equal a fresh recompute.
+    auto files_after_add = state.pending_files();
+    auto bytes_after_add = state.pending_bytes();
+    state.recompute_pending();
+    EXPECT_EQ(state.pending_files(), files_after_add);
+    EXPECT_EQ(state.pending_bytes(), bytes_after_add);
+
+    auto commit = mark_files_committed_update::build(
+      state, tp, rev, kafka::offset{200}, 0UL);
+    ASSERT_FALSE(commit.has_error());
+    ASSERT_FALSE(commit.value().apply(state).has_error());
+
+    EXPECT_EQ(state.pending_files(), 0u);
+    EXPECT_EQ(state.pending_bytes(), 0u);
+}
+
 // A single control-offset batch is committed all-or-nothing: splitting it would
 // leave same-offset entries below the watermark, which the dedup would drop.
 TEST(CopyBoundedTest, IncludesWholeBatchEvenWhenOverLimit) {
@@ -549,7 +589,8 @@ TEST(CopyBoundedTest, IncludesWholeBatchEvenWhenOverLimit) {
         add_entry(ts, pid, i * 10, i * 10 + 9, model::offset{1000});
     }
     bool bounded = false;
-    EXPECT_EQ(total_pending_entries(ts.copy_bounded(1, bounded)), 5);
+    EXPECT_EQ(
+      total_pending_entries(ts.copy_bounded(1, 1'000'000'000, bounded)), 5);
     // The whole same-offset batch is included, so nothing is left over and the
     // copy is not reported as bounded.
     EXPECT_FALSE(bounded);

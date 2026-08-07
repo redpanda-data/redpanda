@@ -1897,6 +1897,120 @@ message_type {
             assert len(nested_rows) == 1, nested_rows
             assert nested_rows[0] == (42, 99), nested_rows[0]
 
+    @cluster(num_nodes=3)
+    @matrix(
+        cloud_storage_type=supported_storage_types(),
+        catalog_type=supported_catalog_types(),
+    )
+    def test_column_stats_in_manifest(self, cloud_storage_type, catalog_type):
+        """
+        Verify that Redpanda writes per-column statistics (min/max bounds,
+        null counts, value counts) into the Iceberg manifest entries.
+
+        Produces Avro records with a required long field and an optional long
+        field (one row has a null), then queries the Iceberg .files metadata
+        table via Spark to assert that readable_metrics is populated with
+        correct bounds and null counts.
+        """
+        topic = self.topic_name
+        # avro_schema_with_null_union_str has: number (long), timestamp_us
+        # (timestamp-micros), optional_long (nullable long).
+        schema_str = avro_schema_with_null_union_str
+        with DatalakeServices(
+            self.test_ctx,
+            redpanda=self.redpanda,
+            catalog_type=catalog_type,
+            include_query_engines=[QueryEngineType.SPARK],
+        ) as dl:
+            dl.create_iceberg_enabled_topic(
+                topic, partitions=1, iceberg_mode="value_schema_id_prefix"
+            )
+
+            raw_schema = avro.loads(schema_str)
+            producer = AvroProducer(
+                {
+                    "bootstrap.servers": self.redpanda.brokers(),
+                    "schema.registry.url": self.redpanda.schema_reg().split(",")[0],
+                },
+                default_value_schema=raw_schema,
+            )
+
+            # Produce 3 records with known number values so we can assert
+            # exact min/max.  The third record leaves optional_long as null.
+            t0 = int(time.time() * 1_000_000)
+            producer.produce(
+                topic=topic,
+                value={"number": 10, "timestamp_us": t0, "optional_long": 10},
+            )
+            producer.produce(
+                topic=topic,
+                value={"number": 5, "timestamp_us": t0 + 1, "optional_long": None},
+            )
+            producer.produce(
+                topic=topic,
+                value={"number": 20, "timestamp_us": t0 + 2, "optional_long": 20},
+            )
+            producer.flush()
+
+            dl.wait_for_translation(topic, msg_count=3)
+
+            spark = dl.spark()
+            table_name = f"redpanda.{topic}"
+
+            # readable_metrics is a struct-per-column containing
+            # column_size, value_count, null_value_count, nan_value_count,
+            # lower_bound, upper_bound — all surfaced by Spark's Iceberg
+            # integration.  We aggregate across all files so the test is
+            # stable regardless of how many row groups / files are produced.
+            rows = spark.run_query_fetch_all(
+                f"""
+                SELECT
+                  sum(readable_metrics.number.value_count),
+                  sum(readable_metrics.number.null_value_count),
+                  min(readable_metrics.number.lower_bound),
+                  max(readable_metrics.number.upper_bound),
+                  sum(readable_metrics.optional_long.value_count),
+                  sum(readable_metrics.optional_long.null_value_count)
+                FROM {table_name}.files
+                """
+            )
+
+            assert len(rows) == 1, f"expected 1 aggregate row, got {rows}"
+            (
+                num_val_count,
+                num_null_count,
+                num_lower,
+                num_upper,
+                opt_val_count,
+                opt_null_count,
+            ) = rows[0]
+
+            self.redpanda.logger.debug(
+                f"column stats: number value_count={num_val_count} "
+                f"null_count={num_null_count} lower={num_lower} upper={num_upper} | "
+                f"optional_long value_count={opt_val_count} null_count={opt_null_count}"
+            )
+
+            # number: required field — 3 values, 0 nulls, min=5, max=20.
+            assert num_val_count == 3, (
+                f"number value_count: expected 3, got {num_val_count}"
+            )
+            assert num_null_count == 0, (
+                f"number null_value_count: expected 0, got {num_null_count}"
+            )
+            assert num_lower is not None, "number lower_bound must be set"
+            assert num_upper is not None, "number upper_bound must be set"
+            assert num_lower == 5, f"number lower_bound: expected 5, got {num_lower}"
+            assert num_upper == 20, f"number upper_bound: expected 20, got {num_upper}"
+
+            # optional_long: 3 values (including 1 null) → null_value_count=1.
+            assert opt_val_count == 3, (
+                f"optional_long value_count: expected 3, got {opt_val_count}"
+            )
+            assert opt_null_count == 1, (
+                f"optional_long null_value_count: expected 1, got {opt_null_count}"
+            )
+
 
 class DatalakeMultiBrokerE2ETest(RedpandaTest):
     def __init__(self, test_ctx, *args, **kwargs):

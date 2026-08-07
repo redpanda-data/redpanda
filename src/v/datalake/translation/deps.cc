@@ -527,12 +527,11 @@ public:
             // with the underlying file output stream because Seastar only
             // allows flush() on stream close(). The default buffer size is
             // 8KiB, this means up to 8KiB per writer can still be buffered even
-            // after flush which is not accounted in reservations. This could be
-            // an issue if there is an explosion of file writer instances. We
-            // try to factor 10KiB overhead per writer, when it is created but
-            // it will be released as soon as the flush is called. An
-            // improvement could be to account for the fixed reservation cost
-            // across flush calls and only release on finish.
+            // after flush. A writer's reservation is released on flush, so
+            // writers that stay open past one hold memory that is no longer
+            // accounted. This could be an issue if there is an explosion of
+            // file writer instances. An improvement could be to hold the fixed
+            // reservation across flush calls and only release on finish.
             vlog(datalake_log.trace, "[{}] flushing writers", _ntp);
             return _in_progress_translation->flush()
               .then_wrapped([](auto result_f) {
