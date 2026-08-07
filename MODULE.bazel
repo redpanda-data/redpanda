@@ -255,20 +255,6 @@ COMPILERS = {
 go_sdk = use_extension("@rules_go//go:extensions.bzl", "go_sdk", dev_dependency = True)
 go_sdk.download(version = "1.26.5")
 
-# The microsoft compiler versions can be listed at their github release under the `asset.json` file
-go_sdk.download(
-    name = "go_sdk_with_systemcrypto",
-    experiments = ["systemcrypto"],
-    sdks = {
-        "linux_amd64": ("96d1f4b28a670f8e9b3259194508ae2f/go1.26.5-20260709.6.linux-amd64.tar.gz", "df9f45167cf1cd825aa8555b76c5b24cb89dfbd771f48cc0007458236c414715"),
-        "linux_arm64": ("af17683a03acab86aec9ba37afbd5ff1/go1.26.5-20260709.6.linux-arm64.tar.gz", "9990f8fcfefcbd15fb888dd777c7a72f1745889c9e94836ffe26f7e46e43328d"),
-        "darwin_amd64": ("d45676061dfccb09b72f2579a6d8927f/go1.26.5-20260709.6.darwin-amd64.tar.gz", "7a4f0bd26ccf1ce912bc509fccb473ee39bdd149b804fa581e59a72b7708e78e"),
-        "darwin_arm64": ("f8da58db7007fa456d93c4f56bf6c337/go1.26.5-20260709.6.darwin-arm64.tar.gz", "a6d2124035c18602926af78d1e3ae523abc613e36b2086da9b451991ce4288c4"),
-    },
-    urls = ["https://download.visualstudio.microsoft.com/download/pr/a38f1e38-3cd4-48b2-b032-ca38793ec901/{}"],
-    version = "1.26.5",
-)
-
 go_deps = use_extension("@gazelle//:extensions.bzl", "go_deps")
 go_deps.config(check_direct_dependencies = "error")
 go_deps.from_file(go_work = "//bazel/thirdparty:go.work")
