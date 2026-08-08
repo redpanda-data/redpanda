@@ -144,6 +144,9 @@ redpanda_cc_library(
     hdrs = [
         "values_protobuf.h",
     ],
+    implementation_deps = [
+        "@abseil-cpp//absl/container:inlined_vector",
+    ],
     visibility = ["//visibility:public"],
     deps = [
         ":conversion_outcome",
@@ -153,8 +156,6 @@ redpanda_cc_library(
         "//src/v/iceberg:values",
         "//src/v/serde/json:writer",
         "//src/v/serde/protobuf",
-        "//src/v/ssx:future_util",
-        "@abseil-cpp//absl/container:inlined_vector",
         "@abseil-cpp//absl/time",
         "@fmt",
         "@protobuf",

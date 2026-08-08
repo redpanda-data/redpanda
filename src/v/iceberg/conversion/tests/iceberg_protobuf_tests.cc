@@ -500,6 +500,67 @@ TEST_CORO(values_protobuf, TestMapConversions) {
           OptionalIcebergPrimitive<iceberg::int_value>(1)))));
 }
 
+TEST_CORO(values_protobuf, TestLargeCollections) {
+    constexpr int collection_size = 257;
+    protobuf_test_messages::editions::TestAllTypesEdition2023 test_msg;
+    for (int i = 0; i < collection_size; ++i) {
+        test_msg.add_repeated_int64(i);
+        test_msg.mutable_map_int32_int32()->emplace(i, i + 1);
+    }
+
+    auto result = co_await serialize_and_convert(test_msg);
+    ASSERT_TRUE_CORO(result.has_value() && result.value().has_value());
+    auto result_value = std::get<std::unique_ptr<struct_value>>(
+      std::move(result.value().value()));
+
+    auto* descriptor = test_msg.GetDescriptor();
+    auto* repeated_descriptor = descriptor->FindFieldByName("repeated_int64");
+    auto& list = std::get<std::unique_ptr<list_value>>(
+      *result_value->fields[repeated_descriptor->index()]);
+    ASSERT_EQ_CORO(list->elements.size(), collection_size);
+    for (int i = 0; i < collection_size; ++i) {
+        const auto& value = std::get<long_value>(
+          std::get<primitive_value>(*list->elements[i]));
+        EXPECT_EQ(value.val, i);
+    }
+
+    auto* map_descriptor = descriptor->FindFieldByName("map_int32_int32");
+    auto& map = std::get<std::unique_ptr<map_value>>(
+      *result_value->fields[map_descriptor->index()]);
+    ASSERT_EQ_CORO(map->kvs.size(), collection_size);
+    for (const auto& kv : map->kvs) {
+        const auto& key = std::get<int_value>(
+          std::get<primitive_value>(kv.key));
+        ASSERT_TRUE_CORO(kv.val.has_value());
+        const auto& value = std::get<int_value>(
+          std::get<primitive_value>(*kv.val));
+        EXPECT_EQ(value.val, key.val + 1);
+    }
+}
+
+TEST_CORO(values_protobuf, TestMapValueDefault) {
+    using test_message
+      = protobuf_test_messages::editions::TestAllTypesEdition2023;
+    auto* descriptor = test_message::GetDescriptor();
+    auto* map_descriptor = descriptor->FindFieldByName("map_int32_int32");
+
+    serde::pb::parsed::map map;
+    map.entries.emplace(int32_t{7}, std::monostate{});
+    auto message = std::make_unique<serde::pb::parsed::message>();
+    message->fields.emplace(map_descriptor->number(), std::move(map));
+
+    auto result = co_await proto_parsed_message_to_value(
+      std::move(message), *descriptor);
+    ASSERT_TRUE_CORO(result.has_value() && result.value().has_value());
+    auto result_value = std::get<std::unique_ptr<struct_value>>(
+      std::move(result.value().value()));
+    EXPECT_THAT(
+      result_value->fields[map_descriptor->index()],
+      IcebergMap(ElementsAre(IcebergKeyValue(
+        IcebergPrimitive<int_value>(7),
+        OptionalIcebergPrimitive<int_value>(0)))));
+}
+
 TEST_CORO(values_protobuf, TestSettingEmtpyNestedMessage) {
     protobuf_test_messages::editions::TestAllTypesEdition2023 test_msg;
     // just ask for mutable nested message to mark it set
