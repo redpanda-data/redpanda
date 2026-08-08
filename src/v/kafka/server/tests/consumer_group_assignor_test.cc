@@ -22,6 +22,7 @@
 
 #include <algorithm>
 #include <cstdint>
+#include <random>
 #include <ranges>
 #include <string>
 #include <vector>
@@ -112,6 +113,19 @@ member_spec member(
       .id = member_id{ss::sstring{id}},
       .subscribed_topics = std::move(subscribed),
       .current_assignment = assigned(assigned_to_it)};
+}
+
+chunked_vector<member_spec> copy(const chunked_vector<member_spec>& members) {
+    chunked_vector<member_spec> out;
+    out.reserve(members.size());
+    for (const auto& member : members) {
+        out.push_back(
+          member_spec{
+            .id = member.id,
+            .subscribed_topics = member.subscribed_topics.copy(),
+            .current_assignment = member.current_assignment.copy()});
+    }
+    return out;
 }
 
 template<typename... Ms>
@@ -280,12 +294,49 @@ protected:
             auto [min, max] = std::ranges::minmax(sizes(assignment));
             EXPECT_LE(max - min, 1) << "unbalanced: " << render(assignment);
         }
+
+        expect_no_move_left(group, assignment);
     }
 
 private:
     std::string topic_name(model::topic_id topic) const {
         auto it = _names.find(topic);
         return it == _names.end() ? fmt::to_string(topic) : it->second;
+    }
+
+    /// Asserts that the group is as even as single moves can make it: wherever
+    /// one member holds more than one partition more than another, the two
+    /// share no topic that the member ahead could hand over.
+    void expect_no_move_left(
+      const group_spec& group, const group_assignment& assignment) const {
+        auto loads = sizes(assignment);
+
+        auto assigned_any = [&assignment](
+                              size_t member, model::topic_id topic) {
+            auto partitions = assignment[member].partitions_of(topic);
+            return partitions != nullptr && !partitions->empty();
+        };
+
+        for (size_t ahead = 0; ahead < group.members().size(); ++ahead) {
+            for (size_t behind = 0; behind < group.members().size(); ++behind) {
+                if (loads[ahead] <= loads[behind] + 1) {
+                    continue;
+                }
+                for (const auto& topic :
+                     group.members()[ahead].subscribed_topics) {
+                    if (!std::ranges::binary_search(
+                          group.members()[behind].subscribed_topics, topic)) {
+                        continue;
+                    }
+                    EXPECT_FALSE(assigned_any(ahead, topic))
+                      << group.members()[ahead].id() << " is "
+                      << loads[ahead] - loads[behind] << " partitions ahead of "
+                      << group.members()[behind].id() << " and is still "
+                      << "assigned " << topic_name(topic)
+                      << ", which both subscribe to: " << render(assignment);
+                }
+            }
+        }
     }
 
     test_describer _describer;
@@ -659,5 +710,398 @@ TEST_F(uniform_assignor_test, a_partition_assigned_to_two_members_fails) {
     EXPECT_EQ(
       assignment.error().errc, assignor_errc::partitions_left_unassigned);
 }
+
+TEST_F(uniform_assignor_test, differing_subscriptions_are_respected) {
+    auto shared = add_topic(2);
+    auto exclusive = add_topic(2);
+
+    auto group = spec(
+      member("m1", {shared}), member("m2", {shared, exclusive}));
+    ASSERT_EQ(group.type(), subscription_type::heterogeneous);
+
+    auto assignment = assign(group);
+
+    ASSERT_TRUE(assignment.has_value());
+    expect_assignment(
+      *assignment,
+      {
+        /* m1 */ {{shared, {0, 1}}},
+        /* m2 */ {{exclusive, {0, 1}}},
+      });
+}
+
+TEST_F(uniform_assignor_test, unassigned_partitions_go_to_the_least_loaded) {
+    auto t1 = add_topic(3);
+    auto t2 = add_topic(3);
+
+    auto group = spec(
+      member("m1", {t1}), member("m2", {t1, t2}), member("m3", {t2}));
+
+    auto assignment = assign(group);
+
+    ASSERT_TRUE(assignment.has_value());
+    EXPECT_EQ(sizes(*assignment), (std::vector<size_t>{2, 2, 2}))
+      << render(*assignment);
+    expect_valid(group, *assignment);
+}
+
+TEST_F(uniform_assignor_test, a_member_holding_too_much_gives_a_partition_up) {
+    auto t1 = add_topic(4);
+    auto t2 = add_topic(1);
+
+    // m1 is assigned four while m2 would be left with one, so t1 is
+    // rebalanced. m1 gives up its highest partition and keeps the rest.
+    auto group = spec(
+      member("m1", {t1}, {{t1, {0, 1, 2, 3}}}), member("m2", {t1, t2}));
+
+    auto assignment = assign(group);
+
+    ASSERT_TRUE(assignment.has_value());
+    expect_assignment(
+      *assignment,
+      {
+        /* m1 */ {{t1, {0, 1, 2}}},
+        /* m2 */ {{t1, {3}}, {t2, {0}}},
+      });
+}
+
+TEST_F(uniform_assignor_test, a_topic_with_one_subscriber_is_left_alone) {
+    auto t1 = add_topic(4);
+    auto t2 = add_topic(1);
+
+    // No topic has two subscribers, so no partition has anywhere to move: m1
+    // keeps four and m2 keeps one.
+    auto group = spec(member("m1", {t1}), member("m2", {t2}));
+
+    auto assignment = assign(group);
+
+    ASSERT_TRUE(assignment.has_value());
+    expect_assignment(
+      *assignment,
+      {
+        /* m1 */ {{t1, {0, 1, 2, 3}}},
+        /* m2 */ {{t2, {0}}},
+      });
+}
+
+TEST_F(
+  uniform_assignor_test,
+  differing_subscriptions_with_a_negative_partition_are_malformed) {
+    auto t1 = add_topic(2);
+    auto t2 = add_topic(1);
+
+    // Corrupt input: without the check this indexes the topic's owner array at
+    // `size_t(-1)`.
+    auto group = spec(
+      member("m1", {t1}, {{t1, {-1, 0}}}), member("m2", {t1, t2}));
+
+    auto assignment = assign(group);
+
+    ASSERT_FALSE(assignment.has_value()) << render(*assignment);
+    EXPECT_EQ(assignment.error().errc, assignor_errc::malformed_assignment);
+    EXPECT_EQ(assignment.error().topic, t1);
+    EXPECT_EQ(assignment.error().partition, model::partition_id{-1});
+}
+
+TEST_F(
+  uniform_assignor_test,
+  differing_subscriptions_with_a_partition_past_the_end_fail) {
+    auto t1 = add_topic(2);
+    auto t2 = add_topic(1);
+
+    auto group = spec(
+      member("m1", {t1}, {{t1, {0, 5}}}), member("m2", {t1, t2}));
+
+    auto assignment = assign(group);
+
+    ASSERT_FALSE(assignment.has_value()) << render(*assignment);
+    EXPECT_EQ(assignment.error().errc, assignor_errc::unknown_partition);
+    EXPECT_EQ(assignment.error().topic, t1);
+    EXPECT_EQ(assignment.error().partition, model::partition_id{5});
+}
+
+TEST_F(
+  uniform_assignor_test,
+  differing_subscriptions_out_of_topic_id_order_are_malformed) {
+    auto t1 = add_topic(2);
+    auto t2 = add_topic(2);
+
+    auto group = spec(member_as_given("m1", {t2, t1}), member("m2", {t1}));
+
+    auto assignment = assign(group);
+
+    ASSERT_FALSE(assignment.has_value()) << render(*assignment);
+    EXPECT_EQ(assignment.error().errc, assignor_errc::malformed_subscription);
+    EXPECT_EQ(assignment.error().topic, t1);
+}
+
+TEST_F(
+  uniform_assignor_test,
+  differing_subscriptions_with_a_repeated_topic_are_malformed) {
+    auto t1 = add_topic(2);
+    auto t2 = add_topic(2);
+
+    auto group = spec(member_as_given("m1", {t1, t1}), member("m2", {t1, t2}));
+
+    auto assignment = assign(group);
+
+    ASSERT_FALSE(assignment.has_value()) << render(*assignment);
+    EXPECT_EQ(assignment.error().errc, assignor_errc::malformed_subscription);
+    EXPECT_EQ(assignment.error().topic, t1);
+}
+
+TEST_F(
+  uniform_assignor_test,
+  differing_subscriptions_with_an_assignment_out_of_order_are_malformed) {
+    auto t1 = add_topic(2);
+    auto t2 = add_topic(2);
+
+    member_assignment holds;
+    holds.assign(t2, model::partition_id{0});
+    holds.assign(t1, model::partition_id{0});
+    auto group = spec(
+      member_as_given("m1", {t1, t2}, std::move(holds)), member("m2", {t1}));
+
+    auto assignment = assign(group);
+
+    ASSERT_FALSE(assignment.has_value()) << render(*assignment);
+    EXPECT_EQ(assignment.error().errc, assignor_errc::malformed_assignment);
+    EXPECT_EQ(assignment.error().topic, t1);
+}
+
+TEST_F(
+  uniform_assignor_test,
+  differing_subscriptions_with_partitions_out_of_order_are_malformed) {
+    auto t1 = add_topic(4);
+    auto t2 = add_topic(2);
+
+    // Corrupt input: `check_assigned` bounds the partitions by their two
+    // ends, which only holds when they are sorted.
+    member_assignment holds;
+    holds.assign(t1, model::partition_id{2});
+    holds.assign(t1, model::partition_id{0});
+    auto group = spec(
+      member_as_given("m1", {t1}, std::move(holds)), member("m2", {t1, t2}));
+
+    auto assignment = assign(group);
+
+    ASSERT_FALSE(assignment.has_value()) << render(*assignment);
+    EXPECT_EQ(assignment.error().errc, assignor_errc::malformed_assignment);
+    EXPECT_EQ(assignment.error().topic, t1);
+    EXPECT_EQ(assignment.error().partition, model::partition_id{0});
+}
+
+TEST_F(uniform_assignor_test, balance_does_not_chain_across_topics) {
+    auto t1 = add_topic(2);
+    auto t2 = add_topic(2);
+    auto t3 = add_topic(2);
+
+    // m1 is assigned all six partitions. Each topic ends up balanced between
+    // its own subscribers, which leaves m2 two ahead of m3 even though six
+    // partitions over three members would divide evenly: m2 and m3 share no
+    // topic, so no single move can even them out, and moving m1's t3 partition
+    // to m3 only helps if m2 also takes from m1, which balancing one topic at a
+    // time does not see.
+    auto group = spec(
+      member("m1", {t1, t2, t3}, {{t1, {0, 1}}, {t2, {0, 1}}, {t3, {0, 1}}}),
+      member("m2", {t1, t2}),
+      member("m3", {t3}));
+
+    auto assignment = assign(group);
+
+    ASSERT_TRUE(assignment.has_value());
+    EXPECT_EQ(sizes(*assignment), (std::vector<size_t>{2, 3, 1}))
+      << render(*assignment);
+    expect_valid(group, *assignment);
+}
+
+TEST_F(uniform_assignor_test, a_dropped_topic_moves_to_a_member_that_wants_it) {
+    auto t1 = add_topic(1);
+    auto t2 = add_topic(1);
+
+    // m1 stopped subscribing to t1, which m2 still subscribes to, so m1
+    // releases its partition and m2 picks it up.
+    auto group = spec(member("m1", {t2}, {{t1, {0}}}), member("m2", {t1}));
+
+    auto assignment = assign(group);
+
+    ASSERT_TRUE(assignment.has_value());
+    expect_assignment(
+      *assignment,
+      {
+        /* m1 */ {{t2, {0}}},
+        /* m2 */ {{t1, {0}}},
+      });
+}
+
+TEST_F(
+  uniform_assignor_test, differing_subscription_to_a_topic_without_metadata) {
+    auto known = add_topic(1);
+    auto missing = unknown_topic();
+
+    auto assignment = assign(
+      spec(member("m1", {known}), member("m2", {known, missing})));
+
+    ASSERT_FALSE(assignment.has_value()) << render(*assignment);
+    EXPECT_EQ(assignment.error().errc, assignor_errc::unknown_topic);
+    EXPECT_EQ(assignment.error().topic, missing);
+}
+
+TEST_F(
+  uniform_assignor_test,
+  differing_subscription_to_a_negative_partition_count_fails) {
+    auto good = add_topic(1);
+    auto bad = add_topic(-1);
+
+    auto assignment = assign(
+      spec(member("m1", {good}), member("m2", {good, bad})));
+
+    ASSERT_FALSE(assignment.has_value()) << render(*assignment);
+    EXPECT_EQ(assignment.error().errc, assignor_errc::invalid_partition_count);
+    EXPECT_EQ(assignment.error().topic, bad);
+}
+
+TEST_F(uniform_assignor_test, random_groups_hold_the_invariants) {
+    // Fixed seed: a failure here has to be reproducible.
+    std::mt19937 rng{0x848};
+    auto pick = [&rng](int32_t from, int32_t to) {
+        return std::uniform_int_distribution<int32_t>{from, to}(rng);
+    };
+
+    for (int round = 0; round < 100; ++round) {
+        std::vector<model::topic_id> topics;
+        for (auto count = pick(1, 4); count > 0; --count) {
+            topics.push_back(add_topic(pick(1, 7)));
+        }
+
+        chunked_vector<member_spec> members;
+        for (auto count = pick(1, 5); count > 0; --count) {
+            subscribed_topic_ids subscribed;
+            for (auto topic : topics) {
+                if (pick(0, 2) > 0) {
+                    subscribed.push_back(topic);
+                }
+            }
+            members.push_back(
+              member(fmt::format("m{}", count), std::move(subscribed)));
+        }
+
+        auto group = group_spec{copy(members)};
+        auto assignment = assign(group);
+        ASSERT_TRUE(assignment.has_value())
+          << fmt::to_string(assignment.error());
+        expect_valid(group, *assignment);
+
+        // The assignor must return its own output unchanged, so that a
+        // heartbeat which changes nothing leaves the group alone.
+        auto assigned_members = copy(members);
+        for (size_t index = 0; index < assigned_members.size(); ++index) {
+            assigned_members[index].current_assignment
+              = (*assignment)[index].copy();
+        }
+        auto settled = group_spec{copy(assigned_members)};
+        auto reassignment = assign(settled);
+        ASSERT_TRUE(reassignment.has_value())
+          << fmt::to_string(reassignment.error());
+        EXPECT_TRUE(*reassignment == *assignment)
+          << "reassigned: " << render(*reassignment)
+          << "\n  assigned: " << render(*assignment);
+
+        // A member that joins a settled group must leave it valid, filling its
+        // target size from the partitions the others release.
+        auto joined = copy(assigned_members);
+        joined.push_back(member(
+          fmt::format("m{}", joined.size() + 1),
+          joined.front().subscribed_topics.copy()));
+        auto larger = group_spec{std::move(joined)};
+        auto with_joiner = assign(larger);
+        ASSERT_TRUE(with_joiner.has_value())
+          << fmt::to_string(with_joiner.error());
+        expect_valid(larger, *with_joiner);
+
+        // Losing a member must leave the rest valid.
+        if (assigned_members.size() > 1) {
+            auto survivors = copy(assigned_members);
+            survivors.pop_back();
+            auto smaller = group_spec{std::move(survivors)};
+            auto after = assign(smaller);
+            ASSERT_TRUE(after.has_value()) << fmt::to_string(after.error());
+            expect_valid(smaller, *after);
+        }
+    }
+}
+
+TEST_F(uniform_assignor_test, a_large_group_settles_within_the_sweep_limit) {
+    // Balancing sweeps pile up only on a group big enough to hold partly
+    // overlapping subscriptions over a lopsided assignment, which the small
+    // random groups above never reach. This hands every partition of a topic to
+    // one of its subscribers, so most of them have to move, and then checks the
+    // same invariants. expect_valid fails if the sweep limit cut balancing
+    // short while moves were still available.
+    std::mt19937 rng{0x848};
+    auto pick = [&rng](int32_t from, int32_t to) {
+        return std::uniform_int_distribution<int32_t>{from, to}(rng);
+    };
+
+    std::vector<model::topic_id> topics;
+    std::vector<int32_t> counts;
+    for (auto topic = 0; topic < 20; ++topic) {
+        counts.push_back(pick(1, 100));
+        topics.push_back(add_topic(counts.back()));
+    }
+
+    chunked_vector<member_spec> members;
+    for (auto index = 0; index < 50; ++index) {
+        subscribed_topic_ids subscribed;
+        for (auto topic : topics) {
+            if (pick(0, 3) > 0) {
+                subscribed.push_back(topic);
+            }
+        }
+        members.push_back(
+          member(fmt::format("m{:02}", index), std::move(subscribed)));
+    }
+
+    // This walks the topics in registration order, which is increasing topic
+    // id order, so each member's assignment below stays sorted as it grows.
+    for (size_t topic = 0; topic < topics.size(); ++topic) {
+        for (auto& assigned_the_lot : members) {
+            if (!std::ranges::binary_search(
+                  assigned_the_lot.subscribed_topics, topics[topic])) {
+                continue;
+            }
+            partition_set whole_topic;
+            whole_topic.reserve(static_cast<size_t>(counts[topic]));
+            for (auto id : std::views::iota(0, counts[topic])) {
+                whole_topic.emplace_back(id);
+            }
+            assigned_the_lot.current_assignment.assign(
+              topics[topic], std::move(whole_topic));
+            break;
+        }
+    }
+
+    auto group = group_spec{copy(members)};
+    ASSERT_EQ(group.type(), subscription_type::heterogeneous);
+
+    auto assignment = assign(group);
+    ASSERT_TRUE(assignment.has_value()) << fmt::to_string(assignment.error());
+    expect_valid(group, *assignment);
+
+    // The assignor must return the settled assignment unchanged here too.
+    auto assigned_members = copy(members);
+    for (size_t index = 0; index < assigned_members.size(); ++index) {
+        assigned_members[index].current_assignment
+          = (*assignment)[index].copy();
+    }
+    auto settled = group_spec{std::move(assigned_members)};
+    auto reassignment = assign(settled);
+    ASSERT_TRUE(reassignment.has_value())
+      << fmt::to_string(reassignment.error());
+    EXPECT_TRUE(*reassignment == *assignment)
+      << "reassigned: " << render(*reassignment)
+      << "\n  assigned: " << render(*assignment);
+}
+
 } // namespace
 } // namespace kafka
