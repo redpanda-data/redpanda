@@ -291,6 +291,25 @@ redpanda_cc_gtest(
 )
 
 redpanda_cc_gtest(
+    name = "consumer_group_assignor_test",
+    timeout = "short",
+    srcs = [
+        "consumer_group_assignor_test.cc",
+    ],
+    deps = [
+        "//src/v/container:chunked_vector",
+        "//src/v/kafka/protocol",
+        "//src/v/kafka/server:consumer_group_assignor",
+        "//src/v/model",
+        "//src/v/test_utils:gtest",
+        "//src/v/utils:uuid",
+        "@abseil-cpp//absl/container:btree",
+        "@fmt",
+        "@googletest//:gtest",
+    ],
+)
+
+redpanda_cc_gtest(
     name = "consumer_group_recovery_test",
     timeout = "short",
     srcs = [
