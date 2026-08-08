@@ -29,13 +29,16 @@ redpanda_cc_library(
     name = "consumer_group_assignor",
     srcs = [
         "consumer_group_assignor.cc",
+        "uniform_assignor.cc",
     ],
     hdrs = [
         "consumer_group_assignor.h",
+        "uniform_assignor.h",
     ],
     visibility = [":__subpackages__"],
     deps = [
         "//src/v/base",
+        "//src/v/container:chunked_hash_map",
         "//src/v/container:chunked_vector",
         "//src/v/kafka/protocol",
         "//src/v/model",
