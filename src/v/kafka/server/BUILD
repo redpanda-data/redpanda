@@ -26,6 +26,23 @@ redpanda_cc_library(
 )
 
 redpanda_cc_library(
+    name = "consumer_group_assignor",
+    srcs = [
+        "consumer_group_assignor.cc",
+    ],
+    hdrs = [
+        "consumer_group_assignor.h",
+    ],
+    visibility = [":__subpackages__"],
+    deps = [
+        "//src/v/base",
+        "//src/v/container:chunked_vector",
+        "//src/v/kafka/protocol",
+        "//src/v/model",
+    ],
+)
+
+redpanda_cc_library(
     name = "topic_config_utils",
     srcs = [
         "handlers/configs/config_response_utils.cc",
