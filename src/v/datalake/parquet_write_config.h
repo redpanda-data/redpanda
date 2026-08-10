@@ -18,6 +18,10 @@ namespace datalake {
 /// Parquet writer configuration parsed from Iceberg write.parquet.* table
 /// properties.
 struct parquet_write_config {
+    /// Compress column data with zstd. Set to false by
+    /// write.parquet.compression-codec = "uncompressed".
+    bool compress = true;
+
     static parquet_write_config
     from_properties(const std::optional<iceberg::table_properties_t>&);
 };

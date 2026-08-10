@@ -144,6 +144,7 @@ redpanda_cc_gtest(
         ":test_data_writer",
         ":test_utils",
         "//src/v/bytes",
+        "//src/v/datalake:parquet_write_config",
         "//src/v/datalake:partitioning_writer",
         "//src/v/datalake:table_definition",
         "//src/v/iceberg/tests:test_schemas",
@@ -241,6 +242,7 @@ redpanda_cc_gtest(
     deps = [
         ":test_data_writer",
         "//src/v/datalake:local_parquet_file_writer",
+        "//src/v/datalake:parquet_write_config",
         "//src/v/datalake/tests:test_data",
         "//src/v/iceberg:datatypes",
         "//src/v/iceberg/tests:value_generator",
@@ -263,6 +265,7 @@ redpanda_cc_gtest(
         "//src/v/bytes",
         "//src/v/bytes:iobuf",
         "//src/v/bytes:iostream",
+        "//src/v/datalake:parquet_write_config",
         "//src/v/datalake:serde_parquet_writer",
         "//src/v/datalake/tests:test_data",
         "//src/v/iceberg:datatypes",
@@ -270,6 +273,20 @@ redpanda_cc_gtest(
         "//src/v/iceberg/tests:value_generator",
         "//src/v/test_utils:gtest",
         "@fmt",
+        "@googletest//:gtest",
+        "@seastar",
+    ],
+)
+
+redpanda_cc_gtest(
+    name = "parquet_write_config_test",
+    timeout = "short",
+    srcs = [
+        "parquet_write_config_test.cc",
+    ],
+    deps = [
+        "//src/v/datalake:parquet_write_config",
+        "//src/v/test_utils:gtest",
         "@googletest//:gtest",
         "@seastar",
     ],

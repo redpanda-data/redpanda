@@ -145,14 +145,14 @@ chunked_vector<per_column_stats> serde_parquet_writer::column_stats() const {
 ss::future<std::unique_ptr<parquet_ostream>>
 serde_parquet_writer_factory::create_writer(
   const iceberg::struct_type& schema,
-  const parquet_write_config& /*write_config*/,
+  const parquet_write_config& write_config,
   ss::output_stream<char> out,
   writer_mem_tracker& mem_tracker) {
     serde::parquet::writer::options opts{
       .schema = schema_to_parquet(schema),
       .version = ss::sstring(redpanda_git_version()),
       .build = ss::sstring(redpanda_git_revision()),
-      .compress = true,
+      .compress = write_config.compress,
     };
     serde::parquet::writer writer(std::move(opts), std::move(out));
     co_await writer.init();

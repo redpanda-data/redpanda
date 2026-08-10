@@ -100,6 +100,11 @@ redpanda_cc_library(
     hdrs = [
         "parquet_write_config.h",
     ],
+    implementation_deps = [
+        ":logger",
+        "//src/v/base",
+        "//src/v/strings:string_switch",
+    ],
     visibility = [":__subpackages__"],
     deps = [
         "//src/v/iceberg:table_metadata",
@@ -381,6 +386,7 @@ redpanda_cc_library(
     visibility = [":__subpackages__"],
     deps = [
         ":location",
+        ":parquet_write_config",
         ":partitioning_writer",
         ":schema_identifier",
         ":types",
