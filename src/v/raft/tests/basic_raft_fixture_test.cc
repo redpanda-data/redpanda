@@ -9,6 +9,7 @@
 
 #include "model/fundamental.h"
 #include "model/record.h"
+#include "model/record_batch_reader.h"
 #include "raft/tests/raft_fixture.h"
 #include "raft/tests/raft_fixture_retry_policy.h"
 #include "raft/types.h"
@@ -1210,4 +1211,96 @@ TEST_F_CORO(raft_fixture, test_leadership_blocked_replicas_can_elect_leader) {
 
     auto leader = co_await wait_for_leader(60s);
     ASSERT_NE_CORO(leader, blocked_follower);
+}
+
+/**
+ * Demonstrates that raft_configuration batches do not reliably demarcate
+ * term boundaries in the log: a candidate that wins an election but fails
+ * the local append of its initial configuration batch remains leader
+ * (vote_stm does not step down on configuration replication failure) and
+ * nothing retries the append, so data batches of the new term get
+ * committed with no configuration batch for that term anywhere in the
+ * log. Today the only durable record of such a term boundary is the
+ * segment roll on term change, which encodes the term in the segment file
+ * name.
+ */
+TEST_F_CORO(raft_fixture, test_term_span_without_configuration_batch) {
+    auto& n0 = add_node(model::node_id(0), model::revision_id(0));
+    co_await n0.init_and_start({n0.get_vnode()});
+    co_await wait_for_leader(10s);
+    auto raft = n0.raft();
+    const auto initial_term = raft->term();
+
+    auto res = co_await raft->replicate(
+      make_batches({{"k_0", "v_0"}}),
+      replicate_options(consistency_level::quorum_ack));
+    ASSERT_TRUE_CORO(res.has_value());
+
+    // fail only the next configuration batch append i.e. the one written by
+    // the new leader at the start of its term
+    bool config_append_failed = false;
+    n0.f_injectable_log()->set_append_hook(
+      [&config_append_failed](const model::record_batch& b) -> ss::future<> {
+          if (
+            !config_append_failed
+            && b.header().type
+                 == model::record_batch_type::raft_configuration) {
+              config_append_failed = true;
+              return ss::make_exception_future<>(
+                std::runtime_error("injected configuration append failure"));
+          }
+          return ss::now();
+      });
+
+    co_await raft->step_down("test-failed-configuration-append");
+
+    // the node is the only voter so it wins the next election, the initial
+    // configuration append fails, yet it stays an elected leader
+    RPTEST_REQUIRE_EVENTUALLY_CORO(10s, [&] {
+        return raft->is_elected_leader() && raft->term() > initial_term;
+    });
+    const auto new_term = raft->term();
+    ASSERT_TRUE_CORO(config_append_failed);
+
+    // leadership was never confirmed: the configuration batch of the new
+    // term was not appended and there is no retry, the leader is only
+    // confirmed once the first data batch of the new term commits
+    ASSERT_FALSE_CORO(raft->is_leader());
+
+    auto data_res = co_await raft->replicate(
+      make_batches({{"k_1", "v_1"}}),
+      replicate_options(consistency_level::quorum_ack));
+    ASSERT_TRUE_CORO(data_res.has_value());
+    RPTEST_REQUIRE_EVENTUALLY_CORO(10s, [&] { return raft->is_leader(); });
+
+    n0.f_injectable_log()->set_append_hook(std::nullopt);
+
+    // scan the raw log: the new term contains committed data batches but no
+    // raft_configuration batch
+    auto rdr = co_await raft->make_reader(
+      storage::local_log_reader_config(
+        raft->start_offset(), model::offset::max()));
+    auto batches = co_await model::consume_reader_to_memory(
+      std::move(rdr), default_timeout());
+
+    size_t data_in_new_term = 0;
+    size_t configs_in_new_term = 0;
+    for (const auto& b : batches) {
+        if (b.term() != new_term) {
+            continue;
+        }
+        if (b.header().type == model::record_batch_type::raft_data) {
+            data_in_new_term++;
+        } else if (
+          b.header().type == model::record_batch_type::raft_configuration) {
+            configs_in_new_term++;
+        }
+    }
+    ASSERT_GT_CORO(data_in_new_term, 0);
+    ASSERT_EQ_CORO(configs_in_new_term, 0);
+
+    // the term boundary is still recoverable, but only from the file name of
+    // the segment rolled on term change
+    ASSERT_EQ_CORO(
+      n0.f_injectable_log()->get_term(data_res.value().last_offset), new_term);
 }
