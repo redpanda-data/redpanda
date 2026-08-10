@@ -231,13 +231,18 @@ ss::future<> replicate_batcher::flush(
 
         // release batcher replicate batcher lock
         batcher_units.return_all();
-        // we have to check if we are the leader
-        // it is critical as term could have been updated already by
-        // vote request and entries from current node could be accepted
-        // by the followers while it is no longer a leader
-        // this problem caused truncation failure.
-
-        if (!_ptr->is_elected_leader()) {
+        // We have to check leadership again while holding the op lock: the
+        // check in do_replicate() is only a fast path and the term could
+        // have been updated already by a vote request between enqueue and
+        // flush, in which case entries from the current node could be
+        // accepted by the followers while it is no longer a leader (this
+        // problem caused truncation failure). The check requires a confirmed
+        // term, not just a won election: batches are stamped with the
+        // current term below, and if the node lost and re-won leadership
+        // since enqueue, appending data of the new term before its
+        // configuration batch committed would let the data commit confirm
+        // the term with no configuration batch demarcating it in the log.
+        if (!_ptr->is_leader()) {
             for (auto& n : item_cache) {
                 n->set_value(errc::not_leader);
             }

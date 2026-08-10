@@ -20,6 +20,7 @@
 
 #include <seastar/core/timed_out_error.hh>
 #include <seastar/core/with_timeout.hh>
+#include <seastar/coroutine/as_future.hh>
 #include <seastar/util/bool_class.hh>
 
 namespace raft {
@@ -430,14 +431,71 @@ ss::future<> vote_stm::update_vote_state(ssx::semaphore_units u) {
 
     auto ec = co_await replicate_config_as_new_leader(std::move(u));
 
-    // even if failed to replicate, don't step down: followers may be behind
     if (ec) {
-        vlog(
-          _ctxlog.info,
-          "unable to replicate configuration as a leader - error code: "
-          "{} - {} ",
-          ec.value(),
-          ec.message());
+        /**
+         * Re-acquire the op lock so that reading the log state, deciding and
+         * stepping down are atomic with respect to appends: every append
+         * path acquires the op lock, and on the timeout path this also
+         * serializes behind the still running configuration append (it holds
+         * the lock units until the local append completes), so the outcome
+         * of our own append is settled by the time the units are granted.
+         */
+        auto lock_fut = co_await ss::coroutine::as_future(
+          _ptr->_op_lock.get_units());
+        if (lock_fut.failed()) {
+            // the lock is only broken on shutdown
+            auto eptr = lock_fut.get_exception();
+            vlog(
+              _ctxlog.debug,
+              "failed to acquire op lock after configuration replication "
+              "failure: {}",
+              eptr);
+            co_return;
+        }
+        auto units = std::move(lock_fut).get();
+        if (
+          _ptr->_vstate != consensus::vote_state::leader
+          || _ptr->_term != term) {
+            // no longer the leader of this term, nothing to decide
+            co_return;
+        }
+        /**
+         * The failure modes differ in whether the configuration batch made
+         * it into the local log.
+         *
+         * If it did (its term is the term of the last batch in the log),
+         * quorum replication is what failed or timed out: followers may just
+         * be behind, recovery will deliver the batch to them and committing
+         * it confirms the term, so stay leader.
+         *
+         * If it did not, nothing will ever append a configuration batch for
+         * this term - there is no retry - and the leader could never be
+         * confirmed. Step down and let a new election retry the append in a
+         * new term.
+         */
+        const auto config_in_log = _ptr->_log->offsets().dirty_offset_term
+                                   == term;
+        if (config_in_log) {
+            vlog(
+              _ctxlog.info,
+              "unable to replicate configuration as a leader - error code: "
+              "{} - {}, configuration batch is in the local log, waiting for "
+              "the quorum to catch up",
+              ec.value(),
+              ec.message());
+        } else {
+            vlog(
+              _ctxlog.warn,
+              "failed to append configuration batch as a new leader - error "
+              "code: {} - {}, stepping down",
+              ec.value(),
+              ec.message());
+            _ptr->do_step_down("initial-configuration-append-failed");
+            if (_ptr->_leader_id) {
+                _ptr->_leader_id = std::nullopt;
+                _ptr->trigger_leadership_notification();
+            }
+        }
     } else {
         if (term == _ptr->_term) {
             vlog(_ctxlog.info, "became the leader term: {}", term);

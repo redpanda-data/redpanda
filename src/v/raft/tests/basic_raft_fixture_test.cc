@@ -22,6 +22,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <map>
 #include <ranges>
 
 using namespace raft;
@@ -1213,18 +1214,77 @@ TEST_F_CORO(raft_fixture, test_leadership_blocked_replicas_can_elect_leader) {
     ASSERT_NE_CORO(leader, blocked_follower);
 }
 
+namespace {
+
 /**
- * Demonstrates that raft_configuration batches do not reliably demarcate
- * term boundaries in the log: a candidate that wins an election but fails
- * the local append of its initial configuration batch remains leader
- * (vote_stm does not step down on configuration replication failure) and
- * nothing retries the append, so data batches of the new term get
- * committed with no configuration batch for that term anywhere in the
- * log. Today the only durable record of such a term boundary is the
- * segment roll on term change, which encodes the term in the segment file
- * name.
+ * Scans the raw log of a node and asserts that every term holding data
+ * batches also holds a configuration batch preceding them: the invariant
+ * that raft_configuration batches demarcate term boundaries in the log.
  */
-TEST_F_CORO(raft_fixture, test_term_span_without_configuration_batch) {
+ss::future<>
+assert_data_terms_have_configuration_batch(raft_node_instance& node) {
+    auto raft = node.raft();
+    auto rdr = co_await raft->make_reader(
+      storage::local_log_reader_config(
+        raft->start_offset(), model::offset::max()));
+    auto batches = co_await model::consume_reader_to_memory(
+      std::move(rdr), model::timeout_clock::now() + 10s);
+
+    struct term_batches {
+        std::optional<model::offset> first_config;
+        std::optional<model::offset> first_data;
+    };
+    std::map<model::term_id, term_batches> terms;
+    for (const auto& b : batches) {
+        auto& t = terms[b.term()];
+        if (b.header().type == model::record_batch_type::raft_configuration) {
+            t.first_config = std::min(
+              t.first_config.value_or(b.base_offset()), b.base_offset());
+        } else if (b.header().type == model::record_batch_type::raft_data) {
+            t.first_data = std::min(
+              t.first_data.value_or(b.base_offset()), b.base_offset());
+        }
+    }
+    for (const auto& [_, t] : terms) {
+        if (!t.first_data) {
+            continue;
+        }
+        ASSERT_TRUE_CORO(t.first_config.has_value());
+        ASSERT_LT_CORO(*t.first_config, *t.first_data);
+    }
+}
+
+// arms a one-shot failure of the next raft_configuration batch append,
+// returns a reference to the flag recording whether it fired
+bool& fail_next_configuration_append(raft_node_instance& node) {
+    auto failed = std::make_shared<bool>(false);
+    auto& failed_ref = *failed;
+    node.f_injectable_log()->set_append_hook(
+      [failed](const model::record_batch& b) -> ss::future<> {
+          if (
+            !*failed
+            && b.header().type
+                 == model::record_batch_type::raft_configuration) {
+              *failed = true;
+              return ss::make_exception_future<>(
+                std::runtime_error("injected configuration append failure"));
+          }
+          return ss::now();
+      });
+    return failed_ref;
+}
+
+} // namespace
+
+/**
+ * A candidate that wins an election but fails the local append of its
+ * initial configuration batch must not remain leader: nothing retries the
+ * append within the term, so staying leader would let data batches of the
+ * new term commit with no configuration batch demarcating the term boundary
+ * in the log. Instead the node steps down and the next election retries the
+ * append in a new term.
+ */
+TEST_F_CORO(raft_fixture, test_step_down_on_configuration_append_failure) {
     auto& n0 = add_node(model::node_id(0), model::revision_id(0));
     co_await n0.init_and_start({n0.get_vnode()});
     co_await wait_for_leader(10s);
@@ -1238,69 +1298,128 @@ TEST_F_CORO(raft_fixture, test_term_span_without_configuration_batch) {
 
     // fail only the next configuration batch append i.e. the one written by
     // the new leader at the start of its term
-    bool config_append_failed = false;
-    n0.f_injectable_log()->set_append_hook(
-      [&config_append_failed](const model::record_batch& b) -> ss::future<> {
-          if (
-            !config_append_failed
-            && b.header().type
-                 == model::record_batch_type::raft_configuration) {
-              config_append_failed = true;
-              return ss::make_exception_future<>(
-                std::runtime_error("injected configuration append failure"));
-          }
-          return ss::now();
-      });
+    auto& config_append_failed = fail_next_configuration_append(n0);
 
     co_await raft->step_down("test-failed-configuration-append");
 
-    // the node is the only voter so it wins the next election, the initial
-    // configuration append fails, yet it stays an elected leader
-    RPTEST_REQUIRE_EVENTUALLY_CORO(10s, [&] {
-        return raft->is_elected_leader() && raft->term() > initial_term;
-    });
-    const auto new_term = raft->term();
+    // the node is the only voter so it wins the next election. The failed
+    // configuration append forces another step down and the election after
+    // that retries the append, confirming leadership in a later term.
+    RPTEST_REQUIRE_EVENTUALLY_CORO(
+      10s, [&] { return raft->is_leader() && raft->term() > initial_term; });
     ASSERT_TRUE_CORO(config_append_failed);
-
-    // leadership was never confirmed: the configuration batch of the new
-    // term was not appended and there is no retry, the leader is only
-    // confirmed once the first data batch of the new term commits
-    ASSERT_FALSE_CORO(raft->is_leader());
+    n0.f_injectable_log()->set_append_hook(std::nullopt);
 
     auto data_res = co_await raft->replicate(
       make_batches({{"k_1", "v_1"}}),
       replicate_options(consistency_level::quorum_ack));
     ASSERT_TRUE_CORO(data_res.has_value());
+
+    co_await assert_data_terms_have_configuration_batch(n0);
+}
+
+/**
+ * An elected but not yet confirmed leader (one whose initial configuration
+ * batch has not committed) must not accept data writes: a data batch
+ * committed before the configuration batch would confirm the term while the
+ * configuration batch could still fail, leaving committed data in a term
+ * with no configuration batch demarcating it.
+ */
+TEST_F_CORO(raft_fixture, test_unconfirmed_leader_rejects_writes) {
+    auto& n0 = add_node(model::node_id(0), model::revision_id(0));
+    co_await n0.init_and_start({n0.get_vnode()});
+    co_await wait_for_leader(10s);
+    auto raft = n0.raft();
+    const auto initial_term = raft->term();
+
+    // delay the next configuration batch append long enough to observe the
+    // elected-but-unconfirmed window
+    bool config_append_delayed = false;
+    n0.f_injectable_log()->set_append_hook(
+      [&config_append_delayed](const model::record_batch& b) -> ss::future<> {
+          if (
+            !config_append_delayed
+            && b.header().type
+                 == model::record_batch_type::raft_configuration) {
+              config_append_delayed = true;
+              return ss::sleep(5s);
+          }
+          return ss::now();
+      });
+
+    co_await raft->step_down("test-delayed-configuration-append");
+
+    RPTEST_REQUIRE_EVENTUALLY_CORO(10s, [&] {
+        return raft->is_elected_leader() && raft->term() > initial_term;
+    });
+
+    // the election is won but the configuration batch has not committed yet
+    ASSERT_FALSE_CORO(raft->is_leader());
+    auto rejected = co_await raft->replicate(
+      make_batches({{"k_0", "v_0"}}),
+      replicate_options(consistency_level::quorum_ack));
+    ASSERT_TRUE_CORO(rejected.has_error());
+
+    // once the delayed configuration batch commits the leader is confirmed
+    // and accepts writes
     RPTEST_REQUIRE_EVENTUALLY_CORO(10s, [&] { return raft->is_leader(); });
-
     n0.f_injectable_log()->set_append_hook(std::nullopt);
+    auto accepted = co_await raft->replicate(
+      make_batches({{"k_1", "v_1"}}),
+      replicate_options(consistency_level::quorum_ack));
+    ASSERT_TRUE_CORO(accepted.has_value());
 
-    // scan the raw log: the new term contains committed data batches but no
-    // raft_configuration batch
-    auto rdr = co_await raft->make_reader(
-      storage::local_log_reader_config(
-        raft->start_offset(), model::offset::max()));
-    auto batches = co_await model::consume_reader_to_memory(
-      std::move(rdr), default_timeout());
+    co_await assert_data_terms_have_configuration_batch(n0);
+}
 
-    size_t data_in_new_term = 0;
-    size_t configs_in_new_term = 0;
-    for (const auto& b : batches) {
-        if (b.term() != new_term) {
-            continue;
-        }
-        if (b.header().type == model::record_batch_type::raft_data) {
-            data_in_new_term++;
-        } else if (
-          b.header().type == model::record_batch_type::raft_configuration) {
-            configs_in_new_term++;
+/**
+ * The configuration append failure scenario in a three node group: the node
+ * whose append failed steps down and the group converges on a confirmed
+ * leader with the term boundary invariant intact on every replica.
+ */
+TEST_F_CORO(raft_fixture, test_configuration_append_failure_multi_node) {
+    co_await create_simple_group(3);
+    auto leader_id = co_await wait_for_leader(10s);
+    auto leader_raft = node(leader_id).raft();
+
+    auto res = co_await leader_raft->replicate(
+      make_batches({{"k_0", "v_0"}}),
+      replicate_options(consistency_level::quorum_ack));
+    ASSERT_TRUE_CORO(res.has_value());
+    const auto initial_term = leader_raft->term();
+
+    // block the other nodes from becoming leader so that the next election
+    // is deterministically won by the node with the failing append
+    for (const auto& [id, n] : nodes()) {
+        if (id != leader_id) {
+            n->raft()->block_new_leadership();
         }
     }
-    ASSERT_GT_CORO(data_in_new_term, 0);
-    ASSERT_EQ_CORO(configs_in_new_term, 0);
+    auto& config_append_failed = fail_next_configuration_append(
+      node(leader_id));
 
-    // the term boundary is still recoverable, but only from the file name of
-    // the segment rolled on term change
-    ASSERT_EQ_CORO(
-      n0.f_injectable_log()->get_term(data_res.value().last_offset), new_term);
+    co_await leader_raft->step_down("test-failed-configuration-append");
+
+    // the node wins the election, fails the configuration append, steps down
+    // and wins again in a later term with the append succeeding
+    RPTEST_REQUIRE_EVENTUALLY_CORO(30s, [&] {
+        return leader_raft->is_leader() && leader_raft->term() > initial_term;
+    });
+    ASSERT_TRUE_CORO(config_append_failed);
+    node(leader_id).f_injectable_log()->set_append_hook(std::nullopt);
+    for (const auto& [id, n] : nodes()) {
+        if (id != leader_id) {
+            n->raft()->unblock_new_leadership();
+        }
+    }
+
+    auto data_res = co_await leader_raft->replicate(
+      make_batches({{"k_1", "v_1"}}),
+      replicate_options(consistency_level::quorum_ack));
+    ASSERT_TRUE_CORO(data_res.has_value());
+    co_await wait_for_committed_offset(data_res.value().last_offset, 30s);
+
+    for (const auto& [_, n] : nodes()) {
+        co_await assert_data_terms_have_configuration_batch(*n);
+    }
 }

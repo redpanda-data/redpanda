@@ -897,7 +897,16 @@ replicate_stages consensus::do_replicate(
         return replicate_stages(errc::shutting_down);
     }
 
-    if (!is_elected_leader() || unlikely(_transferring_leadership)) {
+    /**
+     * Data replication requires a confirmed leadership term, not just a won
+     * election: a leader is only confirmed once an entry of its term - the
+     * configuration batch appended when it became leader - has been
+     * committed. Accepting data before that would allow a term to hold
+     * committed data batches without a configuration batch demarcating the
+     * term boundary in the log, e.g. when the initial configuration append
+     * failed and the first committed data batch confirmed the term instead.
+     */
+    if (!is_leader() || unlikely(_transferring_leadership)) {
         return replicate_stages(errc::not_leader);
     }
 
