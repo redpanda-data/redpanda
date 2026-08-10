@@ -14,6 +14,7 @@
 namespace raft {
 
 using append_delay_generator = std::function<std::chrono::milliseconds()>;
+using append_hook = std::function<ss::future<>(const model::record_batch&)>;
 
 class failure_injectable_log final : public storage::log {
 public:
@@ -21,6 +22,12 @@ public:
     // batch to the log
     void set_append_delay(std::optional<append_delay_generator> generator) {
         _append_delay_generator = std::move(generator);
+    }
+
+    // sets a hook invoked before each record batch is appended to the log,
+    // returning a failed future from the hook fails the append
+    void set_append_hook(std::optional<append_hook> hook) {
+        _append_hook = std::move(hook);
     }
 
 public:
@@ -163,5 +170,6 @@ public:
 private:
     ss::shared_ptr<storage::log> _underlying_log;
     std::optional<append_delay_generator> _append_delay_generator;
+    std::optional<append_hook> _append_hook;
 };
 } // namespace raft

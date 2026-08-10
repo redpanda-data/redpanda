@@ -65,17 +65,40 @@ struct delay_introducing_appender : public storage::log_appender::impl {
     storage::log_appender _underlying;
     append_delay_generator _append_delay_generator;
 };
+
+struct hook_invoking_appender : public storage::log_appender::impl {
+    hook_invoking_appender(storage::log_appender underlying, append_hook hook)
+      : _underlying(std::move(underlying))
+      , _hook(std::move(hook)) {}
+
+    /// non-owning reference - do not steal the iobuf
+    ss::future<ss::stop_iteration> operator()(model::record_batch& b) final {
+        co_await _hook(b);
+        co_return co_await _underlying(b);
+    }
+
+    ss::future<storage::append_result> end_of_stream() final {
+        return _underlying.end_of_stream();
+    }
+    storage::log_appender _underlying;
+    append_hook _hook;
+};
 } // namespace
 
 storage::log_appender
 failure_injectable_log::make_appender(storage::log_append_config cfg) {
+    auto appender = _underlying_log->make_appender(cfg);
     if (_append_delay_generator) {
-        return storage::log_appender(
+        appender = storage::log_appender(
           std::make_unique<delay_introducing_appender>(
-            _underlying_log->make_appender(cfg), *_append_delay_generator));
+            std::move(appender), *_append_delay_generator));
     }
-
-    return _underlying_log->make_appender(cfg);
+    if (_append_hook) {
+        appender = storage::log_appender(
+          std::make_unique<hook_invoking_appender>(
+            std::move(appender), *_append_hook));
+    }
+    return appender;
 }
 
 ss::future<std::optional<ss::sstring>> failure_injectable_log::close() {
