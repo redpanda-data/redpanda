@@ -18,6 +18,7 @@
 #include "pandaproxy/rest/configuration.h"
 #include "pandaproxy/rest/handlers.h"
 #include "pandaproxy/rest/iceberg_handlers.h"
+#include "resource_mgmt/cpu_scheduling.h"
 #include "security/authorizer.h"
 
 #include <seastar/coroutine/parallel_for_each.hh> // NOLINT(misc-include-cleaner): required for co_await/co_return coroutine support
@@ -130,7 +131,7 @@ proxy::proxy(
   , _client_cache(client_cache)
   , _controller(controller)
   , _dl_frontend(dl_frontend)
-  , _ctx{{{{}, max_memory, _mem_sem, _inflight_config_binding(), _inflight_sem, {}, smp_sg}, *this},
+  , _ctx{{{{}, max_memory, _mem_sem, _inflight_config_binding(), _inflight_sem, {}, smp_sg, scheduling_groups::instance().pandaproxy_sg()}, *this},
   {config::always_true(), config::shard_local_cfg().superusers.bind(), controller},
   _config.pandaproxy_api.value()}
   , _topic_table(controller->get_topics_state())

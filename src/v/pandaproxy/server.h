@@ -26,6 +26,7 @@
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/future.hh>
 #include <seastar/core/gate.hh>
+#include <seastar/core/scheduling.hh>
 #include <seastar/core/shared_ptr.hh>
 #include <seastar/core/sstring.hh>
 #include <seastar/http/api_docs.hh>
@@ -79,6 +80,8 @@ public:
         adjustable_semaphore& inflight_sem;
         ss::abort_source as;
         ss::smp_service_group smp_sg;
+        // Scheduling group for request processing on accepted connections.
+        ss::scheduling_group sg = ss::default_scheduling_group();
     };
 
     struct request_t {

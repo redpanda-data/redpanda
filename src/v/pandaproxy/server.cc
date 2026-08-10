@@ -21,6 +21,7 @@
 #include "utils/truncating_logger.h"
 
 #include <seastar/core/coroutine.hh> // NOLINT(misc-include-cleaner): required for co_await/co_return coroutine support
+#include <seastar/coroutine/switch_to.hh>
 #include <seastar/http/function_handlers.hh> // NOLINT(misc-include-cleaner): provides ss::httpd::handler_base
 #include <seastar/http/reply.hh>
 #include <seastar/net/tls.hh>
@@ -256,6 +257,8 @@ ss::future<> server::start(
   const std::vector<config::rest_authn_endpoint>& endpoints,
   const std::vector<config::endpoint_tls_config>& endpoints_tls,
   const std::vector<model::broker_endpoint>& advertised) {
+    co_await ss::coroutine::switch_to(_ctx.sg);
+
     _server._routes.register_exeption_handler(
       exception_replier{ss::sstring{name(_exceptional_mime_type)}, _log});
 

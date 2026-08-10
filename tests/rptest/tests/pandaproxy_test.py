@@ -32,6 +32,7 @@ from rptest.services.admin import Admin
 from rptest.services.cluster import cluster
 from rptest.services.redpanda import (
     LoggingConfig,
+    MetricsEndpoint,
     PandaproxyConfig,
     ResourceSettings,
     SecurityConfig,
@@ -476,6 +477,52 @@ class PandaProxyEndpoints(RedpandaTest):
 
         check_produce_output(
             self._produce_topic(topic_name, data, auth=auth_tuple), expected_offset=1
+        )
+
+
+class PandaProxySchedulingGroupTest(PandaProxyEndpoints):
+    """
+    Verify REST proxy request processing runs in the dedicated
+    "pandaproxy" scheduling group by asserting proxy traffic accrues
+    runtime in the group's public scheduler metric.
+    """
+
+    def _pandaproxy_scheduler_runtime_secs(self) -> float:
+        samples = self.redpanda.metrics_sample(
+            sample_pattern="scheduler_runtime_seconds",
+            metrics_endpoint=MetricsEndpoint.PUBLIC_METRICS,
+        )
+        assert samples is not None, "scheduler runtime metric not found"
+        pandaproxy_samples = samples.label_filter(
+            {"redpanda_scheduling_group": "pandaproxy"}
+        )
+        return sum(s.value for s in pandaproxy_samples.samples)
+
+    @cluster(num_nodes=3)
+    def test_proxy_requests_run_in_pandaproxy_group(self):
+        name = create_topic_names(1)[0]
+        self._create_topics([name], partitions=1)
+
+        # Creating a scheduling group runs a tiny setup task inside the
+        # new group on every shard, so its runtime counter is nonzero
+        # from boot. Assert that proxy traffic grows the counter instead
+        # of asserting on the absolute value.
+        baseline = self._pandaproxy_scheduler_runtime_secs()
+
+        data = '{"records": [{"value": "cGFuZGFwcm94eQ==", "partition": 0}]}'
+        for _ in range(200):
+            result = self._produce_topic(name, data)
+            assert result.status_code == requests.codes.ok
+
+        runtime = self._pandaproxy_scheduler_runtime_secs()
+        growth = runtime - baseline
+        self.logger.info(
+            f"pandaproxy group runtime: baseline={baseline}s, "
+            f"after traffic={runtime}s, growth={growth}s"
+        )
+        assert growth > 0.01, (
+            "expected proxy traffic to accrue scheduler runtime in the "
+            f"pandaproxy group: baseline={baseline}s, growth={growth}s"
         )
 
 
