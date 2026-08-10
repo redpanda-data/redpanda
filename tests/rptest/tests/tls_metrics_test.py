@@ -410,7 +410,7 @@ EXPIRED_CERT_ALLOW_LIST = [
 
 class TLSMetricsTestExpiring(TLSMetricsTestBase):
     def __init__(self, *args, **kwargs):
-        super().__init__(*args, broker_faketime="-23.995h", **kwargs)
+        super().__init__(*args, **kwargs)
         self.tls = tls.TLSCertManager(self.logger, cert_expiry_days=1)
 
     def setUp(self):
@@ -422,6 +422,17 @@ class TLSMetricsTestExpiring(TLSMetricsTestBase):
         Test that metrics detect an expired certificate
         """
         node = self.redpanda.nodes[0]
+
+        # The cluster starts with ordinary certs so that setUp can reach the
+        # Kafka API, then swaps in certs whose validity window already closed
+        # (signed 2 days ago, valid for 1). Expiring the cert *before* it is
+        # installed keeps the assertion below independent of how long startup
+        # took.
+        self.security.tls_provider = FaketimeTLSProvider(
+            self.tls, broker_faketime="-2d"
+        )
+        self.redpanda.set_security_settings(self.security)
+        self.redpanda.write_tls_certs()
 
         def certs_expired():
             metric_values = self._unpack_samples(
