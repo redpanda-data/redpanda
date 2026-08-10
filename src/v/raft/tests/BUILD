@@ -58,6 +58,7 @@ redpanda_test_cc_library(
     visibility = ["//visibility:public"],
     deps = [
         "//src/v/base",
+        "//src/v/model",
         "//src/v/storage",
         "@seastar",
     ],
@@ -584,6 +585,28 @@ redpanda_test_cc_library(
         "//src/v/storage",
         "//src/v/test_utils:random",
         "@seastar",
+    ],
+)
+
+redpanda_cc_gtest(
+    name = "configuration_divergence_test",
+    timeout = "moderate",
+    srcs = [
+        "configuration_divergence_test.cc",
+    ],
+    cpu = 4,
+    deps = [
+        "//src/v/bytes",
+        "//src/v/model",
+        "//src/v/raft",
+        "//src/v/raft/tests:raft_fixture",
+        "//src/v/raft/tests:raft_fixture_retry_policy",
+        "//src/v/serde",
+        "//src/v/storage",
+        "//src/v/test_utils:gtest",
+        "@googletest//:gtest",
+        "@seastar",
+        "@seastar//:testing",
     ],
 )
 

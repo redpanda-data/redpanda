@@ -15,6 +15,7 @@
 #include "raft/tests/raft_fixture.h"
 #include "raft/tests/raft_fixture_retry_policy.h"
 #include "raft/types.h"
+#include "serde/rw/rw.h"
 #include "storage/types.h"
 #include "test_utils/async.h"
 #include "test_utils/test.h"
@@ -103,6 +104,46 @@ struct configuration_divergence_test : raft_fixture {
         }
     }
 
+    /**
+     * Splits the group in two, dropping every message crossing the boundary.
+     */
+    void partition_group(
+      std::vector<model::node_id> a, std::vector<model::node_id> b) {
+        auto block_towards = [this](
+                               const std::vector<model::node_id>& side,
+                               std::vector<model::node_id> unreachable) {
+            for (auto id : side) {
+                node(id).on_dispatch(
+                  [unreachable](model::node_id dest, raft::msg_type) {
+                      if (
+                        std::ranges::find(unreachable, dest)
+                        != unreachable.end()) {
+                          throw std::runtime_error("partitioned");
+                      }
+                      return ss::now();
+                  });
+            }
+        };
+        block_towards(a, b);
+        block_towards(b, a);
+    }
+
+    ss::future<bool>
+    log_contains_key(model::node_id id, const ss::sstring& key) {
+        const auto expected = serde::to_iobuf(key);
+        for (auto& b : co_await read_raw_log(id)) {
+            if (b.header().type != model::record_batch_type::raft_data) {
+                continue;
+            }
+            for (auto& r : b.copy_records()) {
+                if (r.key() == expected) {
+                    co_return true;
+                }
+            }
+        }
+        co_return false;
+    }
+
     ss::future<> restart(model::node_id id, std::vector<vnode> initial_nodes) {
         auto dir = node(id).raft()->log()->config().base_directory();
         co_await stop_node(id);
@@ -111,11 +152,11 @@ struct configuration_divergence_test : raft_fixture {
     }
 
     /**
-     * Brings the group to a state where `victim_id` missed a membership change:
-     * a fourth node is added to a three node group while every configuration
-     * batch append fails on the victim after becoming visible.
+     * Grows the initial three node group by `extra` nodes. When
+     * `drop_on_victim` is set every configuration batch append fails on the
+     * victim after becoming visible, so it never learns the new configuration.
      */
-    ss::future<> diverge_one_follower() {
+    ss::future<> grow_group(size_t extra, bool drop_on_victim) {
         co_await create_simple_group(3);
         leader_id = co_await wait_for_leader(10s);
 
@@ -125,17 +166,23 @@ struct configuration_divergence_test : raft_fixture {
         ASSERT_TRUE_CORO(res.has_value());
 
         for (const auto& [id, _] : nodes()) {
-            if (id != leader_id) {
+            original_nodes.push_back(id);
+            if (id != leader_id && victim_id == model::node_id{-1}) {
                 victim_id = id;
-                break;
             }
         }
         ASSERT_NE_CORO(victim_id, model::node_id{-1});
 
-        auto dropped = drop_configurations_on(victim_id);
+        auto dropped = ss::make_shared<size_t>(0);
+        if (drop_on_victim) {
+            dropped = drop_configurations_on(victim_id);
+        }
 
-        auto& n3 = add_node(added_node, model::revision_id(0));
-        co_await n3.init_and_start({});
+        for (size_t i = 0; i < extra; ++i) {
+            auto& n = add_node(
+              model::node_id(int(added_node() + i)), model::revision_id(0));
+            co_await n.init_and_start({});
+        }
 
         const auto target_voters = all_vnodes().size();
         co_await node(leader_id).raft()->replace_configuration(
@@ -157,9 +204,12 @@ struct configuration_divergence_test : raft_fixture {
                    == node(leader_id).raft()->dirty_offset();
         });
 
-        // both the joint and the resulting simple configuration were dropped
-        ASSERT_GE_CORO(*dropped, 2);
-        stop_dropping_configurations_on(victim_id);
+        if (drop_on_victim) {
+            // both the joint and the resulting simple configuration were
+            // dropped
+            ASSERT_GE_CORO(*dropped, 2);
+            stop_dropping_configurations_on(victim_id);
+        }
 
         // a failed append never reaches end_of_stream, so the dropped batches
         // are visible but not yet flushed. Appending data behind them makes
@@ -172,176 +222,129 @@ struct configuration_divergence_test : raft_fixture {
         co_await wait_for_committed_offset(tail.value().last_offset, 30s);
     }
 
+    ss::future<> diverge_one_follower() { return grow_group(1, true); }
+
+    // the original group member that is neither the leader nor the victim
+    model::node_id third_original() const {
+        for (auto id : original_nodes) {
+            if (id != leader_id && id != victim_id) {
+                return id;
+            }
+        }
+        return model::node_id{-1};
+    }
+
     static constexpr model::node_id added_node{3};
 
     model::node_id victim_id{-1};
     model::node_id leader_id{-1};
+    std::vector<model::node_id> original_nodes;
 };
 
 } // namespace
 
 /**
- * The core defect: the victim's log holds configuration batches that its own
- * configuration_manager has never seen, so it reports a stale group
- * configuration while its log is byte for byte identical to the leader's.
+ *
+ * The group really has five voters, so a commit needs three of them. The victim
+ * lost that configuration and still believes in the original three, so it needs
+ * only two. Partitioning the group so that the victim has a majority of the
+ * configuration it believes in, but not of the real one, lets it acknowledge a
+ * write to a client that no quorum of the real configuration ever saw. When the
+ * victim's side goes away that write is gone, while the surviving three nodes
+ * are a legitimate majority of the real configuration and carry on serving.
+ *
+ * Both sides can commit at the same time: the two acknowledging sets are
+ * disjoint, which is exactly what raft's configuration change rules exist to
+ * make impossible.
  */
-TEST_F_CORO(
-  configuration_divergence_test, configuration_lost_when_append_fails) {
-    co_await diverge_one_follower();
+TEST_F_CORO(configuration_divergence_test, acknowledged_write_is_lost) {
+    co_await grow_group(2, true);
 
-    const auto n3 = node(added_node).get_vnode();
-
-    const auto& leader_cfg = node(leader_id).raft()->config();
-    ASSERT_EQ_CORO(leader_cfg.current_config().voters.size(), 4);
-    ASSERT_TRUE_CORO(leader_cfg.is_voter(n3));
-
-    const auto& victim_cfg = node(victim_id).raft()->config();
-    ASSERT_EQ_CORO(victim_cfg.current_config().voters.size(), 3);
-    ASSERT_FALSE_CORO(victim_cfg.contains(n3));
-
-    // the divergence is in derived state only - the logs agree
-    auto victim_batches = co_await read_raw_log(victim_id);
-    auto leader_batches = co_await read_raw_log(leader_id);
-    ASSERT_EQ_CORO(victim_batches.size(), leader_batches.size());
-    ASSERT_TRUE_CORO(
-      std::equal(
-        victim_batches.begin(), victim_batches.end(), leader_batches.begin()));
-
-    // and the victim's log contains configurations above the last one its
-    // manager knows about, which it will never read again
-    auto cfg_offsets = co_await configuration_offsets_in_log(victim_id);
-    auto latest_known = node(victim_id).raft()->get_latest_configuration_offset();
-    ASSERT_GT_CORO(
-      std::ranges::count_if(
-        cfg_offsets, [latest_known](auto o) { return o > latest_known; }),
-      0);
-}
-
-/**
- * Boundary case: nothing persists a highest known offset above the dropped
- * batches, so a plain restart rescans the log from a low offset and heals. The
- * highest known offset - not log retention - is what makes the loss permanent.
- */
-TEST_F_CORO(configuration_divergence_test, plain_restart_heals_the_divergence) {
-    co_await diverge_one_follower();
-
-    const auto n3 = node(added_node).get_vnode();
-    ASSERT_FALSE_CORO(node(victim_id).raft()->config().contains(n3));
-
-    auto vnodes = all_vnodes();
-    co_await restart(victim_id, vnodes);
-
-    ASSERT_TRUE_CORO(node(victim_id).raft()->config().contains(n3));
-    ASSERT_EQ_CORO(
-      node(victim_id).raft()->config().current_config().voters.size(), 4);
-}
-
-/**
- * A snapshot raises the persisted highest known offset past the dropped batches
- * and prefix truncates them out of the log. configuration_manager::prefix_
- * truncate migrates the *stale* configuration forward to the truncation point,
- * so after a restart the node has neither the correct configuration nor
- * anything left to reconstruct it from.
- */
-TEST_F_CORO(
-  configuration_divergence_test, snapshot_makes_the_divergence_permanent) {
-    co_await diverge_one_follower();
-
-    const auto n3 = node(added_node).get_vnode();
-    auto vnodes = all_vnodes();
-
-    // push the committed offset past the dropped configuration batches
-    auto res = co_await node(leader_id).raft()->replicate(
-      make_batches({{"k_1", "v_1"}}),
-      replicate_options(consistency_level::quorum_ack));
-    ASSERT_TRUE_CORO(res.has_value());
-    co_await wait_for_committed_offset(res.value().last_offset, 30s);
-
-    auto snapshot_offset = node(victim_id).raft()->committed_offset();
-    auto cfg_offsets = co_await configuration_offsets_in_log(victim_id);
-    ASSERT_TRUE_CORO(
-      std::ranges::all_of(
-        cfg_offsets, [snapshot_offset](auto o) { return o <= snapshot_offset; }));
-
-    // quiesce the rest of the group so nothing can push a new configuration to
-    // the victim while it snapshots and restarts
-    for (auto id : all_ids()) {
-        if (id != victim_id) {
-            co_await stop_node(id);
-        }
-    }
-
-    co_await node(victim_id).raft()->write_snapshot(
-      write_snapshot_cfg(snapshot_offset, iobuf{}));
-
-    // the configuration batches are gone from the log
-    ASSERT_TRUE_CORO(
-      (co_await configuration_offsets_in_log(victim_id)).empty());
-
-    co_await restart(victim_id, vnodes);
-
-    // permanently stale: the correct configuration is neither in the manager
-    // nor recoverable from the log
+    // the victim still believes in the original three voters
     ASSERT_EQ_CORO(
       node(victim_id).raft()->config().current_config().voters.size(), 3);
-    ASSERT_FALSE_CORO(node(victim_id).raft()->config().contains(n3));
-    ASSERT_TRUE_CORO(
-      (co_await configuration_offsets_in_log(victim_id)).empty());
+    ASSERT_EQ_CORO(
+      node(leader_id).raft()->config().current_config().voters.size(), 5);
+
+    // the victim plus one other original node is a majority of the stale
+    // configuration and no majority at all of the real one
+    const std::vector<model::node_id> stale_side{victim_id, third_original()};
+    const std::vector<model::node_id> real_side{
+      leader_id, added_node, model::node_id(added_node() + 1)};
+
+    // make sure the victim, not its ally, wins on the stale side
+    node(third_original()).raft()->block_new_leadership();
+    partition_group(stale_side, real_side);
+
+    RPTEST_REQUIRE_EVENTUALLY_CORO(
+      30s, [this] { return node(victim_id).raft()->is_elected_leader(); });
+
+    // two of three acknowledge, so the write is committed and acknowledged to
+    // the caller with quorum_ack
+    auto lost = co_await node(victim_id).raft()->replicate(
+      make_batches({{"lost", "v"}}),
+      replicate_options(consistency_level::quorum_ack, 10s));
+    ASSERT_TRUE_CORO(lost.has_value());
+    RPTEST_REQUIRE_EVENTUALLY_CORO(30s, [this, lost] {
+        return node(victim_id).raft()->committed_offset()
+               >= lost.value().last_offset;
+    });
+
+    // the real side, holding a majority of the real configuration, never saw it
+    // and keeps committing on its own
+    for (auto id : real_side) {
+        ASSERT_FALSE_CORO(co_await log_contains_key(id, "lost"));
+    }
+
+    // the victim's side goes away, as the node that acknowledged the write
+    // would on any ordinary failure
+    for (auto id : stale_side) {
+        co_await stop_node(id);
+    }
+    for (auto id : real_side) {
+        node(id).reset_dispatch_handlers();
+    }
+
+    // three of five voters are alive: a legitimate majority of the real
+    // configuration, which elects and commits normally
+    co_await wait_for_leader(30s);
+    auto after = co_await retry_with_leader(
+      model::timeout_clock::now() + 30s, [this](raft_node_instance& leader) {
+          return leader.raft()->replicate(
+            make_batches({{"after", "v"}}),
+            replicate_options(consistency_level::quorum_ack, 10s));
+      });
+    ASSERT_TRUE_CORO(after.has_value());
+
+    // the acknowledged write is on no surviving replica
+    for (auto id : real_side) {
+        ASSERT_FALSE_CORO(co_await log_contains_key(id, "lost"));
+    }
 }
 
 /**
- * The amplifier. vote_stm snapshots consensus::config() and, on winning,
- * replicates it as the initial configuration batch of its term. A replica with
- * a stale configuration therefore does not just misjudge quorum locally - it
- * writes the stale membership back into the log as an authoritative
- * configuration change, and every other replica accepts it.
- *
- * It also wins that election counting votes over the stale voter set, i.e. with
- * fewer votes than the real configuration requires.
+ * Control: without the lost configuration the very same partition acknowledges
+ * nothing. The victim knows it needs three of five voters, cannot get them, and
+ * fails the write instead of losing it.
  */
 TEST_F_CORO(
-  configuration_divergence_test, stale_replica_regresses_group_as_leader) {
-    co_await diverge_one_follower();
+  configuration_divergence_test, no_write_is_acknowledged_when_intact) {
+    co_await grow_group(2, false);
 
-    const auto n3 = node(added_node).get_vnode();
-    for (auto id : all_ids()) {
-        if (id != victim_id) {
-            ASSERT_TRUE_CORO(node(id).raft()->config().contains(n3));
-        }
-    }
+    ASSERT_EQ_CORO(
+      node(victim_id).raft()->config().current_config().voters.size(), 5);
 
-    co_await transfer_leadership_to(victim_id);
+    const std::vector<model::node_id> stale_side{victim_id, third_original()};
+    const std::vector<model::node_id> real_side{
+      leader_id, added_node, model::node_id(added_node() + 1)};
 
-    // every replica that is still part of the stale configuration accepts it as
-    // an authoritative configuration change: the group's membership has gone
-    // backwards, revision included
-    RPTEST_REQUIRE_EVENTUALLY_CORO(30s, [this, n3] {
-        return std::ranges::all_of(all_ids(), [this, n3](model::node_id id) {
-            if (id == added_node) {
-                return true;
-            }
-            const auto& cfg = node(id).raft()->config();
-            return cfg.get_state() == configuration_state::simple
-                   && cfg.current_config().voters.size() == 3
-                   && !cfg.contains(n3)
-                   && cfg.revision_id() < model::revision_id(1);
-        });
-    });
+    node(third_original()).raft()->block_new_leadership();
+    partition_group(stale_side, real_side);
 
-    // the removed node is never told. It is absent from the configuration the
-    // new leader knows about, so it is dropped from the follower states and
-    // nothing is dispatched to it: it goes on believing it is a voter of a four
-    // node group, campaigning in a configuration that no longer exists.
-    const auto& orphan_cfg = node(added_node).raft()->config();
-    ASSERT_EQ_CORO(orphan_cfg.current_config().voters.size(), 4);
-    ASSERT_TRUE_CORO(orphan_cfg.is_voter(n3));
-    ASSERT_LT_CORO(
-      node(added_node).raft()->get_latest_configuration_offset(),
-      node(victim_id).raft()->get_latest_configuration_offset());
-
-    // the regression is durable: it is a real configuration batch in the log
-    auto cfg_offsets = co_await configuration_offsets_in_log(victim_id);
-    auto latest = node(victim_id).raft()->get_latest_configuration_offset();
-    ASSERT_TRUE_CORO(
-      std::ranges::find(cfg_offsets, latest) != cfg_offsets.end());
+    // two of five voters can neither elect nor commit
+    auto res = co_await node(victim_id).raft()->replicate(
+      make_batches({{"lost", "v"}}),
+      replicate_options(consistency_level::quorum_ack, 5s));
+    ASSERT_TRUE_CORO(res.has_error());
+    ASSERT_FALSE_CORO(node(victim_id).raft()->is_leader());
 }
