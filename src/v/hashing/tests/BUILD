@@ -59,6 +59,23 @@ redpanda_cc_gtest(
 )
 
 redpanda_cc_bench(
+    name = "crc_bench_rpbench",
+    srcs = [
+        "crc_bench.cc",
+    ],
+    deps = [
+        "//src/v/base",
+        "//src/v/bytes",
+        "//src/v/bytes:iobuf",
+        "//src/v/hashing:crc32c",
+        "//src/v/test_utils:random_bytes",
+        "@abseil-cpp//absl/crc:crc32c",
+        "@seastar",
+        "@seastar//:benchmark",
+    ],
+)
+
+redpanda_cc_bench(
     name = "hashing_bench_rpbench",
     srcs = [
         "hash_bench.cc",
