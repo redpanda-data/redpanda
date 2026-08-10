@@ -237,7 +237,6 @@ func newStdioCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 			aigatewayv1mcp.ForwardToConnectSettingsServiceClient(s, aiGatewayClientSet.Settings, aiGatewayURLOpt)
 			aigatewayv1mcp.ForwardToConnectSpendLimitServiceClient(s, aiGatewayClientSet.SpendLimit, aiGatewayURLOpt)
 			aigatewayv1mcp.ForwardToConnectSSOServiceClient(s, aiGatewayClientSet.SSO, aiGatewayURLOpt)
-			aigatewayv1mcp.ForwardToConnectTeamServiceClient(s, aiGatewayClientSet.Team, aiGatewayURLOpt)
 			aigatewayv1mcp.ForwardToConnectUserServiceClient(s, aiGatewayClientSet.User, aiGatewayURLOpt)
 			aigatewayv1mcp.ForwardToConnectVisualMetadataServiceClient(s, aiGatewayClientSet.VisualMetadata, aiGatewayURLOpt)
 			aigatewayv1mcp.ForwardToConnectWorkspaceServiceClient(s, aiGatewayClientSet.Workspace, aiGatewayURLOpt)
