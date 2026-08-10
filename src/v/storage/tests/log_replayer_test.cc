@@ -97,6 +97,24 @@ public:
 
     void write_garbage_index() { do_write_garbage(base_name + ".index"); }
 
+    /// Builds the on-disk shape of a preallocated region that nobody wrote:
+    /// the file has a non-zero size and reads back as zeros from position 0.
+    void write_zeros(size_t n) {
+        auto fd = ss::open_file_dma(
+                    base_name, ss::open_flags::create | ss::open_flags::rw)
+                    .get();
+        fd = ss::file(
+          ss::make_shared(file_io_sanitizer(
+            std::move(fd),
+            std::filesystem::path{base_name},
+            ntp_sanitizer_config{.sanitize_only = true})));
+        auto out = ss::make_file_output_stream(std::move(fd)).get();
+        const std::vector<char> zeros(n, 0);
+        out.write(zeros.data(), zeros.size()).get();
+        out.flush().get();
+        out.close().get();
+    }
+
     void do_write_garbage(ss::sstring name) {
         auto fd = ss::open_file_dma(
                     name, ss::open_flags::create | ss::open_flags::rw)
@@ -145,9 +163,12 @@ TEST(log_replayer_test, test_can_recover_single_batch) {
       = ctx.replayer().recover_in_thread();
     ASSERT_TRUE(bool(recovered));
     EXPECT_EQ(recovered.last_offset.value(), last_offset);
+    EXPECT_EQ(recovered.stop_reason, storage::replay_stop_reason::end_of_file);
 }
 
 TEST(log_replayer_test, test_unrecovered_single_batch) {
+    // write() recomputes the header's own CRC, so both mutations leave it
+    // valid. The header parses and the batch's record CRC fails.
     {
         log_replayer_fixture ctx;
         auto batches
@@ -156,6 +177,9 @@ TEST(log_replayer_test, test_unrecovered_single_batch) {
         ctx.write(batches);
         auto recovered = ctx.replayer().recover_in_thread();
         EXPECT_FALSE(bool(recovered));
+        EXPECT_EQ(
+          recovered.stop_reason,
+          storage::replay_stop_reason::record_crc_mismatch);
     }
     {
         log_replayer_fixture ctx;
@@ -165,6 +189,9 @@ TEST(log_replayer_test, test_unrecovered_single_batch) {
         ctx.write(batches);
         auto recovered = ctx.replayer().recover_in_thread();
         EXPECT_FALSE(bool(recovered));
+        EXPECT_EQ(
+          recovered.stop_reason,
+          storage::replay_stop_reason::record_crc_mismatch);
     }
 }
 
@@ -174,6 +201,42 @@ TEST(log_replayer_test, test_malformed_segment) {
     ctx.initialize(model::offset(0));
     auto recovered = ctx.replayer().recover_in_thread();
     EXPECT_FALSE(bool(recovered));
+    EXPECT_EQ(
+      recovered.stop_reason, storage::replay_stop_reason::header_crc_mismatch);
+}
+
+TEST(log_replayer_test, test_zeroed_batch_header_is_not_a_verdict) {
+    // Both cases report the same reason, so a caller cannot read the reason
+    // as a verdict on the contents.
+    {
+        // A preallocated region that nobody wrote.
+        log_replayer_fixture ctx;
+        ctx.write_zeros(4096);
+        ctx.initialize(model::offset(0));
+        auto recovered = ctx.replayer().recover_in_thread();
+        EXPECT_FALSE(bool(recovered));
+        EXPECT_EQ(
+          recovered.stop_reason,
+          storage::replay_stop_reason::zeroed_batch_header);
+    }
+    {
+        // Batches, then preallocated space: the shape of the segment that
+        // was open when the process died. Replay recovers it and reports the
+        // same stopping point.
+        log_replayer_fixture ctx;
+        auto batches
+          = model::test::make_random_batches(model::offset(1), 2).get();
+        auto last_offset = batches.back().last_offset();
+        ctx.write(batches);
+        ctx._seg->reader().set_file_size(
+          ctx._seg->appender().file_byte_offset() + 4096);
+        auto recovered = ctx.replayer().recover_in_thread();
+        ASSERT_TRUE(bool(recovered));
+        EXPECT_EQ(recovered.last_offset.value(), last_offset);
+        EXPECT_EQ(
+          recovered.stop_reason,
+          storage::replay_stop_reason::zeroed_batch_header);
+    }
 }
 
 TEST(log_replayer_test, test_can_recover_multiple_batches) {

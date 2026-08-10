@@ -69,6 +69,9 @@ public:
             _header = {};
             co_return stop_parser::no;
         }
+        // stop_parser::yes and a clean parse to end of file both leave
+        // parser_errc::none, so record the reason here.
+        _cfg.stop_reason = replay_stop_reason::record_crc_mismatch;
         co_return stop_parser::yes;
     }
 
@@ -91,6 +94,42 @@ private:
     size_t _file_pos_to_end_of_batch{0};
 };
 
+std::string_view to_string_view(replay_stop_reason r) {
+    switch (r) {
+    case replay_stop_reason::end_of_file:
+        return "end_of_file";
+    case replay_stop_reason::zeroed_batch_header:
+        return "zeroed_batch_header";
+    case replay_stop_reason::header_crc_mismatch:
+        return "header_crc_mismatch";
+    case replay_stop_reason::record_crc_mismatch:
+        return "record_crc_mismatch";
+    case replay_stop_reason::truncated_batch:
+        return "truncated_batch";
+    case replay_stop_reason::threw:
+        return "threw";
+    }
+    std::unreachable();
+}
+
+/// Maps the parser's terminal error onto a reason. Only called when no reason
+/// is set yet, so parser_errc::none here means a clean parse to end of file.
+static replay_stop_reason from_parser_errc(parser_errc e) {
+    switch (e) {
+    case parser_errc::fallocated_file_read_zero_bytes_for_header:
+        return replay_stop_reason::zeroed_batch_header;
+    case parser_errc::header_only_crc_missmatch:
+        return replay_stop_reason::header_crc_mismatch;
+    case parser_errc::input_stream_not_enough_bytes:
+    case parser_errc::not_enough_bytes_in_parser_for_one_record:
+        return replay_stop_reason::truncated_batch;
+    case parser_errc::end_of_stream:
+    case parser_errc::none:
+        return replay_stop_reason::end_of_file;
+    }
+    std::unreachable();
+}
+
 // Called in the context of a ss::thread
 log_replayer::checkpoint log_replayer::recover_in_thread() {
     vlog(stlog.debug, "Recovering segment {}", *_seg);
@@ -99,15 +138,22 @@ log_replayer::checkpoint log_replayer::recover_in_thread() {
     auto consumer = std::make_unique<checksumming_consumer>(_seg, _ckpt);
     auto parser = continuous_batch_parser(
       std::move(consumer), std::move(data_stream), true);
+    std::exception_ptr exc;
     try {
         parser.consume().get();
     } catch (...) {
+        exc = std::current_exception();
+    }
+    if (exc) {
         vlog(
           stlog.warn,
           "{} partial recovery to {}, with: {}",
           _seg->reader().filename(),
           _ckpt,
-          std::current_exception());
+          exc);
+        _ckpt.stop_reason = replay_stop_reason::threw;
+    } else if (!_ckpt.stop_reason.has_value()) {
+        _ckpt.stop_reason = from_parser_errc(parser.error());
     }
     parser.close().get();
     return _ckpt;
@@ -116,9 +162,10 @@ log_replayer::checkpoint log_replayer::recover_in_thread() {
 fmt::iterator log_replayer::checkpoint::format_to(fmt::iterator it) const {
     return fmt::format_to(
       it,
-      "{{last_offset: {}, truncate_file_pos: {}}}",
+      "{{last_offset: {}, truncate_file_pos: {}, stop_reason: {}}}",
       last_offset,
-      truncate_file_pos);
+      truncate_file_pos,
+      stop_reason.has_value() ? to_string_view(*stop_reason) : "unset");
 }
 
 } // namespace storage
