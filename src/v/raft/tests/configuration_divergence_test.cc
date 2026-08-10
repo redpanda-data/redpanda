@@ -15,12 +15,12 @@
 #include "raft/tests/raft_fixture.h"
 #include "raft/tests/raft_fixture_retry_policy.h"
 #include "raft/types.h"
-#include "serde/rw/rw.h"
 #include "storage/types.h"
 #include "test_utils/async.h"
 #include "test_utils/test.h"
 
 #include <seastar/core/coroutine.hh>
+#include <seastar/core/sleep.hh>
 
 #include <algorithm>
 #include <chrono>
@@ -30,14 +30,18 @@ using namespace raft;
 namespace {
 
 /**
- * raft::configuration_manager is only ever told about a configuration from the
- * continuation of consensus::disk_append. When an append fails after a
- * raft_configuration batch already became visible in the log, that continuation
- * never runs: the batch is in the log but the manager never learns about it.
+ * An append can fail after a raft_configuration batch already became visible
+ * in the log, e.g. when a later batch of the same append_entries request
+ * fails to be written. The configuration manager must still learn about the
+ * visible configuration: nothing ever re-delivers it otherwise (a leader
+ * does not resend entries that are already present in a follower's log) and
+ * the manager's state would silently diverge from the log, breaking the
+ * quorum arithmetic that raft's configuration change rules depend on.
  *
- * These tests demonstrate the consequences. They are all about a single
- * replica's derived state diverging from its own log - the logs themselves stay
- * identical across the group throughout.
+ * These tests inject such failures on a single replica (the victim) and
+ * verify that its configuration manager stays consistent with its log, in
+ * memory, across the partition scenario that would previously lose an
+ * acknowledged write, and across a restart.
  */
 struct configuration_divergence_test : raft_fixture {
     /**
@@ -66,13 +70,16 @@ struct configuration_divergence_test : raft_fixture {
     }
 
     /**
-     * Reads the raw log, including the raft_configuration batches that
-     * raft_node_instance::read_batches_in_range filters out.
+     * Reads the raw log directly from storage, including the
+     * raft_configuration batches that
+     * raft_node_instance::read_batches_in_range filters out and without
+     * capping at the raft visibility offset (which is unset on a freshly
+     * restarted node with no leader).
      */
     ss::future<model::record_batch_reader::data_t>
     read_raw_log(model::node_id id) {
         auto raft = node(id).raft();
-        auto rdr = co_await raft->make_reader(
+        auto rdr = co_await node(id).f_injectable_log()->make_reader(
           storage::local_log_reader_config(
             raft->start_offset(), model::offset::max()));
         co_return co_await model::consume_reader_to_memory(
@@ -89,19 +96,6 @@ struct configuration_divergence_test : raft_fixture {
             }
         }
         co_return offsets;
-    }
-
-    ss::future<> transfer_leadership_to(model::node_id target) {
-        auto start = model::timeout_clock::now();
-        while (true) {
-            auto current_leader = co_await wait_for_leader(start + 30s);
-            if (current_leader == target) {
-                co_return;
-            }
-            auto raft = node(current_leader).raft();
-            std::ignore = co_await raft->transfer_leadership(
-              {.group = raft->group(), .target = target, .timeout = 10s});
-        }
     }
 
     /**
@@ -128,22 +122,6 @@ struct configuration_divergence_test : raft_fixture {
         block_towards(b, a);
     }
 
-    ss::future<bool>
-    log_contains_key(model::node_id id, const ss::sstring& key) {
-        const auto expected = serde::to_iobuf(key);
-        for (auto& b : co_await read_raw_log(id)) {
-            if (b.header().type != model::record_batch_type::raft_data) {
-                continue;
-            }
-            for (auto& r : b.copy_records()) {
-                if (r.key() == expected) {
-                    co_return true;
-                }
-            }
-        }
-        co_return false;
-    }
-
     ss::future<> restart(model::node_id id, std::vector<vnode> initial_nodes) {
         auto dir = node(id).raft()->log()->config().base_directory();
         co_await stop_node(id);
@@ -154,7 +132,7 @@ struct configuration_divergence_test : raft_fixture {
     /**
      * Grows the initial three node group by `extra` nodes. When
      * `drop_on_victim` is set every configuration batch append fails on the
-     * victim after becoming visible, so it never learns the new configuration.
+     * victim after the batch became visible in its log.
      */
     ss::future<> grow_group(size_t extra, bool drop_on_victim) {
         co_await create_simple_group(3);
@@ -188,8 +166,6 @@ struct configuration_divergence_test : raft_fixture {
         co_await node(leader_id).raft()->replace_configuration(
           all_vnodes(), model::revision_id(1));
 
-        // the reconfiguration completes on every node but the victim, whose
-        // configuration manager never learns about any of the batches
         RPTEST_REQUIRE_EVENTUALLY_CORO(30s, [this, target_voters] {
             const auto& cfg = node(leader_id).raft()->config();
             return cfg.get_state() == configuration_state::simple
@@ -197,32 +173,30 @@ struct configuration_divergence_test : raft_fixture {
         });
 
         // the failed appends leave the batches visible, so the victim's log
-        // still catches up with the leader's. Only once it has can the hook be
-        // removed without the victim picking a configuration up after the fact.
+        // still catches up with the leader's. Waiting for that before
+        // removing the hook makes the number of injected failures
+        // deterministic.
         RPTEST_REQUIRE_EVENTUALLY_CORO(30s, [this] {
             return node(victim_id).raft()->dirty_offset()
                    == node(leader_id).raft()->dirty_offset();
         });
 
         if (drop_on_victim) {
-            // both the joint and the resulting simple configuration were
-            // dropped
+            // both the joint and the resulting simple configuration appends
+            // failed on the victim
             ASSERT_GE_CORO(*dropped, 2);
             stop_dropping_configurations_on(victim_id);
         }
 
-        // a failed append never reaches end_of_stream, so the dropped batches
-        // are visible but not yet flushed. Appending data behind them makes
-        // them durable and readable without telling the victim's configuration
-        // manager anything.
+        // a failed append never reaches end_of_stream, so the batches whose
+        // append failed are visible but not yet flushed. Appending data
+        // behind them makes them durable and readable.
         auto tail = co_await node(leader_id).raft()->replicate(
           make_batches({{"k_1", "v_1"}}),
           replicate_options(consistency_level::quorum_ack));
         ASSERT_TRUE_CORO(tail.has_value());
         co_await wait_for_committed_offset(tail.value().last_offset, 30s);
     }
-
-    ss::future<> diverge_one_follower() { return grow_group(1, true); }
 
     // the original group member that is neither the leader nor the victim
     model::node_id third_original() const {
@@ -244,88 +218,75 @@ struct configuration_divergence_test : raft_fixture {
 } // namespace
 
 /**
- *
- * The group really has five voters, so a commit needs three of them. The victim
- * lost that configuration and still believes in the original three, so it needs
- * only two. Partitioning the group so that the victim has a majority of the
- * configuration it believes in, but not of the real one, lets it acknowledge a
- * write to a client that no quorum of the real configuration ever saw. When the
- * victim's side goes away that write is gone, while the surviving three nodes
- * are a legitimate majority of the real configuration and carry on serving.
- *
- * Both sides can commit at the same time: the two acknowledging sets are
- * disjoint, which is exactly what raft's configuration change rules exist to
- * make impossible.
+ * The victim's configuration manager tracks its own log even though every
+ * configuration batch append on it failed after the batch became visible:
+ * the configurations of the visible batches are reconciled into the manager
+ * on the failure path, so the victim converges on the five voter
+ * configuration like every other replica.
  */
-TEST_F_CORO(configuration_divergence_test, acknowledged_write_is_lost) {
+TEST_F_CORO(configuration_divergence_test, configuration_manager_tracks_log) {
     co_await grow_group(2, true);
 
-    // the victim still believes in the original three voters
+    RPTEST_REQUIRE_EVENTUALLY_CORO(30s, [this] {
+        const auto& cfg = node(victim_id).raft()->config();
+        return cfg.get_state() == configuration_state::simple
+               && cfg.current_config().voters.size() == 5;
+    });
+
+    // the manager's latest configuration is the last configuration batch of
+    // the victim's log
+    auto log_offsets = co_await configuration_offsets_in_log(victim_id);
+    ASSERT_FALSE_CORO(log_offsets.empty());
     ASSERT_EQ_CORO(
-      node(victim_id).raft()->config().current_config().voters.size(), 3);
+      node(victim_id).raft()->get_latest_configuration_offset(),
+      log_offsets.back());
+}
+
+/**
+ * The partition that would previously lose an acknowledged write: the group
+ * really has five voters, and a victim that lost the configuration would
+ * believe in the original three, elect itself with two votes and acknowledge
+ * a write no quorum of the real configuration ever saw. With the
+ * configuration manager consistent with the log the victim knows it needs
+ * three of five voters, cannot get them, and no write is acknowledged.
+ */
+TEST_F_CORO(
+  configuration_divergence_test, no_split_brain_after_append_failures) {
+    co_await grow_group(2, true);
+
+    // the victim learned the five voter configuration despite the failures
+    ASSERT_EQ_CORO(
+      node(victim_id).raft()->config().current_config().voters.size(), 5);
     ASSERT_EQ_CORO(
       node(leader_id).raft()->config().current_config().voters.size(), 5);
 
-    // the victim plus one other original node is a majority of the stale
-    // configuration and no majority at all of the real one
+    // the victim plus one other original node is a majority of the original
+    // three node configuration and no majority at all of the real one
     const std::vector<model::node_id> stale_side{victim_id, third_original()};
     const std::vector<model::node_id> real_side{
       leader_id, added_node, model::node_id(added_node() + 1)};
 
-    // make sure the victim, not its ally, wins on the stale side
+    // if the victim were to campaign with a stale configuration, make sure
+    // it is the one to win on its side of the partition
     node(third_original()).raft()->block_new_leadership();
     partition_group(stale_side, real_side);
 
-    RPTEST_REQUIRE_EVENTUALLY_CORO(
-      30s, [this] { return node(victim_id).raft()->is_elected_leader(); });
+    // give the victim several election timeouts worth of opportunity to
+    // elect itself with a stale quorum
+    co_await ss::sleep(5s);
+    ASSERT_FALSE_CORO(node(victim_id).raft()->is_elected_leader());
 
-    // two of three acknowledge, so the write is committed and acknowledged to
-    // the caller with quorum_ack
-    auto lost = co_await node(victim_id).raft()->replicate(
+    // two of five voters can neither elect nor commit
+    auto res = co_await node(victim_id).raft()->replicate(
       make_batches({{"lost", "v"}}),
-      replicate_options(consistency_level::quorum_ack, 10s));
-    ASSERT_TRUE_CORO(lost.has_value());
-    RPTEST_REQUIRE_EVENTUALLY_CORO(30s, [this, lost] {
-        return node(victim_id).raft()->committed_offset()
-               >= lost.value().last_offset;
-    });
-
-    // the real side, holding a majority of the real configuration, never saw it
-    // and keeps committing on its own
-    for (auto id : real_side) {
-        ASSERT_FALSE_CORO(co_await log_contains_key(id, "lost"));
-    }
-
-    // the victim's side goes away, as the node that acknowledged the write
-    // would on any ordinary failure
-    for (auto id : stale_side) {
-        co_await stop_node(id);
-    }
-    for (auto id : real_side) {
-        node(id).reset_dispatch_handlers();
-    }
-
-    // three of five voters are alive: a legitimate majority of the real
-    // configuration, which elects and commits normally
-    co_await wait_for_leader(30s);
-    auto after = co_await retry_with_leader(
-      model::timeout_clock::now() + 30s, [this](raft_node_instance& leader) {
-          return leader.raft()->replicate(
-            make_batches({{"after", "v"}}),
-            replicate_options(consistency_level::quorum_ack, 10s));
-      });
-    ASSERT_TRUE_CORO(after.has_value());
-
-    // the acknowledged write is on no surviving replica
-    for (auto id : real_side) {
-        ASSERT_FALSE_CORO(co_await log_contains_key(id, "lost"));
-    }
+      replicate_options(consistency_level::quorum_ack, 5s));
+    ASSERT_TRUE_CORO(res.has_error());
+    ASSERT_FALSE_CORO(node(victim_id).raft()->is_leader());
 }
 
 /**
- * Control: without the lost configuration the very same partition acknowledges
- * nothing. The victim knows it needs three of five voters, cannot get them, and
- * fails the write instead of losing it.
+ * Control: the same partition with no failure injection behaves identically,
+ * demonstrating that the injected failures no longer make a difference.
  */
 TEST_F_CORO(
   configuration_divergence_test, no_write_is_acknowledged_when_intact) {
@@ -347,4 +308,32 @@ TEST_F_CORO(
       replicate_options(consistency_level::quorum_ack, 5s));
     ASSERT_TRUE_CORO(res.has_error());
     ASSERT_FALSE_CORO(node(victim_id).raft()->is_leader());
+}
+
+/**
+ * The reconciliation is durable: the configuration manager only persists a
+ * highest known offset covering offsets whose configurations it has
+ * processed, so a restart of the victim recovers a configuration consistent
+ * with its log even though later successful appends advanced the persisted
+ * state past the batches whose appends failed.
+ */
+TEST_F_CORO(
+  configuration_divergence_test, configuration_survives_victim_restart) {
+    co_await grow_group(2, true);
+
+    RPTEST_REQUIRE_EVENTUALLY_CORO(30s, [this] {
+        const auto& cfg = node(victim_id).raft()->config();
+        return cfg.get_state() == configuration_state::simple
+               && cfg.current_config().voters.size() == 5;
+    });
+
+    co_await restart(victim_id, all_vnodes());
+
+    const auto& cfg = node(victim_id).raft()->config();
+    ASSERT_EQ_CORO(cfg.current_config().voters.size(), 5);
+    auto log_offsets = co_await configuration_offsets_in_log(victim_id);
+    ASSERT_FALSE_CORO(log_offsets.empty());
+    ASSERT_EQ_CORO(
+      node(victim_id).raft()->get_latest_configuration_offset(),
+      log_offsets.back());
 }

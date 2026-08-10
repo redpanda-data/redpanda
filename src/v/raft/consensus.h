@@ -663,6 +663,11 @@ private:
     ss::future<storage::append_result> disk_append(
       chunked_vector<model::record_batch>, update_last_quorum_index);
 
+    /// Adds configurations from batches that became visible in the log
+    /// before an append failure to the configuration manager.
+    ss::future<>
+      handle_disk_append_failure(chunked_vector<offset_configuration>);
+
     using success_reply = ss::bool_class<struct successfull_reply_tag>;
 
     success_reply update_follower_index(

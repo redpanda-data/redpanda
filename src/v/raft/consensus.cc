@@ -47,6 +47,7 @@
 #include <seastar/core/gate.hh>
 #include <seastar/core/metrics.hh>
 #include <seastar/core/semaphore.hh>
+#include <seastar/coroutine/as_future.hh>
 #include <seastar/coroutine/exception.hh>
 #include <seastar/coroutine/switch_to.hh>
 #include <seastar/util/defer.hh>
@@ -3031,11 +3032,27 @@ ss::future<storage::append_result> consensus::disk_append(
       // batch fsync
       storage::log_append_config::fsync::no};
 
-    auto [ret, configurations]
-      = co_await details::for_each_ref_extract_configuration(
+    /**
+     * Configurations are owned by this coroutine frame so that they survive
+     * an append failure: an append may fail after some of its batches have
+     * already become visible in the log and the configurations from those
+     * batches must still reach the configuration manager. Nothing ever
+     * re-delivers them otherwise - a leader does not resend entries that are
+     * already present in a follower's log.
+     */
+    chunked_vector<offset_configuration> configurations;
+    auto append_fut = co_await ss::coroutine::as_future(
+      details::for_each_ref_extract_configuration(
         _log->offsets().dirty_offset,
         std::move(batches),
-        _log->make_appender(cfg));
+        _log->make_appender(cfg),
+        configurations));
+    if (append_fut.failed()) {
+        auto eptr = append_fut.get_exception();
+        co_await handle_disk_append_failure(std::move(configurations));
+        co_return ss::coroutine::exception(std::move(eptr));
+    }
+    auto ret = std::move(append_fut).get();
 
     _pending_flush_bytes += ret.byte_size;
     if (should_update_last_quorum_idx) {
@@ -3075,6 +3092,47 @@ ss::future<storage::append_result> consensus::disk_append(
       ret.last_offset, ret.byte_size, _bg);
 
     co_return ret;
+}
+
+ss::future<> consensus::handle_disk_append_failure(
+  chunked_vector<offset_configuration> configurations) {
+    /**
+     * The log appends batches one by one, so a failed append may still have
+     * made a prefix of its batches visible (and durable) in the log. Any
+     * configuration whose offset is covered by the log's dirty offset is in
+     * the log and the configuration manager must learn about it even though
+     * the append failed, otherwise its state silently diverges from the log.
+     */
+    const auto dirty_offset = _log->offsets().dirty_offset;
+    chunked_vector<offset_configuration> visible;
+    for (auto& oc : configurations) {
+        if (oc.offset <= dirty_offset) {
+            visible.push_back(std::move(oc));
+        }
+    }
+    if (visible.empty()) {
+        co_return;
+    }
+    vlog(
+      _ctxlog.warn,
+      "append failed with {} configuration(s) already visible in the log, "
+      "reconciling configuration manager",
+      visible.size());
+    auto add_fut = co_await ss::coroutine::as_future(
+      _configuration_manager.add(std::move(visible)));
+    if (add_fut.failed()) {
+        // the in-memory state of the configuration manager is updated before
+        // any persistence step, so on failure the live state still matches
+        // the log while the persisted highest known offset stays behind the
+        // configuration and a restart re-reads it from the log
+        auto add_eptr = add_fut.get_exception();
+        vlog(
+          _ctxlog.error,
+          "failed to reconcile configuration manager after append failure: {}",
+          add_eptr);
+    } else {
+        update_follower_states(_configuration_manager.get_latest());
+    }
 }
 
 model::term_id consensus::get_term(model::offset o) const {

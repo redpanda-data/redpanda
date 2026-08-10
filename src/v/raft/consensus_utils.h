@@ -139,7 +139,7 @@ struct configuration_extracting_consumer {
         if (
           batch.header().type == model::record_batch_type::raft_configuration) {
             iobuf_parser parser(batch.copy_records().begin()->release_value());
-            configurations.emplace_back(
+            configurations->emplace_back(
               next_offset, deserialize_configuration(parser));
         }
 
@@ -152,20 +152,51 @@ struct configuration_extracting_consumer {
     }
 
     auto end_of_stream() {
-        return ss::futurize_invoke([this] { return wrapped.end_of_stream(); })
-          .then([confs = std::move(configurations)](auto ret) mutable {
-              return std::make_tuple(std::move(ret), std::move(confs));
-          });
+        return ss::futurize_invoke([this] { return wrapped.end_of_stream(); });
     }
 
     ReferenceConsumer wrapped;
     model::offset next_offset;
-    chunked_vector<offset_configuration> configurations;
+    chunked_vector<offset_configuration>* configurations;
 };
 
 template<typename ReferenceConsumer>
 using configuration_extracting_consumer_result_t = typename ss::futurize<
   decltype(std::declval<ReferenceConsumer&>().end_of_stream())>::value_type;
+
+/**
+ * Consumes all batches with the given consumer while lazily extracting
+ * raft::group_configuration batches into the caller provided vector.
+ *
+ * The vector is owned by the caller so that configurations extracted from
+ * batches consumed before a failure remain available to the caller even when
+ * the returned future resolves exceptionally: a batch may have become visible
+ * in the log before a later step of the same append failed and the caller
+ * must be able to reconcile derived state with the log in that case.
+ */
+template<typename ReferenceConsumer>
+requires model::ReferenceBatchReaderConsumer<ReferenceConsumer>
+ss::future<configuration_extracting_consumer_result_t<ReferenceConsumer>>
+for_each_ref_extract_configuration(
+  model::offset base_offset,
+  chunked_vector<model::record_batch> batches,
+  ReferenceConsumer c,
+  chunked_vector<offset_configuration>& configurations) {
+    auto consumer = configuration_extracting_consumer<ReferenceConsumer>{
+      .wrapped = std::move(c),
+      .next_offset = model::next_offset(base_offset),
+      .configurations = &configurations};
+    for (auto& batch : batches) {
+        // move the batch out so that its memory is released as soon as it has
+        // been consumed instead of holding all batches alive until the whole
+        // append completes
+        auto b = std::move(batch);
+        if (co_await consumer(b) == ss::stop_iteration::yes) {
+            break;
+        }
+    }
+    co_return co_await consumer.end_of_stream();
+}
 
 /**
  * Consumes all batches with the given consumer while lazily extracting
@@ -182,18 +213,10 @@ for_each_ref_extract_configuration(
   model::offset base_offset,
   chunked_vector<model::record_batch> batches,
   ReferenceConsumer c) {
-    auto consumer = configuration_extracting_consumer<ReferenceConsumer>{
-      .wrapped = std::move(c), .next_offset = model::next_offset(base_offset)};
-    for (auto& batch : batches) {
-        // move the batch out so that its memory is released as soon as it has
-        // been consumed instead of holding all batches alive until the whole
-        // append completes
-        auto b = std::move(batch);
-        if (co_await consumer(b) == ss::stop_iteration::yes) {
-            break;
-        }
-    }
-    co_return co_await consumer.end_of_stream();
+    chunked_vector<offset_configuration> configurations;
+    auto ret = co_await for_each_ref_extract_configuration(
+      base_offset, std::move(batches), std::move(c), configurations);
+    co_return std::make_tuple(std::move(ret), std::move(configurations));
 }
 
 bytes serialize_group_key(raft::group_id, metadata_key);
