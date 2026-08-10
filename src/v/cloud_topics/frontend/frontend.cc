@@ -109,14 +109,14 @@ static void update_batch_base_offset(
     src.header().reset_size_checksum_metadata(src.data());
 }
 
-static ss::future<chunked_vector<model::record_batch>>
-clone_batches(const chunked_vector<model::record_batch>& src) {
+static chunked_vector<model::record_batch>
+shared_batches(chunked_vector<model::record_batch>& src) {
     chunked_vector<model::record_batch> res;
+    res.reserve(src.size());
     for (auto& s : src) {
-        res.push_back(s.copy());
-        co_await ss::coroutine::maybe_yield();
+        res.push_back(s.share());
     }
-    co_return res;
+    return res;
 }
 
 /// Write proper offsets into the record batches
@@ -984,7 +984,7 @@ ss::future<std::expected<kafka::offset, std::error_code>> frontend::replicate(
 
     chunked_vector<model::record_batch> rb_copy;
     if (cache_enabled()) {
-        rb_copy = co_await clone_batches(batches);
+        rb_copy = shared_batches(batches);
     }
 
     /*
@@ -1131,7 +1131,7 @@ raft::replicate_stages frontend::replicate(
     chunked_vector<model::record_batch> batch_vec, to_cache;
     batch_vec.push_back(std::move(batch));
     if (cache_enabled()) {
-        to_cache.push_back(batch_vec.front().copy());
+        to_cache.push_back(batch_vec.front().share());
     }
     raft::replicate_stages out(raft::errc::success);
     ss::promise<result<raft::replicate_result>> result;

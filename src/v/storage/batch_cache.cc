@@ -101,12 +101,49 @@ batch_cache::range::add(const model::record_batch& b, is_dirty_entry dirty) {
     auto offset = _arena.size_bytes();
     reflection::adl<model::record_batch_header>{}.to(_arena, b.header().copy());
     _size += serialized_header_size;
-    // if there is not enough space left in last arena fragment we
-    // trim it and append existing fragments directly to the arena
-    // iobuf
+
+    // 128 KiB is the maximum size iobuf's own allocator produces
+    // (io_allocation_size::max_chunk_size). At this size there should be no
+    // memory amplification from sharing it.
+    //
+    // In the future this threshold can likely be lowered to avoid additional
+    // copying at the cost of potential memory fragmentation.
+    static constexpr size_t share_threshold = 128 * 1024;
+
     if (_arena.rbegin()->available_bytes() < b.data().size_bytes()) {
         _size += b.data().size_bytes();
-        _arena.append_fragments(b.data().copy());
+        auto& fragments = const_cast<iobuf&>(b.data());
+        for (auto& f : fragments) {
+            if (f.size() >= share_threshold) {
+                _arena.append(std::make_unique<iobuf::fragment>(f.share()));
+            } else {
+                // Copy into an exact-sized fragment so the arena's
+                // capacity stays close to its used bytes (the cache's
+                // waste budget). Going through iobuf::append(char*, n)
+                // here would use the growth heuristic and over-allocate.
+                //
+                // Both Seastar's input_stream and the segment reader use a
+                // 128 KiB read buffer by default, and the iobuf::append
+                // heuristic produces records iobufs of shape
+                // [partial, 128K, 128K, ..., 128K, partial] (preserved
+                // through kafka_batch_adapter's slicing). Under that shape
+                // this branch fires at most twice per batch (for the
+                // leading and trailing partials), so the per-source-fragment
+                // copy doesn't produce a long tail of small arena fragments
+                // in practice.
+                //
+                // The worst case here is a batch that straddles the 128 KiB
+                // source-fragment boundary. This results an iobuf with the
+                // shape of [partial, partial] with no middle fragment. The old
+                // code coalesced them into a single fragment that was appended
+                // to the arena. The current code results in two fragments being
+                // appended to the arena.
+                ss::temporary_buffer<char> buf(f.size());
+                std::copy_n(f.get(), f.size(), buf.get_write());
+                _arena.append(
+                  std::make_unique<iobuf::fragment>(std::move(buf)));
+            }
+        }
     } else {
         // if there is enough space in arena just copy data into
         // existing fragment
