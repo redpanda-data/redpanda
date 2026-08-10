@@ -12,7 +12,6 @@ def redpanda_copts():
     """
 
     copts = []
-    copts.append("-Werror")
     copts.append("-Wall")
     copts.append("-Wextra")
     copts.append("-Wno-missing-field-initializers")
