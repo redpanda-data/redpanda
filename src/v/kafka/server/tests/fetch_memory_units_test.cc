@@ -14,6 +14,7 @@
 #include "config/property.h"
 #include "kafka/server/fetch_memory_units.h"
 #include "ssx/semaphore.h"
+#include "test_utils/async.h"
 #include "test_utils/test.h"
 
 #include <seastar/core/sleep.hh>
@@ -23,6 +24,7 @@
 
 #include <functional>
 #include <optional>
+#include <utility>
 
 using namespace std::chrono_literals;
 
@@ -144,8 +146,13 @@ TEST_F_CORO(fetch_memory_units_test_fixture, test_cross_shard_free) {
 
     remote_units = {};
     // Since the number of units is equal to max_release_size they should be
-    // sent back to their originating shard right away.
-    EXPECT_EQ(co_await other_fetch_sem_avail(), max_release_size);
+    // sent back to their originating shard right away. The release itself is
+    // asynchronous (a background cross-shard call), so wait for it to become
+    // visible.
+    RPTEST_REQUIRE_EVENTUALLY_CORO(10s, [&] {
+        return other_fetch_sem_avail().then(
+          [&](auto avail) { return std::cmp_equal(avail, max_release_size); });
+    });
     EXPECT_EQ(co_await other_kafka_sem_avail(), max_release_size);
 
     remote_units = co_await get_remote_units(max_release_size - 1);
