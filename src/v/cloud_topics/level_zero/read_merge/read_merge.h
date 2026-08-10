@@ -35,6 +35,10 @@ public:
     ss::future<> start();
     ss::future<> stop();
 
+    /// Request counters, exposed so tests can synchronize with the
+    /// background request processing.
+    const read_merge_probe& probe() const { return _probe; }
+
 private:
     using semaphore_units
       = seastar::semaphore_units<ss::named_semaphore_exception_factory, Clock>;

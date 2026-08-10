@@ -153,6 +153,9 @@ public:
         _bytes_out += bytes;
     }
 
+    uint64_t requests_in() const { return _requests_in; }
+    uint64_t requests_out() const { return _requests_out; }
+
 private:
     void setup_internal_metrics(bool disable);
 
