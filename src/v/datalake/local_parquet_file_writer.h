@@ -11,6 +11,7 @@
 #pragma once
 
 #include "datalake/data_writer_interface.h"
+#include "datalake/parquet_write_config.h"
 
 #include <seastar/core/file.hh>
 
@@ -27,7 +28,7 @@ public:
       local_path, ss::shared_ptr<parquet_ostream_factory>, writer_mem_tracker&);
 
     ss::future<checked<std::nullopt_t, writer_error>>
-    initialize(const iceberg::struct_type&);
+    initialize(const iceberg::struct_type&, const parquet_write_config&);
 
     ss::future<writer_error> add_data_struct(
       iceberg::struct_value /* data */,
@@ -68,7 +69,10 @@ public:
       writer_mem_tracker&);
 
     ss::future<result<std::unique_ptr<parquet_file_writer>, writer_error>>
-    create_writer(const iceberg::struct_type& schema, ss::abort_source&) final;
+    create_writer(
+      const iceberg::struct_type& schema,
+      const parquet_write_config&,
+      ss::abort_source&) final;
 
 private:
     local_path create_filename() const;

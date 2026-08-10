@@ -1,5 +1,6 @@
 #include "bytes/bytes.h"
 #include "bytes/iostream.h"
+#include "datalake/parquet_write_config.h"
 #include "datalake/serde_parquet_writer.h"
 #include "datalake/tests/test_data.h"
 #include "datalake/tests/test_data_writer.h"
@@ -22,7 +23,10 @@ TEST(SerdeParquetWriterTest, CheckIfTheWriterWritesData) {
     datalake::noop_mem_tracker mem_tracker;
     auto writer = datalake::serde_parquet_writer_factory{}
                     .create_writer(
-                      schema, make_iobuf_ref_output_stream(target), mem_tracker)
+                      schema,
+                      datalake::parquet_write_config{},
+                      make_iobuf_ref_output_stream(target),
+                      mem_tracker)
                     .get();
 
     auto v = iceberg::tests::make_value(
@@ -47,7 +51,10 @@ TEST(SerdeParquetWriterTest, ValidateWriterBehaviorOnOOM) {
     datalake::noop_mem_tracker mem_tracker;
     auto writer = datalake::serde_parquet_writer_factory{}
                     .create_writer(
-                      schema, make_iobuf_ref_output_stream(target), mem_tracker)
+                      schema,
+                      datalake::parquet_write_config{},
+                      make_iobuf_ref_output_stream(target),
+                      mem_tracker)
                     .get();
 
     auto v = iceberg::tests::make_value(
@@ -98,7 +105,10 @@ TEST(SerdeParquetWriterTest, ColumnStats) {
 
     auto writer = datalake::serde_parquet_writer_factory{}
                     .create_writer(
-                      schema, make_iobuf_ref_output_stream(target), mem_tracker)
+                      schema,
+                      datalake::parquet_write_config{},
+                      make_iobuf_ref_output_stream(target),
+                      mem_tracker)
                     .get();
 
     const float nan_f = std::numeric_limits<float>::quiet_NaN();
@@ -222,7 +232,10 @@ TEST(SerdeParquetWriterTest, ColumnStatsMultipleRowGroups) {
 
     auto writer = datalake::serde_parquet_writer_factory{}
                     .create_writer(
-                      schema, make_iobuf_ref_output_stream(target), mem_tracker)
+                      schema,
+                      datalake::parquet_write_config{},
+                      make_iobuf_ref_output_stream(target),
+                      mem_tracker)
                     .get();
 
     auto add = [&](std::optional<int64_t> v) {

@@ -8,6 +8,7 @@
  * https://github.com/redpanda-data/redpanda/blob/master/licenses/rcl.md
  */
 #include "bytes/bytes.h"
+#include "datalake/parquet_write_config.h"
 #include "datalake/partitioning_writer.h"
 #include "datalake/table_definition.h"
 #include "datalake/tests/test_data_writer.h"
@@ -100,7 +101,8 @@ TEST_P(PartitioningWriterExtraColumnsTest, TestSchemaHappyPath) {
       schema_id,
       default_type.copy(),
       pspec.value().copy(),
-      {});
+      {},
+      datalake::parquet_write_config{});
 
     static constexpr int num_hrs = 5;
     static constexpr int records_per_hr = 5;
@@ -147,7 +149,8 @@ TEST(PartitioningWriterTest, TestWriterError) {
       schema_id,
       default_type.copy(),
       pspec.value().copy(),
-      {});
+      {},
+      datalake::parquet_write_config{});
     auto err = writer
                  .add_data(
                    val_with_timestamp(field, model::timestamp::now()),
@@ -164,7 +167,12 @@ TEST(PartitioningWriterTest, TestUnexpectedSchema) {
     auto pspec = partition_spec::resolve(hour_partition_spec(), schema_type);
     ASSERT_TRUE(pspec.has_value());
     partitioning_writer writer(
-      *writer_factory, schema_id, schema_type.copy(), pspec.value().copy(), {});
+      *writer_factory,
+      schema_id,
+      schema_type.copy(),
+      pspec.value().copy(),
+      {},
+      datalake::parquet_write_config{});
     auto unexpected_field_type = test_nested_schema_type();
     auto err = writer
                  .add_data(
@@ -184,7 +192,12 @@ TEST(PartitioningWriterTest, TestEmptyKey) {
     auto spec_id = partition_spec::id_t{123};
     partition_spec empty_spec{.spec_id = spec_id};
     partitioning_writer writer(
-      *writer_factory, schema_id, default_type.copy(), empty_spec.copy(), {});
+      *writer_factory,
+      schema_id,
+      default_type.copy(),
+      empty_spec.copy(),
+      {},
+      datalake::parquet_write_config{});
 
     static constexpr auto num_hrs = 10;
     static constexpr auto records_per_hr = 5;
@@ -219,7 +232,8 @@ TEST(PartitioningWriterTest, TestDayTransform) {
       schema_id,
       default_type.copy(),
       pspec.value().copy(),
-      {});
+      {},
+      datalake::parquet_write_config{});
 
     static constexpr int num_days = 4;
     static constexpr int records_per_day = 5;
@@ -281,7 +295,12 @@ TEST(PartitioningWriterTest, TestCompositeKey) {
     ASSERT_TRUE(spec.has_value());
 
     partitioning_writer writer(
-      *writer_factory, schema_id, schema_type.copy(), spec.value().copy(), {});
+      *writer_factory,
+      schema_id,
+      schema_type.copy(),
+      spec.value().copy(),
+      {},
+      datalake::parquet_write_config{});
 
     static constexpr auto num_hrs = 10;
     static constexpr auto records_per_hr = 5;

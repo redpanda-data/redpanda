@@ -74,7 +74,9 @@ local_parquet_file_writer::local_parquet_file_writer(
   , _mem_tracker(mem_tracker) {}
 
 ss::future<checked<std::nullopt_t, writer_error>>
-local_parquet_file_writer::initialize(const iceberg::struct_type& schema) {
+local_parquet_file_writer::initialize(
+  const iceberg::struct_type& schema,
+  const parquet_write_config& write_config) {
     vlog(datalake_log.info, "Writing Parquet file to {}", _output_file_path);
     ss::file output_file;
     try {
@@ -106,7 +108,7 @@ local_parquet_file_writer::initialize(const iceberg::struct_type& schema) {
     }
 
     _writer = co_await _writer_factory->create_writer(
-      schema, std::move(fut.get()), _mem_tracker);
+      schema, write_config, std::move(fut.get()), _mem_tracker);
     _initialized = true;
     co_return std::nullopt;
 }
@@ -227,7 +229,9 @@ local_parquet_file_writer_factory::local_parquet_file_writer_factory(
 
 ss::future<result<std::unique_ptr<parquet_file_writer>, writer_error>>
 local_parquet_file_writer_factory::create_writer(
-  const iceberg::struct_type& schema, ss::abort_source& as) {
+  const iceberg::struct_type& schema,
+  const parquet_write_config& write_config,
+  ss::abort_source& as) {
     // Buffered row data is reserved separately as it is written.
     const size_t reservation_bytes = output_stream_buffer_size
                                      + serde::parquet::writer::estimated_memory(
@@ -240,7 +244,7 @@ local_parquet_file_writer_factory::create_writer(
     auto writer = std::make_unique<local_parquet_file_writer>(
       create_filename(), _writer_factory, _mem_tracker);
 
-    auto res = co_await writer->initialize(schema);
+    auto res = co_await writer->initialize(schema, write_config);
     if (res.has_error()) {
         co_return res.error();
     }

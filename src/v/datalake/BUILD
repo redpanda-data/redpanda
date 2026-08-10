@@ -67,6 +67,7 @@ redpanda_cc_library(
     ],
     visibility = [":__subpackages__"],
     deps = [
+        ":parquet_write_config",
         ":partition_key_path",
         ":writer",
         "//src/v/base",
@@ -92,6 +93,20 @@ redpanda_cc_library(
 )
 
 redpanda_cc_library(
+    name = "parquet_write_config",
+    srcs = [
+        "parquet_write_config.cc",
+    ],
+    hdrs = [
+        "parquet_write_config.h",
+    ],
+    visibility = [":__subpackages__"],
+    deps = [
+        "//src/v/iceberg:table_metadata",
+    ],
+)
+
+redpanda_cc_library(
     name = "writer",
     srcs = [
         "data_writer_interface.cc",
@@ -105,6 +120,7 @@ redpanda_cc_library(
     visibility = [":__subpackages__"],
     deps = [
         ":base_types",
+        ":parquet_write_config",
         "//src/v/base",
         "//src/v/iceberg:datatypes",
         "//src/v/iceberg:values",
@@ -461,6 +477,7 @@ redpanda_cc_library(
     visibility = [":__subpackages__"],
     deps = [
         ":logger",
+        ":parquet_write_config",
         ":writer",
         "//src/v/base",
         "//src/v/container:chunked_vector",

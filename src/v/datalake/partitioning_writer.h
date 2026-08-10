@@ -12,6 +12,7 @@
 #include "base/format_to.h"
 #include "container/chunked_hash_map.h"
 #include "datalake/data_writer_interface.h"
+#include "datalake/parquet_write_config.h"
 #include "iceberg/datatypes.h"
 #include "iceberg/partition_key.h"
 #include "iceberg/schema.h"
@@ -36,13 +37,15 @@ public:
       iceberg::schema::id_t schema_id,
       iceberg::struct_type type,
       iceberg::partition_spec spec,
-      remote_path remote_prefix)
+      remote_path remote_prefix,
+      parquet_write_config write_config)
       : writer_factory_(factory)
       , schema_id_(schema_id)
       , type_(std::move(type))
       , accessors_(iceberg::struct_accessor::from_struct_type(type_))
       , spec_(std::move(spec))
-      , remote_prefix_(std::move(remote_prefix)) {}
+      , remote_prefix_(std::move(remote_prefix))
+      , write_config_(std::move(write_config)) {}
 
     // Adds the given value to the writer corresponding to the value's
     // partition key.
@@ -84,6 +87,8 @@ private:
     iceberg::struct_accessor::ids_accessor_map_t accessors_;
     iceberg::partition_spec spec_;
     remote_path remote_prefix_;
+
+    parquet_write_config write_config_;
 
     // Map of partition keys to their corresponding data file writers.
     chunked_hash_map<

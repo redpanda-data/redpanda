@@ -9,6 +9,7 @@
  */
 
 #include "datalake/local_parquet_file_writer.h"
+#include "datalake/parquet_write_config.h"
 #include "datalake/tests/test_data.h"
 #include "datalake/tests/test_data_writer.h"
 #include "iceberg/datatypes.h"
@@ -71,6 +72,7 @@ struct test_writer_factory : datalake::parquet_ostream_factory {
 
     ss::future<std::unique_ptr<datalake::parquet_ostream>> create_writer(
       const iceberg::struct_type&,
+      const datalake::parquet_write_config&,
       ss::output_stream<char> os,
       datalake::writer_mem_tracker&) final {
         co_return std::make_unique<test_writer>(
@@ -169,7 +171,7 @@ TEST_F(LocalFileWriterTest, TestHappyPath) {
       mem_tracker);
 
     auto schema = test_schema(iceberg::field_required::no);
-    file_writer.initialize(schema).get();
+    file_writer.initialize(schema, datalake::parquet_write_config{}).get();
 
     size_t rows = 1000;
     for (size_t i = 0; i < rows; i++) {
@@ -197,7 +199,7 @@ TEST_F(LocalFileWriterTest, TestErrorOnWrite) {
       ss::make_shared<test_writer_factory>(100),
       mem_tracker);
     auto schema = test_schema(iceberg::field_required::no);
-    file_writer.initialize(schema).get();
+    file_writer.initialize(schema, datalake::parquet_write_config{}).get();
 
     size_t rows = 1000;
     for (size_t i = 0; i < rows; i++) {
@@ -222,7 +224,7 @@ TEST_F(LocalFileWriterTest, TestErrorOnFinish) {
       ss::make_shared<test_writer_factory>(5000, true),
       mem_tracker);
     auto schema = test_schema(iceberg::field_required::no);
-    file_writer.initialize(schema).get();
+    file_writer.initialize(schema, datalake::parquet_write_config{}).get();
 
     size_t rows = 1000;
     for (size_t i = 0; i < rows; i++) {
@@ -251,8 +253,12 @@ TEST_F(LocalFileWriterTest, ReservationScalesWithLeafColumns) {
 
     auto reserved_for = [&](size_t n_leaves) -> size_t {
         tracker.last_reserved = 0;
-        auto res
-          = factory.create_writer(make_flat_int_schema(n_leaves), as).get();
+        auto res = factory
+                     .create_writer(
+                       make_flat_int_schema(n_leaves),
+                       datalake::parquet_write_config{},
+                       as)
+                     .get();
         EXPECT_FALSE(res.has_error());
         // Close the writer's stream so its test_writer doesn't assert on drop.
         std::move(res.value())->finish().get();
@@ -273,7 +279,12 @@ TEST_F(LocalFileWriterTest, ReservationScalesWithLeafColumns) {
     EXPECT_GT(r4, r2);
 
     tracker.last_reserved = 0;
-    auto nested_res = factory.create_writer(make_nested_schema(), as).get();
+    auto nested_res = factory
+                        .create_writer(
+                          make_nested_schema(),
+                          datalake::parquet_write_config{},
+                          as)
+                        .get();
     EXPECT_FALSE(nested_res.has_error());
     std::move(nested_res.value())->finish().get();
     EXPECT_EQ(tracker.last_reserved, reserved_for(5));

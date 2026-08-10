@@ -14,6 +14,7 @@
 #include "datalake/data_writer_interface.h"
 #include "datalake/location.h"
 #include "datalake/logger.h"
+#include "datalake/parquet_write_config.h"
 #include "datalake/record_schema_resolver.h"
 #include "datalake/record_translator.h"
 #include "datalake/table_creator.h"
@@ -371,6 +372,8 @@ ss::future<ss::stop_iteration> record_multiplexer::do_multiplex(
                 co_return ss::stop_iteration::yes;
             }
 
+            auto write_config = parquet_write_config::from_properties(
+              load_res.value().properties);
             auto [iter, _] = _writers.emplace(
               record_type.comps,
               std::make_unique<partitioning_writer>(
@@ -378,7 +381,8 @@ ss::future<ss::stop_iteration> record_multiplexer::do_multiplex(
                 load_res.value().schema.schema_id,
                 std::move(record_type.type),
                 std::move(load_res.value().partition_spec),
-                std::move(data_remote_path.value())));
+                std::move(data_remote_path.value()),
+                std::move(write_config)));
             writer_iter = iter;
         }
 
@@ -623,12 +627,15 @@ record_multiplexer::handle_invalid_record(
                 co_return writer_error::unknown_error;
             }
 
+            auto write_config = parquet_write_config::from_properties(
+              load_res.value().properties);
             _invalid_record_writer = std::make_unique<partitioning_writer>(
               *_writer_factory,
               load_res.value().schema.schema_id,
               std::move(record_type.type),
               std::move(load_res.value().partition_spec),
-              std::move(data_remote_path.value()));
+              std::move(data_remote_path.value()),
+              std::move(write_config));
         }
 
         int64_t estimated_size = (key ? key->size_bytes() : 0)

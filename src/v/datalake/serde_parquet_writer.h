@@ -38,6 +38,7 @@ class serde_parquet_writer_factory : public parquet_ostream_factory {
 public:
     ss::future<std::unique_ptr<parquet_ostream>> create_writer(
       const iceberg::struct_type&,
+      const parquet_write_config&,
       ss::output_stream<char>,
       writer_mem_tracker&) final;
 };

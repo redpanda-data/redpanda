@@ -12,6 +12,7 @@
 #include "base/format_to.h"
 #include "base/outcome.h"
 #include "datalake/base_types.h"
+#include "datalake/parquet_write_config.h"
 #include "iceberg/datatypes.h"
 #include "iceberg/values.h"
 
@@ -233,6 +234,7 @@ public:
 
     virtual ss::future<std::unique_ptr<parquet_ostream>> create_writer(
       const iceberg::struct_type&,
+      const parquet_write_config&,
       ss::output_stream<char>,
       writer_mem_tracker&) = 0;
 };
@@ -285,8 +287,10 @@ public:
 
     virtual ss::future<
       result<std::unique_ptr<parquet_file_writer>, writer_error>>
-    create_writer(const iceberg::struct_type& /* schema */, ss::abort_source&)
-      = 0;
+    create_writer(
+      const iceberg::struct_type& /* schema */,
+      const parquet_write_config&,
+      ss::abort_source&) = 0;
 };
 
 } // namespace datalake
