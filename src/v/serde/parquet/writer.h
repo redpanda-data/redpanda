@@ -11,6 +11,7 @@
 
 #pragma once
 
+#include "absl/container/flat_hash_map.h"
 #include "base/units.h"
 #include "container/chunked_vector.h"
 #include "serde/parquet/metadata.h"
@@ -73,6 +74,11 @@ public:
         // occurs at roughly 1.5× the configured NDV (~15K for the default).
         static constexpr size_t default_bloom_filter_ndv = 10'000;
         size_t bloom_filter_ndv = 0;
+
+        // Per-column bloom filter NDV overrides. Key is the dot-joined
+        // column path without the schema root (e.g., "redpanda.offset").
+        // Overrides bloom_filter_ndv for matched columns.
+        absl::flat_hash_map<ss::sstring, size_t> bloom_filter_columns;
     };
 
     // Create a new parquet file writer using the given options that

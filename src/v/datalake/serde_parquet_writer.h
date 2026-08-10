@@ -1,8 +1,11 @@
 #pragma once
 
+#include "absl/container/flat_hash_map.h"
 #include "datalake/data_writer_interface.h"
 #include "iceberg/datatypes.h"
 #include "serde/parquet/writer.h"
+
+#include <seastar/core/sstring.hh>
 
 namespace datalake {
 class serde_parquet_writer : public parquet_ostream {
@@ -42,5 +45,12 @@ public:
       ss::output_stream<char>,
       writer_mem_tracker&) final;
 };
+
+/// Resolve per-column bloom filter config against the given Iceberg schema.
+/// Returns a map from dot-joined parquet column path (without root) to NDV.
+/// Warns on unknown columns (0 matches) and ambiguous dot-separated names
+/// (>1 match), applying config to all matches in the latter case.
+absl::flat_hash_map<ss::sstring, size_t> resolve_bloom_filter_columns(
+  const parquet_write_config& config, const iceberg::struct_type& schema);
 
 } // namespace datalake

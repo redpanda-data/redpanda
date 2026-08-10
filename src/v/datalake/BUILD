@@ -104,10 +104,13 @@ redpanda_cc_library(
         ":logger",
         "//src/v/base",
         "//src/v/strings:string_switch",
+        "@abseil-cpp//absl/container:flat_hash_map",
     ],
     visibility = [":__subpackages__"],
     deps = [
+        "//src/v/container:chunked_vector",
         "//src/v/iceberg:table_metadata",
+        "@seastar",
     ],
 )
 
@@ -510,7 +513,9 @@ redpanda_cc_library(
         "//src/v/iceberg/conversion:schema_parquet",
         "//src/v/iceberg/conversion:values_parquet",
         "//src/v/serde/parquet:metadata",
+        "//src/v/serde/parquet:schema",
         "//src/v/version",
+        "@fmt",
     ],
     visibility = [":__subpackages__"],
     deps = [
@@ -518,6 +523,7 @@ redpanda_cc_library(
         "//src/v/base",
         "//src/v/iceberg:datatypes",
         "//src/v/serde/parquet:writer",
+        "@abseil-cpp//absl/container:flat_hash_map",
         "@seastar",
     ],
 )

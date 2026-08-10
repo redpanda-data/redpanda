@@ -292,6 +292,22 @@ redpanda_cc_gtest(
     ],
 )
 
+redpanda_cc_gtest(
+    name = "resolve_bloom_filter_columns_test",
+    timeout = "short",
+    srcs = [
+        "resolve_bloom_filter_columns_test.cc",
+    ],
+    deps = [
+        "//src/v/datalake:parquet_write_config",
+        "//src/v/datalake:serde_parquet_writer",
+        "//src/v/iceberg:datatypes",
+        "//src/v/test_utils:gtest",
+        "@googletest//:gtest",
+        "@seastar",
+    ],
+)
+
 redpanda_cc_bench(
     name = "record_multiplexer_rpbench",
     timeout = "long",

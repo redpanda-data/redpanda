@@ -21,6 +21,8 @@
 
 #include <seastar/coroutine/exception.hh>
 
+#include <fmt/ranges.h>
+
 #include <algorithm>
 #include <limits>
 #include <stdexcept>
@@ -55,6 +57,19 @@ public:
                 return;
             }
             bool is_bool = std::holds_alternative<bool_type>(element.type);
+            size_t ndv = _opts.bloom_filter_ndv;
+            if (!_opts.bloom_filter_columns.empty()) {
+                auto segments = path_in_schema(element);
+                auto dot_path = fmt::format("{}", fmt::join(segments, "."));
+                if (
+                  auto it = _opts.bloom_filter_columns.find(dot_path);
+                  it != _opts.bloom_filter_columns.end()) {
+                    ndv = it->second;
+                }
+            }
+            if (is_bool) {
+                ndv = 0;
+            }
             _columns.emplace(
               element.position,
               column{
@@ -65,7 +80,7 @@ public:
                     .compress = _opts.compress,
                     .max_stats_truncate_length
                     = _opts.max_stats_truncate_length,
-                    .bloom_filter_ndv = is_bool ? 0 : _opts.bloom_filter_ndv,
+                    .bloom_filter_ndv = ndv,
                   }),
               });
         });

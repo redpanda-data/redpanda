@@ -156,6 +156,7 @@ redpanda_cc_library(
         "//src/v/bytes:iostream",
         "//src/v/container:contiguous_range_map",
         "@abseil-cpp//absl/container:flat_hash_set",
+        "@fmt",
     ],
     visibility = ["//visibility:public"],
     deps = [
@@ -164,6 +165,7 @@ redpanda_cc_library(
         ":value",
         "//src/v/base",
         "//src/v/container:chunked_vector",
+        "@abseil-cpp//absl/container:flat_hash_map",
         "@seastar",
     ],
 )

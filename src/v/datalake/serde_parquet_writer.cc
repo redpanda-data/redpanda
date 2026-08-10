@@ -6,13 +6,68 @@
 #include "iceberg/conversion/schema_parquet.h"
 #include "iceberg/conversion/values_parquet.h"
 #include "serde/parquet/metadata.h"
+#include "serde/parquet/schema.h"
 #include "version/version.h"
 
 #include <seastar/util/defer.hh>
 
+#include <fmt/ranges.h>
+
 #include <variant>
 
 namespace datalake {
+
+absl::flat_hash_map<ss::sstring, size_t> resolve_bloom_filter_columns(
+  const parquet_write_config& config,
+  const iceberg::struct_type& iceberg_schema) {
+    absl::flat_hash_map<ss::sstring, size_t> result;
+    if (config.bloom_filter_columns.empty()) {
+        return result;
+    }
+
+    auto schema_copy = schema_to_parquet(iceberg_schema);
+    serde::parquet::index_schema(schema_copy);
+
+    // Build dot-paths for all leaves.
+    chunked_vector<ss::sstring> leaf_dot_paths;
+    schema_copy.for_each([&](const serde::parquet::schema_element& element) {
+        if (!element.is_leaf()) {
+            return;
+        }
+        // Drop the root name from the path.
+        chunked_vector<ss::sstring> segments;
+        auto it = element.path.begin();
+        for (++it; it != element.path.end(); ++it) {
+            segments.push_back(*it);
+        }
+        leaf_dot_paths.push_back(fmt::format("{}", fmt::join(segments, ".")));
+    });
+
+    for (const auto& col : config.bloom_filter_columns) {
+        size_t match_count = 0;
+        for (const auto& dot_path : leaf_dot_paths) {
+            if (dot_path == col.name) {
+                result[dot_path] = col.ndv;
+                ++match_count;
+            }
+        }
+        if (match_count == 0) {
+            vlog(
+              datalake_log.warn,
+              "bloom filter property references unknown column '{}', ignoring",
+              col.name);
+        } else if (match_count > 1) {
+            vlog(
+              datalake_log.warn,
+              "bloom filter column name '{}' matches {} schema paths "
+              "(ambiguous dot-separated name), applying to all",
+              col.name,
+              match_count);
+        }
+    }
+
+    return result;
+}
 
 writer_error serde_parquet_writer::set_error(writer_error e) {
     _error = e;
@@ -148,11 +203,13 @@ serde_parquet_writer_factory::create_writer(
   const parquet_write_config& write_config,
   ss::output_stream<char> out,
   writer_mem_tracker& mem_tracker) {
+    auto bloom_columns = resolve_bloom_filter_columns(write_config, schema);
     serde::parquet::writer::options opts{
       .schema = schema_to_parquet(schema),
       .version = ss::sstring(redpanda_git_version()),
       .build = ss::sstring(redpanda_git_revision()),
       .compress = write_config.compress,
+      .bloom_filter_columns = std::move(bloom_columns),
     };
     serde::parquet::writer writer(std::move(opts), std::move(out));
     co_await writer.init();

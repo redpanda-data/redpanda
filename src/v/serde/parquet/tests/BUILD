@@ -226,6 +226,8 @@ redpanda_cc_gtest(
         "//src/v/serde/parquet:value",
         "//src/v/serde/parquet:writer",
         "//src/v/test_utils:gtest",
+        "@abseil-cpp//absl/container:flat_hash_map",
+        "@fmt",
         "@googletest//:gtest",
         "@seastar",
     ],

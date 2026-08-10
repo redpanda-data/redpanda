@@ -9,6 +9,7 @@
  * by the Apache License, Version 2.0
  */
 
+#include "absl/container/flat_hash_map.h"
 #include "base/vlog.h"
 #include "bytes/iostream.h"
 #include "serde/parquet/column_stats_collector.h"
@@ -21,6 +22,7 @@
 #include <seastar/core/memory.hh>
 #include <seastar/util/log.hh>
 
+#include <fmt/format.h>
 #include <gtest/gtest.h>
 
 #include <cmath>
@@ -716,6 +718,58 @@ TEST(ParquetWriter, StatsTruncationUtf8InvalidInput) {
     ASSERT_TRUE(stats->max.has_value());
     EXPECT_GT(stats->max->value.linearize_to_string(), ss::sstring("abc"));
     EXPECT_FALSE(stats->max->is_exact);
+}
+
+TEST(ParquetWriter, BloomFilterPerColumnOverride) {
+    // Two-column schema: str_col gets a bloom filter, int_col does not.
+    iobuf file;
+    absl::flat_hash_map<ss::sstring, size_t> bloom_cols;
+    bloom_cols["str_col"] = 1000;
+    writer w(
+      {
+        .schema = two_column_schema(),
+        .bloom_filter_columns = std::move(bloom_cols),
+      },
+      make_iobuf_ref_output_stream(file));
+    w.init().get();
+
+    for (int i = 0; i < 10; ++i) {
+        w.write_row(make_two_col_row(fmt::format("val_{}", i), i)).get();
+    }
+    auto metadata = w.close().get();
+
+    ASSERT_EQ(metadata.row_groups.size(), 1);
+    auto& rg = metadata.row_groups[0];
+    ASSERT_GE(rg.columns.size(), 2);
+
+    // str_col (column 0): bloom filter enabled.
+    auto& str_meta = rg.columns[0].meta_data;
+    EXPECT_TRUE(str_meta.bloom_filter_offset.has_value());
+    EXPECT_TRUE(str_meta.bloom_filter_length.has_value());
+    EXPECT_GT(*str_meta.bloom_filter_length, 0);
+
+    // int_col (column 1): bloom filter NOT enabled (ndv=0 default).
+    auto& int_meta = rg.columns[1].meta_data;
+    EXPECT_FALSE(int_meta.bloom_filter_offset.has_value());
+}
+
+TEST(ParquetWriter, BloomFilterGlobalDefault) {
+    // With no bloom_filter_columns map, the global bloom_filter_ndv=0 means
+    // no bloom filters on any column.
+    iobuf file;
+    writer w(
+      {.schema = two_column_schema()}, make_iobuf_ref_output_stream(file));
+    w.init().get();
+
+    for (int i = 0; i < 10; ++i) {
+        w.write_row(make_two_col_row(fmt::format("val_{}", i), i)).get();
+    }
+    auto metadata = w.close().get();
+
+    ASSERT_EQ(metadata.row_groups.size(), 1);
+    for (const auto& col : metadata.row_groups[0].columns) {
+        EXPECT_FALSE(col.meta_data.bloom_filter_offset.has_value());
+    }
 }
 
 // NOLINTEND(*magic-number*)
