@@ -33,19 +33,17 @@ namespace storage {
 /// other classes can add behavior and still be treated as
 /// an appender.
 ///
-/// The append() functions in this class take different input types to
-/// append but all return future<> and have the same general semantics:
-/// After the future<> for an append() call returns, the data has been
-/// logically appended to the segment in memory, but may not be, or not
-/// fully be flushed to disk and in general hasn't been fsynced. After
-/// the future from append() results, a subject flush() returns a future
-/// whose resolution indicates that all prior appends have been flushed
-/// and fsync'd on disk.
+/// The append() overloads take different input types but behave the same way:
+/// appends are write-behind. A resolved append() future means the segment holds
+/// the data in memory; some or all of it may not be flushed to disk, and in
+/// general it hasn't been fsynced. Once an append() has resolved, a subsequent
+/// flush() resolves only after that append and everything before it is on disk
+/// and fsynced.
 ///
-/// NOTE: Only one append() may be progress at one time. I.e., it is not
-/// safe to call append() before the prior append() call has resolved.
-/// However, there are no requirements around concurrent flushing: flush
-/// may be called even if other flushes or appends are in progress.
+/// NOTE: Only one append() may be in progress. It is not safe to call append()
+/// before the prior append() future has resolved. flush() has no such
+/// restriction; it may be called while other flushes or appends are in
+/// progress.
 class segment_appender {
 public:
     struct stats {
@@ -234,15 +232,6 @@ private:
     // still heavy weight operations compared to regular flush()
     ss::future<> hard_flush();
 
-    /**
-     * Returns true if there is an inflight write for the current head chunk and
-     * that write is already dispatched.
-     */
-    bool is_chunk_write_dispatched(const chunk_ptr& chunk) const {
-        return chunk && !_inflight.empty() && _inflight.back()->chunk == chunk
-               && _inflight.back()->state == inflight_write::DISPATCHED;
-    }
-
     enum class write_state : char { QUEUED = 1, DISPATCHED, DONE };
 
     struct inflight_write {
@@ -291,6 +280,20 @@ private:
             state = new_state;
         }
 
+        /// The write is about to be dma_write'd: stop merging into this
+        /// entry and mark the chunk's in-flight dma extent -- appends must
+        /// not land below chunk_end until complete().
+        void dispatch() {
+            set_state(DISPATCHED);
+            chunk->begin_inflight_dma(chunk_end);
+        }
+
+        /// The device is finished with the buffer.
+        void complete() {
+            set_state(DONE);
+            chunk->end_inflight_dma();
+        }
+
         /**
          * @brief Try to merge the given write with this one.
          *
@@ -337,8 +340,7 @@ private:
     // the lifetime of the appender
     size_t _dispatched_writes{0};
     committed_offset_clb _committed_offset_clb;
-    ss::future<>
-    maybe_advance_stable_offset(const ss::lw_shared_ptr<inflight_write>&);
+    ss::future<> maybe_advance_stable_offset();
     ss::future<> process_flush_ops(size_t);
 
     ss::timer<ss::lowres_clock> _inactive_timer;

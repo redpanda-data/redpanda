@@ -13,6 +13,7 @@
 #include "base/format_to.h"
 #include "base/seastarx.h"
 #include "base/units.h"
+#include "base/vassert.h"
 #include "container/intrusive_list_helpers.h"
 #include "utils/named_type.h"
 
@@ -91,6 +92,20 @@ public:
     size_t bytes_pending() const { return _pos - _flushed_pos; }
     size_t flushed_pos() const { return _flushed_pos; }
 
+    size_t inflight_dma_end() const { return _inflight_dma_end; }
+    void begin_inflight_dma(size_t end) {
+        vassert(
+          _inflight_dma_end == 0,
+          "chunk already has a write in flight: {}",
+          *this);
+        _inflight_dma_end = end;
+    }
+    void end_inflight_dma() {
+        vassert(
+          _inflight_dma_end != 0, "chunk has no write in flight: {}", *this);
+        _inflight_dma_end = 0;
+    }
+
     size_t append(const char* src, size_t len) {
         const size_t sz = std::min(len, space_left());
         std::copy_n(src, sz, get_current());
@@ -99,6 +114,10 @@ public:
     }
 
     void reset() {
+        vassert(
+          _inflight_dma_end == 0,
+          "resetting a chunk with a write in flight: {}",
+          *this);
         _flushed_pos = _pos = 0;
         // allow chunk reuse
         std::memset(_buf.get(), 0, _chunk_size);
@@ -117,13 +136,16 @@ public:
      * pending_aligned_begin()
      * IMPORTANT: this method will reset the chunk content before copying the
      * remainder.
+     *
+     * @return the number of bytes copied.
      */
-    void copy_remainder_from(const segment_appender_chunk& other) {
+    size_t copy_remainder_from(const segment_appender_chunk& other) {
         reset();
         const auto remainder_sz = other.size() - other.pending_aligned_begin();
         std::copy_n(other.dma_ptr(), remainder_sz, get_current());
         _pos = other._pos - other.pending_aligned_begin();
         _flushed_pos = other._flushed_pos - other.pending_aligned_begin();
+        return remainder_sz;
     }
 
     intrusive_list_hook hook;
@@ -133,16 +155,21 @@ private:
     storage::alignment _alignment{0};
     size_t _pos{0};
     size_t _flushed_pos{0};
+    /// One past the last byte a dispatched write is reading, rounded up to a
+    /// full page; 0 when no write for this chunk is in flight. Appending
+    /// below this position would mutate memory the kernel is reading.
+    size_t _inflight_dma_end{0};
     std::unique_ptr<char[], ss::free_deleter> _buf;
 
 public:
     fmt::iterator format_to(fmt::iterator it) const {
         return fmt::format_to(
           it,
-          "{{_alignment:{}, _pos:{}, _flushed_pos:{}}}",
+          "{{_alignment:{}, _pos:{}, _flushed_pos:{}, _inflight_dma_end:{}}}",
           _alignment,
           _pos,
-          _flushed_pos);
+          _flushed_pos,
+          _inflight_dma_end);
     }
 };
 

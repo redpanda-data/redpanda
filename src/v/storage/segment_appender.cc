@@ -29,6 +29,79 @@
 namespace storage {
 
 /*
+ * segment_appender implementation notes. For the public contract see
+ * `segment_appender.h`.
+ *
+ * We write with direct I/O, bypassing the kernel's page cache. The device reads
+ * the buffer by direct memory access (DMA) some time after we submit the write.
+ * Two constraints follow:
+ *
+ * 1. The file offset and length must be multiples of the file's DMA alignment,
+ * and the buffer address a multiple of the memory DMA alignment. The appender
+ * writes at the chunk's fixed 4 KiB alignment, so "page" below means 4 KiB.
+ *
+ * 2. Memory under an in-flight DMA must not be modified [1]. The rule covers
+ * the write's entire range: on a checksummed path (DIF/DIX, iSCSI, RAID 5
+ * parity, a checksumming filesystem) one unstable byte can fail the whole
+ * sector or stripe, as a write error or as a bad read later. Seen in
+ * production [2].
+ *
+ * append() takes arbitrary memory addresses and lengths, so it copies the data
+ * into an aligned buffer, a `segment_appender_chunk`, and resolves without
+ * waiting for the data to reach disk (write-behind). That keeps disk latency
+ * off the append path and lets one write cover many appends. Chunks come from a
+ * per-shard cache, which bounds how much unwritten data the shard can hold in
+ * memory: when no chunk is free, append() waits.
+ *
+ * A full chunk's last write ends on a page boundary, since append_chunk_size is
+ * a multiple of 4 KiB. flush(), hard_flush() and `_inactive_timer` instead
+ * write a partly filled chunk; by rule 1 that write still covers whole pages,
+ * so the appender writes the last page before it is full.
+ *
+ *              page 0        page 1
+ *            ┌─────────────┬─────────────┐
+ *   chunk    │▓▓▓▓▓▓▓▓▓▓▓▓▓│▓▓▓▓▓░░░░░░░░│  memory; two of its four pages
+ *            └─────────────┴─────────────┘
+ *   write    ◄───────────────────────────►  the file range it covers
+ *
+ *              ▓ appended    ░ written, nothing appended there yet
+ *
+ * Unless that write ended on a page boundary, the next append() lands inside
+ * the file range it covers. Whether it may land in the chunk depends on the
+ * write's state. In the diagrams @ marks the bytes the next append adds.
+ *
+ * QUEUED - not submitted to the device, so the chunk is safe to modify. The
+ * append lands in it, and try_merge() folds the write into the queued
+ * one, so a single dma_write covers both appends.
+ *
+ *   chunk   │▓▓▓▓▓▓▓▓▓▓▓▓▓│▓▓▓▓▓@@@░░░░░│
+ *   write   ◄────────── QUEUED ─────────►  extends over @@@ when dispatched
+ *
+ * DONE - the device is finished with the buffer, so the append lands in the
+ * chunk and the following write covers page 1 again.
+ *
+ *   chunk   │▓▓▓▓▓▓▓▓▓▓▓▓▓│▓▓▓▓▓@@@░░░░░│
+ *   write 1 ◄────────── DONE ───────────►
+ *   write 2               ◄─────────────►  covers page 1 again, with @@@
+ *
+ * DISPATCHED - the device may be reading the buffer, so rule 2 forbids
+ * modifying page 1. copy_remainder_from() moves it into a new chunk and the
+ * append lands there. Waiting for the write to complete would satisfy rule 2
+ * too, at the cost of disk latency on the append path.
+ *
+ *   old     │▓▓▓▓▓▓▓▓▓▓▓▓▓│▓▓▓▓▓░░░░░░░░│
+ *   write 1 ◄──────── DISPATCHED ───────►
+ *   new                   │▓▓▓▓▓@@@░░░░░│  page 1 copied, then @@@
+ *   write 2               ◄─────────────►  must land after write 1
+ *
+ * The copy leaves two writes covering page 1, and the older one has no @@@:
+ * landing second, it would erase them. `_prev_head_write` serializes writes
+ * over the same file range so they land in append order.
+ *
+ * [1] "Semantics of racy O_DIRECT writes", linux-block:
+ * https://lore.kernel.org/linux-block/CAOBGo4xx+88nZM=nqqgQU5RRiHP1QOqU4i2dDwXt7rF6K0gaUQ@mail.gmail.com/
+ * [2] https://redpandadata.atlassian.net/browse/CORE-12458
+ *
  * Optimization ideas:
  *
  * 1. partial writes to the same physical head chunk are serialized to prevent
@@ -164,14 +237,19 @@ ss::future<> segment_appender::do_append(const char* buf, size_t n) {
             co_await do_next_adaptive_fallocation();
             continue;
         }
-        // we need to copy the reminder of the chunk into the new one not write
-        // to the one currently being written
-        if (is_chunk_write_dispatched(_head)) {
-            // if head write is dispatched it means there is at least one
-            // inflight write. Always copy the remainder to a new chunk
-            // to simplify the logic (aligned case is very rare ~0.02%)
-            auto last_inflight_write = _inflight.back();
-            auto old_head = std::exchange(_head, nullptr);
+        /*
+         * A dispatched write reads the chunk up to inflight_dma_end(),
+         * rounded up to a full page, so an append below that position would
+         * mutate memory the kernel is reading. Copy the unflushed remainder
+         * into a fresh chunk and append there. A queued write is no hazard:
+         * its buffer is not handed to the kernel yet, and appending in place
+         * lets the next write merge into it.
+         */
+        if (_head && _head->size() < _head->inflight_dma_end()) {
+            // Keep the old head visible while waiting for a cache chunk. A
+            // concurrent flush must be able to dispatch bytes appended after
+            // the in-flight write covered by this branch.
+            auto old_head = _head;
             /**
              * NOTE: Why we do not release _prev_head_write semaphore ?
              * The _prev_head_write semaphore is used to guarantee orders of
@@ -189,27 +267,33 @@ ss::future<> segment_appender::do_append(const char* buf, size_t n) {
 
             auto new_head = co_await _opts.resources.chunks().get();
 
-            const auto remainder_sz = old_head->size()
-                                      - old_head->pending_aligned_begin();
+            // append() calls are serialized, so only flush() may have touched
+            // the head while the chunk allocation was pending. A partial head
+            // remains installed when flushed.
+            vassert(
+              _head == old_head,
+              "Head changed while waiting for a replacement chunk: {}",
+              *this);
 
-            new_head->copy_remainder_from(*old_head);
+            const auto remainder_sz = new_head->copy_remainder_from(*old_head);
             // swap in the new head with the remainder from the old one.
 
-            _head = new_head;
+            _head = std::move(new_head);
             _opts.shared_stats->bytes_copied_in_chunk_remainder += remainder_sz;
             /**
-             * This is the place where we need to release the old head or
-             * mark it for release after the write completes. The
-             * last_inflight_write reference may not longer be valid after
-             * the scheduling point when the new chunk was requested.
+             * Release the old head, or mark it for release when its last
+             * write completes. A concurrent flush may have added a write for
+             * old_head while the chunk request was pending -- possibly still
+             * QUEUED, the dispatched one being what sent us here -- so use
+             * the current last write.
              */
 
-            if (last_inflight_write->state == inflight_write::DISPATCHED) {
+            if (!_inflight.empty() && _inflight.back()->chunk == old_head) {
                 // chunk write isn't finished yet
-                last_inflight_write->last_write_to_current_chunk = true;
+                _inflight.back()->last_write_to_current_chunk = true;
             } else {
-                // chunk was already written and it is done, we can release
-                // it right away
+                // All writes using the old chunk are done, so it can be
+                // released right away.
                 old_head->reset();
                 _opts.resources.chunks().add(old_head);
             }
@@ -250,7 +334,7 @@ void segment_appender::handle_inactive_timer() {
     if (_head && _head->bytes_pending()) {
         /*
          * this is the why the timer was originally set upon returning from
-         * append: data was sitting in the write back buffer. the segment
+         * append: data was sitting in the write-behind buffer. the segment
          * appears to be inactive so go ahead and write that data to disk.
          */
         dispatch_background_head_write();
@@ -447,16 +531,8 @@ ss::future<> segment_appender::do_next_adaptive_fallocation() {
       });
 }
 
-ss::future<> segment_appender::maybe_advance_stable_offset(
-  const ss::lw_shared_ptr<inflight_write>& write) {
+ss::future<> segment_appender::maybe_advance_stable_offset() {
     vassert(!_inflight.empty(), "expected non-empty inflight set");
-
-    vassert(
-      write->state == write_state::DISPATCHED,
-      "write not in dispatched state: {}",
-      write);
-
-    write->set_state(write_state::DONE);
 
     std::optional<size_t> committed;
 
@@ -634,9 +710,13 @@ void segment_appender::dispatch_background_head_write() {
                   w->chunk_begin,
                   w->chunk_end);
 
-                // prevent any more writes from merging into this entry
-                // as it is about to be dma_write'd.
-                w->set_state(write_state::DISPATCHED);
+                /*
+                 * At most one write per chunk is in flight: a chunk's writes
+                 * all queue on one _prev_head_write - it is swapped only
+                 * when the head fills, which retires the chunk - and each
+                 * holds its unit until after complete().
+                 */
+                w->dispatch();
                 ++_inflight_dispatched;
                 ++_dispatched_writes;
 
@@ -651,6 +731,8 @@ void segment_appender::dispatch_background_head_write() {
                   .then([this, w, dma_size](size_t got) {
                       _opts.shared_stats->bytes_written += dma_size;
                       ++_opts.shared_stats->writes_completed;
+                      w->complete();
+
                       /*
                        * the continuation that captured full=true is the
                        * end of the dependency chain for this chunk. it
@@ -672,9 +754,17 @@ void segment_appender::dispatch_background_head_write() {
                           return size_mismatch_error(
                             "chunk::write", expected, got);
                       }
-                      return maybe_advance_stable_offset(w);
+                      return maybe_advance_stable_offset();
                   })
-                  .finally([u = std::move(u)] {});
+                  .finally([u = std::move(u)] {
+                      // You might be tempted to release head_sem's units in
+                      // the continuation above, once dma_write completes,
+                      // rather than after a potential flush (part of
+                      // `maybe_advance_stable_offset`). Holding them delays
+                      // the next write for the same chunk, so more appends
+                      // merge into that write. Benchmarks show higher
+                      // throughput and lower latency.
+                  });
             })
             .finally([head_sem] {});
       })
