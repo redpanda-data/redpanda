@@ -29,6 +29,7 @@
 #include <seastar/core/weak_ptr.hh>
 
 #include <limits>
+#include <memory>
 #include <type_traits>
 
 class batch_cache_test_fixture;
@@ -174,15 +175,8 @@ public:
         // into an invalid state where the batch data cannot be accessed.
         bool valid() const { return _valid; }
         void invalidate() { _valid = false; }
-        static constexpr size_t serialized_header_size
-          = model::packed_record_batch_header_size + sizeof(size_t);
-
-        model::record_batch batch(size_t o);
-        /// Builds the batch from an already-parsed header, avoiding a second
-        /// header decode when the caller has already read it.
         model::record_batch
-        batch(size_t o, const model::record_batch_header& hdr);
-        model::record_batch_header header(size_t o);
+        batch(size_t data_offset, const model::record_batch_header&);
 
         void pin() { _pinned = true; }
         void unpin() { _pinned = false; }
@@ -282,8 +276,9 @@ public:
      */
     class entry {
     public:
-        entry(uint32_t o, range_ptr&& ptr)
-          : _range_offset(o)
+        entry(uint32_t o, range_ptr&& ptr, const model::record_batch_header& h)
+          : _data_offset(o)
+          , _header(std::make_unique<model::record_batch_header>(h.copy()))
           , _range(std::move(ptr)) {}
 
         ~entry() noexcept = default;
@@ -292,12 +287,19 @@ public:
         entry(const entry&) = delete;
         entry& operator=(const entry&) = delete;
 
-        model::record_batch batch() { return _range->batch(_range_offset); }
-        model::record_batch batch(const model::record_batch_header& hdr) {
-            return _range->batch(_range_offset, hdr);
+        model::record_batch batch() {
+            return _range->batch(_data_offset, *_header);
         }
-        model::record_batch_header header() const {
-            return _range->header(_range_offset);
+
+        /*
+         * the batch header is captured at insertion time so that lookups,
+         * filtering and materialization never deserialize it from the
+         * range's arena.
+         */
+        model::record_batch_type type() const { return _header->type; }
+        model::offset last_offset() const { return _header->last_offset(); }
+        model::timestamp max_timestamp() const {
+            return _header->max_timestamp;
         }
 
         range_ptr& range() { return _range; }
@@ -305,7 +307,8 @@ public:
         bool valid() const { return _range->valid(); }
 
     private:
-        uint32_t _range_offset;
+        uint32_t _data_offset;
+        std::unique_ptr<model::record_batch_header> _header;
         range_ptr _range;
     };
 
@@ -332,7 +335,10 @@ public:
     bool empty() const { return _lru.empty(); }
 
     /// Removes all entries from the cache.
-    void clear() { reclaim(std::numeric_limits<size_t>::max()); }
+    void clear() {
+        reclaim(std::numeric_limits<size_t>::max());
+        drain_pending_index_removals();
+    }
 
     /**
      * Copies a batch into the LRU cache.
@@ -457,7 +463,31 @@ private:
                               : reclaim_result::reclaimed_nothing;
     }
 
-    intrusive_list<range, &range::_hook> _lru;
+    /*
+     * Remove the index entries of ranges whose memory was reclaimed. The
+     * asynchronous form runs in the background reclaimer fiber and yields
+     * between ranges; the synchronous form is used by clear() where the
+     * deferred work must complete before returning.
+     */
+    ss::future<> do_pending_index_removals();
+    void drain_pending_index_removals();
+
+    /*
+     * Complete a reclaimed range's deferred index entry removal and dispose
+     * of it.
+     */
+    static void dispose_pending(range* r);
+
+    using intrusive_range_list = intrusive_list<range, &range::_hook>;
+
+    intrusive_range_list _lru;
+    /*
+     * ranges whose arena memory has been reclaimed but whose entries have
+     * not yet been removed from their owning index. drained by the
+     * background reclaimer so that the removals stay off the memory
+     * allocation path.
+     */
+    intrusive_range_list _pending_index_removal;
     reclaimer _reclaimer;
     bool _is_reclaiming{false};
     size_t _size_bytes{0};
@@ -472,10 +502,12 @@ public:
     fmt::iterator format_to(fmt::iterator it) const {
         return fmt::format_to(
           it,
-          "{{is_reclaiming:{}, size_bytes: {}, lru_empty:{}}}",
+          "{{is_reclaiming:{}, size_bytes: {}, lru_empty:{}, "
+          "pending_index_removal_empty:{}}}",
           is_memory_reclaiming(),
           _size_bytes,
-          _lru.empty());
+          _lru.empty(),
+          _pending_index_removal.empty());
     }
 };
 
@@ -556,6 +588,12 @@ public:
           _dirty_tracker);
         std::for_each(
           _index.begin(), _index.end(), [this](index_type::value_type& e) {
+              /*
+               * this also disposes any ranges awaiting deferred index entry
+               * removal: every range is reachable from its index entries,
+               * and evict() unlinks it from the cache's pending removal
+               * list.
+               */
               _cache->evict(std::move(e.second.range()));
           });
     }
@@ -565,8 +603,6 @@ public:
     batch_cache_index& operator=(const batch_cache_index&) = delete;
 
     ss::future<> clear_async();
-    // Requires that a `lock_guard` for `this` is held elsewhere.
-    ss::future<> clear_async_unlocked();
     bool empty() const { return _index.empty(); }
 
     void
@@ -676,8 +712,7 @@ public:
 
     // Leaves the batch_cache_index in a fully clean, re-usable state.
     ss::future<> reset() {
-        lock_guard lk(*this);
-        co_await clear_async_unlocked();
+        co_await clear_async();
         _small_batches_range = nullptr;
     }
 
@@ -714,17 +749,16 @@ private:
     }
 
     /*
+     * Remove the entries of a reclaimed range from the index.
+     *
      * XXX: only safe when invoked by the batch cache reclaimer.
      */
-    bool remove(model::offset offset) {
-        vassert(!locked(), "attempt to erase from locked index");
-        return _index.erase(offset) == 1;
-    }
+    void remove(std::vector<model::offset> offsets);
 
     /*
      * Return an iterator to the first batch that _may_ contain the specified
-     * offset. Since the batch may have been evicted, and we only store the base
-     * offset in the index, the caller deals with the missing upper bound.
+     * offset. The caller verifies containment against the entry's cached
+     * offset bounds and liveness.
      */
     index_type::iterator find_first(model::offset offset) {
         if (_index.empty()) {
@@ -739,16 +773,15 @@ private:
 
     /*
      * Return an iterator to the first batch known to contain the specified
-     * offset, otherwise return the end iterator. Since a batch must be present
-     * in memory to verify that it contains the offset, a non-end returned
-     * iterator is guaranteed to point to a live batch.
+     * offset, otherwise return the end iterator. A non-end returned iterator
+     * is guaranteed to point to a live batch.
      */
     index_type::iterator find_first_contains(model::offset offset) {
         if (
-          auto it = find_first(offset);
-          it != _index.end() && it->second.range()
-          && it->second.range()->valid()
-          && it->second.header().contains(offset)) {
+          auto it = find_first(offset); it != _index.end() && it->second.range()
+                                        && it->second.range()->valid()
+                                        && it->first <= offset
+                                        && offset <= it->second.last_offset()) {
             return it;
         }
         return _index.end();

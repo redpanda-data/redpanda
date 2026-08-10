@@ -286,6 +286,7 @@ redpanda_cc_gtest(
         "//src/v/model",
         "//src/v/storage:batch_cache",
         "//src/v/storage:record_batch_builder",
+        "//src/v/test_utils:async",
         "//src/v/test_utils:gtest",
         "@googletest//:gtest",
         "@seastar",
@@ -1072,6 +1073,19 @@ redpanda_cc_gtest(
         "//src/v/test_utils:random_bytes",
         "@googletest//:gtest",
         "@seastar",
+    ],
+)
+
+redpanda_cc_bench(
+    name = "batch_cache_rpbench",
+    srcs = ["batch_cache_bench.cc"],
+    deps = [
+        "//src/v/bytes:iobuf",
+        "//src/v/model",
+        "//src/v/storage:batch_cache",
+        "//src/v/storage:record_batch_builder",
+        "@seastar",
+        "@seastar//:benchmark",
     ],
 )
 
