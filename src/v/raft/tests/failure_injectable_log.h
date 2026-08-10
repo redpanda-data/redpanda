@@ -7,6 +7,7 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 #pragma once
+#include "model/record.h"
 #include "storage/log.h"
 #include "storage/offset_translator_state.h"
 #include "storage/types.h"
@@ -15,6 +16,8 @@ namespace raft {
 
 using append_delay_generator = std::function<std::chrono::milliseconds()>;
 using append_hook = std::function<ss::future<>(const model::record_batch&)>;
+using post_append_hook
+  = std::function<ss::future<>(const model::record_batch&)>;
 
 class failure_injectable_log final : public storage::log {
 public:
@@ -28,6 +31,22 @@ public:
     // returning a failed future from the hook fails the append
     void set_append_hook(std::optional<append_hook> hook) {
         _append_hook = std::move(hook);
+    }
+
+    /**
+     * Sets a hook invoked after each record batch has been appended to the
+     * underlying log, i.e. once the batch is visible to readers and the offset
+     * translator has been updated.
+     *
+     * Returning a failed future from the hook fails the append while leaving
+     * the batch in the log. This models a failure of a later step of the same
+     * append - most realistically a subsequent batch of the same
+     * append_entries request failing to be written - which leaves callers of
+     * log::make_appender() with an exception even though everything up to this
+     * batch is durable and readable.
+     */
+    void set_post_append_hook(std::optional<post_append_hook> hook) {
+        _post_append_hook = std::move(hook);
     }
 
 public:
@@ -171,5 +190,6 @@ private:
     ss::shared_ptr<storage::log> _underlying_log;
     std::optional<append_delay_generator> _append_delay_generator;
     std::optional<append_hook> _append_hook;
+    std::optional<post_append_hook> _post_append_hook;
 };
 } // namespace raft

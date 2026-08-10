@@ -83,6 +83,28 @@ struct hook_invoking_appender : public storage::log_appender::impl {
     storage::log_appender _underlying;
     append_hook _hook;
 };
+
+struct post_append_failing_appender : public storage::log_appender::impl {
+    post_append_failing_appender(
+      storage::log_appender underlying, post_append_hook hook)
+      : _underlying(std::move(underlying))
+      , _hook(std::move(hook)) {}
+
+    /// non-owning reference - do not steal the iobuf
+    ss::future<ss::stop_iteration> operator()(model::record_batch& b) final {
+        auto stop = co_await _underlying(b);
+        // the batch is durable and visible at this point, a failure here fails
+        // the append without removing it from the log
+        co_await _hook(b);
+        co_return stop;
+    }
+
+    ss::future<storage::append_result> end_of_stream() final {
+        return _underlying.end_of_stream();
+    }
+    storage::log_appender _underlying;
+    post_append_hook _hook;
+};
 } // namespace
 
 storage::log_appender
@@ -97,6 +119,11 @@ failure_injectable_log::make_appender(storage::log_append_config cfg) {
         appender = storage::log_appender(
           std::make_unique<hook_invoking_appender>(
             std::move(appender), *_append_hook));
+    }
+    if (_post_append_hook) {
+        appender = storage::log_appender(
+          std::make_unique<post_append_failing_appender>(
+            std::move(appender), *_post_append_hook));
     }
     return appender;
 }
