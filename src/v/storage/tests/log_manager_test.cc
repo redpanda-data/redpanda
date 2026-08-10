@@ -338,6 +338,54 @@ TEST_F(LogManagerTest, test_recovery_counts_the_files_an_earlier_run_dropped) {
     EXPECT_EQ(report.dropped_position_unknown, 1);
 }
 
+TEST_F(LogManagerTest, test_removal_sweeps_past_an_entry_it_cannot_remove) {
+    auto& m = log_mgr();
+
+    auto ntp = config_from_ntp(model::ntp("ns-sweep-error", "topic-1", 0));
+    directories::initialize(ntp.work_directory()).get();
+
+    auto seg = m.make_log_segment(
+                  ntp,
+                  model::offset(2),
+                  model::term_id(1),
+                  default_segment_readahead_size,
+                  default_segment_readahead_count,
+                  1_MiB)
+                 .get();
+    write_garbage(seg->appender());
+    seg->close().get();
+    const ss::sstring log_path = seg->reader().filename();
+    const ss::sstring index_path = seg->index().path().string();
+
+    auto log = m.manage(config_from_ntp(ntp.ntp())).get();
+    log->stm_hookset()->start();
+    log->stm_hookset()->stop();
+    ASSERT_TRUE(
+      ss::file_exists(log_path + ".header_crc_mismatch.tail.cannotrecover")
+        .get());
+    ASSERT_TRUE(ss::file_exists(index_path).get());
+
+    // The sweep tries to remove this, because the name ends in .base_index,
+    // and ::remove() is rmdir for a directory, so a non-empty one fails.
+    const auto blocker = std::filesystem::path(ntp.work_directory())
+                         / "0-1-v1.base_index";
+    ss::recursive_touch_directory((blocker / "occupant").string()).get();
+
+    // The subdirectory keeps the partition directory itself, so the removal
+    // still fails. The path it fails on is what this asserts: the sweep reaches
+    // the end and the directory removal reports, so the error names the
+    // partition directory and not the subdirectory.
+    EXPECT_THAT(
+      [&] { m.remove(ntp.ntp()).get(); },
+      testing::Throws<std::filesystem::filesystem_error>(testing::Property(
+        &std::filesystem::filesystem_error::path1,
+        std::filesystem::path(ntp.work_directory()))));
+    EXPECT_FALSE(
+      ss::file_exists(log_path + ".header_crc_mismatch.tail.cannotrecover")
+        .get());
+    EXPECT_FALSE(ss::file_exists(index_path).get());
+}
+
 TEST_F(LogManagerTest, test_removing_a_log_stops_reporting_its_files) {
     auto& m = log_mgr();
 
@@ -384,4 +432,53 @@ TEST_F(LogManagerTest, test_shutting_down_a_log_stops_reporting_its_files) {
     m.shutdown(ntp.ntp()).get();
     EXPECT_EQ(quarantined(segment_position::mid_log), before);
     EXPECT_TRUE(ss::file_exists(path).get());
+}
+
+TEST_F(LogManagerTest, test_removal_sweeps_a_stranded_index) {
+    auto& m = log_mgr();
+
+    auto ntp = config_from_ntp(model::ntp("ns-orphan-index", "topic-1", 0));
+    directories::initialize(ntp.work_directory()).get();
+
+    auto seg = m.make_log_segment(
+                  ntp,
+                  model::offset(2),
+                  model::term_id(1),
+                  default_segment_readahead_size,
+                  default_segment_readahead_count,
+                  1_MiB)
+                 .get();
+    write_garbage(seg->appender());
+    seg->close().get();
+    const ss::sstring log_path = seg->reader().filename();
+    const ss::sstring index_path = seg->index().path().string();
+    const ss::sstring compaction_index_path
+      = seg->reader().path().to_compacted_index().string();
+
+    // A segment on a compacted topic carries a compaction index alongside its
+    // offset index, and recovery strands both.
+    ss::open_file_dma(
+      compaction_index_path, ss::open_flags::create | ss::open_flags::rw)
+      .get()
+      .close()
+      .get();
+
+    auto log = m.manage(config_from_ntp(ntp.ntp())).get();
+    log->stm_hookset()->start();
+    log->stm_hookset()->stop();
+
+    // Recovery renamed the log file to .cannotrecover and left its indices
+    // under the original name. materialize_index() opens with create, so every
+    // segment that recovery reads has an offset index on disk by this point.
+    EXPECT_TRUE(
+      ss::file_exists(log_path + ".header_crc_mismatch.tail.cannotrecover")
+        .get());
+    EXPECT_TRUE(ss::file_exists(index_path).get());
+    EXPECT_TRUE(ss::file_exists(compaction_index_path).get());
+
+    // Removing the partition has to sweep both indices. Otherwise the
+    // directory removal fails with ENOTEMPTY, and the retry returns early and
+    // leaves the directory on disk.
+    m.remove(ntp.ntp()).get();
+    EXPECT_FALSE(ss::file_exists(ntp.work_directory()).get());
 }

@@ -1036,10 +1036,18 @@ ss::future<> log_manager::remove(model::ntp ntp) {
           // If this has happened, clean up all staging files so we can fully
           // remove the NTP directory.
           //
+          // Recovery renames the segment file to .cannotrecover and leaves
+          // its indices under the original name, so .base_index and
+          // .compaction_index are here for the same reason.
+          //
           // TODO: we should more consistently clean up the staging operations
           // to clean up after themselves on failure.
           static constexpr auto suffixes_to_remove = std::to_array(
-            {".staging", ".cannotrecover", ".ignore_have_newer"});
+            {".staging",
+             ".cannotrecover",
+             ".ignore_have_newer",
+             ".base_index",
+             ".compaction_index"});
           const auto should_remove = std::ranges::any_of(
             suffixes_to_remove,
             [&](const auto& v) { return de.name.ends_with(v); });
@@ -1051,7 +1059,17 @@ ss::future<> log_manager::remove(model::ntp ntp) {
               // Log verbosely to make it easier to catch.
               auto file_path = fmt::format("{}/{}", ntp_dir, de.name);
               vlog(stlog.warn, "Leftover file found, removing: {}", file_path);
-              return ss::remove_file(file_path);
+              // directory_walker lets an exception from the callback escape
+              // the walk, which would skip both directory removals below with
+              // the log already out of _logs.
+              return ss::remove_file(file_path).handle_exception(
+                [file_path](const std::exception_ptr& e) {
+                    vlog(
+                      stlog.warn,
+                      "Failed to remove leftover file {}: {}",
+                      file_path,
+                      e);
+                });
           }
           return ss::make_ready_future<>();
       });
