@@ -896,7 +896,7 @@ func ParamsHelp() string {
 }
 
 const xflagHelpIntro = `The -X flag can be used to override any rpk specific configuration option.
-As an example, -X brokers.tls.enabled=true enables TLS for the Kafka API.
+As an example, -X tls.enabled=true enables TLS for the Kafka API.
 
 All -X flags can also be set via environment variables. The corresponding
 environment variable is the flag name uppercased, with dots replaced by
