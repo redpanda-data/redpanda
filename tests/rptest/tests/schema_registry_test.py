@@ -7516,7 +7516,12 @@ class SchemaRegistryAclAuthzTest(SchemaRegistryEndpoints):
         # DELETE_SECURITY_ACLS          - kafka cluster ACL required
     ]
 
-    def __init__(self, context):
+    def __init__(
+        self,
+        context,
+        num_brokers: int = 1,
+        **kwargs,
+    ):
         security = SecurityConfig()
         security.enable_sasl = True
         security.endpoint_authn_method = "sasl"
@@ -7528,8 +7533,9 @@ class SchemaRegistryAclAuthzTest(SchemaRegistryEndpoints):
         super(SchemaRegistryAclAuthzTest, self).__init__(
             context,
             security=security,
-            num_brokers=1,
+            num_brokers=num_brokers,
             schema_registry_config=schema_registry_config,
+            **kwargs,
         )
 
         superuser = self.redpanda.SUPERUSER_CREDENTIALS
