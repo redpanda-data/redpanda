@@ -62,6 +62,13 @@ func TestPrintTree(t *testing.T) {
 	require.Equal(t, "bool", globals["verbose"].Type)
 	require.Equal(t, false, globals["verbose"].Default)
 
+	require.NotEmpty(t, got.XOptions, "x_options must expose the documented -X flags")
+	require.Equal(t, "brokers", got.XOptions[0].Name, "x_options must be in display order")
+	for _, x := range got.XOptions {
+		require.NotEmpty(t, x.Description, "every x_option must carry a description (%s)", x.Name)
+		require.NotEqual(t, "cloud_environment", x.Name, "deliberately undocumented flags must not be exposed")
+	}
+
 	names := make([]string, len(got.Commands))
 	for i, c := range got.Commands {
 		names[i] = c.Name
