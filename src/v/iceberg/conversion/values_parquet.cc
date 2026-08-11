@@ -10,6 +10,7 @@
 #include "iceberg/conversion/values_parquet.h"
 
 #include <seastar/core/coroutine.hh>
+#include <seastar/coroutine/maybe_yield.hh>
 
 namespace iceberg {
 namespace {
@@ -78,9 +79,26 @@ struct value_converting_visitor {
     operator()(std::unique_ptr<iceberg::struct_value> value) {
         serde::parquet::group_value group;
         group.reserve(value->fields.size());
+        size_t fields_since_yield = 0;
         for (auto& field : value->fields) {
             if (!field.has_value()) {
                 group.emplace_back(serde::parquet::null_value{});
+                continue;
+            }
+            // Fast path: convert primitive values directly without
+            // allocating a coroutine frame for to_parquet_value().
+            if (
+              auto* prim = std::get_if<iceberg::primitive_value>(
+                &field.value())) {
+                auto result = std::visit(
+                  primitive_value_converting_visitor{}, std::move(*prim));
+                group.emplace_back(std::move(result).assume_value());
+                // Yield periodically on wide schemas to avoid reactor
+                // stalls. Each primitive conversion is ~20-50ns, so 64
+                // fields is ~1-3µs — well bounded.
+                if (++fields_since_yield % 64 == 0) {
+                    co_await ss::coroutine::maybe_yield();
+                }
                 continue;
             }
             auto result = co_await to_parquet_value(std::move(*field));
@@ -100,6 +118,12 @@ struct value_converting_visitor {
             serde::parquet::group_value element_wrapper;
             if (!element.has_value()) {
                 element_wrapper.emplace_back(serde::parquet::null_value{});
+            } else if (
+              auto* prim = std::get_if<iceberg::primitive_value>(
+                &element.value())) {
+                auto result = std::visit(
+                  primitive_value_converting_visitor{}, std::move(*prim));
+                element_wrapper.emplace_back(std::move(result).assume_value());
             } else {
                 auto result = co_await to_parquet_value(std::move(*element));
                 if (result.has_error()) {
