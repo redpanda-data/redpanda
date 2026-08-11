@@ -16,9 +16,11 @@ import (
 	"math/rand"
 	"time"
 
+	"github.com/antithesishq/antithesis-sdk-go/assert"
 	"github.com/antithesishq/antithesis-sdk-go/random"
 	"github.com/twmb/franz-go/pkg/kadm"
 	"github.com/twmb/franz-go/pkg/kerr"
+	"github.com/twmb/franz-go/pkg/kgo"
 )
 
 // rng draws from Antithesis-controlled entropy so the platform both controls
@@ -95,4 +97,66 @@ func createOneTopic(adm *kadm.Client, name string, partitions int32, replicas in
 	}
 
 	return fmt.Errorf("failed to create topic %s", name)
+}
+
+// parallel_driver_produce_foo: produce a bounded random batch. Best-effort under
+// fault injection — transient failures are expected and not bugs.
+func produceFoo() error {
+	// A per-invocation nonce keeps this producer's keys distinct from every
+	// other concurrent producer's, so (nonce, seq) uniquely identifies a
+	// record. It also rides in the ClientID so Redpanda's request logs can be
+	// correlated back to this batch.
+	nonce := rng.Uint64()
+	cl, err := newClient(
+		kgo.ClientID(fmt.Sprintf("ct/produce/%016x", nonce)),
+		kgo.DefaultProduceTopic(fooTopic),
+		kgo.RequiredAcks(kgo.AllISRAcks()),
+		kgo.ProducerLinger(5*time.Millisecond),
+		// Assign partitions ourselves so each record can carry the partition
+		// it was written to; a reader then verifies it was served from there.
+		kgo.RecordPartitioner(kgo.ManualPartitioner()),
+		// Flag franz-go's data-loss detection: it otherwise resets the
+		// producer id and silently carries on, hiding an anomaly we want seen.
+		kgo.ProducerOnDataLossDetected(reportDataLoss),
+	)
+	if err != nil {
+		return err
+	}
+	defer cl.Close()
+
+	count := 1 + randN(50)
+	recs := make([]*kgo.Record, count)
+	for i := range recs {
+		recs[i] = makeFooRecord(nonce, i, int32(randN(fooPartitions)))
+	}
+
+	fmt.Printf("producing %d records to foo (nonce=%016x)\n", count, nonce)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	if err := cl.ProduceSync(ctx, recs...).FirstErr(); err != nil {
+		fmt.Printf("produce did not complete (expected under faults) (nonce=%016x): %v\n", nonce, err)
+		return nil
+	}
+	// Prove the workload actually writes data in some timeline; without this a
+	// run where produce never succeeds would pass every safety check vacuously,
+	// since the checkers only assert on non-empty reads.
+	assert.Reachable("workload produced a batch to foo",
+		map[string]any{"count": count, "nonce": fmt.Sprintf("%016x", nonce)})
+	fmt.Printf("produced %d records to foo (nonce=%016x)\n", count, nonce)
+	return nil
+}
+
+// reportDataLoss is the franz-go ProducerOnDataLossDetected hook. franz-go
+// calls it when a produce response returns an out-of-order sequence number or
+// unknown producer id that it cannot attribute to benign prefix truncation
+// (the broker's log start offset moving past records we'd already had acked).
+// franz-go treats that as data loss and, since we don't stop the producer,
+// resets the producer id and sequence numbers and continues. It is a
+// presumption, not proof — a producer-id expiry can trigger it too — but on an
+// acks=all cloud-topic producer it is an anomaly worth surfacing, so record it
+// as a reachability failure for Antithesis.
+func reportDataLoss(topic string, part int32) {
+	details := map[string]any{"topic": topic, "partition": part}
+	assert.Unreachable("idempotent producer detected data loss (out-of-order sequence or unknown producer id)", details)
+	fmt.Printf("data loss detected on %s/%d (out-of-order sequence or unknown producer id)\n", topic, part)
 }

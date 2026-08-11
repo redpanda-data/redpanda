@@ -41,8 +41,39 @@ const (
 // the image build uses to create those links). `setup` is the container
 // entrypoint, not a test command.
 var commands = map[string]func() error{
-	"setup":               setup,
-	"first_create_topics": createTestTopics,
+	"setup":                       setup,
+	"first_create_topics":         createTestTopics,
+	"parallel_driver_produce_foo": produceFoo,
+	// consume reads and validates the same way the anytime checker does, but
+	// as a parallel driver Antithesis may run several concurrent copies of it,
+	// applying real read pressure while still asserting the invariants.
+	"parallel_driver_consume_foo": checkFoo,
+	"anytime_check_range_foo":     checkFoo,
+	// check_offsets_foo has no test-composer prefix, so it gets no symlink and
+	// Antithesis never schedules it. It is a manual replay tool for the
+	// multiverse debugger; see checkFooOffsets.
+	"check_offsets_foo": checkFooOffsets,
+}
+
+// cmdArgs holds the positional arguments that follow the command token, for
+// the few manual commands (e.g. check_offsets_foo) that take parameters.
+var cmdArgs []string
+
+// cmdName is the command this invocation resolved to. The checkers shared
+// across commands (validateFooRange, validateCtcRange) carry it in assertion
+// details so a tripped property names the phase it fired in — e.g.
+// parallel_driver_consume_foo vs anytime_check_range_foo vs eventually_check_complete.
+var cmdName string
+
+// quiescedPhase reports whether this invocation is an eventually command,
+// i.e. fault injection has stopped and the cluster has healed. The shared
+// validators skip their Sometimes/Reachable assertions in this phase: those
+// liveness properties exist to prove reads make progress while faults are
+// possible, and a quiesced-cluster read satisfying them would mask timelines
+// where no such read ever succeeded. The eventually checks assert their own
+// liveness under distinct names instead.
+func quiescedPhase() bool {
+	return strings.HasPrefix(cmdName, "eventually_")
 }
 
 // testCommandPrefixes are the Antithesis test-composer command prefixes; a
@@ -93,13 +124,16 @@ func newClient(opts ...kgo.Opt) (*kgo.Client, error) {
 
 func main() {
 	cmd := filepath.Base(os.Args[0])
+	cmdArgs = os.Args[1:]
 	// When invoked by the binary's own name (e.g. the entrypoint's
 	// `helper_workload setup`, or `workload parallel_driver_produce_foo` by
 	// hand) rather than through a command symlink, take the command from
 	// argv[1].
 	if _, known := commands[cmd]; !known && len(os.Args) > 1 {
 		cmd = os.Args[1]
+		cmdArgs = os.Args[2:]
 	}
+	cmdName = cmd
 
 	// Dispatched outside `commands` to avoid an init cycle (it reads the map).
 	if cmd == "list-commands" {
