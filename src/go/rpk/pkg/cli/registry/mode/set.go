@@ -34,8 +34,8 @@ func setCommand(fs afero.Fs, p *config.Params, schemaCtx *string) *cobra.Command
 		Short: "Set schema registry mode",
 		Long: `Set schema registry mode
 
-Running this command with no subject sets the global schema registry mode, 
-alternatively you can use the --global flag to set the global schema registry 
+Running this command with no subject sets the global schema registry mode.
+Alternatively, you can use the --global flag to set the global schema registry
 mode at the same time as per-subject mode.
 
 Acceptable mode values: 

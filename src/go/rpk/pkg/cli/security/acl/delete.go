@@ -122,7 +122,7 @@ func (a *acls) addDeleteFlags(cmd *cobra.Command) {
 
 	cmd.Flags().StringSliceVar(&a.topics, topicFlag, nil, "Topic to remove ACLs for (repeatable)")
 	cmd.Flags().StringSliceVar(&a.groups, groupFlag, nil, "Group to remove ACLs for (repeatable)")
-	cmd.Flags().BoolVar(&a.cluster, clusterFlag, false, "Whether to remove ACLs to the cluster")
+	cmd.Flags().BoolVar(&a.cluster, clusterFlag, false, "Whether to remove ACLs for the cluster")
 	cmd.Flags().StringSliceVar(&a.txnIDs, txnIDFlag, nil, "Transactional IDs to remove ACLs for (repeatable)")
 	cmd.Flags().BoolVar(&a.registry, registryFlag, false, "Whether to remove ACLs for the schema registry")
 	cmd.Flags().StringSliceVar(&a.subjects, subjectFlag, nil, "Schema Registry subjects to remove ACLs for (repeatable)")
