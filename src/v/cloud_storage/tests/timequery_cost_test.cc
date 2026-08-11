@@ -269,6 +269,11 @@ FIXTURE_TEST(timequery_cost_every_fourth_inflated, cloud_storage_fixture) {
 
     BOOST_REQUIRE(!cost.found);
 
+    // The walk must not hydrate a segment the manifest already rules out, so
+    // the cost is bounded by the number of candidates rather than by the
+    // length of the log.
+    BOOST_REQUIRE_LE(cost.segment_gets, count_inflated(layout));
+
     vlog(
       cost_log.info,
       "segments in log: {}, manifest candidates: {}, segment GETs per "
