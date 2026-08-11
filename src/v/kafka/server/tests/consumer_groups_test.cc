@@ -12,6 +12,7 @@
 #include "cluster/security_frontend.h"
 #include "container/chunked_vector.h"
 #include "kafka/client/transport.h"
+#include "kafka/protocol/consumer_group_heartbeat.h"
 #include "kafka/protocol/describe_groups.h"
 #include "kafka/protocol/errors.h"
 #include "kafka/protocol/find_coordinator.h"
@@ -86,6 +87,31 @@ struct consumer_offsets_fixture : public redpanda_thread_fixture {
         client.shutdown();
     }
 
+    /// Joins a group over the classic protocol, so a classic group owns the
+    /// id. Joins as a static member, which skips the member-id round trip a
+    /// plain join needs first.
+    void join_classic_group(
+      kafka::client::transport& client,
+      const kafka::group_id& group,
+      const kafka::group_instance_id& instance) {
+        tests::cooperative_spin_wait_with_timeout(
+          30s,
+          [&client, &group, &instance] {
+              auto req = make_join_group_request(
+                unknown_member_id, group(), {"p1"}, "consumer");
+              req.data.group_instance_id = instance;
+              return client.dispatch(std::move(req), kafka::api_version(5))
+                .then([](join_group_response resp) {
+                    BOOST_REQUIRE(
+                      resp.data.error_code == kafka::error_code::none
+                      || resp.data.error_code
+                           == kafka::error_code::not_coordinator);
+                    return resp.data.error_code == kafka::error_code::none;
+                });
+          })
+          .get();
+    }
+
     void create_user(const ss::sstring& user, const ss::sstring& pass) {
         auto creds = security::scram_sha256::make_credentials(
           pass, security::scram_sha256::min_iterations);
@@ -148,6 +174,47 @@ FIXTURE_TEST(join_empty_group_static_member, consumer_offsets_fixture) {
               return resp.data.error_code == kafka::error_code::none
                      && resp.data.member_id != unknown_member_id;
           });
+    }).get();
+}
+
+FIXTURE_TEST(
+  consumer_heartbeat_refuses_a_classic_group_id, consumer_offsets_fixture) {
+    kafka::group_instance_id gr("instance-1");
+    wait_for_consumer_offsets_topic(gr);
+    auto client = make_kafka_client().get();
+    auto deferred = ss::defer([&client] {
+        client.stop().then([&client] { client.shutdown(); }).get();
+    });
+    client.connect().get();
+
+    const kafka::group_id classic{"classic-group"};
+    join_classic_group(client, classic, gr);
+
+    // the heartbeat handler's feature gate is closed while the protocol is
+    // incomplete, so the router is driven directly
+    const auto heartbeat = [this](const kafka::group_id& group) {
+        kafka::consumer_group_heartbeat_request req;
+        req.data.group_id = group;
+        req.data.member_id = "m1";
+        req.data.member_epoch = kafka::member_epoch(0);
+        return app.group_router.local()
+          .consumer_group_heartbeat(std::move(req))
+          .get()
+          .data.error_code;
+    };
+
+    BOOST_REQUIRE_EQUAL(
+      heartbeat(classic), kafka::error_code::group_id_not_found);
+
+    // An id no classic group owns reaches the end of the path instead, so the
+    // refusal is a decision about the id and not the only answer the entry
+    // point gives. This id hashes to a partition of its own, whose leadership
+    // and group loading nothing here has waited for, so the coordinator
+    // checks are retried the way the classic half of the test retries them.
+    const kafka::group_id consumer{"consumer-group"};
+    tests::cooperative_spin_wait_with_timeout(30s, [&heartbeat, &consumer] {
+        return ss::make_ready_future<bool>(
+          heartbeat(consumer) == kafka::error_code::unsupported_version);
     }).get();
 }
 

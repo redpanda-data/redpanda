@@ -411,6 +411,7 @@ redpanda_cc_btest(
         "//src/v/container:chunked_vector",
         "//src/v/kafka/client:transport",
         "//src/v/kafka/protocol",
+        "//src/v/kafka/protocol:consumer_group_heartbeat",
         "//src/v/kafka/protocol:describe_groups",
         "//src/v/kafka/protocol:find_coordinator",
         "//src/v/kafka/protocol:join_group",
