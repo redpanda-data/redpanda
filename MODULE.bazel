@@ -47,6 +47,14 @@ single_version_override(
 
 bazel_dep(name = "libxml2", version = "2.15.3")
 bazel_dep(name = "lz4", version = "1.9.4")
+single_version_override(
+    module_name = "lz4",
+    patch_strip = 1,
+    patches = [
+        "//bazel/thirdparty:lz4-namespace-xxhash.patch",
+    ],
+)
+
 bazel_dep(name = "platforms", version = "1.0.0")
 bazel_dep(name = "protobuf", version = "33.5")
 single_version_override(

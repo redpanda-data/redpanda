@@ -1,0 +1,19 @@
+Namespace LZ4's bundled xxHash symbols as its upstream build does. This avoids
+collisions with applications that link a separate xxHash version.
+
+--- a/BUILD.bazel
++++ b/BUILD.bazel
+@@ -6,5 +6,6 @@
+ cc_library(
+     name = "lz4",
++    local_defines = ["XXH_NAMESPACE=LZ4_"],
+     srcs = [
+         "lib/lz4.c",
+         "lib/xxhash.c",
+@@ -44,5 +45,6 @@
+ cc_library(
+     name = "lz4_frame",
++    local_defines = ["XXH_NAMESPACE=LZ4_"],
+     srcs = [
+         "lib/lz4frame.c",
+         "lib/lz4frame_static.h",
