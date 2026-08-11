@@ -26,6 +26,7 @@ import (
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/check"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/cloud"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/cluster"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/cmdstatus"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/connect"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/container"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/debug"
@@ -214,7 +215,9 @@ Use --print-tree to emit the full command tree as JSON.`,
 
 	cobra.AddTemplateFunc("wrappedLocalFlagUsages", wrappedLocalFlagUsages)
 	cobra.AddTemplateFunc("wrappedGlobalFlagUsages", wrappedGlobalFlagUsages)
+	cobra.AddTemplateFunc("statusBanner", cmdstatus.HelpBanner)
 	root.SetUsageTemplate(usageTemplate)
+	root.SetHelpTemplate(helpTemplate)
 
 	err := root.Execute()
 	if err != nil {
@@ -267,6 +270,14 @@ func newOxlaCommand() *cobra.Command {
 	}
 	return cmd
 }
+
+// This is the default Cobra help template with a status notice (see the
+// cmdstatus package) rendered above the command's description.
+var helpTemplate = `{{with statusBanner .}}{{.}}
+
+{{end}}{{with (or .Long .Short)}}{{. | trimTrailingWhitespaces}}
+
+{{end}}{{if or .Runnable .HasSubCommands}}{{.UsageString}}{{end}}`
 
 // This is the same Cobra usage template but using the wrapped flag usages.
 var usageTemplate = `Usage:{{if .Runnable}}

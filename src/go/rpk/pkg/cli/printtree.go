@@ -18,6 +18,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/cmdstatus"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/version"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/out"
 	"github.com/spf13/cobra"
@@ -41,6 +42,8 @@ type commandPrint struct {
 	Aliases     []string       `json:"aliases"`
 	Examples    string         `json:"examples,omitempty"`
 	Deprecated  string         `json:"deprecated,omitempty"`
+	Status      string         `json:"status,omitempty"`
+	StatusNote  string         `json:"status_note,omitempty"`
 	Flags       []flagPrint    `json:"flags"`
 	Commands    []commandPrint `json:"commands"`
 }
@@ -95,6 +98,7 @@ func printCommand(c *cobra.Command) commandPrint {
 	if aliases == nil {
 		aliases = []string{}
 	}
+	status, statusNote := cmdstatus.Get(c)
 	return commandPrint{
 		Name:        c.Name(),
 		Description: desc,
@@ -102,6 +106,8 @@ func printCommand(c *cobra.Command) commandPrint {
 		Aliases:     aliases,
 		Examples:    c.Example,
 		Deprecated:  c.Deprecated,
+		Status:      status,
+		StatusNote:  statusNote,
 		Flags:       printFlagSet(c.LocalFlags()),
 		Commands:    printChildren(c),
 	}

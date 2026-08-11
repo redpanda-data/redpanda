@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"testing"
 
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/cmdstatus"
 	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/require"
 )
@@ -34,6 +35,10 @@ func newPrintTreeTestRoot() *cobra.Command {
 	topic.Flags().MarkHidden("internal")
 	topic.Flags().String("legacy", "old", "legacy flag")
 	topic.Flags().Lookup("legacy").Deprecated = "use --new-flag"
+
+	create := &cobra.Command{Use: "create", Short: "create a topic"}
+	topic.AddCommand(create)
+	cmdstatus.MarkBeta(topic, "Feedback welcome.")
 
 	short := &cobra.Command{Use: "short-only", Short: "short fallback"}
 	old := &cobra.Command{Use: "old", Short: "old", Deprecated: "use new"}
@@ -77,6 +82,11 @@ func TestPrintTree(t *testing.T) {
 	require.Equal(t, "manage topics in detail", tc.Description, "Long is preferred over Short")
 	require.Equal(t, []string{"t"}, tc.Aliases)
 	require.Equal(t, "rpk topic create foo", tc.Examples)
+	require.Equal(t, "beta", tc.Status)
+	require.Equal(t, "Feedback welcome.", tc.StatusNote)
+	require.Len(t, tc.Commands, 1)
+	require.Equal(t, "beta", tc.Commands[0].Status, "status must inherit into subtrees in the tree output")
+	require.Empty(t, cmds["short-only"].Status, "unmarked commands must omit status")
 
 	flags := flagsByName(tc.Flags)
 	require.Len(t, tc.Flags, 5, "hidden flag must be excluded")
