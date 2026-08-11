@@ -149,3 +149,5 @@ docker pull docker.redpanda.com/redpandadata/redpanda-unstable:v25.1.1-rc1
 - [Upcoming Redpanda Events](https://www.redpanda.com/events)
 - [Redpanda Support](https://support.redpanda.com/)
 - [Redpanda University](https://university.redpanda.com/)
+
+<!-- CORE-16997 A/B arm A (control: bazel default download mode). Do not merge. -->
