@@ -15,53 +15,38 @@
 # by the Apache License, Version 2.0
 # ==================================================================
 #
-# Package Bazel-built C++ binaries into Antithesis-compatible Docker
-# images. Supports single targets, multiple targets, and Bazel patterns.
-# Builds Docker images directly using named build contexts, then uploads
-# the workload/config images to the registry (unless --skip-registry-upload)
-# and optionally launches an Antithesis test run (--submit; reads the API
-# password from $AT_PASSWORD).
-#
-# Usage:
-#   # Single target:
-#   ./tools/antithesis/single_binary_test_package.py \
-#       //src/v/lsm/db/tests:db_bench \
-#       --binary-args='--smp 1 --num 1000 --benchmarks mixedworkload --verify'
-#
-#   # Bazel pattern (all cc_test/cc_binary in a package):
-#   ./tools/antithesis/single_binary_test_package.py \
-#       //src/v/cluster/tests/...
-#
-#   # With instrumentation:
-#   ./tools/antithesis/single_binary_test_package.py \
-#       //src/v/lsm/db/tests:db_bench --instrumented
-#
+# Package Bazel-built C++ test binaries into Antithesis-ready Docker
+# images: every binary becomes a test-composer singleton driver in a
+# single bazel-target image. See --help for the full flow and examples.
 
 import argparse
 import functools
+import json
 import re
 import shlex
 import shutil
 import sys
 import tempfile
-import xml.etree.ElementTree as ET
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from jinja2 import Template
-
 from at_common import (
+    REPO_ROOT,
+    add_build_args,
     add_common_args,
+    build_config_image,
+    docker_build,
     maybe_submit,
     registry_help_str,
+    render_template,
     run as _run,
+    tag_images,
     upload_images,
     validate_common_args,
 )
 
 
-REPO_ROOT = Path(__file__).resolve().parent.parent.parent
-DEPS_DIR = Path(__file__).resolve().parent / "single_binary_deps"
+DEPS_DIR = Path(__file__).resolve().parent / "bazel_target_deps"
 
 # bazel and docker commands in this script must run from the repo root.
 run = functools.partial(_run, cwd=REPO_ROOT)
@@ -85,7 +70,17 @@ _EXCLUDED_ENV = {
 INSTALL_PREFIX = "/opt/antithesis"
 DATA_DIR = f"{INSTALL_PREFIX}/data"
 LIB_DIR = f"{INSTALL_PREFIX}/lib"
-DRIVER_DIR = f"{INSTALL_PREFIX}/test/v1/single_binary_tests"
+DRIVER_DIR = f"{INSTALL_PREFIX}/test/v1/main"
+
+IMAGE = "bazel-target"
+CONFIG_IMAGE = "bazel-target-config"
+
+# Fault posture sent with every submitted run, explicit rather than the
+# webhook defaults: vary simulated clocks and CPU/instruction speed.
+FAULT_PARAMS = {
+    "custom.clock_skew": "true",
+    "custom.cpu_mod": "true",
+}
 
 _ROOTPATH_RE = r"\$\(rootpath\s+([^)]+)\)"
 
@@ -105,14 +100,6 @@ class BinaryInfo:
     runtime_args: list[str] = field(default_factory=list)
     env: dict[str, str] = field(default_factory=dict)
     data_files: dict[str, Path] = field(default_factory=dict)
-
-
-def render_template(template_path: Path, **kwargs) -> str:
-    with open(template_path) as f:
-        tmpl = Template(f.read())
-    tmpl.globals["shquote"] = shlex.quote
-    tmpl.environment.filters["shquote"] = shlex.quote
-    return tmpl.render(**kwargs)
 
 
 @functools.cache
@@ -203,48 +190,54 @@ def query_seastar_targets(patterns: list[str]) -> set[str]:
 
 def resolve_and_query_targets(
     patterns: list[str],
+    extra_bazel_args: list[str],
     tests_only: bool = False,
 ) -> tuple[list[str], dict[str, TargetInfo]]:
-    """Resolve patterns and query target info in a single bazel query."""
+    """Resolve patterns and query target info in a single bazel cquery.
+
+    cquery runs after analysis with the build's own flags, so select()ed
+    attributes (e.g. the reactor backend from //bazel:io_uring) resolve to
+    the branch the build actually uses; a loading-phase query would report
+    the union of all branches."""
     kind_filter = "cc_test" if tests_only else "cc_test|cc_binary"
     query_expr = f"kind('{kind_filter}', set(" + " ".join(patterns) + "))"
     print("==> Resolving and querying targets")
-    result = run(["bazel", "query", "--output=xml", query_expr], capture=True)
+    result = run(
+        ["bazel", "cquery", "--output=jsonproto", *extra_bazel_args, query_expr],
+        capture=True,
+    )
 
-    root = ET.fromstring(result.stdout)
-    rules = root.findall(".//rule")
-    targets = [rule.get("name", "") for rule in rules]
-    seastar_targets = query_seastar_targets(patterns) if targets else set()
+    rules = [
+        r["target"]["rule"]
+        for r in json.loads(result.stdout).get("results", [])
+        if "rule" in r.get("target", {})
+    ]
+    seastar_targets = query_seastar_targets(patterns) if rules else set()
 
     info: dict[str, TargetInfo] = {}
     for rule in rules:
-        label = rule.get("name", "")
-
-        args_elem = rule.find("list[@name='args']")
+        attrs = {a["name"]: a for a in rule.get("attribute", [])}
         rule_args = [
-            s.get("value", "").replace("'", "")
-            for s in (args_elem if args_elem is not None else [])
-            if s.get("value")
+            value.replace("'", "")
+            for value in attrs.get("args", {}).get("stringListValue", [])
+            if value
         ]
-
-        env: dict[str, str] = {}
-        env_elem = rule.find("dict[@name='env']")
-        for pair in env_elem if env_elem is not None else []:
-            strings = pair.findall("string")
-            if len(strings) == 2 and strings[0].get("value"):
-                env[strings[0].get("value", "")] = strings[1].get("value", "")
-
-        info[label] = TargetInfo(
-            rule_kind=rule.get("class", "cc_binary"),
+        env = {
+            e["key"]: e.get("value", "")
+            for e in attrs.get("env", {}).get("stringDictValue", [])
+            if e.get("key")
+        }
+        info[rule["name"]] = TargetInfo(
+            rule_kind=rule.get("ruleClass", "cc_binary"),
             args=rule_args,
             env=env,
-            uses_seastar=label in seastar_targets,
+            uses_seastar=rule["name"] in seastar_targets,
         )
 
-    if not targets:
+    if not info:
         sys.exit("Error: no targets resolved from the given patterns")
-    print(f"    Resolved {len(targets)} target(s)")
-    return targets, info
+    print(f"    Resolved {len(info)} target(s)")
+    return list(info), info
 
 
 def _flatten_args(args: list[str]) -> list[str]:
@@ -267,6 +260,9 @@ def build_runtime_args(
             if not any(a.startswith(prefix) for a in args):
                 args.extend(flag.split())
         if log_level:
+            # Moderate default volume for Antithesis (<200MB/core-hour),
+            # keeping the target's per-logger overrides; resubmit a narrower
+            # test with a higher --log-level when a finding needs more.
             args = [a for a in args if not a.startswith("--default-log-level")]
             args.append(f"--default-log-level={log_level}")
     if binary_args:
@@ -340,10 +336,11 @@ def collect_binary_info(
 
 def build_workload_image(
     binaries: list[BinaryInfo],
-    image_tag: str,
-) -> None:
-    """Build the workload Docker image using named build contexts."""
-    print(f"==> Building workload image: {image_tag}")
+    name: str,
+) -> str:
+    """Build the workload Docker image using named build contexts.
+    Returns the built reference."""
+    print(f"==> Building image: {name}")
 
     with tempfile.TemporaryDirectory() as tmpdir:
         ctx = Path(tmpdir)
@@ -383,7 +380,7 @@ def build_workload_image(
 
         (ctx / "Dockerfile").write_text(
             render_template(
-                DEPS_DIR / "workload.Dockerfile.j2",
+                DEPS_DIR / "bazel-target.Dockerfile.j2",
                 install_prefix=INSTALL_PREFIX,
                 lib_dir=LIB_DIR,
                 data_dir=DATA_DIR,
@@ -403,29 +400,36 @@ def build_workload_image(
         for ctx_name, src_dir in data_contexts.items():
             build_ctx_args += ["--build-context", f"{ctx_name}={src_dir}"]
 
-        run(["docker", "build", *build_ctx_args, "--tag", image_tag, tmpdir])
-
-
-def build_config_image(config_tag: str, compose_content: str) -> None:
-    print(f"==> Building config image: {config_tag}")
-    with tempfile.TemporaryDirectory() as tmpdir:
-        (Path(tmpdir) / "docker-compose.yaml").write_text(compose_content)
-        run(
-            [
-                "docker",
-                "build",
-                "-f",
-                str(DEPS_DIR / "config.Dockerfile"),
-                "--tag",
-                config_tag,
-                tmpdir,
-            ]
-        )
+        return docker_build(name, build_ctx_args, tmpdir)
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Package Bazel C++ binaries for Antithesis testing."
+        description="""\
+Package Bazel-built C++ test binaries into Antithesis-ready images.
+
+Builds the targets (instrumented with --config=antithesis by default)
+and bakes every binary, each wrapped in a test-composer singleton
+driver, into a single bazel-target image tagged by its image ID. A
+matching bazel-target-config image carries the docker-compose.yaml,
+and a compose pinning the exact build is written to .antithesis/<name>/
+for local runs. --push uploads the images to the Antithesis registry;
+--submit also launches an Antithesis test run (reads the API password
+from $AT_PASSWORD).""",
+        epilog="""\
+examples:
+  # package a single test target and print the local run commands
+  tools/antithesis/bazel_target.py //src/v/storage/opfuzz:opfuzz_test
+
+  # package every test under a package and submit a 2-hour ad-hoc run
+  tools/antithesis/bazel_target.py //src/v/cluster/tests/... \\
+      --tests-only --submit --duration 120
+
+  # nightly: record findings history and move the nightly alias tags
+  tools/antithesis/bazel_target.py //src/v/raft/tests/... \\
+      --submit --duration 360 --no-ephemeral --source dev --tag nightly \\
+      --name raft-fixture-tests --description 'nightly raft fixture tests'""",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     parser.add_argument(
         "targets",
@@ -436,55 +440,45 @@ def main() -> None:
         "--binary-args", default="", help="Extra runtime arguments for all binaries"
     )
     parser.add_argument(
-        "--name", default="", help="Image name (default: derived from first target)"
-    )
-    parser.add_argument(
-        "--tag", default="", help="Docker image tag (default: <name>:latest)"
-    )
-    parser.add_argument(
-        "--bazel-args", default="", help="Extra arguments passed to bazel build"
-    )
-    parser.add_argument(
-        "--instrumented", action="store_true", help="Build with --config=antithesis"
+        "--name",
+        default="bazel-target",
+        help="Test run name, also the .antithesis/ output directory "
+        "(default: bazel-target)",
     )
     parser.add_argument(
         "--log-level",
-        default="",
-        help="Override default log level (e.g. warn, error, info)",
-    )
-    parser.add_argument(
-        "--skip-bazel-build",
-        action="store_true",
-        help="Skip bazel build, use existing artifacts",
+        default="info",
+        help="Default log level applied to every binary, replacing the "
+        "target's own; per-logger overrides are kept (default: info)",
     )
     parser.add_argument(
         "--tests-only",
         action="store_true",
         help="Only package cc_test targets, excluding cc_binary",
     )
+    add_build_args(parser)
     add_common_args(parser)
+    if len(sys.argv) == 1:
+        parser.print_help(sys.stderr)
+        parser.exit(
+            2,
+            f"\n{parser.prog}: error: the following arguments are required: targets\n",
+        )
+
     args = parser.parse_args()
 
     validate_common_args(parser, args)
-
-    # Resolve patterns and query target info.
-    targets, target_info = resolve_and_query_targets(
-        args.targets, tests_only=args.tests_only
-    )
-
-    _, first_name = parse_bazel_target(targets[0])
-    target_name = args.name or first_name
-    image_tag = args.tag or f"{target_name}:latest"
-    if ":" not in image_tag:
-        image_tag += ":latest"
-    base, tag = image_tag.rsplit(":", 1)
-    config_tag = f"{base}-config:{tag}"
 
     extra_bazel_args = list(_BASE_BAZEL_ARGS)
     if args.bazel_args:
         extra_bazel_args.extend(shlex.split(args.bazel_args))
     if args.instrumented:
         extra_bazel_args.append("--config=antithesis")
+
+    # Resolve patterns and query configured target info.
+    targets, target_info = resolve_and_query_targets(
+        args.targets, extra_bazel_args, tests_only=args.tests_only
+    )
 
     # Build all targets.
     if not args.skip_bazel_build:
@@ -502,51 +496,59 @@ def main() -> None:
         sys.exit("Error: no binaries found. Run without --skip-bazel-build?")
 
     # Build workload image.
-    build_workload_image(binaries, image_tag)
+    workload_ref = build_workload_image(binaries, IMAGE)
 
-    # Build config image.
-    hostname = target_name.replace("_", "-")
-    compose = render_template(
-        DEPS_DIR / "compose.yaml.j2", image_tag=image_tag, hostname=hostname
-    )
-    build_config_image(config_tag, compose)
+    def compose_with(image: str) -> str:
+        return render_template(DEPS_DIR / "compose.yaml.j2", image=image)
 
-    # Write compose for local testing.
-    compose_out = REPO_ROOT / ".antithesis" / target_name
+    # The config compose references the stable <name>:latest name, so the
+    # config image changes only when the environment itself changes, not on
+    # every image rebuild. In the Antithesis environment the submitted
+    # antithesis.images digest overrides that name (a digest entry is
+    # tagged latest there).
+    config_ref = build_config_image(CONFIG_IMAGE, compose_with(f"{IMAGE}:latest"))
+
+    # Write a compose pinning the exact built image, so local runs keep
+    # running this build regardless of later packagings.
+    compose_out = REPO_ROOT / ".antithesis" / args.name
     compose_out.mkdir(parents=True, exist_ok=True)
-    (compose_out / "docker-compose.yaml").write_text(compose)
+    (compose_out / "docker-compose.yaml").write_text(compose_with(workload_ref))
 
-    config_key = f"{target_name}-config"
-    images = {
-        target_name: image_tag,
-        config_key: config_tag,
-    }
-    if not args.skip_registry_upload:
-        upload_images(args.registry, images)
+    refs = [workload_ref, config_ref]
+    aliases = tag_images(refs, args.tag)
+    pushed: dict[str, str] = {}
+    if args.push:
+        pushed = upload_images(args.registry, refs)
+        upload_images(args.registry, aliases)
 
-    maybe_submit(args, name=target_name, images=images, config_key=config_key)
-
-    binary_names = [b.name for b in binaries]
+    compose_file = compose_out / "docker-compose.yaml"
     drivers_list = "\n".join(
-        f"  {DRIVER_DIR}/singleton_driver_{n}.sh" for n in binary_names
+        f"  docker compose -f {compose_file} exec {IMAGE} \\\n"
+        f"      {DRIVER_DIR}/singleton_driver_{b.name}.sh"
+        for b in binaries
     )
 
     print(f"""
 Images built:
-  workload: {image_tag}
-  config:   {config_tag}
+  image:  {workload_ref}
+  config: {config_ref}
 
-Singleton drivers ({len(binary_names)}):
+Run locally ({len(binaries)} driver{"s" if len(binaries) != 1 else ""}):
+  docker compose -f {compose_file} up -d
 {drivers_list}
+  docker compose -f {compose_file} down
 
-Run locally:
-  docker compose -f {compose_out}/docker-compose.yaml up -d
-  docker compose -f {compose_out}/docker-compose.yaml exec workload \\
-      {DRIVER_DIR}/singleton_driver_<binary>.sh
-  docker compose -f {compose_out}/docker-compose.yaml down
-
-{registry_help_str(args.registry, skipped=args.skip_registry_upload, images=images)}
+{registry_help_str(args.registry, pushed=args.push, refs=[*refs, *aliases])}
 """)
+
+    # Last so its status is the final thing the user sees.
+    maybe_submit(
+        args,
+        test_name=args.name,
+        pushed=pushed,
+        config_ref=config_ref,
+        extra_params=FAULT_PARAMS,
+    )
 
 
 if __name__ == "__main__":
