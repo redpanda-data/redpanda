@@ -323,10 +323,9 @@ public:
     bool contains(const key& key) const;
     bool contains(const segment_name& name) const;
 
-    /// Check if the provided offset range matches any segment in the manifest
-    /// exactly.
-    bool segment_with_offset_range_exists(
-      model::offset base, model::offset committed) const;
+    /// Check if the manifest contains a segment with the same identity
+    /// (offset range, size, term) as the provided metadata.
+    bool segment_with_same_identity_exists(const value& meta) const;
 
     struct add_segment_meta_result {
         // size in bytes of the segment(s) that has been replaced by this
