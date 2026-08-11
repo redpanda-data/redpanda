@@ -14,6 +14,7 @@
 #include "serde/parquet/schema.h"
 #include "serde/parquet/value.h"
 
+#include <seastar/core/coroutine.hh>
 #include <seastar/coroutine/maybe_yield.hh>
 #include <seastar/util/variant_utils.hh>
 
@@ -51,7 +52,16 @@ public:
     }
 
     ss::future<> shred() {
+        size_t entries_since_yield = 0;
         while (!_stack.empty()) {
+            // Yield periodically to avoid reactor stalls on wide schemas.
+            // Each entry involves a column write (~100-200ns), so 64
+            // entries is ~6-13µs of work — well under the preemption
+            // threshold, but enough to bound latency for schemas with
+            // hundreds of columns.
+            if (++entries_since_yield % 64 == 0) {
+                co_await ss::coroutine::maybe_yield();
+            }
             auto [element, levels, value] = std::move(_stack.back());
             _stack.pop_back();
             if (element->is_leaf()) {
@@ -165,7 +175,8 @@ private:
                     std::runtime_error(
                       "detected null value for required group node"));
               }
-              return process_optional_null_group(element, levels);
+              process_optional_null_group(element, levels);
+              return ss::now();
           },
           [element](repeated_value) -> ss::future<> {
               return ss::make_exception_future(
@@ -188,8 +199,9 @@ private:
       const schema_element* element, traversal_levels levels, value val) {
         return ss::visit(
           std::move(val),
-          [this, element, levels](null_value) {
-              return process_optional_null_group(element, levels);
+          [this, element, levels](null_value) -> ss::future<> {
+              process_optional_null_group(element, levels);
+              return ss::now();
           },
           [this, element, levels](repeated_value list) {
               return process_repeated_value(element, levels, std::move(list));
@@ -220,7 +232,8 @@ private:
                 element, levels, std::move(group));
           },
           [this, element, levels](null_value) -> ss::future<> {
-              return process_optional_null_group(element, levels);
+              process_optional_null_group(element, levels);
+              return ss::now();
           },
           [element](repeated_value) -> ss::future<> {
               return ss::make_exception_future(
@@ -245,7 +258,8 @@ private:
       repeated_value list) {
         // Empty lists are equivalent to a `null` value.
         if (list.empty()) {
-            co_return co_await process_optional_null_group(element, levels);
+            process_optional_null_group(element, levels);
+            co_return;
         }
         traversal_levels child_levels = levels;
         // Since these elements are repeated, we need to mark that they are
@@ -272,14 +286,13 @@ private:
         return process_required_group_value(element, levels, std::move(groups));
     }
 
-    ss::future<> process_optional_null_group(
+    void process_optional_null_group(
       const schema_element* element, traversal_levels levels) {
         // If the value is `null`, we use the parent definition_level so that
         // assembly can determine where the `null` started.
         for (size_t i : reverse_view(irange(element->children.size()))) {
             const schema_element* child = &element->children[i];
             _stack.emplace_back(child, levels, value(null_value()));
-            co_await ss::coroutine::maybe_yield();
         }
     }
 
@@ -288,15 +301,14 @@ private:
       traversal_levels levels,
       group_value group) {
         if (group.size() != element->children.size()) {
-            co_return co_await ss::make_exception_future(
-              std::runtime_error(
-                fmt::format(
-                  "schema/struct mismatch, schema had {} children, struct had "
-                  "{} "
-                  "fields. At column {}",
-                  element->children.size(),
-                  group.size(),
-                  element->position)));
+            return ss::make_exception_future<>(std::runtime_error(
+              fmt::format(
+                "schema/struct mismatch, schema had {} children, struct had "
+                "{} "
+                "fields. At column {}",
+                element->children.size(),
+                group.size(),
+                element->position)));
         }
         // Levels don't change for require elements because they always have
         // to be there so no additional bits need to be tracked (they'd be
@@ -305,8 +317,8 @@ private:
             group_member& member = group[i];
             const schema_element* child = &element->children[i];
             _stack.emplace_back(child, levels, std::move(member.field));
-            co_await ss::coroutine::maybe_yield();
         }
+        return ss::now();
     }
 
     struct entry {
