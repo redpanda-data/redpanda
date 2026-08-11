@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"testing"
 
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
 	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/require"
 )
@@ -64,8 +65,10 @@ func TestPrintTree(t *testing.T) {
 
 	require.NotEmpty(t, got.XOptions, "x_options must expose the documented -X flags")
 	require.Equal(t, "brokers", got.XOptions[0].Name, "x_options must be in display order")
+	require.Equal(t, "RPK_BROKERS", got.XOptions[0].Env)
 	for _, x := range got.XOptions {
 		require.NotEmpty(t, x.Description, "every x_option must carry a description (%s)", x.Name)
+		require.Equal(t, config.XEnvVar(x.Name), x.Env, "env must come from the same derivation rpk reads (%s)", x.Name)
 		require.NotEqual(t, "cloud_environment", x.Name, "deliberately undocumented flags must not be exposed")
 	}
 

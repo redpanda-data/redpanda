@@ -307,6 +307,7 @@ var xflagDocs = []xflagDoc{
 // --print-tree to expose the flags to automation tooling.
 type XFlagDoc struct {
 	Name        string `json:"name"`
+	Env         string `json:"env"`
 	Format      string `json:"format"`
 	Example     string `json:"example"`
 	Description string `json:"description"`
@@ -319,6 +320,7 @@ func XFlagDocs() []XFlagDoc {
 	for _, d := range xflagDocs {
 		docs = append(docs, XFlagDoc{
 			Name:        d.name,
+			Env:         XEnvVar(d.name),
 			Format:      d.listHint,
 			Example:     d.helpExample,
 			Description: d.help,
@@ -1684,14 +1686,18 @@ func envOverrides() []string {
 		}
 	}
 	for _, k := range XFlags() {
-		targetKey := k
-		k = strings.ReplaceAll(k, ".", "_")
-		k = strings.ToUpper(k)
-		if v, exists := os.LookupEnv("RPK_" + k); exists {
-			envOverrides = append(envOverrides, targetKey+"="+v)
+		if v, exists := os.LookupEnv(XEnvVar(k)); exists {
+			envOverrides = append(envOverrides, k+"="+v)
 		}
 	}
 	return envOverrides
+}
+
+// XEnvVar returns the environment variable that overrides the given -X flag:
+// the flag name uppercased, with dots replaced by underscores, prefixed with
+// RPK_. For example, tls.enabled becomes RPK_TLS_ENABLED.
+func XEnvVar(name string) string {
+	return "RPK_" + strings.ToUpper(strings.ReplaceAll(name, ".", "_"))
 }
 
 // processes first env and then flag overrides into our virtual rpk yaml.
