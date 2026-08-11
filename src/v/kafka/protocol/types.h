@@ -58,6 +58,16 @@ inline constexpr leader_epoch invalid_leader_epoch(-1);
 /// Kafka group generation identifier.
 using generation_id = named_type<int32_t, struct kafka_generation_id>;
 
+/// A consumer group's epoch, bumped whenever a new assignment is owed.
+using group_epoch = named_type<int32_t, struct kafka_group_epoch>;
+
+/// The group epoch a target assignment was computed at.
+using assignment_epoch = named_type<int32_t, struct kafka_assignment_epoch>;
+
+/// A consumer group member's epoch. Advances toward the group epoch as the
+/// member finishes reconciling its assignment.
+using member_epoch = named_type<int32_t, struct kafka_member_epoch>;
+
 /// Kafka group protocol type.
 using protocol_type = named_type<ss::sstring, struct kafka_protocol_type>;
 

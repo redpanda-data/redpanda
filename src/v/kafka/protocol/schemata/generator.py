@@ -494,6 +494,12 @@ field_name_type_map = {
     ("int32", "ThrottleTimeMs"): ("std::chrono::milliseconds", 0),
     ("int32", "SessionTimeoutMs"): ("std::chrono::milliseconds", None),
     ("int32", "RebalanceTimeoutMs"): ("std::chrono::milliseconds", None),
+    # a named_type over an arithmetic type value-initializes to the type's
+    # minimum, so an epoch with no default in the schema needs one here to
+    # keep the zero an int32 field would have had
+    ("int32", "GroupEpoch"): ("kafka::group_epoch", 0),
+    ("int32", "AssignmentEpoch"): ("kafka::assignment_epoch", 0),
+    ("int32", "MemberEpoch"): ("kafka::member_epoch", 0),
 }
 
 # primitive types
