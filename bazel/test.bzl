@@ -475,6 +475,15 @@ def redpanda_cc_bench(
         deps = deps + test_deps,
         testonly = True,
         copts = redpanda_copts(),
+        # Statically linked bench binaries are huge - the biggest reach ~4 GB in
+        # debug, too large for the remote cache to store, so the gRPC upload
+        # exceeds its deadline and their link actions never get a cache hit.
+        # Link them dynamically, except in optimized builds, which is where the
+        # numbers actually get measured.
+        linkstatic = select({
+            "//bazel:optimized_build": True,
+            "//conditions:default": False,
+        }),
         features = [
             "layering_check",
         ],
