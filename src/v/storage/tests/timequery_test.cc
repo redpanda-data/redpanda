@@ -699,3 +699,70 @@ TEST_F(log_builder_fixture, timequery_append_time) {
 
     b | stop();
 }
+
+// Batches that are not user data are stamped with walltime, which is unrelated
+// to client-assigned timestamps. They must not take part in the segment's
+// monotonicity bookkeeping.
+TEST_F(log_builder_fixture, timequery_non_data_batch_monotonicity) {
+    using namespace storage;
+
+    const auto past = model::timestamp(1000);
+
+    // A kafka-namespace topic, so that the non-data batch is not treated as
+    // user data by virtue of being on an internal topic.
+    b | start(model::ntp(model::kafka_namespace, model::topic("tq"), 0));
+    b | add_segment(0);
+
+    b | add_batch(make_random_batch(model::term_id(0), model::offset(0), past));
+
+    auto config_batch = model::test::make_random_batch(
+      model::offset(1),
+      1,
+      false,
+      model::record_batch_type::raft_configuration,
+      std::vector<size_t>(1, 1024),
+      model::new_timestamp());
+    config_batch.set_term(model::term_id(0));
+    b | add_batch(std::move(config_batch));
+
+    b
+      | add_batch(make_random_batch(
+        model::term_id(0), model::offset(2), model::timestamp(past() + 500)));
+
+    const auto& seg = b.get_log_segments().front();
+    EXPECT_EQ(seg->index().base_timestamp(), past);
+    EXPECT_EQ(seg->index().max_timestamp(), model::timestamp(past() + 500));
+    EXPECT_TRUE(seg->index().batch_timestamps_are_monotonic());
+
+    b | stop();
+}
+
+// Some clients leave `max_timestamp` unset on a single-record batch
+// (d87c1cdaef), which 'maybe_index' normalizes away with max(first, max) so
+// that the indexed timestamps stay ordered. The monotonicity predicate has to
+// agree.
+TEST_F(log_builder_fixture, timequery_unset_max_timestamp_monotonicity) {
+    using namespace storage;
+
+    b | start(model::ntp(model::kafka_namespace, model::topic("tq"), 0));
+    b | add_segment(0);
+
+    b
+      | add_batch(make_random_batch(
+        model::term_id(0), model::offset(0), model::timestamp(1000)));
+
+    auto unset = make_random_batch(
+      model::term_id(0), model::offset(1), model::timestamp(2000));
+    unset.header().max_timestamp = model::timestamp::missing();
+    b | add_batch(std::move(unset));
+
+    b
+      | add_batch(make_random_batch(
+        model::term_id(0), model::offset(2), model::timestamp(3000)));
+
+    const auto& seg = b.get_log_segments().front();
+    EXPECT_EQ(seg->index().max_timestamp(), model::timestamp(3000));
+    EXPECT_TRUE(seg->index().batch_timestamps_are_monotonic());
+
+    b | stop();
+}
