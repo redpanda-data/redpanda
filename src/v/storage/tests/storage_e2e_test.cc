@@ -4425,6 +4425,66 @@ TEST_F(storage_test_fixture, test_offset_range_size_ignores_non_data_batches) {
     ASSERT_LE(sized->last_timestamp, data_ts);
 }
 
+TEST_F(storage_test_fixture, test_offset_range_size_spans_whole_range) {
+    // The range's timestamp bounds are derived from two partial scans - one
+    // from an index entry to the range start, one from an index entry to the
+    // range end - so a batch in the middle of the range is visited by neither.
+    // With out-of-order timestamps the largest one can sit there, and an
+    // uploaded segment whose max_timestamp under-reports makes
+    // partition_manifest::timequery pass over the segment holding the first
+    // matching record.
+    auto cfg = default_log_config(test_dir);
+    storage::log_manager mgr = make_log_manager(cfg);
+    auto deferred = ss::defer([&mgr]() mutable { mgr.stop().get(); });
+    auto ntp = model::ntp("redpanda", "test-topic", 0);
+    storage::ntp_config ntp_cfg(ntp, mgr.config().base_dir);
+    auto log = manage_log(mgr, std::move(ntp_cfg));
+
+    const auto base_ts = model::timestamp(1'000'000);
+    // Far above every other timestamp, and buried mid-range.
+    const auto spike_ts = model::timestamp(9'000'000);
+
+    auto append = [&log](model::timestamp ts, size_t payload) {
+        storage::record_batch_builder builder(
+          model::record_batch_type::raft_data, model::offset(0));
+        builder.add_raw_kv(
+          iobuf::from("key"), iobuf::from(ss::sstring(payload, 'v')));
+        auto batch = std::move(builder).build();
+        batch.set_term(model::term_id(0));
+        batch.header().first_timestamp = ts;
+        batch.header().max_timestamp = ts;
+        auto reader = model::make_memory_record_batch_reader(
+          {std::move(batch)});
+        storage::log_append_config append_cfg{
+          .should_fsync = storage::log_append_config::fsync::no,
+        };
+        std::move(reader)
+          .for_each_ref(log->make_appender(append_cfg), model::no_timeout)
+          .get();
+    };
+
+    // Enough batches, each large enough to be indexed, that the spike lands
+    // well inside the range rather than in either scan window.
+    constexpr size_t batch_payload = 40_KiB;
+    constexpr int batches = 40;
+    constexpr int spike_at = batches / 2;
+    for (int i = 0; i < batches; ++i) {
+        auto ts = i == spike_at ? spike_ts : model::timestamp(base_ts() + i);
+        append(ts, batch_payload);
+    }
+    log->flush().get();
+
+    auto last = log->offsets().committed_offset;
+    auto result = log->offset_range_size(model::offset(0), last).get();
+    ASSERT_TRUE(result.has_value());
+
+    // max_timestamp must bound every data batch in the range, wherever the
+    // largest one sits. Under-reporting it loses timequery answers.
+    ASSERT_GE(result->last_timestamp, spike_ts);
+    // And a bound can never be inverted.
+    ASSERT_LE(result->first_timestamp, result->last_timestamp);
+}
+
 TEST_F(storage_test_fixture, test_offset_range_size_bounds_are_orderable) {
     // An uploaded range's base_timestamp is what a timequery uses to decide
     // whether the range can start after it, and max_timestamp whether it can

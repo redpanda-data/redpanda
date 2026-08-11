@@ -766,3 +766,62 @@ TEST_F(log_builder_fixture, timequery_unset_max_timestamp_monotonicity) {
 
     b | stop();
 }
+
+// Genuinely out-of-order producer timestamps. The running-max time column keeps
+// the index searchable anyway, so the query is answered by a seek rather than
+// by scanning the segment, and the answer still matches the analytic one: the
+// first offset whose timestamp is at or above the target.
+TEST_F(log_builder_fixture, timequery_disordered_timestamps_use_index) {
+    using namespace storage;
+
+    // Out of order across batches, and dipping back below the running max.
+    const std::vector<int64_t> timestamps{
+      1000, 5000, 3000, 4000, 9000, 6000, 7000, 20000, 8000, 30000};
+
+    b | start(model::ntp(model::kafka_namespace, model::topic("tq"), 0));
+    b | add_segment(0);
+
+    for (size_t i = 0; i < timestamps.size(); ++i) {
+        b
+          | add_batch(make_random_batch(
+            model::term_id(0),
+            model::offset(static_cast<int64_t>(i)),
+            model::timestamp(timestamps[i])));
+    }
+
+    const auto& seg = b.get_log_segments().front();
+    // The data really is non-monotonic; the index is searchable regardless.
+    EXPECT_FALSE(seg->index().batch_timestamps_are_monotonic());
+    EXPECT_TRUE(seg->index().has_running_max_timestamps());
+    EXPECT_TRUE(seg->index().time_index_is_sorted());
+
+    for (int64_t query = 500; query <= 31000; query += 500) {
+        std::optional<int64_t> expected;
+        for (size_t i = 0; i < timestamps.size(); ++i) {
+            if (timestamps[i] >= query) {
+                expected = static_cast<int64_t>(i);
+                break;
+            }
+        }
+
+        auto result = b.get_log()
+                        ->timequery(
+                          storage::timequery_config(
+                            model::offset(0),
+                            model::timestamp(query),
+                            model::offset::max(),
+                            {model::record_batch_type::raft_data},
+                            std::nullopt))
+                        .get();
+
+        if (expected.has_value()) {
+            ASSERT_TRUE(result.has_value()) << "query=" << query;
+            EXPECT_EQ(result->offset, model::offset(*expected))
+              << "query=" << query;
+        } else {
+            EXPECT_FALSE(result.has_value()) << "query=" << query;
+        }
+    }
+
+    b | stop();
+}

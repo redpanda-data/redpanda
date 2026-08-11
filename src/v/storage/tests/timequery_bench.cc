@@ -154,11 +154,13 @@ private:
         const auto& index = _builder.get_log_segments().back()->index();
         fmt::print(
           "setup: non_data_batch={} interleaved={} disordered={} monotonic={} "
-          "answer={}\n",
+          "running_max={} sorted={} answer={}\n",
           with_non_data_batch,
           _interleave_non_data,
           _disordered,
           index.batch_timestamps_are_monotonic(),
+          index.has_running_max_timestamps(),
+          index.time_index_is_sorted(),
           _answer);
     }
 

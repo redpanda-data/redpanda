@@ -244,9 +244,20 @@ ss::future<result<offset_to_file_pos_result>> convert_end_offset_to_file_pos(
             });
       });
 
-    if (max_data_ts != model::timestamp::missing()) {
-        ts = max_data_ts;
-    }
+    // The scan starts at an index entry, so data batches before it are never
+    // visited and the largest timestamp in the range may be one of them. Bound
+    // the result by what the index knows about everything up to that entry:
+    // with a running-max time column that is the prefix maximum, and without
+    // one the segment's own data-only maximum. Note the entry sits near the
+    // range's end, so neither is a tight bound - both can reach past the range.
+    // That is the safe direction for a query, though it does make a segment
+    // look newer than its data to time-based retention; under-reporting would
+    // make a timequery pass over the segment holding the first matching record.
+    const auto prefix_max = ix_end
+                                && segment->index().has_running_max_timestamps()
+                              ? ix_end->timestamp
+                              : segment->index().max_timestamp();
+    ts = std::max(max_data_ts, prefix_max);
 
     if (res.has_error()) {
         vlog(stlog.error, "Can't read segment file, error: {}", res.error());

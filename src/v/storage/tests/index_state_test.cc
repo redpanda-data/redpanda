@@ -29,6 +29,9 @@ static storage::index_state make_random_index_state(
     st.max_timestamp = model::timestamp(random_generators::get_int<int64_t>());
     st.batch_timestamps_are_monotonic = apply_offset
                                         == storage::offset_delta_time::yes;
+    // The deprecated encodings predate this field, so a state that is going to
+    // be round-tripped through one cannot claim to carry running maxima.
+    st.running_max_timestamps = apply_offset == storage::offset_delta_time::yes;
 
     if (apply_offset == storage::offset_delta_time::yes) {
         // set new field if the request is for a current-version index

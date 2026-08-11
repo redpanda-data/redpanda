@@ -2564,12 +2564,23 @@ auto disk_log_impl::get_file_offset(
         throw;
     }
 
-    if (max_timestamp == model::timestamp::missing()) {
-        // The scanned window held no data batches, so it carries no data
-        // timestamp of its own. Fall back to the segment's own bound, which
-        // is data-only and cannot under-report.
-        max_timestamp = s->index().max_timestamp();
-    }
+    // The scan starts at an index entry, so batches between the segment's
+    // start and that entry are never visited and cannot contribute. That is
+    // fine while timestamps rise, but the largest one may sit in the unscanned
+    // part, and a range whose max_timestamp under-reports makes
+    // partition_manifest::timequery pass over the segment holding the first
+    // matching record.
+    //
+    // Take the bound the index already carries for everything up to the entry:
+    // with a running-max time column that is exactly the prefix maximum, and
+    // without one fall back to the segment's own data-only maximum. Either may
+    // reach past the range, which is safe - considering a segment that holds no
+    // match only costs a scan, while skipping one that does is a wrong answer.
+    const auto& index = s->index();
+    const auto prefix_max = index.has_running_max_timestamps()
+                              ? index_entry.timestamp
+                              : index.max_timestamp();
+    max_timestamp = std::max(max_timestamp, prefix_max);
 
     co_return file_offset_t{
       .position = size_bytes,
@@ -3216,15 +3227,17 @@ disk_log_impl::make_reader(timequery_config config) {
               std::optional<segment_index::entry> index_entry = std::nullopt;
 
               // The index (and hence, binary search) is used only if the
-              // timestamps on the batches are monotonically increasing.
-              if (segment->index().batch_timestamps_are_monotonic()) {
+              // timestamps on the batches are monotonically increasing, or if
+              // we have tracked its running maximum.
+              if (segment->index().time_index_is_sorted()) {
                   index_entry = segment->index().find_nearest(cfg.time);
                   if (index_entry) {
                       vlog(
                         stlog.debug,
-                        "Batch timestamps have monotonically increasing "
-                        "timestamps; used segment index to find first batch "
-                        "before timestamp {}: offset={} with ts={}",
+                        "Time index is sorted (running_max={}); used "
+                        "segment index to find first batch before timestamp "
+                        "{}: offset={} with ts={}",
+                        segment->index().has_running_max_timestamps(),
                         cfg.time,
                         index_entry->offset,
                         index_entry->timestamp);
