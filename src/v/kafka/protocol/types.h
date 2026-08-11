@@ -218,6 +218,9 @@ inline constexpr std::string_view group_state_name_completing_rebalance
   = "CompletingRebalance";
 inline constexpr std::string_view group_state_name_stable = "Stable";
 inline constexpr std::string_view group_state_name_dead = "Dead";
+/// Consumer group states. Empty, Stable and Dead are named above and shared.
+inline constexpr std::string_view group_state_name_assigning = "Assigning";
+inline constexpr std::string_view group_state_name_reconciling = "Reconciling";
 
 /// An unknown / missing generation id (Kafka protocol specific)
 inline constexpr generation_id unknown_generation_id(-1);
