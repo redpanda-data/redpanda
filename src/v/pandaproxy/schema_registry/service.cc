@@ -40,7 +40,6 @@
 #include "security/ephemeral_credential_store.h"
 #include "security/request_auth.h"
 #include "ssx/semaphore.h"
-#include "utils/tristate.h"
 
 #include <seastar/core/coroutine.hh>
 #include <seastar/core/future-util.hh>
@@ -526,29 +525,8 @@ ss::future<> service::create_internal_topic() {
       = _config.schema_registry_replication_factor().value_or(
         _controller->internal_topic_replication());
 
-    // Create the base topic configuration to get the cluster defaults
-    auto base_topic_config = kafka::to_topic_config(
-      model::kafka_namespace,
-      model::schema_registry_internal_tp.topic,
-      /*partition_count=*/1,
-      replication_factor,
-      {});
-    // Now update the properties
-    base_topic_config.properties.cleanup_policy_bitflags
-      = model::cleanup_policy_bitflags::compaction;
-    base_topic_config.properties.compression = model::compression::none;
-    base_topic_config.properties.retention_bytes = tristate<size_t>{
-      disable_tristate};
-    base_topic_config.properties.retention_duration
-      = tristate<std::chrono::milliseconds>{disable_tristate};
-    base_topic_config.properties.retention_local_target_bytes
-      = tristate<size_t>{disable_tristate};
-    base_topic_config.properties.retention_local_target_ms
-      = tristate<std::chrono::milliseconds>{disable_tristate};
-    base_topic_config.properties.initial_retention_local_target_bytes
-      = tristate<size_t>{disable_tristate};
-    base_topic_config.properties.initial_retention_local_target_ms
-      = tristate<std::chrono::milliseconds>{disable_tristate};
+    auto base_topic_config = kafka::schema_registry_topic_configuration(
+      replication_factor);
 
     vlog(
       srlog.debug,

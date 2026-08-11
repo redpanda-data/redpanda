@@ -10,11 +10,19 @@
  */
 #pragma once
 
+#include "cluster/topic_configuration.h"
 #include "kafka/server/coordinator_ntp_mapper.h"
 /*
  * This class creates consumer offsets topic
  */
 namespace kafka {
+
+/// \brief The intended configuration of the consumer group metadata topic:
+/// compacted, with group_topic_partitions partitions. Creation is permitted
+/// while a consumer group migration is in progress.
+cluster::topic_configuration consumer_offsets_topic_configuration(
+  model::topic_namespace tp_ns, int16_t replication_factor);
+
 class group_initializer {
 public:
     group_initializer(

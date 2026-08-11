@@ -12,6 +12,7 @@
 #include "kafka/server/group_initializer.h"
 
 #include "cluster/controller_api.h"
+#include "cluster/members_table.h"
 #include "cluster/topics_frontend.h"
 #include "kafka/protocol/logger.h"
 /*
@@ -60,13 +61,25 @@ ss::future<bool> group_initializer::assure_topic_exists(
     co_return true;
 }
 
+cluster::topic_configuration consumer_offsets_topic_configuration(
+  model::topic_namespace tp_ns, int16_t replication_factor) {
+    cluster::topic_configuration topic{
+      std::move(tp_ns.ns),
+      std::move(tp_ns.tp),
+      config::shard_local_cfg().group_topic_partitions(),
+      replication_factor};
+
+    topic.properties.cleanup_policy_bitflags
+      = model::cleanup_policy_bitflags::compaction;
+    // allow creation even if a consumer group migration is in progress
+    topic.is_migrated = true;
+    return topic;
+}
+
 /*
  * create the internal metadata topic for group membership
  */
 ss::future<bool> group_initializer::try_create_consumer_group_topic() {
-    // Attempt to use internal topic replication factor, if enough nodes found.
-    auto replication_factor
-      = (int16_t)config::shard_local_cfg().internal_topic_replication_factor();
     if (!_members_table.local_is_initialized()) {
         vlog(
           klog.warn,
@@ -74,23 +87,14 @@ ss::future<bool> group_initializer::try_create_consumer_group_topic() {
           "initialized");
         return ssx::now(false);
     }
-    if (
-      static_cast<size_t>(replication_factor)
-      > _members_table.local().node_count()) {
-        replication_factor = 1;
-    }
+    // Attempt to use internal topic replication factor, if enough nodes found.
+    auto replication_factor = cluster::internal_topic_replication(
+      _members_table.local().node_count());
 
     // the new internal metadata topic for group membership
-    cluster::topic_configuration topic{
-      _coordinator_ntp_mapper.ns(),
-      _coordinator_ntp_mapper.topic(),
-      config::shard_local_cfg().group_topic_partitions(),
-      replication_factor};
-
-    topic.properties.cleanup_policy_bitflags
-      = model::cleanup_policy_bitflags::compaction;
-    // allow cretation even if a consumer group migration is in progress
-    topic.is_migrated = true;
+    auto topic = consumer_offsets_topic_configuration(
+      {_coordinator_ntp_mapper.ns(), _coordinator_ntp_mapper.topic()},
+      replication_factor);
 
     if (!_topics_frontend.local_is_initialized()) {
         vlog(
