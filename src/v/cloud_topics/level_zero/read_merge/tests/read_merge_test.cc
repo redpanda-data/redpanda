@@ -15,6 +15,7 @@
 #include "model/namespace.h"
 #include "model/record.h"
 #include "model/tests/random_batch.h"
+#include "test_utils/async.h"
 #include "test_utils/test.h"
 #include "utils/uuid.h"
 
@@ -72,13 +73,31 @@ public:
 
         co_await sink.start(
           ss::sharded_parameter([this] { return std::ref(pipeline.local()); }));
+
+        _started = true;
     }
 
-    ss::future<> stop() {
+    // Runs even when a test body bails out on a failed assertion:
+    // sharded services must be stopped or their destructors abort
+    // the whole test binary.
+    ss::future<> TearDownAsync() override {
+        if (!_started) {
+            co_return;
+        }
         co_await pipeline.invoke_on_all([](auto& s) { return s.shutdown(); });
         co_await sink.stop();
         co_await merge.stop();
         co_await pipeline.stop();
+    }
+
+    /// read_merge processes pulled requests in concurrently spawned
+    /// background tasks, so tests must wait for it to catch up before
+    /// making assumptions about what reached the next stage.
+    ss::future<> merge_processed(uint64_t requests_in) {
+        co_await tests::cooperative_spin_wait_with_timeout(
+          10s, [this, requests_in] {
+              return merge.local().probe().requests_in() >= requests_in;
+          });
     }
 
     /// Helper: make a query targeting a specific object_id.
@@ -104,6 +123,9 @@ public:
     ss::sharded<l0::read_pipeline<ss::manual_clock>> pipeline;
     ss::sharded<l0::read_merge<ss::manual_clock>> merge;
     ss::sharded<fetch_handler> sink;
+
+private:
+    bool _started{false};
 };
 
 static const model::topic_namespace
@@ -131,8 +153,6 @@ TEST_F_CORO(read_merge_fixture, test_happy_path) {
     ASSERT_EQ_CORO(result.value().results.size(), 1);
     ASSERT_EQ_CORO(
       result.value().results.front().header().base_offset, model::offset{0});
-
-    co_await stop();
 }
 
 TEST_F_CORO(read_merge_fixture, test_error_propagation) {
@@ -152,8 +172,6 @@ TEST_F_CORO(read_merge_fixture, test_error_propagation) {
     auto result = co_await std::move(result_fut);
     ASSERT_FALSE_CORO(result.has_value());
     ASSERT_EQ_CORO(result.error(), errc::timeout);
-
-    co_await stop();
 }
 
 TEST_F_CORO(read_merge_fixture, test_merge_same_object) {
@@ -172,7 +190,13 @@ TEST_F_CORO(read_merge_fixture, test_merge_same_object) {
     auto fut2 = pipeline.local().make_reader(
       test_ntp, make_query(id), ss::manual_clock::now() + 10s);
 
+    // Wait until read_merge has processed both requests. Once it has,
+    // the second request is subscribed to the in-flight download and
+    // fulfilling the proxy below deterministically wakes it.
+    co_await merge_processed(2);
+
     // The fetch handler should only receive ONE proxy request (the first).
+    ASSERT_EQ_CORO(merge.local().probe().requests_out(), 1);
     auto request = co_await sink.local().get_next_requests();
     ASSERT_TRUE_CORO(request.has_value());
     ASSERT_EQ_CORO(request.value().requests.size(), 1);
@@ -198,8 +222,6 @@ TEST_F_CORO(read_merge_fixture, test_merge_same_object) {
     auto result2 = co_await std::move(fut2);
     ASSERT_TRUE_CORO(result2.has_value());
     ASSERT_EQ_CORO(result2.value().results.size(), 1);
-
-    co_await stop();
 }
 
 TEST_F_CORO(read_merge_fixture, test_merge_error_propagated_to_waiters) {
@@ -215,7 +237,14 @@ TEST_F_CORO(read_merge_fixture, test_merge_error_propagated_to_waiters) {
     auto fut2 = pipeline.local().make_reader(
       test_ntp, make_query(id), ss::manual_clock::now() + 10s);
 
+    // Wait until the second request is merged onto the in-flight
+    // download, otherwise failing the proxy below erases the in-flight
+    // entry before the merge happens and the second request gets its
+    // own proxy instead of the propagated error.
+    co_await merge_processed(2);
+
     // Only one proxy reaches the fetch handler.
+    ASSERT_EQ_CORO(merge.local().probe().requests_out(), 1);
     auto request = co_await sink.local().get_next_requests();
     ASSERT_TRUE_CORO(request.has_value());
     ASSERT_EQ_CORO(request.value().requests.size(), 1);
@@ -233,8 +262,6 @@ TEST_F_CORO(read_merge_fixture, test_merge_error_propagated_to_waiters) {
     auto result2 = co_await std::move(fut2);
     ASSERT_FALSE_CORO(result2.has_value());
     ASSERT_EQ_CORO(result2.error(), errc::timeout);
-
-    co_await stop();
 }
 
 TEST_F_CORO(read_merge_fixture, test_unique_objects_not_merged) {
@@ -251,7 +278,12 @@ TEST_F_CORO(read_merge_fixture, test_unique_objects_not_merged) {
     auto fut2 = pipeline.local().make_reader(
       test_ntp, make_query(id2), ss::manual_clock::now() + 10s);
 
+    // Wait until read_merge has processed both requests so that a
+    // single pull below observes both proxies.
+    co_await merge_processed(2);
+
     // The fetch handler should receive TWO proxy requests (one per object).
+    ASSERT_EQ_CORO(merge.local().probe().requests_out(), 2);
     auto request = co_await sink.local().get_next_requests();
     ASSERT_TRUE_CORO(request.has_value());
     ASSERT_EQ_CORO(request.value().requests.size(), 2);
@@ -268,8 +300,6 @@ TEST_F_CORO(read_merge_fixture, test_unique_objects_not_merged) {
     auto result2 = co_await std::move(fut2);
     ASSERT_TRUE_CORO(result2.has_value());
     ASSERT_EQ_CORO(result2.value().results.size(), 1);
-
-    co_await stop();
 }
 
 TEST_F_CORO(read_merge_fixture, test_second_request_after_first_completes) {
@@ -306,6 +336,4 @@ TEST_F_CORO(read_merge_fixture, test_second_request_after_first_completes) {
 
     auto result2 = co_await std::move(fut2);
     ASSERT_TRUE_CORO(result2.has_value());
-
-    co_await stop();
 }
