@@ -51,9 +51,30 @@ func TestSubtreeInheritance(t *testing.T) {
 func TestBanner(t *testing.T) {
 	require.Empty(t, Banner("", ""), "GA renders no banner")
 	require.Contains(t, Banner(StatusExperimental, ""), "EXPERIMENTAL")
+	require.Contains(t, Banner(StatusTechPreview, ""), "TECHNICAL PREVIEW")
 	require.Contains(t, Banner(StatusBeta, ""), "BETA")
+	require.Contains(t, Banner(StatusLimitedAvailability, ""), "LIMITED AVAILABILITY")
 	require.Contains(t, Banner(StatusExperimental, "Extra detail."), "Extra detail.")
-	require.Contains(t, Banner("preview", ""), `"preview"`, "unknown statuses must be visible, not dropped")
+	require.Contains(t, Banner("previeww", ""), `"previeww"`, "unknown statuses must be visible, not dropped")
+}
+
+func TestEveryDefinedStatusHasANotice(t *testing.T) {
+	for _, status := range []string{StatusExperimental, StatusTechPreview, StatusBeta, StatusLimitedAvailability} {
+		require.Contains(t, notices, status)
+		require.Contains(t, notices[status], "This command", "notices follow the standard shape (%s)", status)
+	}
+}
+
+func TestMarkPanicsOnUndefinedStatus(t *testing.T) {
+	cmd := &cobra.Command{Use: "thing"}
+	require.Panics(t, func() { Mark(cmd, "previeww", "") },
+		"a typo'd status must fail at registration, not render generically")
+	MarkTechPreview(cmd, "")
+	s, _ := Get(cmd)
+	require.Equal(t, StatusTechPreview, s)
+	MarkLimitedAvailability(cmd, "")
+	s, _ = Get(cmd)
+	require.Equal(t, StatusLimitedAvailability, s)
 }
 
 func TestHelpRendersBanner(t *testing.T) {
