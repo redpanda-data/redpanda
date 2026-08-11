@@ -2457,26 +2457,39 @@ struct batch_size_accumulator {
         //                  target---v
         //     |++++++++++++++[+++++++]X          |
         //
-        *base_timestamp = b.header().first_timestamp;
+        // Only data batches may contribute to the range's timestamp bounds.
+        const bool user_data = b.header().type
+                               == model::record_batch_type::raft_data;
         if (boundary == boundary_type::inclusive) {
             if (b.last_offset() > target) {
-                *max_timestamp = std::min(
-                  *max_timestamp, b.header().max_timestamp);
                 co_return ss::stop_iteration::yes;
             }
             *result_size_bytes += model::packed_record_batch_header_size
                                   + b.data().size_bytes();
-            if (b.header().last_offset() == target) {
-                *max_timestamp = b.header().max_timestamp;
+            if (user_data) {
+                *max_timestamp = std::max(
+                  *max_timestamp, model::batch_max_timestamp(b.header()));
             }
             co_return ss::stop_iteration::no;
         } else {
             if (b.base_offset() >= target) {
+                // The first batch at or after the range's start, and so the
+                // only visited batch inside the range - everything before it
+                // sits below the range and must not describe where the range
+                // begins. Where this batch is not data the seeded segment bound
+                // stands, which under-reports rather than naming a time from
+                // outside the range.
+                if (user_data) {
+                    *base_timestamp = b.header().first_timestamp;
+                }
                 co_return ss::stop_iteration::yes;
             }
             *result_size_bytes += model::packed_record_batch_header_size
                                   + b.data().size_bytes();
-            *max_timestamp = b.header().max_timestamp;
+            if (user_data) {
+                *max_timestamp = std::max(
+                  *max_timestamp, model::batch_max_timestamp(b.header()));
+            }
             co_return ss::stop_iteration::no;
         }
     }
@@ -2502,8 +2515,16 @@ auto disk_log_impl::get_file_offset(
         .filepos = 0,
       });
     size_t size_bytes{index_entry.filepos};
-    model::timestamp base_timestamp = index_entry.timestamp;
-    model::timestamp max_timestamp = model::timestamp::max();
+    // Seed from the segment's own first data timestamp, not the index entry's.
+    // The entry's time column holds a running maximum over everything before
+    // it, which is a bound rather than a time near this offset, so a scan
+    // window holding no data batch would leave that maximum standing as the
+    // range's base - and it can exceed the range's own maximum, which is not a
+    // describable range at all. The segment's base is a genuine lower bound for
+    // any range inside it, and under-reporting a base is safe: it only stops a
+    // timequery selecting the segment early, which 'max_timestamp' governs.
+    model::timestamp base_timestamp = s->index().base_timestamp();
+    model::timestamp max_timestamp = model::timestamp::missing();
     details::batch_size_accumulator acc{
       .result_size_bytes = &size_bytes,
       .target = target,
@@ -2541,6 +2562,13 @@ auto disk_log_impl::get_file_offset(
           "Error detected while consuming {}",
           std::current_exception());
         throw;
+    }
+
+    if (max_timestamp == model::timestamp::missing()) {
+        // The scanned window held no data batches, so it carries no data
+        // timestamp of its own. Fall back to the segment's own bound, which
+        // is data-only and cannot under-report.
+        max_timestamp = s->index().max_timestamp();
     }
 
     co_return file_offset_t{

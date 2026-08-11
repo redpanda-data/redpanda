@@ -4357,6 +4357,158 @@ TEST_F(storage_test_fixture, test_offset_range_size) {
       == std::nullopt);
 };
 
+// The timestamps offset_range_size reports become the uploaded segment's
+// base_timestamp/max_timestamp in the cloud manifest, and
+// partition_manifest::timequery uses them to decide which segment a timequery
+// must scan. Config batches are stamped with walltime, so on a topic whose
+// data timestamps sit far from walltime (a backfill) a range that happens to
+// end on one must not inherit its timestamp: a segment claiming to cover
+// "now" while holding only historical data is a false candidate that every
+// timequery above the data era has to hydrate and reject.
+TEST_F(storage_test_fixture, test_offset_range_size_ignores_non_data_batches) {
+    auto cfg = default_log_config(test_dir);
+    storage::log_manager mgr = make_log_manager(cfg);
+    auto deferred = ss::defer([&mgr]() mutable { mgr.stop().get(); });
+    auto ntp = model::ntp("redpanda", "test-topic", 0);
+    storage::ntp_config ntp_cfg(ntp, mgr.config().base_dir);
+    auto log = manage_log(mgr, std::move(ntp_cfg));
+
+    // Historical data timestamps, and a walltime far above them.
+    const auto data_ts = model::timestamp(1'000'000);
+    const auto walltime_ts = model::timestamp(9'000'000);
+
+    auto append = [&log](model::record_batch_type type, model::timestamp ts) {
+        storage::record_batch_builder builder(type, model::offset(0));
+        builder.add_raw_kv(iobuf::from("key"), iobuf::from("v"));
+        auto batch = std::move(builder).build();
+        batch.set_term(model::term_id(0));
+        batch.header().first_timestamp = ts;
+        batch.header().max_timestamp = ts;
+        auto reader = model::make_memory_record_batch_reader(
+          {std::move(batch)});
+        storage::log_append_config append_cfg{
+          .should_fsync = storage::log_append_config::fsync::no,
+        };
+        std::move(reader)
+          .for_each_ref(log->make_appender(append_cfg), model::no_timeout)
+          .get();
+    };
+
+    // Three data batches in the data era, then a walltime archival_metadata
+    // batch last - the shape archival produces on a tiered storage topic.
+    append(model::record_batch_type::raft_data, data_ts);
+    append(model::record_batch_type::raft_data, data_ts);
+    append(model::record_batch_type::raft_data, data_ts);
+    append(model::record_batch_type::archival_metadata, walltime_ts);
+    log->flush().get();
+
+    auto last = log->offsets().committed_offset;
+    auto result = log->offset_range_size(model::offset(0), last).get();
+    ASSERT_TRUE(result.has_value());
+    ASSERT_EQ(last, result->last_offset);
+
+    // The range ends on the walltime batch, but only data batches may bound
+    // the range's timestamps.
+    ASSERT_EQ(data_ts, result->last_timestamp);
+    ASSERT_EQ(data_ts, result->first_timestamp);
+
+    // Same expectation via the size-limited overload used by the uploader.
+    auto sized = log
+                   ->offset_range_size(
+                     model::offset(0),
+                     storage::log::offset_range_size_requirements_t{
+                       .target_size = 1,
+                       .min_size = 0,
+                     })
+                   .get();
+    ASSERT_TRUE(sized.has_value());
+    ASSERT_LE(sized->last_timestamp, data_ts);
+}
+
+TEST_F(storage_test_fixture, test_offset_range_size_bounds_are_orderable) {
+    // An uploaded range's base_timestamp is what a timequery uses to decide
+    // whether the range can start after it, and max_timestamp whether it can
+    // end before it. A base above the max describes no range at all, and
+    // cloud_storage acts on both, so the pair must always be orderable.
+    //
+    // The trap: base_timestamp used to be seeded from the index entry the scan
+    // starts at, and that entry carries a running maximum over everything
+    // before it. A scan window holding only non-data batches never overwrites
+    // the seed, so a spike earlier in the segment could stand as the base of a
+    // range that does not contain it.
+    auto cfg = default_log_config(test_dir);
+    storage::log_manager mgr = make_log_manager(cfg);
+    auto deferred = ss::defer([&mgr]() mutable { mgr.stop().get(); });
+    auto ntp = model::ntp("redpanda", "test-topic", 0);
+    storage::ntp_config ntp_cfg(ntp, mgr.config().base_dir);
+    auto log = manage_log(mgr, std::move(ntp_cfg));
+
+    const auto base_ts = model::timestamp(1'000'000);
+    const auto spike_ts = model::timestamp(9'000'000);
+    // Stands in for archival metadata: stamped with walltime, far from the
+    // data.
+    const auto walltime_ts = model::timestamp(5'000'000);
+
+    auto append =
+      [&log](
+        model::record_batch_type type, model::timestamp ts, size_t payload) {
+          storage::record_batch_builder builder(type, model::offset(0));
+          builder.add_raw_kv(
+            iobuf::from("key"), iobuf::from(ss::sstring(payload, 'v')));
+          auto batch = std::move(builder).build();
+          batch.set_term(model::term_id(0));
+          batch.header().first_timestamp = ts;
+          batch.header().max_timestamp = ts;
+          auto reader = model::make_memory_record_batch_reader(
+            {std::move(batch)});
+          storage::log_append_config append_cfg{
+            .should_fsync = storage::log_append_config::fsync::no,
+          };
+          std::move(reader)
+            .for_each_ref(log->make_appender(append_cfg), model::no_timeout)
+            .get();
+      };
+
+    constexpr size_t indexed = 40_KiB;
+
+    // Data, then a spike, so the running maximum at the following index entry
+    // sits far above every other timestamp.
+    for (int i = 0; i < 8; ++i) {
+        append(
+          model::record_batch_type::raft_data,
+          model::timestamp(base_ts() + i),
+          indexed);
+    }
+    append(model::record_batch_type::raft_data, spike_ts, indexed);
+
+    // A run of non-data batches: a scan across these finds nothing to overwrite
+    // the seeded base with. Flush first - committed_offset does not advance
+    // until the append is durable, and an unflushed log still reports -1.
+    log->flush().get();
+    auto first_non_data = model::next_offset(log->offsets().committed_offset);
+    for (int i = 0; i < 4; ++i) {
+        append(model::record_batch_type::archival_metadata, walltime_ts, 1024);
+    }
+
+    // Then ordinary data again, all below the spike.
+    for (int i = 0; i < 8; ++i) {
+        append(
+          model::record_batch_type::raft_data,
+          model::timestamp(base_ts() + 100 + i),
+          indexed);
+    }
+    log->flush().get();
+
+    // A range beginning inside the non-data run, so its left scan sees no data
+    // batch at all.
+    auto last = log->offsets().committed_offset;
+    auto result = log->offset_range_size(first_non_data, last).get();
+    ASSERT_TRUE(result.has_value());
+    ASSERT_LE(result->first_timestamp, result->last_timestamp);
+    // And the spike, which is not in this range, must not describe its start.
+    ASSERT_LT(result->first_timestamp, spike_ts);
+}
+
 TEST_F(storage_test_fixture, test_offset_range_size2) {
 #ifdef NDEBUG
     size_t num_test_cases = 5000;
