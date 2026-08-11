@@ -263,6 +263,34 @@ redpanda_cc_gtest(
 )
 
 redpanda_cc_gtest(
+    name = "offset_store_test",
+    timeout = "short",
+    srcs = [
+        "offset_store_test.cc",
+    ],
+    deps = [
+        "//src/v/cluster",
+        "//src/v/cluster:errc",
+        "//src/v/cluster:simple_batch_builder",
+        "//src/v/cluster:tx_protocol_types",
+        "//src/v/config",
+        "//src/v/container:chunked_vector",
+        "//src/v/features",
+        "//src/v/kafka/protocol:offset_commit",
+        "//src/v/kafka/protocol:offset_fetch",
+        "//src/v/kafka/protocol:txn_offset_commit",
+        "//src/v/kafka/server",
+        "//src/v/model",
+        "//src/v/raft",
+        "//src/v/storage:record_batch_builder",
+        "//src/v/test_utils:gtest",
+        "//src/v/test_utils:scoped_config",
+        "@googletest//:gtest",
+        "@seastar",
+    ],
+)
+
+redpanda_cc_gtest(
     name = "consumer_group_recovery_test",
     timeout = "short",
     srcs = [

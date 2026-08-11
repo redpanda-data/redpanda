@@ -156,7 +156,7 @@ public:
     explicit group_probe(
       member_map& members,
       static_member_map& static_members,
-      offsets_map& offsets,
+      const offsets_map& offsets,
       consumer_lag_metrics& _lag_metrics) noexcept
       : _members(members)
       , _static_members(static_members)
@@ -254,7 +254,7 @@ private:
 
     member_map& _members;
     static_member_map& _static_members;
-    offsets_map& _offsets;
+    const offsets_map& _offsets;
     consumer_lag_metrics& _lag_metrics;
     std::optional<metrics::public_metric_groups> _public_group_metrics;
     std::optional<metrics::public_metric_groups> _public_consumer_lag_metrics;
