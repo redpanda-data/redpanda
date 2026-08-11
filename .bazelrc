@@ -173,6 +173,19 @@ build:dev-base --copt=-Og
 # we try to note the restrictions below.
 ####################################################
 
+##########################
+## remote cache mixins   #
+##########################
+
+# Don't materialize anything that isn't needed: we only need these 3 output
+# files, which are used by downstream packaging steps. This saves ~73% of
+# downloaded bytes on a full cache hit. Keep in sync with vtools'
+# copy-packaging-artifacts task.
+build:ci-remote-cache --remote_download_minimal
+build:ci-remote-cache --remote_download_regex=.*/bazel/packaging/bazel_out\\.tar\\.gz$
+build:ci-remote-cache --remote_download_regex=.*/redpanda/redpanda$
+build:ci-remote-cache --remote_download_regex=.*/rp_util/rp_util$
+
 #########################
 ## debug symbols mixins #
 #########################
@@ -415,8 +428,5 @@ build:io_uring --//bazel:io_uring=True
 # always pass through the following variables if they are set in the environment
 test --test_env=REDPANDA_RNG_SEEDING_MODE
 test --test_env=REDPANDA_DEBUG_TEST_HOOKS
-
-# Empty in this branch: CI passes --config=ci-remote-cache unconditionally.
-build:ci-remote-cache --build
 
 try-import %workspace%/user.bazelrc
