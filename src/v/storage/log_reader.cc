@@ -12,11 +12,13 @@
 #include "base/vassert.h"
 #include "base/vlog.h"
 #include "bytes/iobuf.h"
+#include "config/node_config.h"
 #include "model/batch_compression.h"
 #include "model/batch_utils.h"
 #include "model/fundamental.h"
 #include "model/offset_interval.h"
 #include "model/record.h"
+#include "storage/exceptions.h"
 #include "storage/logger.h"
 #include "storage/offset_translator_state.h"
 #include "storage/parser_errc.h"
@@ -44,6 +46,57 @@ struct fmt::formatter<storage::log_reader> : fmt::formatter<std::string_view> {
 
 namespace storage {
 using records_t = chunked_circular_buffer<model::record_batch>;
+
+void internal::handle_corrupt_segment(
+  parser_errc err,
+  std::string_view segment_desc,
+  model::offset next_offset,
+  model::offset stable_offset_at_stream_start,
+  corrupt_segment_action action) {
+    // - `none` is a consumer-requested stop.
+    // - `end_of_stream` means the parser reached the end of *its own* stream,
+    //   whose length segment_reader::data_stream() fixed at creation. It has to
+    //   clear the stable offset captured then, not the segment's current one,
+    //   which it may have grown past since.
+    // - Anything else is a malformed batch, and needs no bound. The stream
+    //   cannot extend past filepos(stable_offset_at_stream_start), so all
+    //   included batches must be valid.
+    if (err == parser_errc::none) {
+        return;
+    }
+    if (
+      err == parser_errc::end_of_stream
+      && next_offset > stable_offset_at_stream_start) {
+        return;
+    }
+    auto msg = fmt::format(
+      "Read on segment {} stopped at offset {} with error {}, before stable "
+      "offset {} (at the time the read began)",
+      segment_desc,
+      next_offset,
+      to_string_view(err),
+      stable_offset_at_stream_start);
+    if (action == corrupt_segment_action::throw_exception) {
+        throw malformed_batch_stream_exception(msg, next_offset);
+    }
+    if (!config::node().storage_abort_on_corrupt_segment()) {
+        vlog(
+          stlog.error,
+          "{} - continuing with a truncated read because "
+          "storage_abort_on_corrupt_segment is false",
+          msg);
+        return;
+    }
+    vassert(
+      false,
+      "{}. Aborting process due to invalid disk state. If possible, introduce "
+      "a replacement broker, allow the cluster to recover, and then "
+      "decommission this damaged broker once the cluster is healthy. If this "
+      "broker is absolutely necessary to recover data, the "
+      "storage_abort_on_corrupt_segment node property can be set to false to "
+      "override this abort.",
+      msg);
+}
 
 /**
  * makes multiple ghost batches required to fill the gap in a way that max batch
@@ -179,6 +232,11 @@ ss::future<std::unique_ptr<continuous_batch_parser>>
 log_segment_batch_reader::initialize(
   model::timeout_clock::time_point timeout,
   std::optional<model::offset> next_cached_batch) {
+    // Stream will be constructed with the current size and must read up to
+    // the current stable offset (if requested).  Capture here so that
+    // handle_corrupt_segment can distinguish a correct end_of_stream
+    // from a premature one.
+    _stable_at_stream_start = _seg.offsets().get_stable_offset();
     auto input = co_await _seg.offset_data_stream(_config.start_offset);
     co_return std::make_unique<continuous_batch_parser>(
       std::make_unique<skipping_consumer>(*this, timeout, next_cached_batch),
@@ -248,7 +306,16 @@ log_segment_batch_reader::read_some(model::timeout_clock::time_point timeout) {
     }
     auto ptr = _iterator.get();
     co_return co_await ptr->consume()
-      .then([this](result<size_t> bytes_consumed) -> result<records_t> {
+      .then([this, ptr](result<size_t> bytes_consumed) -> result<records_t> {
+          // bytes_consumed will indicate success if any bytes were read and
+          // may (depending on the error) even with no bytes read.  Validate
+          // via ptr->error() and next_offset (_config.start_offset).
+          internal::handle_corrupt_segment(
+            ptr->error(),
+            _seg.filename(),
+            _config.start_offset,
+            _stable_at_stream_start,
+            _config.on_corrupt_segment);
           if (!bytes_consumed) {
               return bytes_consumed.error();
           }

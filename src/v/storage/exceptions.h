@@ -12,6 +12,7 @@
 #pragma once
 
 #include "base/seastarx.h"
+#include "model/fundamental.h"
 
 #include <seastar/core/sstring.hh>
 
@@ -21,13 +22,20 @@
 
 class malformed_batch_stream_exception : public std::exception {
 public:
-    explicit malformed_batch_stream_exception(ss::sstring s)
-      : _msg(std::move(s)) {}
+    /// \param failed_at the first offset the read was unable to supply.
+    malformed_batch_stream_exception(ss::sstring s, model::offset failed_at)
+      : _msg(std::move(s))
+      , _failed_at(failed_at) {}
 
     const char* what() const noexcept override { return _msg.c_str(); }
 
+    /// The first offset the read was unable to supply. Carried separately from
+    /// the message so callers can assert on it without parsing prose.
+    model::offset failed_at() const { return _failed_at; }
+
 private:
     ss::sstring _msg;
+    model::offset _failed_at;
 };
 
 class zero_segments_indexed_exception : public std::exception {

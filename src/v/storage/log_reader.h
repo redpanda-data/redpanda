@@ -50,6 +50,25 @@ after every invocation of `record_batch_reader::load_batches()`
 */
 namespace storage {
 
+namespace internal {
+
+/// \brief Aborts the process if `err` shows that a read stopped inside the
+/// offset range a segment reports as written.  A corrupt segment indicates
+/// a storage problem (or redpanda bug), and we don't want to propagate invalid
+/// state to clients or other brokers.
+///
+/// `storage_abort_on_corrupt_segment` downgrades the abort to a log line.
+/// Passing `throw_exception` raises `malformed_batch_stream_exception` instead,
+/// which is how the tests validate detection.
+void handle_corrupt_segment(
+  parser_errc err,
+  std::string_view segment_desc,
+  model::offset next_offset,
+  model::offset stable_offset_at_stream_start,
+  corrupt_segment_action action);
+
+} // namespace internal
+
 class log_segment_batch_reader;
 class skipping_consumer final : public batch_consumer {
 public:
@@ -125,6 +144,11 @@ private:
     probe& _probe;
 
     std::unique_ptr<continuous_batch_parser> _iterator;
+
+    // The segment's stable offset when `_iterator`'s stream was created.
+    // Reads up through this offset must succeed, see handle_corrupt_segment.
+    model::offset _stable_at_stream_start;
+
     tmp_state _state;
     friend class skipping_consumer;
 };

@@ -217,6 +217,16 @@ node_config::node_config() noexcept
       "not loaded and only administrative operations are allowed.",
       {.visibility = visibility::user},
       false)
+  , storage_abort_on_corrupt_segment(
+      *this,
+      "storage_abort_on_corrupt_segment",
+      "If `true`, abort the process upon failure to read committed log segment "
+      "data. Continuing to operate with missing or corrupted committed data "
+      "could result in propagating invalid state to clients or other brokers. "
+      "Can be set to `false` in order to salvage data from a broker with some "
+      "damaged segments.",
+      {.visibility = visibility::user},
+      true)
   , storage_failure_injection_config_path(
       *this,
       "storage_failure_injection_config_path",
