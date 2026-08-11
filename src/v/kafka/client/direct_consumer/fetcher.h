@@ -9,15 +9,18 @@
  * by the Apache License, Version 2.0
  */
 #pragma once
+#include "absl/container/flat_hash_set.h"
 #include "base/format_to.h"
 #include "container/chunked_vector.h"
 #include "container/intrusive_list_helpers.h"
 #include "kafka/client/direct_consumer/api_types.h"
 #include "kafka/client/direct_consumer/data_queue.h"
+#include "kafka/protocol/errors.h"
 #include "kafka/protocol/fetch.h"
 #include "kafka/protocol/list_offset.h"
 #include "kafka/protocol/types.h"
 #include "model/fundamental.h"
+#include "model/record.h"
 #include "utils/mutex.h"
 #include "utils/prefix_logger.h"
 
@@ -28,6 +31,8 @@
 #include <fmt/format.h>
 
 #include <optional>
+
+class fetcher_accessor;
 
 namespace kafka::client {
 class direct_consumer;
@@ -192,9 +197,12 @@ private:
      * Fields required s.t. they are harder to forget.
      * Defaults:
      *  - high_watermark: nullopt, not known at instantiation
-     *  - current_leader_epoch: nullopt, not known at instantiation
+     *  - current_leader_epoch: invalid_leader_epoch, not known at
+     *    instantiation
      *  - incremental_include: true, new assignments should always be included
      *    in the next fetch
+     *  - source_reported: false, the broker has told us nothing about this
+     *    partition yet
      */
     struct partition_fetch_state {
         partition_fetch_state(
@@ -208,6 +216,7 @@ private:
           , current_leader_epoch{kafka::invalid_leader_epoch}
           , fetcher_epoch{fetcher_epoch}
           , incremental_include{true}
+          , source_reported{false}
           , subscription_epoch{subscription_epoch} {}
 
         model::partition_id partition_id;
@@ -216,6 +225,7 @@ private:
         leader_epoch current_leader_epoch;
         fetcher_epoch fetcher_epoch;
         bool incremental_include;
+        bool source_reported;
         subscription_epoch subscription_epoch;
 
         bool include_in_fetch_request() const {
@@ -257,6 +267,9 @@ private:
         chunked_vector<fetched_topic_data> topics;
         size_t total_bytes{0};
         bool needs_metadata_update{false};
+        // Set when the broker withheld a partition whose source offsets we have
+        // never learned. Only a full fetch makes the broker re-report it.
+        bool needs_full_fetch{false};
         kafka::fetch_session_id session_id{0};
     };
 
@@ -298,6 +311,42 @@ private:
       fetch_response resp,
       const topic_partition_map<epoch_set>& epochs,
       const chunked_vector<partitions_to_process>& partitions);
+
+    ss::future<std::optional<fetched_partition_data>>
+    process_partition_response(
+      const model::topic& topic,
+      partition_data partition_data,
+      const topic_partition_map<epoch_set>& epochs,
+      /* in&out */ fetch_response_content& result,
+      /* in&out */
+      chunked_hash_map<model::topic, absl::flat_hash_set<model::partition_id>>&
+        dirty_partitions);
+
+    struct partition_response_actions {
+        // error if any
+        kafka::error_code error{kafka::error_code::none};
+        // should the partition's fetch offsets be reset s.t. they will be set
+        // on the next list offsets
+        bool should_reset_offsets{false};
+        // indicates that the entire fetch needs a metadata update, probably a
+        // leadership transfer
+        bool should_update_metadata{false};
+        // should the fetch be included in the next round of incremental fetch
+        // requests
+        bool is_dirty{false};
+        // if present, this fetch data will be added to the response queue
+        std::optional<fetched_partition_data> maybe_fetched_partition_data{
+          std::nullopt};
+    };
+
+    // unit testable function to make decisions on what update actions should be
+    // done considering given response
+    static partition_response_actions do_process_partition_response(
+      partition_data partition_data,
+      chunked_vector<model::record_batch> response_batches,
+      size_t response_size,
+      epoch_set epoch_set);
+
     /**
      * Returns false if the partition was not found or the fetch offset was
      * not updated.
@@ -334,6 +383,8 @@ private:
      */
     fetcher_epoch _epoch{0};
     ss::abort_source _as;
+
+    friend class ::fetcher_accessor;
 };
 } // namespace kafka::client
 

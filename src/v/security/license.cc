@@ -28,29 +28,34 @@ namespace security {
 namespace crypto {
 
 namespace {
-const ::crypto::key public_key = []() {
-    static const ss::sstring public_key_material
-      = "-----BEGIN PUBLIC KEY-----\n"
-        "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAt0Y2jGOLI70xkF4rmpNM\n"
-        "hBqU3cUrwYCREgjT9TT77KusvhPVc16cdK83bpaGQy+Or1WyZpN+TCxT2vlaZet6\n"
-        "RDo+55jRk7epazAHx9s+DLd6IzhSXakf6Sxh5JRK7Zn/75C1hYJMspcJ75EhLv4H\n"
-        "qXj12dkyivcLAecGhWdIGK95J0P7f4EQQGwGL3rilCSlfkVVmE4qaPUaLqULKelq\n"
-        "7T2d+AklR+KwgtHINyKDPJ9+cCAMoEOrRBDPjcQ79k0yvP3BdHV394F+2Vt/AYOL\n"
-        "dcVQBm3tqIySLGFtiJp+RIa+nJhMrd+G4sqwm4FhsmG35Fbr0XQJY0sM6MaFJcDH\n"
-        "swIDAQAB\n"
-        "-----END PUBLIC KEY-----\n";
-    return ::crypto::key::load_key(
-      public_key_material,
-      ::crypto::format_type::PEM,
-      ::crypto::is_private_key_t::no);
-}();
+const ::crypto::key& public_key() {
+    // Defer the loading of the public key until OpenSSL has been initialized by
+    // ossl_context_service
+    static const ::crypto::key result = []() {
+        static const ss::sstring public_key_material
+          = "-----BEGIN PUBLIC KEY-----\n"
+            "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAt0Y2jGOLI70xkF4rmpNM\n"
+            "hBqU3cUrwYCREgjT9TT77KusvhPVc16cdK83bpaGQy+Or1WyZpN+TCxT2vlaZet6\n"
+            "RDo+55jRk7epazAHx9s+DLd6IzhSXakf6Sxh5JRK7Zn/75C1hYJMspcJ75EhLv4H\n"
+            "qXj12dkyivcLAecGhWdIGK95J0P7f4EQQGwGL3rilCSlfkVVmE4qaPUaLqULKelq\n"
+            "7T2d+AklR+KwgtHINyKDPJ9+cCAMoEOrRBDPjcQ79k0yvP3BdHV394F+2Vt/AYOL\n"
+            "dcVQBm3tqIySLGFtiJp+RIa+nJhMrd+G4sqwm4FhsmG35Fbr0XQJY0sM6MaFJcDH\n"
+            "swIDAQAB\n"
+            "-----END PUBLIC KEY-----\n";
+        return ::crypto::key::load_key(
+          public_key_material,
+          ::crypto::format_type::PEM,
+          ::crypto::is_private_key_t::no);
+    }();
+    return result;
+}
 
 /// The redpanda license is comprised of 2 sections seperated by a delimiter.
 /// The first section is the data section (base64 encoded), the second being the
 /// signature, which is a PCKS1.5 sigature of the contents of the data section.
 bool verify_license(const ss::sstring& data, const ss::sstring& signature) {
     return ::crypto::verify_signature(
-      ::crypto::digest_type::SHA256, public_key, data, signature);
+      ::crypto::digest_type::SHA256, public_key(), data, signature);
 }
 } // namespace
 

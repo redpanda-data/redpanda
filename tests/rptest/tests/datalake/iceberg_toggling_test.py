@@ -121,17 +121,9 @@ class IcebergTogglingTest(RedpandaTest):
                 topic=self.topic_name, name=self.stream_name, count=0, interval="1ms"
             )
 
-            def total_records_sent():
-                metrics = connect.stream_metrics(name=self.stream_name)
-                samples = metrics["output_sent"]
-                for s in samples:
-                    if s.name == "output_sent_total":
-                        return s.value
-                assert False, f"Unable to probe metrics for stream {self.stream_name}"
-
             def ensure_stream_progress(target: int):
                 wait_until(
-                    lambda: total_records_sent() >= target,
+                    lambda: connect.total_records_sent(self.stream_name) >= target,
                     timeout_sec=60,
                     backoff_sec=5,
                     err_msg=f"Timed out waiting for stream producer to reach target: {target}",
@@ -193,11 +185,12 @@ class IcebergTogglingTest(RedpandaTest):
 
                 # Wait for some records to be produced.
                 ensure_stream_progress(
-                    total_records_sent() + ADDITIONAL_RECORDS_PER_ITERATION
+                    connect.total_records_sent(self.stream_name)
+                    + ADDITIONAL_RECORDS_PER_ITERATION
                 )
 
                 # Wait for records to be translated.
-                min_records_expected = total_records_sent()
+                min_records_expected = connect.total_records_sent(self.stream_name)
                 dl.wait_for_translation(
                     self.topic_name,
                     msg_count=min_records_expected,
@@ -220,7 +213,7 @@ class IcebergTogglingTest(RedpandaTest):
             connect.stop_stream(name=self.stream_name, should_finish=None)
 
             # Wait for everything to be translated.
-            total_row_count = total_records_sent()
+            total_row_count = connect.total_records_sent(self.stream_name)
             dl.wait_for_translation(self.topic_name, total_row_count)
 
             # Optimize the parquet files to aid the verifier.

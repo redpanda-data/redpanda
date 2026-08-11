@@ -282,9 +282,7 @@ inline constexpr model::offset prev_offset(model::offset o) {
     return o - model::offset{1};
 }
 
-// An invalid offset indicating that actual LSO is not yet ready to be returned.
-// Follows the policy that LSO is the next offset of the decided offset.
-inline constexpr model::offset invalid_lso{next_offset(model::offset::min())};
+inline constexpr model::offset invalid_lso{-1};
 
 struct topic_partition_view {
     topic_partition_view(model::topic_view tp, model::partition_id p)

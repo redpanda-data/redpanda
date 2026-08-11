@@ -26,6 +26,7 @@
 #include <seastar/core/thread.hh>
 
 #include <fmt/format.h>
+#include <fmt/ostream.h>
 
 #include <algorithm>
 #include <exception>
@@ -140,25 +141,29 @@ segment_set::upper_bound(model::term_id term) const {
       _handles.cbegin(), _handles.cend(), term, segment_ordering{});
 }
 
-std::ostream& operator<<(std::ostream& o, const segment_set& s) {
-    o << "{size: " << s.size() << ", [";
+fmt::iterator segment_set::format_to(fmt::iterator out) const {
+    out = fmt::format_to(out, "{{size: {}, [", size());
     static constexpr size_t max_to_log = 8;
     static constexpr size_t halved = max_to_log / 2;
-    if (s.size() <= max_to_log) {
-        for (auto& p : s) {
-            o << p;
+    if (size() <= max_to_log) {
+        for (const auto& p : *this) {
+            out = fmt::format_to(out, "{}", p);
         }
     } else {
-        for (auto it = s.begin(); it != std::next(s.begin(), halved); ++it) {
-            o << *it;
+        for (auto it = begin(); it != std::next(begin(), halved); ++it) {
+            out = fmt::format_to(out, "{}", *it);
         }
-        o << "...";
-        for (auto it = std::next(s.begin(), s.size() - halved); it != s.end();
-             ++it) {
-            o << *it;
+        out = fmt::format_to(out, "...");
+        for (auto it = std::next(begin(), size() - halved); it != end(); ++it) {
+            out = fmt::format_to(out, "{}", *it);
         }
     }
-    return o << "]}";
+    return fmt::format_to(out, "]}}");
+}
+
+std::ostream& operator<<(std::ostream& o, const segment_set& s) {
+    fmt::print(o, "{}", s);
+    return o;
 }
 
 static bool

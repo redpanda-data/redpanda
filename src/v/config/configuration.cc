@@ -734,6 +734,14 @@ configuration::configuration()
       "minimum bytes was not reached.",
       {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
       1ms)
+  , kafka_fetch_request_timeout_ms(
+      *this,
+      "kafka_fetch_request_timeout_ms",
+      "Broker-side target for the duration of a single fetch request. The "
+      "broker will try to complete fetches within the specified duration, even "
+      "if it means returning less bytes in the fetch than are available.",
+      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
+      5s)
   , fetch_read_strategy(
       *this,
       "fetch_read_strategy",
@@ -1058,6 +1066,13 @@ configuration::configuration()
       "How often to trigger background compaction.",
       {.needs_restart = needs_restart::no, .visibility = visibility::user},
       10s)
+  , log_compaction_max_priority_wait_ms(
+      *this,
+      "log_compaction_max_priority_wait_ms",
+      "Maximum time a priority partition (for example, __consumer_offsets) can "
+      "wait for compaction before preempting regular compaction.",
+      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
+      60min)
   , tombstone_retention_ms(
       *this,
       "tombstone_retention_ms",
@@ -1337,6 +1352,16 @@ configuration::configuration()
       "Disables cross shard sharing used to throttle recovery traffic. Should "
       "only be used to debug unexpected problems.",
       {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
+      false)
+  , controller_log_learner_recovery_rate_enabled(
+      *this,
+      "controller_log_learner_recovery_rate_enabled",
+      "Whether the controller raft group (raft0) honors "
+      "`raft_learner_recovery_rate`. When `false` (default) the controller log "
+      "replicates to new learners without throttling. When `true`, "
+      "controller-log recovery is subject to the same per-node recovery bucket "
+      "as user partitions.",
+      {.needs_restart = needs_restart::yes, .visibility = visibility::tunable},
       false)
   , raft_smp_max_non_local_requests(
       *this,
@@ -2456,9 +2481,20 @@ configuration::configuration()
       "The per-partition limit for the number of segments pending deletion "
       "from the cloud. Segments can be deleted due to retention or compaction. "
       "If this limit is breached and deletion fails, then segments will be "
-      "orphaned in the cloud and will have to be removed manually",
+      "orphaned in the cloud and will have to be removed manually. Applies "
+      "only the the in-memory manifest. Spillover manifests are not affected "
+      "by this limit.",
       {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
       5000)
+  , cloud_storage_gc_max_segments_per_run(
+      *this,
+      "cloud_storage_gc_max_segments_per_run",
+      "Maximum number of segments to delete per housekeeping run. Each segment "
+      "maps to up to three object keys (data, index, tx manifest), so a value "
+      "of 300 produces 600 to 900 deletes plus one per spillover manifest.",
+      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
+      300,
+      {.min = 1})
   , cloud_storage_enable_compacted_topic_reupload(
       *this,
       "cloud_storage_enable_compacted_topic_reupload",
@@ -3582,6 +3618,24 @@ configuration::configuration()
       "wait for manual activation via the Admin API (false).",
       {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
       true)
+  , features_auto_finalization(
+      *this,
+      false, /* restricted value: license required to disable */
+      "features_auto_finalization",
+      "Whether the cluster active logical version is advanced automatically "
+      "once all nodes have been upgraded (true), or only in response to an "
+      "explicit request via the Admin API (false). When false, the cluster "
+      "remains able to downgrade to the previous version until finalization "
+      "is requested. Setting this to false is an Enterprise feature and "
+      "requires a valid license. Note: if upgrade was performed with this "
+      "set to false and the cluster is ready to finalize, flipping this to "
+      "true does not reliably trigger finalization. Leave this set to false "
+      "and use the Admin API to finalize; once the upgrade is complete this "
+      "can be set back to true to restore automatic finalization for future "
+      "upgrades.",
+      meta{
+        .needs_restart = needs_restart::no, .visibility = visibility::tunable},
+      true)
   , enable_rack_awareness(
       *this,
       "enable_rack_awareness",
@@ -3823,6 +3877,16 @@ configuration::configuration()
        .visibility = visibility::user,
        .aliases = {"schema_registry_normalize_on_startup"}},
       false)
+  , schema_registry_avro_use_named_references(
+      *this,
+      "schema_registry_avro_use_named_references",
+      "When enabled, Avro schemas with external references are compiled using "
+      "named reference resolution instead of schema concatenation. This fixes "
+      "issues with compatibility checks and schema validation for schemas with "
+      "reference dependencies. This config will be deprecated and always "
+      "enabled in v26.1.1.",
+      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
+      false)
   , schema_registry_protobuf_renderer_v2(
       *this, "schema_registry_protobuf_renderer_v2")
   , pp_sr_smp_max_non_local_requests(
@@ -4026,12 +4090,10 @@ configuration::configuration()
       *this,
       true,
       "iceberg_enabled",
-      "Enables the translation of topic data into Iceberg tables. Setting "
-      "iceberg_enabled to true activates the feature at the cluster level, but "
-      "each topic must also set the redpanda.iceberg.enabled topic-level "
-      "property to true to use it. If iceberg_enabled is set to false, the "
-      "feature is disabled for all topics in the cluster, overriding any "
-      "topic-level settings.",
+      "Enables Apache Iceberg integration for storing topic data in the "
+      "Iceberg open table format. Setting iceberg_enabled to true activates "
+      "the feature at the cluster level, but each topic must also configure "
+      "the redpanda.iceberg.mode topic-level property to use it.",
       meta{
         .needs_restart = needs_restart::yes,
         .visibility = visibility::user,
@@ -4096,7 +4158,8 @@ configuration::configuration()
         .example = "http://hostname:8181",
         .visibility = visibility::user,
       },
-      std::nullopt)
+      std::nullopt,
+      &validate_iceberg_rest_catalog_endpoint)
   , iceberg_rest_catalog_client_id(
       *this,
       "iceberg_rest_catalog_client_id",
@@ -4380,6 +4443,26 @@ configuration::configuration()
       "but may be useful if the Iceberg catalog does not support tags.",
       {.needs_restart = needs_restart::no, .visibility = visibility::user},
       false)
+  , datalake_coordinator_max_files_per_commit(
+      *this,
+      "datalake_coordinator_max_files_per_commit",
+      "Target maximum number of pending data files committed to an Iceberg "
+      "table in a single commit. A larger backlog is committed across multiple "
+      "passes to bound the memory used per commit. May be exceeded slightly to "
+      "avoid splitting files sharing a commit offset.",
+      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
+      10000,
+      {.min = 1})
+  , datalake_coordinator_max_pending_files(
+      *this,
+      "datalake_coordinator_max_pending_files",
+      "Maximum number of pending data files a coordinator accumulates across "
+      "all of its topics before it sheds load, rejecting new files and offset "
+      "requests until it commits enough of the backlog. Bounds the "
+      "coordinator's pending-file memory.",
+      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
+      100000,
+      {.min = 1})
   , iceberg_disable_automatic_snapshot_expiry(
       *this,
       "iceberg_disable_automatic_snapshot_expiry",

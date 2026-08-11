@@ -1138,11 +1138,8 @@ ss::future<list_result> remote::list_objects(
             result = cloud_storage_clients::error_outcome::fail;
             break;
         case cloud_storage_clients::error_outcome::key_not_found:
-            vassert(
-              false,
-              "Unexpected key_not_found outcome received when listing bucket "
-              "{}",
-              bucket);
+            result = cloud_storage_clients::error_outcome::fail;
+            break;
         case cloud_storage_clients::error_outcome::authentication_failed:
             vlog(ctxlog.info, "Token expired, refreshing credentials");
             maybe_request_auth_refresh();

@@ -17,7 +17,9 @@
 #include "cluster/cloud_metadata/tests/manual_mixin.h"
 #include "cluster/controller_api.h"
 #include "cluster/health_monitor_frontend.h"
+#include "kafka/client/transport.h"
 #include "kafka/data/replicated_partition.h"
+#include "kafka/protocol/fetch.h"
 #include "kafka/protocol/find_coordinator.h"
 #include "kafka/server/tests/delete_records_utils.h"
 #include "kafka/server/tests/list_offsets_utils.h"
@@ -283,6 +285,87 @@ TEST_P(EndToEndFixture, TestProduceConsumeFromCloud) {
         EXPECT_EQ(records[i].key, consumed_records[i].key);
         EXPECT_EQ(records[i].val, consumed_records[i].val);
     }
+}
+
+// Verify that a fetch request with negative max_wait_ms succeeds when reading
+// from cloud storage. This can happen when the kafka client (e.g. in
+// schema_registry) computes max_wait_ms as (deadline - now) and the deadline
+// has already passed.
+TEST_P(EndToEndFixture, TestFetchWithNegativeMaxWait) {
+    test_local_cfg.get("cloud_storage_disable_upload_loop_for_tests")
+      .set_value(true);
+    const model::topic topic_name("tapioca");
+    model::ntp ntp(model::kafka_namespace, topic_name, 0);
+    cluster::topic_properties props;
+    props.shadow_indexing = model::shadow_indexing_mode::full;
+    props.retention_local_target_bytes = tristate<size_t>(1);
+    add_topic({model::kafka_namespace, topic_name}, 1, props).get();
+    wait_for_leader(ntp).get();
+
+    auto partition = app.partition_manager.local().get(ntp);
+    auto log = partition->log();
+    auto& archiver = partition->archiver().value().get();
+    archiver.initialize_probe();
+    ASSERT_TRUE(archiver.sync_for_tests().get());
+
+    tests::remote_segment_generator gen(make_kafka_client().get(), *partition);
+    auto deferred_g_close = ss::defer([&gen] { gen.stop().get(); });
+
+    ASSERT_EQ(3, gen.records_per_batch(3).produce().get());
+    ASSERT_EQ(2, log->segments().size());
+    ASSERT_EQ(1, archiver.manifest().size());
+
+    // force reads from cloud storage
+    ss::abort_source as;
+    storage::housekeeping_config housekeeping_conf(
+      model::timestamp::min(),
+      1,
+      log->stm_manager()->max_removable_local_log_offset(),
+      log->stm_manager()->max_removable_local_log_offset(),
+      log->stm_manager()->max_removable_local_log_offset(),
+      std::nullopt,
+      std::nullopt,
+      std::chrono::milliseconds{0},
+      as);
+    partition->log()->housekeeping(housekeeping_conf).get();
+    tests::cooperative_spin_wait_with_timeout(10s, [log] {
+        return log->segments().size() == 1;
+    }).get();
+
+    // Send a fetch request with negative max_wait_ms.
+    kafka::client::transport transport(make_kafka_client().get());
+    transport.connect().get();
+    auto deferred_t_close = ss::defer([&transport] { transport.stop().get(); });
+
+    kafka::fetch_request::partition fetch_partition;
+    fetch_partition.fetch_offset = model::offset(0);
+    fetch_partition.partition = model::partition_id(0);
+    fetch_partition.log_start_offset = model::offset(0);
+    fetch_partition.partition_max_bytes = 1_MiB;
+
+    kafka::fetch_request::topic fetch_topic;
+    fetch_topic.topic = topic_name;
+    fetch_topic.partitions.push_back(std::move(fetch_partition));
+
+    kafka::fetch_request req;
+    req.data.min_bytes = 1;
+    req.data.max_bytes = 10_MiB;
+    req.data.max_wait_ms = std::chrono::milliseconds(-10);
+    req.data.topics.push_back(std::move(fetch_topic));
+
+    auto resp = transport.dispatch(std::move(req), kafka::api_version(4)).get();
+    ASSERT_EQ(resp.data.error_code, kafka::error_code::none);
+
+    ASSERT_EQ(resp.data.responses.size(), 1);
+    auto& topic_resp = resp.data.responses[0];
+    ASSERT_EQ(topic_resp.partitions.size(), 1);
+    auto& partition_resp = topic_resp.partitions[0];
+    // There is a workaround for the low/negative max-wait
+    // in the kafka layer. The cloud storage layer should
+    // end up getting default fetch timeout and succeed.
+    ASSERT_EQ(partition_resp.error_code, kafka::error_code::none);
+    ASSERT_TRUE(partition_resp.records.has_value());
+    ASSERT_GT(partition_resp.records->size_bytes(), 0);
 }
 
 TEST_P(EndToEndFixture, TestProduceConsumeFromCloudWithSpillover) {
@@ -1274,6 +1357,91 @@ TEST_F(ReadReplicaFixture, TestCloudStorageTimequeryReadReplicaMode) {
         base_timestamp() + (batch_time_delta_ms * total_records)},
       model::offset{total_records},
       false);
+}
+
+// For a read replica, an OffsetForLeaderEpoch query for a term above everything
+// in cloud storage must return no value (undefined epoch / -1 on the wire), not
+// the cloud start offset. Returning the cloud start offset would tell a
+// consumer positioned above it that its log was truncated, resetting it
+// backwards. A term below cloud coverage still resolves to the cloud start
+// offset.
+TEST_F(
+  ReadReplicaFixture, TestOffsetForLeaderEpochReadReplicaTermOutsideCloud) {
+    const model::topic topic_name("tapioca");
+    model::ntp ntp(model::kafka_namespace, topic_name, model::partition_id{0});
+
+    cluster::topic_properties props;
+    props.shadow_indexing = model::shadow_indexing_mode::full;
+    props.retention_local_target_bytes = tristate<size_t>(0);
+    add_topic({model::kafka_namespace, topic_name}, 1, props).get();
+    wait_for_leader(ntp).get();
+
+    auto partition = app.partition_manager.local().get(ntp);
+    auto& archiver = partition->archiver().value().get();
+    archiver.initialize_probe();
+    ASSERT_TRUE(archiver.sync_for_tests().get());
+    archiver.upload_topic_manifest().get();
+
+    tests::remote_segment_generator gen(make_kafka_client().get(), *partition);
+    auto deferred_g_close = ss::defer([&gen] { gen.stop().get(); });
+    auto total_records
+      = gen.num_segments(3).batches_per_segment(1).produce().get();
+    ASSERT_GT(total_records, 0);
+
+    auto rr_rp = start_read_replica_fixture();
+    cluster::topic_properties read_replica_props;
+    read_replica_props.shadow_indexing = model::shadow_indexing_mode::disabled;
+    read_replica_props.read_replica = true;
+    read_replica_props.read_replica_bucket = "test-bucket";
+    rr_rp
+      ->add_topic({model::kafka_namespace, topic_name}, 1, read_replica_props)
+      .get();
+    rr_rp->wait_for_leader(ntp).get();
+
+    auto rr_partition = rr_rp->app.partition_manager.local().get(ntp);
+    kafka::replicated_partition rr(rr_partition);
+
+    // Before the manifest is synced, cloud data is unavailable and the read
+    // replica has no local log to fall back on, so it cannot answer -> no
+    // value.
+    ASSERT_FALSE(rr_partition->cloud_data_available());
+    ASSERT_FALSE(rr.get_leader_epoch_last_offset(kafka::leader_epoch(1))
+                   .get()
+                   .has_value());
+
+    auto& rr_archiver = rr_partition->archiver()->get();
+    rr_archiver.initialize_probe();
+    ASSERT_TRUE(rr_archiver.sync_for_tests().get());
+    rr_archiver.sync_manifest().get();
+    ASSERT_TRUE(rr_partition->cloud_data_available());
+
+    const auto& manifest = rr_archiver.manifest();
+    ASSERT_GT(manifest.size(), 0);
+    const auto highest_cloud_term = manifest.last_segment()->segment_term;
+    const auto lowest_cloud_term = manifest.begin()->segment_term;
+
+    // Within cloud coverage: resolves to a real cloud offset, not one of the
+    // out-of-range tails handled below.
+    auto in_cloud = rr.get_leader_epoch_last_offset(
+                        kafka::leader_epoch(highest_cloud_term()))
+                      .get();
+    ASSERT_TRUE(in_cloud.has_value());
+    ASSERT_GT(in_cloud.value(), rr_partition->start_cloud_offset());
+
+    // Above cloud coverage: an undefined epoch for this read replica -> no
+    // value.
+    auto above = rr.get_leader_epoch_last_offset(
+                     kafka::leader_epoch(highest_cloud_term() + 1))
+                   .get();
+    ASSERT_FALSE(above.has_value());
+
+    // Below cloud coverage: the next-highest term still lives in cloud, so the
+    // answer is the cloud start offset.
+    auto below = rr.get_leader_epoch_last_offset(
+                     kafka::leader_epoch(lowest_cloud_term() - 1))
+                   .get();
+    ASSERT_TRUE(below.has_value());
+    ASSERT_EQ(below.value(), rr_partition->start_cloud_offset());
 }
 
 TEST_P(EndToEndFixture, TestMixedTimequery) {

@@ -48,7 +48,7 @@ public:
     // new offset.
     void reset(kafka::offset next);
     kafka::offset next() const { return _next; }
-    bool empty() const { return _batches.empty(); }
+    bool empty() const { return !_batches.has_value(); }
     bool full() const { return _sem.available_units() <= 0; }
 
     void update_max_buffered(size_t max_buffered_bytes);
@@ -61,7 +61,7 @@ private:
     size_t _max_buffered_bytes;
     ssx::semaphore _sem;
     ssx::semaphore_units _batch_units;
-    chunked_vector<::model::record_batch> _batches;
+    std::optional<chunked_vector<::model::record_batch>> _batches;
     ss::gate _gate;
 };
 } // namespace cluster_link::replication

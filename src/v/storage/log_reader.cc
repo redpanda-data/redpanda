@@ -62,7 +62,7 @@ std::vector<model::record_batch> log_reader::make_ghost_batches(
           max_batch_size, end_offset - start_offset);
 
         batches.push_back(
-          make_ghost_batch(start_offset, delta + start_offset, term));
+          model::make_ghost_batch(start_offset, delta + start_offset, term));
         start_offset = next_offset(batches.back().last_offset());
     }
 

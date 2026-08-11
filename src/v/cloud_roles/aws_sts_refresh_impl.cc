@@ -14,6 +14,7 @@
 #include "cloud_roles/logger.h"
 #include "request_response_helpers.h"
 #include "utils/file_io.h"
+#include "utils/xml.h"
 
 #include <boost/algorithm/string/trim.hpp>
 #include <boost/property_tree/ptree.hpp>
@@ -75,28 +76,19 @@ static ss::sstring load_from_env(std::string_view env_var) {
     return env_value;
 }
 
-static boost::property_tree::ptree iobuf_to_ptree(iobuf&& buf) {
-    namespace pt = boost::property_tree;
-    try {
-        iobuf_istreambuf strbuf(buf);
-        std::istream stream(&strbuf);
-        pt::ptree res;
-        pt::read_xml(stream, res);
-        return res;
-    } catch (...) {
-        vlog(clrl_log.error, "!!parsing error {}", std::current_exception());
-        throw;
-    }
-}
-
 aws_sts_refresh_impl::aws_sts_refresh_impl(
   net::unresolved_address address,
   aws_service_name service,
   aws_region_name region,
   ss::abort_source& as,
-  retry_params retry_params)
+  retry_params retry_params,
+  ss::sstring metrics_tag)
   : refresh_credentials::impl(
-      std::move(address), std::move(region), as, retry_params)
+      std::move(address),
+      std::move(region),
+      as,
+      retry_params,
+      std::move(metrics_tag))
   , _role{load_from_env(aws_injected_env_vars::role_arn)}
   , _token_file_path{load_from_env(aws_injected_env_vars::token_file_path)}
   , _service(std::move(service)) {}
@@ -152,7 +144,8 @@ ss::future<api_response> aws_sts_refresh_impl::fetch_credentials() {
 }
 
 api_response_parse_result aws_sts_refresh_impl::parse_response(iobuf resp) {
-    auto root = iobuf_to_ptree(std::move(resp));
+    auto root = xml::iobuf_to_ptree(
+      std::move(resp), clrl_log, xml::log_body_on_failure::no);
 
     auto creds_node_maybe = root.get_child_optional(
       response_node_credential_path.data());

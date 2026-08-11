@@ -11,11 +11,18 @@
 
 #include "redpanda/admin/services/shadow_link/converter.h"
 
+#include "bytes/iobuf_parser.h"
 #include "cluster_link/model/types.h"
+#include "config/configuration.h"
 #include "crypto/crypto.h"
+#include "serde/protobuf/rpc.h"
 #include "utils/base64.h"
 
+#include <seastar/core/memory.hh>
+#include <seastar/util/defer.hh>
+
 #include <algorithm>
+#include <new>
 #include <optional>
 #include <stdexcept>
 #include <variant>
@@ -57,6 +64,28 @@ using proto::common::tls_file_settings;
 using proto::common::tls_settings;
 using proto::common::tlspem_settings;
 namespace {
+
+/// Converts an iobuf to ss::sstring for TLS PEM data.
+///
+/// Note: This creates a contiguous allocation which may exceed 128KiB for large
+/// CA bundles. While large allocations are generally discouraged in Seastar,
+/// this is acceptable here because the Seastar TLS layer (set_x509_key, etc.)
+/// requires linearized certificate data anyway.
+ss::sstring iobuf_to_string(const iobuf& buf) {
+    auto sz = buf.size_bytes();
+
+    // Temporarily disable crash-on-allocation-failure so we can convert
+    // std::bad_alloc to an RPC error instead of crashing the broker.
+    try {
+        ss::memory::scoped_system_alloc_fallback fb;
+        iobuf_const_parser p(buf);
+        return p.read_string(sz);
+    } catch (const std::bad_alloc&) {
+        throw serde::pb::rpc::resource_exhausted_exception(
+          ssx::sformat(
+            "TLS certificate data too large to linearize ({} bytes)", sz));
+    }
+}
 
 constexpr auto to_filter_pattern_type(proto::admin::pattern_type p) {
     switch (p) {
@@ -454,13 +483,16 @@ void set_tls_settings(
       },
       [&config](const tlspem_settings& pem) {
           if (!pem.get_ca().empty()) {
-              config.ca = cluster_link::model::tls_value(pem.get_ca());
+              config.ca = cluster_link::model::tls_value(
+                iobuf_to_string(pem.get_ca()));
           }
           if (!pem.get_key().empty()) {
-              config.key = cluster_link::model::tls_value(pem.get_key());
+              config.key = cluster_link::model::tls_value(
+                iobuf_to_string(pem.get_key()));
           }
           if (!pem.get_cert().empty()) {
-              config.cert = cluster_link::model::tls_value(pem.get_cert());
+              config.cert = cluster_link::model::tls_value(
+                iobuf_to_string(pem.get_cert()));
           }
           if (config.key.has_value() != config.cert.has_value()) {
               throw std::invalid_argument(
@@ -612,14 +644,14 @@ struct tls_visitor {
               auto key_digest = bytes_to_base64(
                 crypto::digest(crypto::digest_type::SHA256, key()));
               pem_settings.set_key_fingerprint(std::move(key_digest));
-              pem_settings.set_cert(ss::sstring{cert()});
+              pem_settings.set_cert(iobuf::from(cert()));
           },
           [this, &key, &cert](std::monostate) {
               tlspem_settings pem_settings;
               auto key_digest = bytes_to_base64(
                 crypto::digest(crypto::digest_type::SHA256, key()));
               pem_settings.set_key_fingerprint(std::move(key_digest));
-              pem_settings.set_cert(ss::sstring{cert()});
+              pem_settings.set_cert(iobuf::from(cert()));
               _tls_settings->set_tls_pem_settings(std::move(pem_settings));
           });
     }
@@ -647,7 +679,7 @@ tls_settings create_tls_settings(const cluster_link::model::metadata& md) {
           },
           [&tls](const cluster_link::model::tls_value& value) {
               tlspem_settings pem_settings;
-              pem_settings.set_ca(ss::sstring{value});
+              pem_settings.set_ca(iobuf::from(value()));
               tls.set_tls_pem_settings(std::move(pem_settings));
           });
     }
@@ -1062,6 +1094,16 @@ chunked_vector<shadow_link_task_status> create_task_status(
           });
     }
 
+    std::ranges::sort(task_status, [](const auto& a, const auto& b) {
+        if (a.get_name() != b.get_name()) {
+            return a.get_name() < b.get_name();
+        }
+        if (a.get_broker_id() != b.get_broker_id()) {
+            return a.get_broker_id() < b.get_broker_id();
+        }
+        return a.get_shard() < b.get_shard();
+    });
+
     return task_status;
 }
 
@@ -1080,6 +1122,7 @@ shadow_link_status create_shadow_link_status(
     properties_synced.reserve(props.size());
     std::ranges::copy(props, std::back_inserter(properties_synced));
 
+    std::ranges::sort(properties_synced);
     status.set_synced_shadow_topic_properties(std::move(properties_synced));
     return status;
 }
@@ -1136,7 +1179,7 @@ void merge_input_only_fields(
                   from.connection.key.value(),
                   [&to_pem](
                     const cluster_link::model::tls_value& value) mutable {
-                      to_pem.set_key(ss::sstring{value()});
+                      to_pem.set_key(iobuf::from(value()));
                   },
                   [](const auto&) {
                       throw std::invalid_argument(
@@ -1233,7 +1276,7 @@ chunked_vector<topic_partition_information> status_to_partition_information(
 
 void set_client_id(cluster_link::model::metadata& md) {
     md.connection.client_id = ssx::sformat(
-      "cluster-link-{}-{}", md.name, md.uuid);
+      "shadow-link-{}-{}", md.name, md.uuid);
 }
 
 cluster_link::model::metadata
@@ -1251,14 +1294,14 @@ convert_create_to_metadata(create_shadow_link_request req) {
 }
 
 shadow_link metadata_to_shadow_link(
-  cluster_link::model::metadata md,
+  cluster_link::model::metadata_ptr md,
   cluster_link::model::shadow_link_status_report status_report) {
     shadow_link sl;
 
-    sl.set_name(std::move(md.name));
-    sl.set_uid(ssx::sformat("{}", md.uuid));
-    sl.set_configurations(create_shadow_link_configuration(md));
-    sl.set_status(create_shadow_link_status(md, status_report));
+    sl.set_name(ss::sstring{md->name()});
+    sl.set_uid(ssx::sformat("{}", md->uuid));
+    sl.set_configurations(create_shadow_link_configuration(*md));
+    sl.set_status(create_shadow_link_status(*md, status_report));
 
     return sl;
 }
@@ -1266,24 +1309,30 @@ shadow_link metadata_to_shadow_link(
 cluster_link::model::update_cluster_link_configuration_cmd
 create_update_cluster_link_config_cmd(
   update_shadow_link_request req,
-  cluster_link::model::metadata current_metadata) {
+  cluster_link::model::metadata_ptr current_metadata) {
     if (!req.get_update_mask().is_valid_for_message<shadow_link>()) {
         throw serde::pb::rpc::invalid_argument_exception(
           ssx::sformat(
             "Invalid update mask for shadow_link: {}", req.get_update_mask()));
     }
+    auto current_md_copy = ss::make_lw_shared<cluster_link::model::metadata>({
+      .name = current_metadata->name,
+      .uuid = current_metadata->uuid,
+      .connection = current_metadata->connection,
+      .configuration = current_metadata->configuration.copy(),
+    });
     // Save off client ID to reuse later
     // Client ID is an output only field so when the shadow link value is
     // converted back to metadata, the client ID is not set
-    auto current_sl = metadata_to_shadow_link(current_metadata.copy(), {});
+    auto current_sl = metadata_to_shadow_link(std::move(current_md_copy), {});
     req.get_update_mask().merge_into(
       std::move(req.get_shadow_link()), &current_sl);
-    merge_input_only_fields(current_metadata, current_sl);
+    merge_input_only_fields(*current_metadata, current_sl);
     try {
         auto updated_md = shadow_link_to_metadata(std::move(current_sl));
 
-        merge_output_only_fields(current_metadata, updated_md);
-        update_timestamps(current_metadata, updated_md);
+        merge_output_only_fields(*current_metadata, updated_md);
+        update_timestamps(*current_metadata, updated_md);
 
         return cluster_link::model::update_cluster_link_configuration_cmd{
           .connection = std::move(updated_md.connection),

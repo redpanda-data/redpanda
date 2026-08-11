@@ -20,6 +20,7 @@
 #include "cluster/logger.h"
 #include "cluster/members_table.h"
 #include "cluster/node/local_monitor.h"
+#include "cluster/partition_kafka_offsets.h"
 #include "cluster/partition_manager.h"
 #include "cluster/partition_probe.h"
 #include "config/configuration.h"
@@ -607,7 +608,9 @@ health_monitor_backend::get_current_node_in_sync_replicas_share(
         const followers_stats& fs,
         const model::topic_namespace&,
         model::partition_id) {
-          if (std::ranges::count(fs.out_of_sync, _self)) {
+          if (
+            std::ranges::contains(fs.out_of_sync, _self)
+            || std::ranges::contains(fs.down, _self)) {
               ++out_of_sync_replicas;
           } else {
               ++in_sync_replicas;
@@ -952,8 +955,8 @@ partition_status build_partition_status(const partition& p) {
 
     if (p.ntp().ns == model::kafka_namespace && p.started()) {
         // HWM cannot be reliably retrieved until raft has started
-        status.high_watermark = model::offset_cast(
-          p.log()->from_log_offset(p.high_watermark()));
+        status.high_watermark = model::offset_cast(kafka_high_watermark(p));
+        status.log_start_offset = model::offset_cast(kafka_start_offset(p));
     }
 
     if (p.raft()->is_elected_leader()) {
@@ -1082,7 +1085,7 @@ bool is_partition_offline(
 ss::future<> health_monitor_backend::fill_aggregate_with_offline_partitions(
   const std::vector<model::node_id>& offline_nodes,
   aggregated_report& aggr_report) {
-    size_t retries_left = 5;
+    uint8_t retries_left = 5;
 
     ssx::async_counter counter;
     while (retries_left > 0) {
@@ -1092,12 +1095,17 @@ ss::future<> health_monitor_backend::fill_aggregate_with_offline_partitions(
                  ++it) {
                 const auto& topic = it->first;
                 const auto& assignment_set = it->second.get_assignments();
-                co_await ssx::async_for_each_counter(
+                auto inner_it = assignment_set.begin();
+                auto inner_end = assignment_set.end();
+                co_await ssx::async_while_counter(
                   counter,
-                  assignment_set,
-                  [&offline_nodes, &aggr_report, &topic, &it](
-                    const auto& p_as) {
+                  [&it, &inner_it, &inner_end] {
                       it.check();
+                      return inner_it != inner_end;
+                  },
+                  [&inner_it, &offline_nodes, &aggr_report, &topic] {
+                      const auto& p_as = *inner_it;
+                      ++inner_it;
                       if (!is_partition_offline(p_as.second, offline_nodes)) {
                           return;
                       }
@@ -1111,7 +1119,6 @@ ss::future<> health_monitor_backend::fill_aggregate_with_offline_partitions(
                         model::ntp(topic.ns, topic.tp, p_as.first));
                   });
             }
-            // success, return from the function
             co_return;
         } catch (const iterator_stability_violation&) {
             --retries_left;

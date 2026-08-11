@@ -14,8 +14,8 @@ class NetemDelayDistribution(Enum):
 class NetemDelay(typing.NamedTuple):
     delay_us: int
     jitter_us: int
-    correlation_us: str
-    distribution: NetemDelayDistribution
+    correlation_us: str | None = None
+    distribution: NetemDelayDistribution | None = None
 
     def validate(self):
         if not self.delay_us:

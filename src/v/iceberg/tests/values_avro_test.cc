@@ -16,6 +16,9 @@
 #include "iceberg/values_avro.h"
 #include "random/generators.h"
 
+#include <avro/GenericDatum.hh>
+#include <avro/LogicalType.hh>
+#include <avro/Schema.hh>
 #include <gtest/gtest.h>
 
 using namespace iceberg;
@@ -75,9 +78,10 @@ TEST(ValuesAvroTest, TestDecimal) {
         return ret;
     };
 
+    // Values must fit decimal(10,2): magnitude < 10^10.
     for (auto& v : {
-           make_struct(std::numeric_limits<absl::int128>::max()),
-           make_struct(std::numeric_limits<absl::int128>::max()),
+           make_struct(9999999999),
+           make_struct(-9999999999),
            make_struct(0),
            make_struct(-1),
            make_struct(1),
@@ -100,35 +104,40 @@ TEST(ValuesAvroTest, TestDecimalConversions) {
 
         auto decimal = absl::MakeInt128(high_half, low_half);
 
-        ASSERT_EQ(decimal, decode_avro_decimal(encode_avro_decimal(decimal)));
         ASSERT_EQ(
-          decimal, iobuf_to_avro_decimal(avro_decimal_to_iobuf(decimal, 16)));
+          decimal,
+          decode_avro_decimal(
+            encode_avro_fixed_decimal(decimal, max_decimal_bytes)));
+        ASSERT_EQ(
+          decimal,
+          iobuf_to_avro_decimal(
+            avro_fixed_decimal_to_iobuf(decimal, max_decimal_bytes)));
     }
 }
 
 TEST(ValuesAvroTest, TestDecimalConversionsLimitedSize) {
-    auto high_half = 0;
-    auto low_half = random_generators::get_int<uint64_t>();
-
-    auto decimal = absl::MakeInt128(high_half, low_half);
+    // Value must fit in a signed 8-byte slot — pick from int64_t range.
+    absl::int128 decimal{random_generators::get_int<int64_t>()};
 
     ASSERT_EQ(
-      decimal, iobuf_to_avro_decimal(avro_decimal_to_iobuf(decimal, 8)));
+      decimal, iobuf_to_avro_decimal(avro_fixed_decimal_to_iobuf(decimal, 8)));
 }
 
 TEST(ValuesAvroTest, TestDecimalConversionAgainstJavaBigInteger) {
     // value of 65536
     ASSERT_EQ(
-      encode_avro_decimal(absl::MakeInt128(0, 65536)),
+      encode_avro_fixed_decimal(absl::MakeInt128(0, 65536), max_decimal_bytes),
       bytes({0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0}));
     // value of 35209893291843950283695459221
     ASSERT_EQ(
-      encode_avro_decimal(absl::MakeInt128(1908732140, 89247320981)),
+      encode_avro_fixed_decimal(
+        absl::MakeInt128(1908732140, 89247320981), max_decimal_bytes),
       bytes({0, 0, 0, 0, 113, 196, 240, 236, 0, 0, 0, 20, 199, 142, 11, 149}));
 
     // value of -18218949492341193300753118315
     ASSERT_EQ(
-      encode_avro_decimal(absl::MakeInt128(-987651231, 89247320981)),
+      encode_avro_fixed_decimal(
+        absl::MakeInt128(-987651231, 89247320981), max_decimal_bytes),
       bytes(
         {255,
          255,
@@ -146,4 +155,59 @@ TEST(ValuesAvroTest, TestDecimalConversionAgainstJavaBigInteger) {
          142,
          11,
          149}));
+}
+
+// Decode a decimal value packed in an Avro fixed[N] payload where N is the
+// minimum byte width for the column's precision (Iceberg spec). Hand-craft
+// the datum so the decoder is exercised independently of the encoder.
+namespace {
+avro::GenericDatum make_decimal_fixed_datum(
+  const decimal_type& dt, const std::vector<uint8_t>& payload) {
+    auto n = static_cast<int>(payload.size());
+    auto schema = avro::FixedSchema(n, "decimal");
+    avro::LogicalType l_type(avro::LogicalType::DECIMAL);
+    l_type.setPrecision(static_cast<int>(dt.precision));
+    l_type.setScale(static_cast<int>(dt.scale));
+    schema.root()->setLogicalType(l_type);
+    return {schema.root(), avro::GenericFixed(schema.root(), payload)};
+}
+} // namespace
+
+TEST(ValuesAvroTest, TestEncodeAvroFixedDecimalThrows) {
+    EXPECT_THROW(encode_avro_fixed_decimal(0, 0), std::invalid_argument);
+    EXPECT_THROW(
+      encode_avro_fixed_decimal(0, max_decimal_bytes + 1),
+      std::invalid_argument);
+    // 128 does not fit in a signed 1-byte slot (range [-128, 127]).
+    EXPECT_THROW(encode_avro_fixed_decimal(128, 1), std::invalid_argument);
+    EXPECT_THROW(encode_avro_fixed_decimal(-129, 1), std::invalid_argument);
+    // -128 is the inclusive lower bound and must succeed.
+    EXPECT_NO_THROW(encode_avro_fixed_decimal(-128, 1));
+    EXPECT_NO_THROW(encode_avro_fixed_decimal(127, 1));
+}
+
+TEST(ValuesAvroTest, TestDecodeIcebergFixedDecimal) {
+    // decimal(10,2) → fixed[5]. 1234567 (=12345.67) and -1234567 (=-12345.67)
+    // both fit in 3 bytes but must be sign-extended to 5 to fill the slot.
+    const decimal_type dt{.precision = 10, .scale = 2};
+    field_type expected_type{dt};
+
+    struct case_t {
+        absl::int128 value;
+        std::vector<uint8_t> fixed5;
+    };
+    const std::array cases{
+      case_t{1234567, {0x00, 0x00, 0x12, 0xD6, 0x87}},
+      case_t{-1234567, {0xFF, 0xFF, 0xED, 0x29, 0x79}},
+      case_t{0, {0x00, 0x00, 0x00, 0x00, 0x00}},
+      case_t{-1, {0xFF, 0xFF, 0xFF, 0xFF, 0xFF}},
+    };
+    for (const auto& c : cases) {
+        auto datum = make_decimal_fixed_datum(dt, c.fixed5);
+        auto parsed = val_from_avro(datum, expected_type, field_required::yes);
+        ASSERT_TRUE(parsed.has_value());
+        const auto& dv = std::get<decimal_value>(
+          std::get<primitive_value>(*parsed));
+        ASSERT_EQ(dv.val, c.value);
+    }
 }

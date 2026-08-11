@@ -7,3 +7,4 @@ jinja2
 aioboto3
 PyYAML
 psutil
+avro==1.12.0

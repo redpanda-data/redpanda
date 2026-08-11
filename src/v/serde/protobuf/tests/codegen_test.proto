@@ -70,6 +70,10 @@ message WellKnownProtos {
     map<string, google.protobuf.Timestamp> timestamp_map = 9;
 }
 
+message IOBufStringField {
+    string large_data = 1 [(redpanda.core.pbgen.iobuf) = true];
+}
+
 message SayGreetingRequest {
     optional string greeting = 1;
 }

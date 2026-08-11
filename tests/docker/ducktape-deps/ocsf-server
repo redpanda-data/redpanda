@@ -1,6 +1,22 @@
 #!/usr/bin/env bash
 set -e
 
+# Retry an apt-related command with exponential backoff. Tolerates transient
+# Canonical/Launchpad PPA outages observed in CDT (DEVPROD-4196).
+retry_apt() {
+  local max_attempts=3 delay=30 attempt=1
+  until "$@"; do
+    if ((attempt >= max_attempts)); then
+      echo "retry_apt: '$*' failed after ${max_attempts} attempts" >&2
+      return 1
+    fi
+    echo "retry_apt: attempt ${attempt}/${max_attempts} of '$*' failed; sleeping ${delay}s" >&2
+    sleep "$delay"
+    delay=$((delay * 2))
+    attempt=$((attempt + 1))
+  done
+}
+
 OCSF_SCHEMA_VERSION=9608805fe0b61035cb821bb9068096fe47fed12d # tip of v1.0.0 branch
 OCSF_SERVER_VERSION=d3b26de39df9eb33c6d63e34a126c77c0811c7a0
 
@@ -15,12 +31,27 @@ tar -xvzf ${OCSF_SERVER_VERSION}.tar.gz
 rm ${OCSF_SERVER_VERSION}.tar.gz
 mv ocsf-server-${OCSF_SERVER_VERSION} /opt/ocsf-server
 
-apt-get update
-apt-get install -qq software-properties-common
+retry_apt apt-get update
+retry_apt apt-get install -qq software-properties-common unzip
 
-add-apt-repository -y ppa:rabbitmq/rabbitmq-erlang
-apt-get update
-apt-get install -qq elixir erlang-dev erlang-xmerl
+retry_apt add-apt-repository -y ppa:rabbitmq/rabbitmq-erlang
+retry_apt apt-get update
+retry_apt apt-get install -qq erlang erlang-dev erlang-xmerl
+
+# Ubuntu's `elixir` package is 1.12, but ocsf-server's mix.exs requires
+# `~> 1.14`. Install Elixir from the official precompiled release, matching
+# the OTP 26 the rabbitmq erlang PPA provides.
+ELIXIR_VERSION=1.15.7
+ELIXIR_OTP=26
+ELIXIR_SHA256=10370b04df55fcd93fd016125d5c9bbe1aab5a7ffa99691f6197e3829e32af34
+wget "https://github.com/elixir-lang/elixir/releases/download/v${ELIXIR_VERSION}/elixir-otp-${ELIXIR_OTP}.zip"
+echo "${ELIXIR_SHA256}  elixir-otp-${ELIXIR_OTP}.zip" | sha256sum -c -
+mkdir -p /opt/elixir
+unzip -q -d /opt/elixir "elixir-otp-${ELIXIR_OTP}.zip"
+rm "elixir-otp-${ELIXIR_OTP}.zip"
+for bin in elixir elixirc iex mix; do
+  ln -sf "/opt/elixir/bin/${bin}" "/usr/local/bin/${bin}"
+done
 
 mix local.hex --force && mix local.rebar --force
 
@@ -35,7 +66,7 @@ fi
 ./build_server.sh
 
 # remove added repository for other packages stability
-add-apt-repository -ry ppa:rabbitmq/rabbitmq-erlang
+retry_apt add-apt-repository -ry ppa:rabbitmq/rabbitmq-erlang
 
 # The following is required because the server attempts to write logs
 # to the `dist/tmp` directory.  This is fine in docker ducktape as the user

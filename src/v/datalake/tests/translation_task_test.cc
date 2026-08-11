@@ -93,6 +93,36 @@ public:
         return model::make_memory_record_batch_reader(std::move(batches));
     }
 
+    /// Returns a memory tracker that allows for `n` successful reservations.
+    /// After `n` reservations `out_of_memory` is returned.
+    std::unique_ptr<datalake::writer_mem_tracker>
+    make_memory_tracker(size_t n) {
+        class mem_tracker : public datalake::writer_mem_tracker {
+        public:
+            explicit mem_tracker(size_t num_left)
+              : _num_left(num_left) {}
+            ss::future<reservation_error>
+            reserve_bytes(size_t, ss::abort_source&) noexcept override {
+                if (_num_left == 0) {
+                    co_return reservation_error::out_of_memory;
+                }
+                --_num_left;
+                co_return reservation_error::ok;
+            }
+            ss::future<> free_bytes(size_t, ss::abort_source&) override {
+                return ss::now();
+            }
+            void release() override {}
+            writer_disk_tracker& disk() override { return _disk.disk(); }
+
+        private:
+            size_t _num_left;
+            datalake::noop_mem_tracker _disk;
+        };
+
+        return std::make_unique<mem_tracker>(n);
+    }
+
     std::unique_ptr<datalake::parquet_file_writer_factory>
     get_writer_factory() {
         return std::make_unique<datalake::local_parquet_file_writer_factory>(
@@ -280,6 +310,53 @@ TEST_F(TranslateTaskTest, TestUploadError) {
 
     ASSERT_TRUE(result.has_error());
     ASSERT_EQ(result.error(), datalake::translation_task::errc::cloud_io_error);
+    // check no data files are left behind
+    ASSERT_THAT(list_data_files().get(), IsEmpty());
+}
+TEST_F(TranslateTaskTest, TestCleanupAfterOOMError) {
+    // Create a mem tracker allows for 1 reservation to make a single writer.
+    auto mem_tracker = make_memory_tracker(1);
+    auto writer_factory
+      = std::make_unique<datalake::local_parquet_file_writer_factory>(
+        datalake::local_path(tmp_dir.get_path()),
+        "test-prefix",
+        ss::make_shared<datalake::serde_parquet_writer_factory>(),
+        *mem_tracker);
+
+    datalake::translation_task task(
+      ntp,
+      model::revision_id{123},
+      std::move(writer_factory),
+      cloud_io,
+      &features,
+      *schema_mgr,
+      *schema_resolver,
+      *translator,
+      *t_creator,
+      model::iceberg_invalid_record_action::dlq_table,
+      location_provider,
+      probe);
+
+    task.translate_once(make_batches(10, 16), kafka::offset{0}, as).get();
+    auto result = std::move(task)
+                    .finish(
+                      translation_task::custom_partitioning_enabled::yes,
+                      test_rcn,
+                      as)
+                    .get();
+
+    if (result.has_error()) {
+        // There are two ways a writer can handle an OOM. If it allocates the
+        // memory units prior to writing the record then there should be no data
+        // when flushed.
+        ASSERT_EQ(result.error(), datalake::translation_task::errc::no_data);
+    } else {
+        // Otherwise if it allocates the memory units after writing the record
+        // then only a single record should've been written at which point the
+        // OOM error would've bubbled up to the translator.
+        ASSERT_EQ(result.value().last_offset, kafka::offset{0});
+    }
+
     // check no data files are left behind
     ASSERT_THAT(list_data_files().get(), IsEmpty());
 }

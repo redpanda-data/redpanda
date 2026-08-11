@@ -30,9 +30,11 @@ redpanda_cc_library(
     name = "coordinator",
     srcs = [
         "coordinator.cc",
+        "coordinator_probe.cc",
     ],
     hdrs = [
         "coordinator.h",
+        "coordinator_probe.h",
     ],
     implementation_deps = [
         ":iceberg_snapshot_remover",
@@ -51,12 +53,15 @@ redpanda_cc_library(
     ],
     deps = [
         ":file_committer",
+        ":partition_state_override",
         ":snapshot_remover",
         ":state_update",
         ":stm",
         "//src/v/cluster",
         "//src/v/config",
+        "//src/v/container:chunked_hash_map",
         "//src/v/container:chunked_vector",
+        "//src/v/metrics",
         "//src/v/model",
         "@abseil-cpp//absl/hash",
         "@seastar",
@@ -124,6 +129,7 @@ redpanda_cc_library(
         "//src/v/base",
         "//src/v/config",
         "//src/v/datalake:logger",
+        "//src/v/datalake:validators",
         "//src/v/iceberg:catalog",
         "//src/v/iceberg:filesystem_catalog",
         "//src/v/iceberg:rest_catalog",
@@ -256,6 +262,21 @@ redpanda_cc_library(
 )
 
 redpanda_cc_library(
+    name = "partition_state_override",
+    srcs = [
+        "partition_state_override.cc",
+    ],
+    hdrs = [
+        "partition_state_override.h",
+    ],
+    deps = [
+        "//src/v/model",
+        "//src/v/serde",
+        "@fmt",
+    ],
+)
+
+redpanda_cc_library(
     name = "state",
     srcs = [
         "state.cc",
@@ -267,6 +288,7 @@ redpanda_cc_library(
     deps = [
         ":translated_offset_range",
         "//src/v/container:chunked_hash_map",
+        "//src/v/container:chunked_vector",
         "//src/v/iceberg:manifest_entry",
         "//src/v/model",
         "//src/v/serde",
@@ -283,6 +305,7 @@ redpanda_cc_library(
     ],
     visibility = ["//visibility:public"],
     deps = [
+        ":partition_state_override",
         ":translated_offset_range",
         "//src/v/datalake:schema_identifier",
         "//src/v/datalake:types",
@@ -335,9 +358,11 @@ redpanda_cc_library(
         "state_update.h",
     ],
     deps = [
+        ":partition_state_override",
         ":state",
         ":translated_offset_range",
         "//src/v/base",
+        "//src/v/container:chunked_hash_map",
         "//src/v/container:chunked_vector",
         "//src/v/iceberg:manifest_entry",
         "//src/v/model",

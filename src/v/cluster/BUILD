@@ -277,6 +277,26 @@ redpanda_cc_library(
 )
 
 redpanda_cc_library(
+    name = "table_utils",
+    srcs = [
+        "cluster_link/table_utils.cc",
+    ],
+    hdrs = [
+        "cluster_link/table_utils.h",
+    ],
+    implementation_deps = [
+        "//src/v/ssx:async_algorithm",
+    ],
+    visibility = ["__subpackages__"],
+    deps = [
+        "//src/v/base",
+        "//src/v/cluster_link/model",
+        "//src/v/container:chunked_hash_map",
+        "@seastar",
+    ],
+)
+
+redpanda_cc_library(
     name = "cluster",
     srcs = [
         "archival/adjacent_segment_merger.cc",
@@ -376,6 +396,7 @@ redpanda_cc_library(
         "partition_balancer_rpc_handler.cc",
         "partition_balancer_state.cc",
         "partition_balancer_types.cc",
+        "partition_kafka_offsets.cc",
         "partition_leaders_table.cc",
         "partition_manager.cc",
         "partition_probe.cc",
@@ -567,6 +588,7 @@ redpanda_cc_library(
         "partition_balancer_rpc_service.h",
         "partition_balancer_state.h",
         "partition_balancer_types.h",
+        "partition_kafka_offsets.h",
         "partition_leaders_table.h",
         "partition_manager.h",
         "partition_probe.h",
@@ -647,6 +669,7 @@ redpanda_cc_library(
         "version.h",
     ],
     implementation_deps = [
+        ":table_utils",
         ":topic_memory_per_partition_default",
         "//src/v/cloud_storage:logger",
         "//src/v/crash_tracker",

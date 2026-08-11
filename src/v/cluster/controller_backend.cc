@@ -435,6 +435,15 @@ ss::future<> controller_backend::start() {
 ss::future<> controller_backend::bootstrap_controller_backend() {
     for (const auto& [ntp, _] : _shard_placement.shard_local_states()) {
         notify_reconciliation(ntp);
+        if (!_topics.local().get_replicas_view(ntp)) {
+            // The topic was deleted while this node was down. The "removed"
+            // delta fired during controller log replay before our listener
+            // was registered, so removed_at was never set. Without it the
+            // reconcile loop skips cleanup. Synthesize it here so
+            // finish_delete runs and clears the shard_placement kvstore key.
+            _states.at(ntp)->removed_at
+              = _topics.local().last_applied_revision();
+        }
     }
 
     _topic_table_notify_handle

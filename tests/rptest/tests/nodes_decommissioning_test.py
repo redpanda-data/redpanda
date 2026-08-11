@@ -867,7 +867,7 @@ class NodesDecommissioningTest(PreallocNodesTest):
             backoff_sec=1,
         )
         # set recovery rate to small value but allow the controller to recover
-        self._set_recovery_rate(10 * 1024)
+        self._set_recovery_rate(10 * 1024, await_rehabilitation=False)
         # throttle recovery
         self.redpanda.clean_node(self.redpanda.nodes[-1], preserve_current_install=True)
         self.redpanda.start_node(self.redpanda.nodes[-1])

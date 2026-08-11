@@ -195,4 +195,55 @@ datalake_service_impl::get_coordinator_state(
     co_return response;
 }
 
+ss::future<proto::admin::coordinator_reset_topic_state_response>
+datalake_service_impl::coordinator_reset_topic_state(
+  serde::pb::rpc::context,
+  proto::admin::coordinator_reset_topic_state_request req) {
+    if (!_coordinator_fe->local_is_initialized()) {
+        throw serde::pb::rpc::unavailable_exception(
+          "Datalake coordinator frontend not initialized");
+    }
+
+    model::topic topic{req.get_topic_name()};
+    auto partition_opt = _coordinator_fe->local().coordinator_partition(topic);
+    if (!partition_opt.has_value()) {
+        throw serde::pb::rpc::unavailable_exception(
+          fmt::format(
+            "Datalake coordinator couldn't get coordinator partition "
+            "for {}",
+            topic));
+    }
+
+    model::revision_id topic_revision{req.get_revision()};
+
+    chunked_hash_map<
+      model::partition_id,
+      datalake::coordinator::partition_state_override>
+      partition_overrides;
+    for (const auto& [pid, po] : req.get_partition_overrides()) {
+        datalake::coordinator::partition_state_override o;
+        if (po.has_last_committed()) {
+            o.last_committed = kafka::offset{po.get_last_committed()};
+        }
+        partition_overrides.emplace(model::partition_id{pid}, std::move(o));
+    }
+
+    auto fe_res = co_await _coordinator_fe->local().reset_topic_state(
+      datalake::coordinator::reset_topic_state_request(
+        partition_opt.value(),
+        topic,
+        topic_revision,
+        req.get_reset_all_partitions(),
+        std::move(partition_overrides)));
+    if (fe_res.errc != datalake::coordinator::errc::ok) {
+        throw serde::pb::rpc::internal_exception(
+          fmt::format(
+            "Datalake coordinator error for partition {}: {}",
+            partition_opt.value(),
+            fe_res.errc));
+    }
+
+    co_return proto::admin::coordinator_reset_topic_state_response{};
+}
+
 } // namespace admin

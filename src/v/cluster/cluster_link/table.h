@@ -26,7 +26,7 @@ class table : public ss::peering_sharded_service<table> {
 public:
     using map_t = chunked_hash_map<
       ::cluster_link::model::id_t,
-      ::cluster_link::model::metadata>;
+      ::cluster_link::model::metadata_ptr>;
     using link_revision_index_t
       = chunked_hash_map<::cluster_link::model::id_t, model::revision_id>;
 
@@ -46,10 +46,10 @@ public:
     size_t size() const;
 
     /// Finds link by name
-    std::optional<std::reference_wrapper<const ::cluster_link::model::metadata>>
+    ::cluster_link::model::metadata_ptr
     find_link_by_name(const ::cluster_link::model::name_t& name) const;
     /// Finds link by id
-    std::optional<std::reference_wrapper<const ::cluster_link::model::metadata>>
+    ::cluster_link::model::metadata_ptr
     find_link_by_id(::cluster_link::model::id_t id) const;
     /// Finds link ID by name
     std::optional<::cluster_link::model::id_t>
@@ -83,42 +83,40 @@ public:
     bool cluster_link_active() const;
 
 private:
-    /// Snapshot copy of all the cluster links
-    map_t all_links() const;
     table::link_revision_index_t all_link_revisions() const;
     /// Restores a cluster link table from a snapshot
     void reset_links(map_t, link_revision_index_t, model::revision_id);
 
     /// Upserts a link, if the ID classes, throws a std::logic_error
-    cluster::cluster_link::errc upsert_link(
+    ss::future<cluster::cluster_link::errc> upsert_link(
       ::cluster_link::model::id_t,
-      ::cluster_link::model::metadata,
+      const ::cluster_link::model::metadata&,
       model::revision_id);
     /// Removes a link by ID
     cluster::cluster_link::errc
     remove_link(const ::cluster_link::model::name_t&, model::revision_id);
 
-    cluster::cluster_link::errc add_mirror_topic(
+    ss::future<cluster::cluster_link::errc> add_mirror_topic(
       ::cluster_link::model::id_t,
       const ::cluster_link::model::add_mirror_topic_cmd& cmd,
       model::revision_id);
 
-    cluster::cluster_link::errc update_mirror_topic_state(
+    ss::future<cluster::cluster_link::errc> update_mirror_topic_state(
       ::cluster_link::model::id_t,
       const ::cluster_link::model::update_mirror_topic_status_cmd& cmd,
       model::revision_id);
 
-    cluster::cluster_link::errc update_mirror_topic_properties(
+    ss::future<cluster::cluster_link::errc> update_mirror_topic_properties(
       ::cluster_link::model::id_t,
       const ::cluster_link::model::update_mirror_topic_properties_cmd&,
       model::revision_id);
 
-    cluster::cluster_link::errc delete_mirror_topic(
+    ss::future<cluster::cluster_link::errc> delete_mirror_topic(
       ::cluster_link::model::id_t,
       const ::cluster_link::model::delete_mirror_topic_cmd& cmd,
       model::revision_id);
 
-    cluster::cluster_link::errc update_cluster_link_configuration(
+    ss::future<cluster::cluster_link::errc> update_cluster_link_configuration(
       ::cluster_link::model::id_t,
       const ::cluster_link::model::update_cluster_link_configuration_cmd&,
       model::revision_id);
@@ -132,6 +130,8 @@ private:
     using topic_name_index_t
       = chunked_hash_map<model::topic, ::cluster_link::model::id_t>;
 
+    // The link metadata table holds const lw_shared_ptrs containing shadow link
+    // state.  Modifications are done via copy-on-write semantics.
     map_t _link_metadata;
     name_index_t _name_index;
     topic_name_index_t _topic_name_index;

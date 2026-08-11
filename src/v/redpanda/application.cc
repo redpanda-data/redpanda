@@ -565,7 +565,11 @@ int application::run(int ac, char** av) {
                     vlog(_log.info, "Shutdown complete.");
                 });
                 // must initialize configuration before services
-                hydrate_config(cfg);
+                auto node_cfg_yaml = hydrate_node_config(cfg);
+                // Cluster config validation uses OpenSSL (e.g. TLS cipher
+                // checks), so crypto must be initialized first.
+                wire_up_and_start_crypto_services();
+                hydrate_cluster_config(node_cfg_yaml);
                 init_crashtracker(app_signal);
                 initialize();
                 check_environment();
@@ -871,7 +875,7 @@ ss::app_template::config application::setup_app_config() {
     return app_cfg;
 }
 
-void application::hydrate_config(const po::variables_map& cfg) {
+YAML::Node application::hydrate_node_config(const po::variables_map& cfg) {
     auto raw_cfg_path = cfg["redpanda-cfg"].as<std::string>();
     // Expand ~/redpanda.yaml to the full path
     if (raw_cfg_path.starts_with("~")) {
@@ -906,18 +910,6 @@ void application::hydrate_config(const po::variables_map& cfg) {
 
         throw;
     }
-
-    auto config_printer = [this](std::string_view service, const auto& cfg) {
-        std::vector<ss::sstring> items;
-        cfg.for_each([&items, &service](const auto& item) {
-            items.push_back(
-              ssx::sformat("{}.{}\t- {}", service, item, item.desc()));
-        });
-        std::sort(items.begin(), items.end());
-        for (const auto& item : items) {
-            vlog(_log.info, "{}", item);
-        }
-    };
 
     ss::smp::invoke_on_all([&config, cfg_path] {
         config::node().load(cfg_path, config);
@@ -957,6 +949,22 @@ void application::hydrate_config(const po::variables_map& cfg) {
                 .as<std::vector<config::node_id_override>>());
         }).get();
     }
+
+    return config;
+}
+
+void application::hydrate_cluster_config(const YAML::Node& config) {
+    auto config_printer = [this](std::string_view service, const auto& cfg) {
+        std::vector<ss::sstring> items;
+        cfg.for_each([&items, &service](const auto& item) {
+            items.push_back(
+              ssx::sformat("{}.{}\t- {}", service, item, item.desc()));
+        });
+        std::sort(items.begin(), items.end());
+        for (const auto& item : items) {
+            vlog(_log.info, "{}", item);
+        }
+    };
 
     // This includes loading from local bootstrap file or legacy
     // config file on first-start or upgrade cases.
@@ -2966,7 +2974,6 @@ void application::wire_up_and_start(::stop_signal& app_signal, bool test_mode) {
     construct_service(_as).get();
 
     // Bootstrap services.
-    wire_up_and_start_crypto_services();
     wire_up_bootstrap_services();
     start_bootstrap_services();
 
@@ -3397,7 +3404,11 @@ void application::start_runtime_services(
             std::make_unique<kafka::data::rpc::network_service>(
               sched_groups.transforms_sg(),
               smp_service_groups.transform_smp_sg(),
-              &_kafka_data_rpc_service));
+              &_kafka_data_rpc_service,
+              kafka::data::rpc::network_service::memory_config{
+                .memory = &s.memory(),
+                .total = s.cfg.max_service_memory_per_core,
+              }));
 
           if (wasm_data_transforms_enabled()) {
               runtime_services.push_back(

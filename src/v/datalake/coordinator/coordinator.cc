@@ -184,6 +184,7 @@ coordinator::run_until_term_change(model::term_id term) {
     auto reset_term_as = ss::defer([this] { term_as_.reset(); });
     vlog(datalake_log.debug, "Running coordinator loop in term {}", term);
     while (raft.is_leader() && term == raft.term()) {
+        bool has_more_to_commit = false;
         // Make a copy of the topics to reconcile, in case the map changes
         // during this call.
         // TODO: probably worth building a more robust scheduler.
@@ -232,7 +233,9 @@ coordinator::run_until_term_change(model::term_id term) {
             }
             // TODO: apply table retention periodically too.
 
-            auto updates = std::move(commit_res.value());
+            auto commit = std::move(commit_res.value());
+            has_more_to_commit |= commit.has_more;
+            auto& updates = commit.updates;
             if (!updates.empty()) {
                 storage::record_batch_builder builder(
                   model::record_batch_type::datalake_coordinator,
@@ -262,6 +265,11 @@ coordinator::run_until_term_change(model::term_id term) {
                     break;
                 }
             }
+        }
+        if (has_more_to_commit) {
+            // A commit left more pending files; start the next pass immediately
+            // instead of idling for a full commit interval.
+            continue;
         }
         auto sleep_res = co_await ss::coroutine::as_future(
           ssx::sleep_abortable(commit_interval_(), as_, term_as));
@@ -532,6 +540,31 @@ coordinator::sync_ensure_dlq_table_exists(
     co_return notify_waiters_and_erase(key, in_flight_dlq_, res_fut.get());
 }
 
+bool coordinator::has_too_many_pending_files() {
+    auto now = ss::lowres_clock::now();
+    if (
+      backpressured_as_of_.has_value()
+      && now - *backpressured_as_of_ < commit_interval_()) {
+        return true;
+    }
+    const auto threshold = max_pending_files_();
+    size_t pending = 0;
+    for (const auto& [_, tp_state] : stm_->state().topic_to_state) {
+        for (const auto& [pid, p_state] : tp_state.pid_to_pending_files) {
+            for (const auto& entry : p_state.pending_entries) {
+                pending += entry.data.files.size()
+                           + entry.data.dlq_files.size();
+                if (pending >= threshold) {
+                    backpressured_as_of_ = now;
+                    return true;
+                }
+            }
+        }
+    }
+    backpressured_as_of_ = std::nullopt;
+    return false;
+}
+
 ss::future<checked<std::nullopt_t, coordinator::errc>>
 coordinator::sync_add_files(
   model::topic_partition tp,
@@ -544,6 +577,14 @@ coordinator::sync_add_files(
     auto gate = maybe_gate();
     if (gate.has_error()) {
         co_return gate.error();
+    }
+    if (has_too_many_pending_files()) {
+        vlog(
+          datalake_log.debug,
+          "Rejecting request to add files for {}: too many pending files",
+          tp);
+        probe_.increment_add_files_backpressure();
+        co_return errc::failed;
     }
     vlog(
       datalake_log.debug,
@@ -636,9 +677,21 @@ coordinator::sync_get_last_added_offsets(
     if (sync_res.has_error()) {
         co_return convert_stm_errc(sync_res.error());
     }
+    const bool backpressure = has_too_many_pending_files();
+    if (backpressure) {
+        vlog(
+          datalake_log.debug,
+          "Signaling backpressure for offsets request for {}: too many pending "
+          "files",
+          tp);
+        // Fall through to actually return offsets, even if we're under load.
+        // Returning a valid response despite backpressure allows translators
+        // to report lag.
+        probe_.increment_fetch_offsets_backpressure();
+    }
     auto topic_it = stm_->state().topic_to_state.find(tp.topic);
     if (topic_it == stm_->state().topic_to_state.end()) {
-        co_return last_offsets{std::nullopt, std::nullopt};
+        co_return last_offsets{std::nullopt, std::nullopt, backpressure};
     }
     const auto& topic = topic_it->second;
     if (requested_topic_rev < topic.revision) {
@@ -653,7 +706,7 @@ coordinator::sync_get_last_added_offsets(
         if (topic.lifecycle_state == topic_state::lifecycle_state_t::purged) {
             // Coordinator is ready to accept files for the new topic revision,
             // but there is no stm record yet. Reply with "no offset".
-            co_return last_offsets{std::nullopt, std::nullopt};
+            co_return last_offsets{std::nullopt, std::nullopt, backpressure};
         }
 
         vlog(
@@ -676,16 +729,17 @@ coordinator::sync_get_last_added_offsets(
 
     auto partition_it = topic.pid_to_pending_files.find(tp.partition);
     if (partition_it == topic.pid_to_pending_files.end()) {
-        co_return last_offsets{std::nullopt, std::nullopt};
+        co_return last_offsets{std::nullopt, std::nullopt, backpressure};
     }
     const auto& prt_state = partition_it->second;
     if (prt_state.pending_entries.empty()) {
         co_return last_offsets{
-          prt_state.last_committed, prt_state.last_committed};
+          prt_state.last_committed, prt_state.last_committed, backpressure};
     }
     co_return last_offsets{
       prt_state.pending_entries.back().data.last_offset,
-      prt_state.last_committed};
+      prt_state.last_committed,
+      backpressure};
 }
 
 void coordinator::notify_leadership(std::optional<model::node_id> leader_id) {
@@ -883,6 +937,56 @@ coordinator::sync_get_topic_state(chunked_vector<model::topic> topics_filter) {
         }
     }
     co_return result;
+}
+
+ss::future<checked<void, coordinator::errc>>
+coordinator::sync_reset_topic_state(
+  model::topic topic,
+  model::revision_id topic_revision,
+  bool reset_all_partitions,
+  chunked_hash_map<model::partition_id, partition_state_override>
+    partition_overrides) {
+    auto gate = maybe_gate();
+    if (gate.has_error()) {
+        co_return gate.error();
+    }
+
+    vlog(datalake_log.debug, "Resetting coordinator state for topic {}", topic);
+    auto sync_res = co_await stm_->sync(10s);
+    if (sync_res.has_error()) {
+        co_return convert_stm_errc(sync_res.error());
+    }
+
+    reset_topic_state_update update{
+      .topic = topic,
+      .topic_revision = topic_revision,
+      .reset_all_partitions = reset_all_partitions,
+      .partition_overrides = std::move(partition_overrides),
+    };
+    auto check_res = update.can_apply(stm_->state());
+    if (check_res.has_error()) {
+        vlog(
+          datalake_log.debug,
+          "Rejecting reset topic state request for {}: {}",
+          topic,
+          check_res.error());
+        co_return errc::stm_apply_error;
+    }
+    storage::record_batch_builder builder(
+      model::record_batch_type::datalake_coordinator, model::offset{0});
+    builder.add_raw_kv(
+      serde::to_iobuf(reset_topic_state_update::key),
+      serde::to_iobuf(std::move(update)));
+
+    auto repl_res = co_await stm_->replicate_and_wait(
+      sync_res.value(), std::move(builder).build(), as_);
+    if (repl_res.has_error()) {
+        auto e = convert_stm_errc(repl_res.error());
+        vlog(datalake_log.warn, "Replication failed {}", e);
+        co_return e;
+    }
+
+    co_return outcome::success();
 }
 
 ss::sstring coordinator::get_effective_default_partition_spec(

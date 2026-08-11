@@ -51,6 +51,8 @@ class data_queue;
  *
  */
 class direct_consumer {
+    friend class consumer_test_mock;
+
 public:
     struct configuration {
         int32_t min_bytes{1};
@@ -170,14 +172,29 @@ private:
 
     fetcher& get_fetcher(model::node_id id);
 
-    std::optional<subscription_epoch> find_subscription_epoch(
+    std::optional<std::reference_wrapper<const subscription>> find_subscription(
+      const model::topic& topic, model::partition_id partition_id) const;
+
+    std::optional<std::reference_wrapper<subscription>> find_subscription(
       const model::topic& topic, model::partition_id partition_id);
 
-    void filter_stale_subscriptions(
-      chunked_vector<fetched_topic_data>& responses_to_filter);
+    std::optional<subscription_epoch> find_subscription_epoch(
+      const model::topic& topic, model::partition_id partition_id) const;
 
-    void maybe_update_source_partition_offsets(
-      model::topic_partition_view tp, source_partition_offsets offsets);
+    void
+    filter_fetch_data(chunked_vector<fetched_topic_data>& responses_to_filter);
+
+    static bool is_partition_data_stale(
+      const fetched_partition_data& partition_data,
+      const std::optional<subscription>& maybe_subscription);
+
+    // update offsets and last seen
+    // returns true -> fetch was an update keep it in the fetched data
+    //         false -> the fetch contained no new information, drop it
+    bool update_and_filter_offsets(
+      model::topic topic_name,
+      const fetched_partition_data& partition_data,
+      subscription& subscription);
 
     cluster* _cluster;
 

@@ -40,9 +40,14 @@ gcp_refresh_impl::gcp_refresh_impl(
   aws_service_name, // Ignored for GCP
   aws_region_name region,
   ss::abort_source& as,
-  retry_params retry_params)
+  retry_params retry_params,
+  ss::sstring metrics_tag)
   : refresh_credentials::impl(
-      std::move(address), std::move(region), as, retry_params) {}
+      std::move(address),
+      std::move(region),
+      as,
+      retry_params,
+      std::move(metrics_tag)) {}
 
 ss::future<api_response> gcp_refresh_impl::fetch_credentials() {
     http::client::request_header oauth_req;

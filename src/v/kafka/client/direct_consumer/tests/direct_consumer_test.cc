@@ -494,8 +494,7 @@ init_offsets(reassign_direction direction) {
  * 3. let dc fetch data
  * 4. unassign ntp
  * 5. reassign ntp with reassignment_offset
- * 6. check the first call to fetch_next is a empty fetch (was filtered out)
- * 7. drain all fetches, check we see only 50 - reassignment offset
+ * 6. drain all fetches, check we see only 50 - reassignment offset
  */
 void epoch_filtering_test(
   consumer_test_mock* self, reassign_direction direction) {
@@ -549,26 +548,11 @@ void epoch_filtering_test(
     consumer.unassign_topics({test_topic}).get();
     consumer.assign_partitions(get_assignment(reassignment_offset)).get();
 
-    // 6. check the first call to fetch_next is an empty fetch (was filtered)
-    auto filtered_fetch_result = consumer.fetch_next(5s).get();
-    ASSERT_TRUE(filtered_fetch_result.has_value());
-    auto filtered_fetch = std::move(filtered_fetch_result).value();
-    int found_partition_count{0};
-
-    for (auto& topic_data : filtered_fetch) {
-        for (auto& partition_data : topic_data.partitions) {
-            std::ignore = partition_data;
-            ++found_partition_count;
-            ASSERT_EQ(topic_data.total_bytes, 0);
-        }
-    }
-    ASSERT_EQ(found_partition_count, 0);
-
     const size_t expected_size = (batch_count * batch_size)
                                  - static_cast<int64_t>(reassignment_offset);
     const model::offset final_offset{batch_count * batch_size - 1};
 
-    // 7. drain all fetches, check we see only 50 - reassignment_offset
+    // 6. drain all fetches, check we see only 50 - reassignment_offset
     RPTEST_REQUIRE_EVENTUALLY(10s, [&] {
         return self->fetch_and_append_to_map(all_batches, consumer).then([&] {
             auto& ntp_batches = all_batches[test_topic][model::partition_id(0)];
@@ -654,15 +638,22 @@ TEST_F(consumer_test_mock, TestOffsetResetPolicy) {
         .next_offset = std::nullopt, // no offset set, should reset to latest
       });
     consumer.assign_partitions(std::move(new_assignment)).get();
+    // fetch will update offsets, but offer no data
     auto data = consumer.fetch_next(std::chrono::seconds(1)).get();
-    // fetch should be empty, because the fetch offset was reset to latest
-    ASSERT_EQ(data.value().size(), 0);
+    for (auto& topic_data : data.value()) {
+        ASSERT_EQ(topic_data.total_bytes, 0)
+          << "should not find any batches on empty initial fetch";
+    }
     // add more data to partition 1
     make_data_available(test_topic, 1, 6);
-    fetch_and_append_to_map(all_batches, consumer).get();
-    ASSERT_EQ(
-      all_batches[test_topic][model::partition_id(1)].front().base_offset(),
-      model::offset(430));
+    auto& p1_batches = all_batches[test_topic][model::partition_id(1)];
+    RPTEST_REQUIRE_EVENTUALLY(10s, [&] {
+        return fetch_and_append_to_map(all_batches, consumer).then([&] {
+            return !p1_batches.empty();
+        });
+    });
+
+    ASSERT_EQ(p1_batches.front().base_offset(), model::offset(430));
 }
 TEST_F(consumer_test_mock, TestFetchErrorPropagation) {
     prepare_cluster();

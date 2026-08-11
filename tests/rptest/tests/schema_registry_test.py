@@ -289,6 +289,19 @@ message Test3 {
   google.protobuf.Timestamp timestamp = 1;
 }"""
 
+validate_proto_def = """
+syntax = "proto3";
+
+import "buf/validate/validate.proto";
+
+message TestValidate {
+  buf.validate.FieldRules field_rules = 1;
+  buf.validate.StringRules string_rules = 2;
+  buf.validate.Int32Rules int32_rules = 3;
+  buf.validate.MessageRules message_rules = 4;
+  buf.validate.TimestampRules timestamp_rules = 5;
+}"""
+
 json_number_schema_def = '{"type":"number"}'
 
 validation_schemas = dict(
@@ -6199,6 +6212,12 @@ class SchemaRegistryConfluentClient(SchemaRegistryEndpoints):
         result = self.sr_client.register_schema(well_known_subject, well_known_schema)
         assert result == 3, f"Result: {result}"
 
+        validate_subject = "topic_4-key"
+        validate_schema = Schema(validate_proto_def, "PROTOBUF")
+
+        result = self.sr_client.register_schema(validate_subject, validate_schema)
+        assert result == 4, f"Result: {result}"
+
         result = self.sr_client.get_schema(1)
         assert result == simple_schema, f"Result: {result}"
 
@@ -6207,6 +6226,9 @@ class SchemaRegistryConfluentClient(SchemaRegistryEndpoints):
 
         result = self.sr_client.get_schema(3)
         assert result == well_known_schema, f"Result: {result}"
+
+        result = self.sr_client.get_schema(4)
+        assert result == validate_schema, f"Result: {result}"
 
 
 # dataset for SchemaRegistryCompatibilityModes: schemas is a list of 3 schemas compatible for `mode`, `antimode` is a suitable mode that will make the compat check for schemas fail

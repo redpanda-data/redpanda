@@ -62,9 +62,14 @@ aws_refresh_impl::aws_refresh_impl(
   aws_service_name service,
   aws_region_name region,
   ss::abort_source& as,
-  retry_params retry_params)
+  retry_params retry_params,
+  ss::sstring metrics_tag)
   : refresh_credentials::impl(
-      std::move(address), std::move(region), as, retry_params)
+      std::move(address),
+      std::move(region),
+      as,
+      retry_params,
+      std::move(metrics_tag))
   , _service(std::move(service)) {}
 
 bool aws_refresh_impl::is_fallback_required(const api_request_error& response) {

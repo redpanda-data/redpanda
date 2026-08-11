@@ -14,7 +14,9 @@ redpanda_test_cc_library(
         "//src/v/kafka/data/rpc",
         "//src/v/model",
         "//src/v/model/tests:random",
+        "//src/v/rpc",
         "@abseil-cpp//absl/container:flat_hash_map",
+        "@seastar",
     ],
 )
 

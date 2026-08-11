@@ -358,8 +358,10 @@ ss::future<size_t> group_manager::delete_offsets(
     if (group->in_state(group_state::dead)) {
         auto it = _groups.find(group->id());
         if (it != _groups.end() && it->second == group) {
-            co_await it->second->shutdown();
+            // erase before shutdown()'s suspension point so concurrent
+            // deletion paths can't find the group and close its gate twice
             _groups.erase(it);
+            co_await group->shutdown();
             if (group->generation() > 0) {
                 vlog(
                   cg_klog.trace,
@@ -456,10 +458,17 @@ ss::future<> group_manager::stop() {
 
     return _gate.close().then([this]() {
         /**
-         * cancel all pending group opeartions
+         * cancel all pending group opeartions. remove the groups from the
+         * index before shutting them down so that, like every other
+         * shutdown path, only the fiber that erased a group closes its
+         * gate
          */
-        return ss::do_for_each(
-                 _groups, [](auto& p) { return p.second->shutdown(); })
+        return ss::do_with(
+                 std::exchange(_groups, {}),
+                 [](auto& groups) {
+                     return ss::do_for_each(
+                       groups, [](auto& p) { return p.second->shutdown(); });
+                 })
           .then([this] { _partitions.clear(); });
     });
 }
@@ -525,30 +534,26 @@ ss::future<> group_manager::cleanup_removed_topic_partitions(
         groups.push_back(group.second);
     }
 
-    return ss::do_with(
-      std::move(groups), [this, &tps](chunked_vector<group_ptr>& groups) {
-          return ss::do_for_each(groups, [this, &tps](group_ptr& group) {
-              return group->remove_topic_partitions(tps).then(
-                [this, g = group] {
-                    if (!g->in_state(group_state::dead)) {
-                        return ss::now();
-                    }
-                    auto it = _groups.find(g->id());
-                    if (it == _groups.end()) {
-                        return ss::now();
-                    }
-                    // ensure the group didn't change
-                    if (it->second != g) {
-                        return ss::now();
-                    }
-                    vlog(cg_klog.trace, "Removed group {}", g);
-                    it->second->pre_shutdown();
-                    _groups.erase(it);
-                    _groups.rehash(0);
-                    return ss::now();
-                });
-          });
-      });
+    for (auto& group : groups) {
+        co_await group->remove_topic_partitions(tps);
+        if (!group->in_state(group_state::dead)) {
+            continue;
+        }
+        auto it = _groups.find(group->id());
+        if (it == _groups.end()) {
+            continue;
+        }
+        // ensure the group didn't change
+        if (it->second != group) {
+            continue;
+        }
+        vlog(cg_klog.trace, "Removed group {}", group);
+        // erase before shutdown()'s suspension point so concurrent
+        // deletion paths can't find the group and close its gate twice
+        _groups.erase(it);
+        _groups.rehash(0);
+        co_await group->shutdown();
+    }
 }
 
 void group_manager::handle_topic_delta(
@@ -1973,8 +1978,14 @@ ss::future<chunked_vector<deletable_group_result>> group_manager::delete_groups(
         // - batch tombstones same backing partition
         error = co_await group->remove();
         if (error == error_code::none) {
-            group->pre_shutdown();
-            _groups.erase(group_info.second);
+            auto it = _groups.find(group_info.second);
+            if (it != _groups.end() && it->second == group) {
+                // erase before shutdown()'s suspension point so concurrent
+                // deletion paths can't find the group and close its gate
+                // twice
+                _groups.erase(it);
+                co_await group->shutdown();
+            }
         }
         results.push_back(
           deletable_group_result{
@@ -2233,11 +2244,16 @@ ss::future<> group_manager::collect_consumer_lag_metrics() {
         co_return;
     }
 
-    static constexpr auto find_partition_hwm =
+    struct lag_bounds {
+        std::optional<kafka::offset> high_watermark;
+        std::optional<kafka::offset> log_start_offset;
+    };
+
+    static constexpr auto find_lag_bounds =
       [](
         const cluster::cluster_health_report& response,
-        const model::topic_partition& tp) -> std::optional<kafka::offset> {
-        std::optional<kafka::offset> max_hwm;
+        const model::topic_partition& tp) -> lag_bounds {
+        lag_bounds max_bounds;
         for (const auto& report : response.node_reports) {
             const model::topic_namespace_view tn{
               model::kafka_namespace, tp.topic};
@@ -2249,23 +2265,35 @@ ss::future<> group_manager::collect_consumer_lag_metrics() {
             if (partition_it == topic_it->second.end()) {
                 continue;
             }
-            auto hwm = partition_it->second.high_watermark;
-            if (!max_hwm || hwm > *max_hwm) {
-                max_hwm = hwm;
+            const auto& ps = partition_it->second;
+            if (
+              !max_bounds.high_watermark
+              || ps.high_watermark > *max_bounds.high_watermark) {
+                max_bounds.high_watermark = ps.high_watermark;
+                max_bounds.log_start_offset = ps.log_start_offset;
             }
         }
-        return max_hwm;
+        return max_bounds;
     };
 
     const auto set_metrics = [&report_r](const group_manager& gm) {
         for (const auto& group : gm._groups | std::views::values) {
             consumer_lag_metrics lag_metrics{};
             for (const auto& [tp, group_topic_offsets] : group->offsets()) {
-                if (auto hwm = find_partition_hwm(report_r.value(), tp); hwm) {
+                auto [hwm, lso] = find_lag_bounds(report_r.value(), tp);
+                if (hwm) {
                     auto committed_offset = offset_cast(
                       group_topic_offsets->metadata.offset);
+                    // Clamp committed_offset up to log_start_offset when
+                    // known: a stale commit below log_start_offset means no
+                    // consumable backlog exists and should not inflate lag.
+                    // log_start_offset is nullopt for reports from older nodes
+                    // — fall back to the pre-fix behaviour in that case.
+                    auto effective_committed = lso ? std::max(
+                                                       committed_offset, *lso)
+                                                   : committed_offset;
                     lag part_lag{static_cast<lag>(
-                      std::max(*hwm - committed_offset, offset{0}))};
+                      std::max(*hwm - effective_committed, offset{0}))};
                     lag_metrics.sum += part_lag;
                     lag_metrics.max = std::max(lag_metrics.max, part_lag);
                 }

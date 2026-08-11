@@ -38,7 +38,7 @@
                 },
                 "kafka_bytes_processed": {
                     "type": "long",
-                    "description": "Total number of topic bytes successfully converted to Iceberg format. This is a counter that persists across restarts."
+                    "description": "Cumulative all-time total of topic bytes successfully converted to Iceberg format for this topic revision, measured at the bucket's close time."
                 }
             }
         },

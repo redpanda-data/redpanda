@@ -1183,6 +1183,110 @@ FIXTURE_TEST(test_produce_unset_max_timestamp_relaxed, prod_consume_fixture) {
     }
 }
 
+// Test that the log_append_time_ms field in the produce response is set
+// correctly based on the topic's timestamp type:
+// - CreateTime: log_append_time_ms should be -1 (missing)
+// - LogAppendTime: log_append_time_ms should be the broker's local timestamp
+FIXTURE_TEST(test_produce_log_append_time_response, prod_consume_fixture) {
+    wait_for_controller_leadership().get();
+
+    // Create topic with CreateTime
+    const model::topic_namespace create_time_tp_ns{
+      model::kafka_namespace, model::topic{"create-time-topic"}};
+    cluster::topic_properties create_time_props;
+    create_time_props.timestamp_type = model::timestamp_type::create_time;
+    add_topic(create_time_tp_ns, 1, create_time_props).get();
+
+    // Create topic with LogAppendTime
+    const model::topic_namespace log_append_time_tp_ns{
+      model::kafka_namespace, model::topic{"log-append-time-topic"}};
+    cluster::topic_properties log_append_props;
+    log_append_props.timestamp_type = model::timestamp_type::append_time;
+    add_topic(log_append_time_tp_ns, 1, log_append_props).get();
+
+    // Wait for leadership on both partitions
+    model::ntp create_time_ntp(
+      create_time_tp_ns.ns, create_time_tp_ns.tp, model::partition_id(0));
+    model::ntp log_append_time_ntp(
+      log_append_time_tp_ns.ns,
+      log_append_time_tp_ns.tp,
+      model::partition_id(0));
+    wait_for_leader(create_time_ntp).get();
+    wait_for_leader(log_append_time_ntp).get();
+
+    auto producer = tests::kafka_produce_transport(make_kafka_client().get());
+    producer.start().get();
+    auto deferred_close = ss::defer([&producer] { producer.stop().get(); });
+
+    auto transport = make_kafka_client().get();
+    transport.connect().get();
+    auto deferred_t_close = ss::defer([&transport] { transport.stop().get(); });
+
+    // Helper to build and send a produce request for a given topic
+    auto produce_to_topic =
+      [&](const model::topic& topic) -> ss::future<kafka::produce_response> {
+        storage::record_batch_builder builder(
+          model::record_batch_type::raft_data, model::offset(0));
+        builder.add_raw_kv(iobuf::from("key"), iobuf::from("value"));
+
+        kafka::produce_request::partition partition;
+        partition.partition_index = model::partition_id(0);
+        partition.records.emplace(std::move(builder).build());
+
+        chunked_vector<kafka::produce_request::partition> partitions;
+        partitions.push_back(std::move(partition));
+
+        kafka::produce_request::topic tp;
+        tp.name = topic;
+        tp.partitions = std::move(partitions);
+
+        chunked_vector<kafka::produce_request::topic> topics;
+        topics.push_back(std::move(tp));
+
+        kafka::produce_request req(std::nullopt, 1, std::move(topics));
+        req.data.timeout_ms = std::chrono::seconds(2);
+        req.has_idempotent = false;
+        req.has_transactional = false;
+        return transport.dispatch(std::move(req), kafka::api_version(7));
+    };
+
+    // Produce to CreateTime topic
+    auto create_time_resp = produce_to_topic(create_time_tp_ns.tp).get();
+    BOOST_REQUIRE_EQUAL(create_time_resp.data.responses.size(), 1);
+    BOOST_REQUIRE_EQUAL(
+      create_time_resp.data.responses[0].partitions.size(), 1);
+    const auto& create_time_partition
+      = create_time_resp.data.responses[0].partitions[0];
+    BOOST_REQUIRE_EQUAL(
+      create_time_partition.error_code, kafka::error_code::none);
+
+    // For CreateTime topics, log_append_time_ms should be -1 (missing)
+    BOOST_CHECK_EQUAL(
+      create_time_partition.log_append_time_ms, model::timestamp::missing());
+
+    // Produce to LogAppendTime topic
+    auto log_append_time_resp
+      = produce_to_topic(log_append_time_tp_ns.tp).get();
+    BOOST_REQUIRE_EQUAL(log_append_time_resp.data.responses.size(), 1);
+    BOOST_REQUIRE_EQUAL(
+      log_append_time_resp.data.responses[0].partitions.size(), 1);
+    const auto& log_append_time_partition
+      = log_append_time_resp.data.responses[0].partitions[0];
+    BOOST_REQUIRE_EQUAL(
+      log_append_time_partition.error_code, kafka::error_code::none);
+
+    // For LogAppendTime topics, log_append_time_ms should be a valid timestamp
+    BOOST_CHECK_NE(
+      log_append_time_partition.log_append_time_ms,
+      model::timestamp::missing());
+    // Also verify it's a reasonable timestamp (within the last minute)
+    auto now = model::timestamp::now();
+    auto one_minute_ago = model::timestamp(now.value() - 60000);
+    BOOST_CHECK_GE(
+      log_append_time_partition.log_append_time_ms, one_minute_ago);
+    BOOST_CHECK_LE(log_append_time_partition.log_append_time_ms, now);
+}
+
 FIXTURE_TEST(test_produce_unset_timestamps_relaxed, prod_consume_fixture) {
     scoped_config cfg;
     cfg.get("kafka_produce_batch_validation")

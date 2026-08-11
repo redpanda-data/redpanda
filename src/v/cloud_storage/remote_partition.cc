@@ -375,11 +375,13 @@ public:
                   "empty");
                 co_return storage_t{};
             }
-            if (_seg_reader->config().over_budget) {
+            auto now = model::timeout_clock::now();
+            if (_seg_reader->config().over_budget || now > deadline) {
                 vlog(
                   _ctxlog.debug,
-                  "We're over-budget, stopping, config: {}",
-                  _seg_reader->config());
+                  "We're over-budget, stopping, config: {}{}",
+                  _seg_reader->config(),
+                  now > deadline ? ", deadline exceeded." : ".");
                 // We need to stop in such way that will keep the
                 // reader in the reusable state, so we could reuse
                 // it on next iteration
@@ -986,13 +988,12 @@ ss::future<> remote_partition::run_eviction_loop() {
 
 kafka::offset remote_partition::first_uploaded_offset() {
     vassert(
-      _manifest_view->stm_manifest().size() > 0,
-      "The manifest for {} is not expected to be empty",
+      is_data_available(),
+      "first_uploaded_offset called on {} without data available",
       _ntp);
-    auto so
-      = _manifest_view->stm_manifest().full_log_start_kafka_offset().value();
-    vlog(_ctxlog.trace, "remote partition first_uploaded_offset: {}", so);
-    return so;
+    auto so = _manifest_view->stm_manifest().full_log_start_kafka_offset();
+    vlog(_ctxlog.trace, "remote partition first_uploaded_offset: {}", *so);
+    return *so;
 }
 
 kafka::offset remote_partition::next_kafka_offset() {
@@ -1039,6 +1040,10 @@ remote_partition::get_term_last_offset(model::term_id term) const {
     } else {
         co_return res.value();
     }
+}
+
+std::optional<model::term_id> remote_partition::highest_term() const {
+    return _manifest_view->highest_term();
 }
 
 ss::future<std::vector<model::tx_range>>

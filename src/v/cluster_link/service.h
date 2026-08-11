@@ -75,7 +75,7 @@ public:
      * cluster link
      * @return Result containing either the created/updated link or an error
      */
-    ss::future<cl_result<model::metadata>>
+    ss::future<cl_result<model::metadata_ptr>>
     upsert_cluster_link(model::metadata md);
     /**
      * @brief Get the cluster link object
@@ -83,13 +83,13 @@ public:
      * @param name The name of the link
      * @return Either the existing link or an error
      */
-    cl_result<model::metadata> get_cluster_link(const model::name_t& name);
+    cl_result<model::metadata_ptr> get_cluster_link(const model::name_t& name);
     /**
      * @brief Returns a list of existing cluster links
      *
      * @return List of cluster links
      */
-    cl_result<chunked_vector<model::metadata>> list_cluster_links();
+    cl_result<chunked_vector<model::metadata_ptr>> list_cluster_links();
     /**
      * @brief Updates the configuration of a cluster link
      *
@@ -97,7 +97,7 @@ public:
      * @param cmd The command containing the new configuration
      * @return Result containing the updated link
      */
-    ss::future<cl_result<model::metadata>> update_cluster_link(
+    ss::future<cl_result<model::metadata_ptr>> update_cluster_link(
       model::name_t name, model::update_cluster_link_configuration_cmd cmd);
 
     /**
@@ -105,7 +105,7 @@ public:
      *
      * @return Result containing metadata of updated mirror topic or an error.
      */
-    ss::future<cl_result<model::metadata>> update_mirror_topic_status(
+    ss::future<cl_result<model::metadata_ptr>> update_mirror_topic_status(
       model::name_t link_name,
       ::model::topic topic,
       model::mirror_topic_status,
@@ -116,7 +116,7 @@ public:
      *
      * @return Result containing metadata of failed over topics or an error.
      */
-    ss::future<cl_result<model::metadata>>
+    ss::future<cl_result<model::metadata_ptr>>
     failover_link_topics(model::name_t link_name);
 
     /**
@@ -136,7 +136,8 @@ public:
      * @param shadow_topic The name of the shadow topic
      * @return Updated metadata information
      */
-    ss::future<cl_result<model::metadata>> delete_shadow_topic_from_shadow_link(
+    ss::future<cl_result<model::metadata_ptr>>
+    delete_shadow_topic_from_shadow_link(
       model::name_t link_name, ::model::topic shadow_topic);
 
     /**

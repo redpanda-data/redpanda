@@ -220,6 +220,7 @@ struct configuration final : public config_store {
     property<std::chrono::milliseconds> tx_timeout_delay_ms;
     deprecated_property rm_violation_recovery_policy;
     property<std::chrono::milliseconds> fetch_reads_debounce_timeout;
+    property<std::chrono::milliseconds> kafka_fetch_request_timeout_ms;
     enum_property<model::fetch_read_strategy> fetch_read_strategy;
     bounded_property<size_t> fetch_max_read_concurrency;
     bounded_property<double, numeric_bounds> fetch_pid_p_coeff;
@@ -260,6 +261,7 @@ struct configuration final : public config_store {
     // same as log.retention.ms in kafka
     retention_duration_property log_retention_ms;
     property<std::chrono::milliseconds> log_compaction_interval_ms;
+    property<std::chrono::milliseconds> log_compaction_max_priority_wait_ms;
     // same as delete.retention.ms in kafka
     property<std::optional<std::chrono::milliseconds>> tombstone_retention_ms;
     bounded_property<std::optional<double>, numeric_bounds>
@@ -304,6 +306,7 @@ struct configuration final : public config_store {
     property<size_t> raft_replicate_batch_window_size;
     property<size_t> raft_learner_recovery_rate;
     property<bool> raft_recovery_throttle_disable_dynamic_mode;
+    property<bool> controller_log_learner_recovery_rate_enabled;
     property<std::optional<uint32_t>> raft_smp_max_non_local_requests;
     deprecated_property raft_max_concurrent_append_requests_per_follower;
     enum_property<model::write_caching_mode> write_caching_default;
@@ -471,6 +474,7 @@ struct configuration final : public config_store {
     property<bool> enable_cluster_metadata_upload_loop;
     property<std::optional<ss::sstring>> cloud_storage_cluster_name;
     property<size_t> cloud_storage_max_segments_pending_deletion_per_partition;
+    bounded_property<size_t> cloud_storage_gc_max_segments_per_run;
     property<bool> cloud_storage_enable_compacted_topic_reupload;
     property<size_t> cloud_storage_recovery_temporary_retention_bytes_default;
     // validation of topic manifest during recovery
@@ -649,6 +653,7 @@ struct configuration final : public config_store {
     property<ss::sstring> metrics_reporter_url;
 
     property<bool> features_auto_enable;
+    enterprise<property<bool>> features_auto_finalization;
 
     // enables rack aware replica assignment
     property<bool> enable_rack_awareness;
@@ -702,6 +707,7 @@ struct configuration final : public config_store {
 
     enterprise<property<bool>> schema_registry_enable_authorization;
     property<bool> schema_registry_always_normalize;
+    property<bool> schema_registry_avro_use_named_references;
     deprecated_property schema_registry_protobuf_renderer_v2;
     property<std::optional<uint32_t>> pp_sr_smp_max_non_local_requests;
     bounded_property<size_t> max_in_flight_schema_registry_requests_per_shard;
@@ -784,6 +790,8 @@ struct configuration final : public config_store {
       iceberg_invalid_record_action;
     bounded_property<std::chrono::milliseconds> iceberg_target_lag_ms;
     property<bool> iceberg_disable_snapshot_tagging;
+    bounded_property<size_t> datalake_coordinator_max_files_per_commit;
+    bounded_property<size_t> datalake_coordinator_max_pending_files;
     property<bool> iceberg_disable_automatic_snapshot_expiry;
     property<std::optional<ss::sstring>> iceberg_topic_name_dot_replacement;
     property<ss::sstring> iceberg_dlq_table_suffix;

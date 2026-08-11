@@ -81,6 +81,7 @@
 #include "model/timeout_clock.h"
 #include "raft/fundamental.h"
 #include "raft/fwd.h"
+#include "raft/types.h"
 #include "security/acl.h"
 #include "security/authorizer.h"
 #include "security/credential_store.h"
@@ -270,7 +271,10 @@ ss::future<> controller::start(
       _partition_manager,
       _shard_table,
       config::node().data_directory().as_sstring(),
-      seed_nodes);
+      seed_nodes,
+      config::shard_local_cfg().controller_log_learner_recovery_rate_enabled()
+        ? raft::with_learner_recovery_throttle::yes
+        : raft::with_learner_recovery_throttle::no);
 
     co_await _partition_leaders.start(std::ref(_tp_state), std::ref(_as));
     co_await _drain_manager.start(std::ref(_partition_manager));
@@ -1146,16 +1150,8 @@ ss::future<> controller::cluster_creation_hook(
  * how many replicas they should use.
  */
 int16_t controller::internal_topic_replication() const {
-    auto replication_factor
-      = (int16_t)config::shard_local_cfg().internal_topic_replication_factor();
-    if (replication_factor > (int16_t)_members_table.local().node_count()) {
-        // Fall back to r=1 if we do not have sufficient nodes
-        return 1;
-    } else {
-        // Respect `internal_topic_replication_factor` if enough
-        // nodes were available.
-        return replication_factor;
-    }
+    return cluster::internal_topic_replication(
+      _members_table.local().node_count());
 }
 
 ss::future<result<std::vector<partition_state>>>
@@ -1235,6 +1231,50 @@ controller::do_get_controller_partition_state(model::node_id target_node) {
               partition_state_request{.ntp = model::controller_ntp},
               rpc::client_opts(timeout))
             .then(&rpc::get_ctx_data<partition_state_reply>);
+      });
+}
+
+ss::future<std::error_code> controller::cancel_raft0_reconfiguration() {
+    return ss::smp::submit_to(controller_stm_shard, [this] {
+        if (!_raft0->is_elected_leader()) {
+            return ss::make_ready_future<std::error_code>(
+              make_error_code(errc::not_leader));
+        }
+        vlog(
+          clusterlog.info,
+          "Requesting cancellation of controller (raft0) reconfiguration");
+        // Cancel with the revision of the config being cancelled; if it gets
+        // bumped, another completely unrelated config change can get skipped.
+        return _raft0->cancel_configuration_change(
+          _raft0->config().revision_id());
+    });
+}
+
+ss::future<std::error_code>
+controller::force_raft0_reconfiguration(std::vector<model::node_id> replicas) {
+    return ss::smp::submit_to(
+      controller_stm_shard, [this, replicas = std::move(replicas)]() mutable {
+          if (!_raft0->is_elected_leader()) {
+              return ss::make_ready_future<std::error_code>(
+                make_error_code(errc::not_leader));
+          }
+          std::vector<raft::vnode> voters;
+          voters.reserve(replicas.size());
+          for (auto id : replicas) {
+              // raft0 vnodes always carry revision 0.
+              voters.emplace_back(id, model::revision_id{0});
+          }
+          vlog(
+            clusterlog.warn,
+            "Forcing controller (raft0) reconfiguration to {}",
+            replicas);
+          // Bump the revision past the current log tail so the members backend
+          // treats any raft0 update enqueued behind the wedge as stale and
+          // drops it.
+          return _raft0->force_replace_configuration_replicated(
+            std::move(voters),
+            {},
+            model::revision_id(model::next_offset(_raft0->dirty_offset())));
       });
 }
 /**

@@ -420,3 +420,34 @@ PERF_TEST(cstore_bench, cs_iteration_precompute_end_test_10000) {
     segment_meta_cstore store;
     cs_iteration_precompute_end_test(store, 10000);
 }
+
+/// Simulates the `partition_manifest::add()` access pattern: each add
+/// runs `move_aligned_offset_range()` which calls `_segments.lower_bound()`
+/// before the insert lands, flushing the write buffer between every write.
+/// Measures the steady-state cost of appending to a pre-populated cstore.
+void cs_append_with_intervening_lookup_test(
+  size_t pre_populate, size_t append_n) {
+    auto manifest = generate_metadata(pre_populate + append_n);
+
+    segment_meta_cstore store;
+    for (size_t i = 0; i < pre_populate; ++i) {
+        store.insert(manifest[i]);
+    }
+    store.flush_write_buffer();
+
+    perf_tests::start_measuring_time();
+    for (size_t i = pre_populate; i < pre_populate + append_n; ++i) {
+        auto it = store.lower_bound(manifest[i].base_offset);
+        perf_tests::do_not_optimize(it);
+        store.insert(manifest[i]);
+    }
+    perf_tests::stop_measuring_time();
+}
+
+PERF_TEST(cstore_bench, column_store_append_with_intervening_lookup_10k_1k) {
+    cs_append_with_intervening_lookup_test(10000, 1000);
+}
+
+PERF_TEST(cstore_bench, column_store_append_with_intervening_lookup_100k_1k) {
+    cs_append_with_intervening_lookup_test(100000, 1000);
+}

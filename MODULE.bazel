@@ -27,7 +27,7 @@ bazel_dep(name = "lexy", version = "2025.05.0")
 bazel_dep(name = "liburing", version = "2.5")
 bazel_dep(name = "lz4", version = "1.9.4")
 bazel_dep(name = "platforms", version = "1.0.0")
-bazel_dep(name = "protobuf", version = "31.1")
+bazel_dep(name = "protobuf", version = "33.5")
 single_version_override(
     module_name = "protobuf",
     patch_strip = 1,
@@ -39,7 +39,7 @@ single_version_override(
 bazel_dep(name = "re2", version = "2024-07-02.bcr.1")
 bazel_dep(name = "rules_cc", version = "0.2.0")
 bazel_dep(name = "rules_foreign_cc", version = "0.12.0")
-bazel_dep(name = "rules_go", version = "0.56.1")
+bazel_dep(name = "rules_go", version = "0.59.0")
 bazel_dep(name = "rules_proto", version = "7.1.0")
 bazel_dep(name = "rules_python", version = "1.5.1")
 bazel_dep(name = "rules_rust", version = "0.60.0")
@@ -53,6 +53,8 @@ bazel_dep(name = "googleapis", version = "0.0.0-20250703-f9d6fe4a")
 
 bazel_dep(name = "buildifier_prebuilt", version = "8.2.0.2", dev_dependency = True)
 bazel_dep(name = "rules_shell", version = "0.4.1", dev_dependency = True)
+
+bazel_dep(name = "protovalidate", version = "1.0.0")
 
 python = use_extension("@rules_python//python/extensions:python.bzl", "python", dev_dependency = True)
 python.toolchain(
@@ -216,20 +218,20 @@ COMPILERS = {
 # Go Toolchain
 # ====================================
 go_sdk = use_extension("@rules_go//go:extensions.bzl", "go_sdk", dev_dependency = True)
-go_sdk.download(version = "1.24.3")
+go_sdk.download(version = "1.26.5")
 
 # The microsoft compiler versions can be listed at their github release under the `asset.json` file
 go_sdk.download(
     name = "go_sdk_with_systemcrypto",
     experiments = ["systemcrypto"],
     sdks = {
-        "linux_amd64": ("dfb7c8bd6b64c9fa9debd6efa724c609/go1.24.3-20250506.3.linux-amd64.tar.gz", "d1e9e4465951816b556f648dfebc1cf20fdef4832d7d3f01f1ef35a259375286"),
-        "linux_arm64": ("e4d43c57efd1a31cf8673bf43aa69412/go1.24.3-20250506.3.linux-arm64.tar.gz", "6d4232da7ca7d2bd19e0b6b69524448de8e5480f49e5d39f7a5507cef682a9ea"),
-        "darwin_amd64": ("a6a4d462a5d8a7be72e3222c112d2101/go1.24.3-20250506.3.darwin-amd64.tar.gz", "1f1d8e1537c4a8049e6f049a861c05d9709f7627178df36cb176872a2546fb7c"),
-        "darwin_arm64": ("02acaf96922416da68a7b15764e56e3c/go1.24.3-20250506.3.darwin-arm64.tar.gz", "330cb681a69cd32465b9e5381e1127eba3184a19d29e9216a9f36383f1bedff0"),
+        "linux_amd64": ("96d1f4b28a670f8e9b3259194508ae2f/go1.26.5-20260709.6.linux-amd64.tar.gz", "df9f45167cf1cd825aa8555b76c5b24cb89dfbd771f48cc0007458236c414715"),
+        "linux_arm64": ("af17683a03acab86aec9ba37afbd5ff1/go1.26.5-20260709.6.linux-arm64.tar.gz", "9990f8fcfefcbd15fb888dd777c7a72f1745889c9e94836ffe26f7e46e43328d"),
+        "darwin_amd64": ("d45676061dfccb09b72f2579a6d8927f/go1.26.5-20260709.6.darwin-amd64.tar.gz", "7a4f0bd26ccf1ce912bc509fccb473ee39bdd149b804fa581e59a72b7708e78e"),
+        "darwin_arm64": ("f8da58db7007fa456d93c4f56bf6c337/go1.26.5-20260709.6.darwin-arm64.tar.gz", "a6d2124035c18602926af78d1e3ae523abc613e36b2086da9b451991ce4288c4"),
     },
-    urls = ["https://download.visualstudio.microsoft.com/download/pr/18982fcf-1155-40cc-bf0e-4b7564f22251/{}"],
-    version = "1.24.3",
+    urls = ["https://download.visualstudio.microsoft.com/download/pr/a38f1e38-3cd4-48b2-b032-ca38793ec901/{}"],
+    version = "1.26.5",
 )
 
 go_deps = use_extension("@gazelle//:extensions.bzl", "go_deps")

@@ -81,7 +81,7 @@ def repeat_check(times: int):
                 if wrapper._passed >= times:
                     wrapper._passed = 0  # in case we reuse the function
                     return ret
-                return False, None if isinstance(ret, tuple) else False
+                return (False, None) if isinstance(ret, tuple) else False
             else:
                 wrapper._passed = 0
                 return ret

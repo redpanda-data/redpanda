@@ -1209,13 +1209,24 @@ class Admin:
         return self._request("post", path, node=node, json=replicas)
 
     def force_set_partition_replicas(
-        self, topic, partition, replicas, *, namespace="kafka", node=None
-    ):
+        self,
+        topic: str,
+        partition: int,
+        replicas: list[dict[str, Any]],
+        *,
+        namespace: str = "kafka",
+        node: ClusterNode | None = None,
+        evil_mode: bool = False,
+    ) -> Response:
         """
         [ {"node_id": 0, "core": 1}, ... ]
+
+        evil_mode opts in to forcing a reconfiguration of the controller
+        (redpanda/controller/0) group, which is otherwise rejected.
         """
         path = f"debug/partitions/{namespace}/{topic}/{partition}/force_replicas"
-        return self._request("post", path, node=node, json=replicas)
+        params = {"evil_mode": "true"} if evil_mode else None
+        return self._request("post", path, node=node, json=replicas, params=params)
 
     def toggle_failure_injection(
         self,

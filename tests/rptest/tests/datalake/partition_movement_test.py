@@ -66,17 +66,9 @@ class PartitionMovementTest(PartitionMovementMixin, RedpandaTest):
                 name=stream, topic=topic, count=0, interval="1ms"
             )
 
-            def total_records_ingested():
-                metrics = connect.stream_metrics(name=stream)
-                samples = metrics["output_sent"]
-                for s in samples:
-                    if s.name == "output_sent_total":
-                        return s.value
-                assert False, f"Unable to probe metrics for stream {stream}"
-
             def ensure_stream_progress(target: int):
                 wait_until(
-                    lambda: total_records_ingested() >= target,
+                    lambda: connect.total_records_sent(stream) >= target,
                     timeout_sec=20,
                     backoff_sec=5,
                     err_msg=f"Timed out waiting for stream producer to reach target: {target}",
@@ -87,7 +79,7 @@ class PartitionMovementTest(PartitionMovementMixin, RedpandaTest):
                 for a in assignments:
                     a["core"] = (a["core"] + 1) % self.redpanda.get_node_cpu_count()
 
-                counter_before = total_records_ingested()
+                counter_before = connect.total_records_sent(stream)
 
                 self._set_partition_assignments(
                     topic, partition, assignments, admin=admin
@@ -98,7 +90,7 @@ class PartitionMovementTest(PartitionMovementMixin, RedpandaTest):
 
             connect.stop_stream(name=stream, should_finish=None)
 
-            total_row_count = total_records_ingested()
+            total_row_count = connect.total_records_sent(stream)
             dl.wait_for_translation_until_offset(topic, total_row_count - 1)
 
             verifier = DatalakeVerifier(self.redpanda, topic, dl.trino())

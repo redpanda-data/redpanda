@@ -35,6 +35,7 @@ class c;
 class super_duper_secret;
 class mask_wrapper;
 class well_known_protos;
+class io_buf_string_field;
 class say_greeting_request;
 class say_greeting_response;
 
@@ -402,6 +403,54 @@ private:
   absl::Time single_timestamp_;
   chunked_vector<absl::Time> repeated_timestamp_;
   chunked_hash_map<ss::sstring, absl::Time> timestamp_map_;
+};
+
+class io_buf_string_field : public serde::pb::base_message {
+public:
+  io_buf_string_field() noexcept;
+  io_buf_string_field(const io_buf_string_field&) = delete;
+  io_buf_string_field& operator=(const io_buf_string_field&) = delete;
+  io_buf_string_field(io_buf_string_field&&) noexcept;
+  io_buf_string_field& operator=(io_buf_string_field&&) noexcept;
+  ~io_buf_string_field() noexcept;
+
+  bool operator==(const io_buf_string_field&) const;
+  fmt::iterator format_to(fmt::iterator) const;
+
+  // Serializes example.IOBufStringField into a protocol buffer, in a way that will not cause stalls for large messages.
+  seastar::future<iobuf> to_proto() const;
+  // Serializes example.IOBufStringField into proto3 JSON, in a way that will not cause stalls for large messages.
+  seastar::future<iobuf> to_json() const;
+  // Deserializes example.IOBufStringField from a protocol buffer, in a way that will not cause stalls for large messages.
+  static seastar::future<io_buf_string_field> from_proto(iobuf);
+  // Note: This factory function should not be used directly, it's exposed for other protobuf parsers to use.
+  // Use the iobuf version instead.
+  static seastar::future<> from_proto(serde::pb::wire_format_parser*, io_buf_string_field*);
+  // Deserializes example.IOBufStringField from json, in a way that will not cause stalls for large messages.
+  static seastar::future<io_buf_string_field> from_json(iobuf);
+  // Note: This factory function should not be used directly, it's exposed for other protobuf parsers to use.
+  // Use the iobuf version instead.
+  static seastar::future<> from_json(serde::pb::json::peekable_parser*, io_buf_string_field*);
+
+  iobuf& get_large_data();
+  const iobuf& get_large_data() const;
+  void set_large_data(iobuf&& v);
+
+  std::string_view full_name() const override { return "example.IOBufStringField"; }
+  // Convert a field path into a path of field numbers.
+  static bool convert_field_path_to_numbers(std::span<std::string_view> field_path, std::vector<int32_t>* out);
+  // Convert a field path into a path of field numbers.
+  std::optional<std::vector<int32_t>> convert_field_path_to_numbers(std::span<std::string_view> field_path) const override;
+  // Look up a field based on the field numbers.
+  std::optional<serde::pb::field> lookup_field(std::span<const int32_t> field_numbers) override;
+
+  // NOTE: This is intended to be used by field_mask only. Do not use directly.
+  static bool is_valid_field_path(std::span<const ss::sstring> path);
+  // NOTE: This is intended to be used by field_mask only. Do not use directly.
+  void apply_field_path_from(std::span<const ss::sstring> path, io_buf_string_field* update);
+
+private:
+  iobuf large_data_;
 };
 
 class say_greeting_request : public serde::pb::base_message {

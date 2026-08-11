@@ -73,11 +73,16 @@ public:
         _commit_offset_lag = new_lag;
     }
 
+    // Translation backed off because the coordinator signaled backpressure
+    // (too many pending files).
+    void increment_backpressure_backoff() { _backpressure_backoffs += 1; }
+
 private:
     void register_created_files_metrics();
     void register_invalid_record_metric();
     void register_throughput_metrics();
     void register_lag_metrics();
+    void register_backpressure_metric();
 
 private:
     model::ntp _ntp;
@@ -96,6 +101,8 @@ private:
     size_t _num_failed_kafka_schema_resolution = 0;
     size_t _num_failed_data_translation = 0;
     size_t _num_failed_iceberg_schema_resolution = 0;
+
+    size_t _backpressure_backoffs = 0;
 
     // NOTE: the accounting for bytes here is not strictly accurate and should
     // only be used to get a rough sense for translation throughput.

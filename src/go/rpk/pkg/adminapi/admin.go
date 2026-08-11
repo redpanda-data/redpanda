@@ -40,11 +40,18 @@ const (
 	ScramSha256 = "SCRAM-SHA-256"
 	ScramSha512 = "SCRAM-SHA-512"
 	CloudOIDC   = "CLOUD-OIDC"
+	OAuthBearer = "OAUTHBEARER"
 )
 
 // GetAuth gets the rpadmin.Auth from the rpk profile.
 func GetAuth(p *config.RpkProfile) (rpadmin.Auth, error) {
 	switch {
+	case p.KafkaAPI.SASL != nil && strings.EqualFold(p.KafkaAPI.SASL.Mechanism, OAuthBearer):
+		token := OAuthBearerToken(p.KafkaAPI.SASL.Password)
+		if token == "" {
+			return nil, errors.New("OAUTHBEARER requires a token passed via --password (or kafka_api.sasl.password in the profile)")
+		}
+		return &rpadmin.BearerToken{Token: token}, nil
 	case p.KafkaAPI.SASL != nil && p.KafkaAPI.SASL.Mechanism != CloudOIDC:
 		return &rpadmin.BasicAuth{Username: p.KafkaAPI.SASL.User, Password: p.KafkaAPI.SASL.Password}, nil
 	case p.KafkaAPI.SASL != nil && p.KafkaAPI.SASL.Mechanism == CloudOIDC:
@@ -70,6 +77,15 @@ func GetAuth(p *config.RpkProfile) (rpadmin.Auth, error) {
 	default:
 		return &rpadmin.NopAuth{}, nil
 	}
+}
+
+// OAuthBearerToken extracts the bearer token from the SASL password field.
+// It accepts both "token:<TOKEN>" format and a raw token string.
+func OAuthBearerToken(password string) string {
+	if t, ok := strings.CutPrefix(password, "token:"); ok {
+		return t
+	}
+	return password
 }
 
 // NewClient returns an rpadmin.AdminAPI client that talks to each of the

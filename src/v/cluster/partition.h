@@ -282,6 +282,7 @@ public:
     model::term_id get_term(model::offset o) const;
     ss::future<std::optional<model::offset>>
     get_cloud_term_last_offset(model::term_id term) const;
+    std::optional<model::term_id> highest_cloud_term() const;
 
     ss::future<std::error_code>
     cancel_replica_set_update(model::revision_id rev);

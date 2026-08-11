@@ -323,10 +323,9 @@ public:
     bool contains(const key& key) const;
     bool contains(const segment_name& name) const;
 
-    /// Check if the provided offset range matches any segment in the manifest
-    /// exactly.
-    bool segment_with_offset_range_exists(
-      model::offset base, model::offset committed) const;
+    /// Check if the manifest contains a segment with the same identity
+    /// (offset range, size, term) as the provided metadata.
+    bool segment_with_same_identity_exists(const value& meta) const;
 
     struct add_segment_meta_result {
         // size in bytes of the segment(s) that has been replaced by this
@@ -381,11 +380,13 @@ public:
     /// This mechanism is used by the 'spillover' mechanism. The 'segment_meta'
     /// instances that describe spillover manifests are stored using this
     /// format.
+    ///
+    /// \pre The manifest must not be empty.
     segment_meta make_manifest_metadata() const;
 
     /// Return 'true' if the spillover manifest can be added to
     /// the manifest without creating a gap
-    bool safe_spillover_manifest(const segment_meta& meta);
+    bool safe_spillover_manifest(const segment_meta& meta) const;
 
     /// \brief Set start offset without removing any data from the
     /// manifest.
@@ -594,6 +595,10 @@ public:
       scrub_status status,
       anomalies detected);
 
+    /// Returns a repaired copy of the manifest if the manifest has known
+    /// defects. Returns `std::nullopt` otherwise.
+    std::optional<partition_manifest> repair_state() const;
+
 private:
     ss::sstring display_name() const;
     std::optional<kafka::offset> compute_start_kafka_offset_local() const;
@@ -642,6 +647,8 @@ private:
     /// Serialize removed manifest entry
     void serialize_removed_segment_meta(
       const lw_segment_meta& meta, serialization_cursor_ptr cursor) const;
+
+    std::optional<partition_manifest> do_repair_state() const;
 
     model::ntp _ntp;
     model::initial_revision_id _rev;

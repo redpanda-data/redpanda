@@ -11,6 +11,7 @@
 #include "absl/strings/str_split.h"
 #include "container/chunked_circular_buffer.h"
 #include "container/chunked_hash_map.h"
+#include "container/chunked_vector.h"
 #include "kafka/protocol/types.h"
 #include "kafka/server/group_metadata.h"
 #include "kafka/server/group_recovery_consumer.h"
@@ -84,7 +85,7 @@ struct cg_recovery_test_fixture : seastar_test {
       std::optional<protocol_name> p_name,
       std::optional<member_id> leader,
       model::timestamp ts,
-      std::vector<member_state> members) {
+      chunked_vector<member_state> members) {
         group_metadata_kv kv;
         kv.key = group_metadata_key{group_id(g_name)};
         kv.value = group_metadata_value{
@@ -249,7 +250,7 @@ struct cg_recovery_test_fixture : seastar_test {
           protocol_name("proto-name"),
           member_id("member-1"),
           model::timestamp::now(),
-          std::vector<member_state>{});
+          chunked_vector<member_state>{});
 
         g_1_metadata.value->members.push_back(make_member_state(
           member_id("m-1"),
@@ -300,7 +301,7 @@ TEST_F_CORO(cg_recovery_test_fixture, test_tombstone_recovery) {
       protocol_name("proto-name"),
       member_id("member-1"),
       model::timestamp::now(),
-      std::vector<member_state>{});
+      chunked_vector<member_state>{});
 
     auto g_2_metadata = make_group_metadata(
       "g-2",
@@ -309,7 +310,7 @@ TEST_F_CORO(cg_recovery_test_fixture, test_tombstone_recovery) {
       protocol_name("proto-name-2"),
       member_id("member-1"),
       model::timestamp::now(),
-      std::vector<member_state>{});
+      chunked_vector<member_state>{});
 
     g_2_metadata.value->members.push_back(make_member_state(
       member_id("m-1"),

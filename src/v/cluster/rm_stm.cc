@@ -210,7 +210,7 @@ ss::future<> rm_stm::cleanup_evicted_producers() {
         if (producer.is_evicted() && producer.id() == pid) {
             if (producer._active_transaction_hook.is_linked()) {
                 vlog(
-                  _ctx_log.error,
+                  _ctx_log.info,
                   "Ignoring cleanup request of producer {} due to in progress "
                   "transaction.",
                   producer);
@@ -220,7 +220,7 @@ ss::future<> rm_stm::cleanup_evicted_producers() {
             vlog(_ctx_log.trace, "removed producer: {}", pid);
         } else {
             vlog(
-              _ctx_log.error,
+              _ctx_log.info,
               "Skipping cleanup of evicted pid: {} and associated producer: {}",
               pid,
               producer);
@@ -1333,7 +1333,7 @@ model::offset rm_stm::last_stable_offset() {
     }
 
     auto synced_leader = _raft->is_leader() && _raft->term() == _insync_term;
-    model::offset lso{-1};
+    model::offset lso{model::invalid_lso};
     auto last_visible_index = _raft->last_visible_index();
     auto next_to_apply = model::next_offset(last_applied);
     if (first_tx_start <= last_visible_index) {
@@ -1460,7 +1460,7 @@ ss::future<bool> rm_stm::sync(model::timeout_clock::duration timeout) {
     auto ready = co_await raft::persisted_stm<>::sync(timeout);
     if (ready) {
         if (current_insync_term != _insync_term) {
-            _last_known_lso = model::offset{-1};
+            _last_known_lso = model::invalid_lso;
             vlog(
               _ctx_log.trace,
               "garbage collecting requests from terms < {}",

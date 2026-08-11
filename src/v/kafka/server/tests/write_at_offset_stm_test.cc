@@ -640,3 +640,53 @@ TEST_F(WriteAtOffsetStmFixture, test_failed_replication) {
     }
     ASSERT_TRUE(logs_content_is_valid().get());
 }
+
+TEST_F(WriteAtOffsetStmFixture, test_ensure_truncatable) {
+    enable_offset_translation();
+    initialize_state_machines(3).get();
+    wait_for_leader(10s).get();
+    auto stm = get_leader_stm();
+
+    // negative offset should return invalid_truncation_offset error
+    auto result = (*stm)->ensure_truncatable(kafka::offset{-1}, 10s).get();
+    ASSERT_EQ(
+      result, kafka::write_at_offset_stm::errc::invalid_truncation_offset);
+
+    // on empty log, ensure_truncatable should fill the gap from 0 to
+    // new_start_offset - 1
+    auto new_start_offset = kafka::offset{100};
+    result = (*stm)->ensure_truncatable(new_start_offset, 10s).get();
+    ASSERT_EQ(result, kafka::write_at_offset_stm::errc::success);
+
+    // verify the stm's expected_last_offset is at least new_start_offset - 1
+    auto expected_last = (*stm)->get_expected_last_offset(10s).get();
+    ASSERT_FALSE(expected_last.has_error());
+    ASSERT_GE(expected_last.value(), kafka::prev_offset(new_start_offset));
+
+    // replicate some batches
+    auto data = generate_data(new_start_offset, 10, 5);
+    kafka::offset last_offset{};
+    for (auto& batches : data) {
+        last_offset = model::offset_cast(batches.back().last_offset());
+        auto expected_offsets = start_offsets(batches);
+        auto stages = (*stm)->replicate(
+          std::move(batches), std::move(expected_offsets), std::nullopt, 10s);
+        stages.request_enqueued.get();
+        auto replicate_result = stages.replicate_finished.get();
+        ASSERT_FALSE(replicate_result.has_error());
+    }
+
+    // ensure_truncatable with offset <= last_offset should succeed immediately
+    result = (*stm)->ensure_truncatable(last_offset, 10s).get();
+    ASSERT_EQ(result, kafka::write_at_offset_stm::errc::success);
+
+    // ensure_truncatable with a higher offset should fill the gap
+    new_start_offset = kafka::offset{last_offset() + 100};
+    result = (*stm)->ensure_truncatable(new_start_offset, 10s).get();
+    ASSERT_EQ(result, kafka::write_at_offset_stm::errc::success);
+
+    // verify the stm's expected_last_offset is at least new_start_offset - 1
+    expected_last = (*stm)->get_expected_last_offset(10s).get();
+    ASSERT_FALSE(expected_last.has_error());
+    ASSERT_GE(expected_last.value(), kafka::prev_offset(new_start_offset));
+}

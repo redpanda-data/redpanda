@@ -19,6 +19,7 @@
 #include "utils/prefix_logger.h"
 
 #include <seastar/coroutine/as_future.hh>
+#include <seastar/coroutine/maybe_yield.hh>
 
 namespace datalake::coordinator {
 
@@ -133,6 +134,13 @@ ss::future<> coordinator_stm::do_apply(const model::record_batch& b) {
             maybe_log_update_error(_log, key, o, res);
             continue;
         }
+        case update_key::reset_topic_state: {
+            auto update = serde::read<reset_topic_state_update>(val_p);
+            vlog(_log.debug, "Applying {} from offset {}: {}", key, o, update);
+            auto res = update.apply(state_);
+            maybe_log_update_error(_log, key, o, res);
+            continue;
+        }
         }
         vlog(
           _log.error,
@@ -158,6 +166,7 @@ coordinator_stm::take_local_snapshot(ssx::semaphore_units units) {
     auto snapshot_offset = last_applied_offset();
     auto snapshot = make_snapshot();
     units.return_all();
+    co_await ss::coroutine::maybe_yield();
     iobuf snapshot_buf;
     co_await serde::write_async(snapshot_buf, std::move(snapshot));
     co_return raft::stm_snapshot::create(

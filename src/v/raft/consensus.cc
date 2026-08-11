@@ -58,6 +58,7 @@
 #include <algorithm>
 #include <chrono>
 #include <exception>
+#include <expected>
 #include <iterator>
 #include <optional>
 #include <ranges>
@@ -1323,6 +1324,7 @@ consensus::interrupt_configuration_change(model::revision_id revision, Func f) {
 
 ss::future<std::error_code>
 consensus::cancel_configuration_change(model::revision_id revision) {
+    auto holder = _bg.hold();
     vlog(
       _ctxlog.info,
       "requested cancellation of current configuration change - {}",
@@ -1370,7 +1372,8 @@ consensus::cancel_configuration_change(model::revision_id revision) {
               }
           }
           return ss::make_ready_future<std::error_code>(ec);
-      });
+      })
+      .finally([holder = std::move(holder)] {});
 }
 
 ss::future<std::error_code>
@@ -1431,6 +1434,61 @@ ss::future<std::error_code> consensus::force_replace_configuration_locally(
         co_return errc::shutting_down;
     }
     co_return errc::success;
+}
+
+ss::future<std::expected<ssx::semaphore_units, std::error_code>>
+consensus::acquire_op_lock_units() {
+    return _op_lock.get_units()
+      .then([](ssx::semaphore_units u) {
+          return std::expected<ssx::semaphore_units, std::error_code>(
+            std::move(u));
+      })
+      .handle_exception_type([](const ss::broken_semaphore&) {
+          return std::expected<ssx::semaphore_units, std::error_code>(
+            std::unexpected(make_error_code(errc::shutting_down)));
+      });
+}
+
+ss::future<std::error_code> consensus::force_replace_configuration_replicated(
+  std::vector<vnode> voters,
+  std::vector<vnode> learners,
+  model::revision_id new_revision) {
+    auto holder = _bg.hold();
+    auto u = co_await acquire_op_lock_units();
+    if (!u) {
+        co_return u.error();
+    }
+    if (!is_elected_leader()) {
+        co_return errc::not_leader;
+    }
+    // Deliberately skip the configuration_change_in_progress guard used by
+    // change_configuration: this replaces whatever configuration is current,
+    // including an in-flight one, by replicating a fresh configuration.
+    auto new_cfg = group_configuration(
+      std::move(voters), std::move(learners), new_revision);
+    vlog(
+      _ctxlog.info,
+      "Force replacing configuration (replicated) with: {}",
+      new_cfg);
+    // If this node is replicating a configuration that removes itself from the
+    // voter set, it must step down once the configuration is replicated so a
+    // remaining voter can take over leadership.
+    const bool self_removed = !new_cfg.is_voter(_self);
+    auto ec = co_await replicate_configuration(
+      std::move(u.value()), std::move(new_cfg));
+    if (ec || !self_removed) {
+        co_return ec;
+    }
+    auto units = co_await acquire_op_lock_units();
+    if (!units) {
+        co_return units.error();
+    }
+    vlog(
+      _ctxlog.info,
+      "Stepping down: forced reconfiguration removed this node from the voter "
+      "set");
+    do_step_down("forced-reconfiguration-self-removed");
+    co_return ec;
 }
 
 void consensus::try_updating_configuration_version(group_configuration& cfg) {
@@ -2054,6 +2112,8 @@ consensus::do_append_entries(append_entries_request&& r) {
     // follower (§5.2)
     maybe_update_leader(r.source_node());
 
+    auto refresh_hbeat = ss::defer([this] { _hbeat = clock_type::now(); });
+
     // raft.pdf: Reply false if log doesn’t contain an entry at
     // prevLogIndex whose term matches prevLogTerm (§5.3)
     // broken into 3 sections
@@ -2281,17 +2341,23 @@ consensus::do_append_entries(append_entries_request&& r) {
             co_return reply;
         }
 
-        co_return co_await do_append_entries(std::move(r));
+        // Here we intentionally choose not to recurse with a mutated
+        // request (r) because of the risk of polluting prev_log_delta.
+        // If we are to recurse, we have to populate prev_log_delta with
+        // the local state of the log which could, in theory, diverge from
+        // the leader log. Instead we choose to return success, let the leader
+        // reconstruct new request from its state. This is an extra round trip
+        // but far easier to reason about in terms of correctness.
+        reply.last_dirty_log_index = adjusted_prev_log_index;
+        reply.last_flushed_log_index = std::min(
+          adjusted_prev_log_index, _flushed_offset);
+        reply.result = reply_result::success;
+        co_return reply;
     }
 
     // success. copy entries for each subsystem
 
     try {
-        auto deferred = ss::defer([this] {
-            // we do not want to include our disk flush latency into
-            // the leader vote timeout
-            _hbeat = clock_type::now();
-        });
         validate_offset_translator_delta(request_metadata, lstats);
 
         // simulate disk error
@@ -3106,6 +3172,7 @@ consensus::next_followers_request_seq() {
 }
 
 ss::future<> consensus::refresh_commit_index() {
+    auto holder = _bg.hold();
     return _op_lock.get_units()
       .then([this](ssx::semaphore_units u) mutable {
           auto f = ss::now();
@@ -3122,7 +3189,8 @@ ss::future<> consensus::refresh_commit_index() {
       })
       .handle_exception_type([](const ss::broken_semaphore&) {
           // ignore exception, shutting down
-      });
+      })
+      .finally([holder = std::move(holder)] {});
 }
 
 void consensus::maybe_update_leader_commit_idx() {
@@ -3320,7 +3388,7 @@ void consensus::trigger_leadership_notification() {
         // can make progress.
         _follower_recovery_state->yield();
     }
-    _compaction_coordinator.on_leadership_change(_leader_id);
+    _compaction_coordinator.on_leadership_change(_leader_id, _term);
     _leadership_changed.broadcast();
 }
 
@@ -3943,6 +4011,14 @@ void consensus::update_heartbeat_status(vnode id, bool success) {
             it->second.heartbeats_failed = 0;
         } else {
             it->second.heartbeats_failed++;
+        }
+    }
+}
+
+void consensus::reset_heartbeat_failures(model::node_id node) {
+    for (auto& [vn, fstate] : _fstates) {
+        if (vn.id() == node) {
+            fstate.heartbeats_failed = 0;
         }
     }
 }

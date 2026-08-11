@@ -317,24 +317,12 @@ static ss::future<read_result> do_read_from_ntp(
               preferred_replica);
         }
     }
-    auto res_fut = co_await ss::coroutine::as_future(read_from_partition(
-      std::move(*kafka_partition),
-      maybe_lso.value(),
-      ntp_config.cfg,
-      deadline));
-    if (res_fut.failed()) {
-        auto ex = res_fut.get_exception();
-        if (ssx::is_shutdown_exception(ex)) {
-            co_return make_errored_read_result(
-              md_cache, ntp_config.ktp(), error_code::not_leader_for_partition);
-        }
-        std::rethrow_exception(ex);
-    }
+    auto result = co_await read_from_partition(
+      std::move(*kafka_partition), maybe_lso.value(), ntp_config.cfg, deadline);
 
     // Note that units can be both increased and decreassed here. Increases
     // happen because there is no strict limit on read size when reading the
     // obligatory batch.
-    auto result = std::move(res_fut.get());
     memory_units.adjust_units(result.data_size_bytes());
     result.memory_units = std::move(memory_units);
     co_return result;
@@ -482,6 +470,7 @@ static ss::future<chunked_vector<read_result>> fetch_ntps(
   chunked_vector<ntp_fetch_config> ntp_fetch_configs,
   read_distribution_probe& read_probe,
   std::optional<model::timeout_clock::time_point> deadline,
+  model::timeout_clock::time_point fetch_deadline,
   const size_t bytes_left,
   fetch_memory_units_manager& units_mgr) {
     size_t total_read_size = 0;
@@ -499,6 +488,15 @@ static ss::future<chunked_vector<read_result>> fetch_ntps(
     for (const auto& _ : config_indexes) {
         results.emplace_back(error_code::none);
     }
+
+    // Ensure fetch_deadline is at least as large as deadline. The deadline is
+    // the point in time at which fetch.max.wait has elapsed. The fetch_deadline
+    // is the point in time before which we want to complete the fetch request.
+    // The fetch_deadline is >= deadline and the storage layer tries to stop
+    // reading if this deadline has been exceeded.
+    fetch_deadline = std::max(
+      deadline.value_or(model::timeout_clock::time_point::min()),
+      fetch_deadline);
 
     co_await ss::max_concurrent_for_each(
       config_indexes,
@@ -525,7 +523,7 @@ static ss::future<chunked_vector<read_result>> fetch_ntps(
                    md_cache,
                    replica_selector,
                    ntp_cfg,
-                   deadline,
+                   fetch_deadline,
                    obligatory_batch_read,
                    units_mgr)
             .then([&, cfg_idx](read_result&& res) {
@@ -539,6 +537,22 @@ static ss::future<chunked_vector<read_result>> fetch_ntps(
                       res.delta_from_tip_ms.value());
                 }
 
+                results[cfg_idx] = std::move(res);
+            })
+            .handle_exception([&, cfg_idx](const std::exception_ptr& e) {
+                bool is_shutdown = ssx::is_shutdown_exception(e);
+                // Return not_leader_for_partition error to force clients retry
+                // for potential transient errors.
+                auto ec = error_code::not_leader_for_partition;
+                vlogl(
+                  klog,
+                  is_shutdown ? ss::log_level::debug : ss::log_level::warn,
+                  "ntp {}: caught unhandled exception {} in fetch path",
+                  ntp_cfg.ktp(),
+                  e);
+                auto res = make_errored_read_result(
+                  md_cache, ntp_cfg.ktp(), ec);
+                res.partition = ntp_cfg.ktp().get_partition();
                 results[cfg_idx] = std::move(res);
             });
       });
@@ -573,8 +587,13 @@ public:
         // Specifies the minimum number of bytes this sub-fetch should read
         // before returning.
         size_t min_bytes;
-        // If set then the sub-fetch should return by the specified time_point .
+
+        // Debounce timeout
         std::optional<model::timeout_clock::time_point> deadline;
+
+        // If set then the sub-fetch should return by the specified time_point .
+        model::timeout_clock::time_point fetch_deadline;
+
         // The fetch sub-requests of partitions local to the shard this worker
         // is running on.
         chunked_vector<ntp_fetch_config> requests;
@@ -690,6 +709,7 @@ private:
           std::move(requests),
           _ctx.srv.read_probe(),
           _ctx.deadline,
+          _ctx.fetch_deadline,
           _ctx.bytes_left,
           _ctx.srv.fetch_units_manager());
 
@@ -1075,6 +1095,7 @@ private:
                       .bytes_left = octx.bytes_left,
                       .min_bytes = min_fetch_bytes,
                       .deadline = octx.deadline,
+                      .fetch_deadline = octx.fetch_deadline,
                       .requests = std::move(configs),
                       .srv = octx.rctx.server().local(),
                       .mgr = mgr,
@@ -1478,6 +1499,9 @@ op_context::op_context(request_context&& ctx, ss::smp_service_group ssg)
     if (auto delay = request.debounce_delay(); delay) {
         deadline = model::timeout_clock::now() + delay.value();
     }
+    fetch_deadline
+      = model::timeout_clock::now()
+        + config::shard_local_cfg().kafka_fetch_request_timeout_ms();
 
     if (rctx.header().version() >= api_version{13}) {
         /*
@@ -1569,45 +1593,52 @@ void op_context::create_response_placeholders() {
     }
 }
 
-bool update_fetch_partition(
+// Determines if a partition should be included in an incremental fetch
+// response per KIP-227.
+bool partition_has_changes(
   const fetch_response::partition_response& resp,
-  fetch_session_partition& partition) {
-    bool include = false;
+  const fetch_session_partition& session_partition) {
     if (resp.records && resp.records->size_bytes() > 0) {
-        // Partitions with new data are always included in the response.
-        include = true;
+        return true;
     }
-    if (partition.high_watermark != resp.high_watermark) {
-        include = true;
-        partition.high_watermark = model::offset(resp.high_watermark);
+    if (session_partition.high_watermark != resp.high_watermark) {
+        return true;
     }
-    if (partition.last_stable_offset != resp.last_stable_offset) {
-        include = true;
-        partition.last_stable_offset = model::offset(resp.last_stable_offset);
+    if (session_partition.last_stable_offset != resp.last_stable_offset) {
+        return true;
     }
-    if (partition.start_offset != resp.log_start_offset) {
-        include = true;
-        partition.start_offset = model::offset(resp.log_start_offset);
+    if (session_partition.start_offset != resp.log_start_offset) {
+        return true;
     }
     /**
      * Always include partition in a response if it contains information about
      * the preferred replica
      */
     if (resp.preferred_read_replica != -1) {
-        include = true;
-    }
-    if (include) {
-        return include;
+        return true;
     }
     if (resp.error_code != error_code::none) {
         // Partitions with errors are always included in the response.
-        // We also set the cached highWatermark to an invalid offset, -1.
-        // This ensures that when the error goes away, we re-send the
-        // partition.
-        partition.high_watermark = model::offset{-1};
-        include = true;
+        return true;
     }
-    return include;
+    return false;
+}
+
+// Updates the fetch session's partition with the response. Called in
+// send_response() when committing the response, not during fetch iteration (to
+// avoid premature updates on retries).
+void update_session_partition(
+  const fetch_response::partition_response& resp,
+  fetch_session_partition& session_partition) {
+    session_partition.high_watermark = model::offset(resp.high_watermark);
+    session_partition.last_stable_offset = model::offset(
+      resp.last_stable_offset);
+    session_partition.start_offset = model::offset(resp.log_start_offset);
+    if (resp.error_code != error_code::none) {
+        // Set high_watermark to -1 so we re-send this partition once the error
+        // clears.
+        session_partition.high_watermark = model::offset{-1};
+    }
 }
 
 ss::future<response_ptr> op_context::send_response() && {
@@ -1641,7 +1672,24 @@ ss::future<response_ptr> op_context::send_response() && {
     }
     // bellow we handle incremental fetches, set response session id
     response.data.session_id = session_ctx.session()->id();
+
+    auto& session_partitions = session_ctx.session()->partitions();
+    auto update_session = [&session_partitions](const auto& resp_it) {
+        auto key = model::kitp_view(
+          resp_it->partition->topic_id,
+          resp_it->partition->topic,
+          resp_it->partition_response->partition_index);
+        if (auto sp_it = session_partitions.find(key);
+            sp_it != session_partitions.end()) {
+            update_session_partition(
+              *resp_it->partition_response, sp_it->second->partition);
+        }
+    };
+
     if (session_ctx.is_full_fetch()) {
+        for (auto it = response.begin(false); it != response.end(); ++it) {
+            update_session(it);
+        }
         return rctx.respond(std::move(response));
     }
 
@@ -1651,6 +1699,8 @@ ss::future<response_ptr> op_context::send_response() && {
     final_response.internal_topic_bytes = response.internal_topic_bytes;
 
     for (auto it = response.begin(true); it != response.end(); ++it) {
+        update_session(it);
+
         if (it->is_new_topic) {
             final_response.data.responses.emplace_back(
               fetchable_topic_response{
@@ -1762,7 +1812,7 @@ void op_context::response_placeholder::set(
 
         if (auto it = session_partitions.find(key);
             it != session_partitions.end()) {
-            auto has_to_be_included = update_fetch_partition(
+            auto has_to_be_included = partition_has_changes(
               *_it->partition_response, it->second->partition);
             /**
              * From KIP-227

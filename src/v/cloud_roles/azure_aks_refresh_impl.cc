@@ -54,7 +54,8 @@ azure_aks_refresh_impl::azure_aks_refresh_impl(
   aws_service_name, // Ignored for Azure AKS
   aws_region_name region,
   ss::abort_source& as,
-  retry_params retry_params)
+  retry_params retry_params,
+  ss::sstring metrics_tag)
   : refresh_credentials::impl(
       [&] {
           if (!address.host().empty()) {
@@ -79,7 +80,8 @@ azure_aks_refresh_impl::azure_aks_refresh_impl(
       }(),
       std::move(region),
       as,
-      retry_params)
+      retry_params,
+      std::move(metrics_tag))
   , client_id_{load_from_env(env_var_azure_client_id)}
   , tenant_id_{load_from_env(env_var_azure_tenant_id)}
   , federated_token_file_{load_from_env(env_var_azure_federated_token_file)} {}

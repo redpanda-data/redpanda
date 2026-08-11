@@ -268,8 +268,6 @@ public:
 
     /// Add element to the store. The operation is transactional.
     void append(const segment_meta& meta) {
-        auto ix = _base_offset.size();
-
         try {
             details::tuple_map(
               [&](auto& col, auto accessor) {
@@ -284,8 +282,15 @@ public:
             vunreachable("column_store bad_alloc during 'append' operation");
         }
 
+        // Sample by position within the current frame rather than by the
+        // total store size. When the store is churned by interleaved
+        // appends and prefix truncations (retention steady state) its size
+        // can settle on a multiple of the sampling interval, in which case
+        // a size-based condition would insert a hint on every append and
+        // the hint map would grow to one entry per element.
+        auto frame_ix = _base_offset.last_frame_size() - 1;
         if (
-          ix
+          frame_ix
             % static_cast<uint32_t>(
               ::details::FOR_buffer_depth * cstore_sampling_rate)
           == 0) {
@@ -334,6 +339,7 @@ public:
             return;
         }
 
+        static constexpr auto end_index = std::numeric_limits<size_t>::max();
         // construct a column_store with the frames and hints that are before
         // the replacements
         auto first_replacement_index = [&] {
@@ -347,11 +353,22 @@ public:
             if (candidate.is_end()) {
                 // replacements are append only, return an index that will
                 // signal this
-                return std::numeric_limits<size_t>::max();
+                return end_index;
             }
             // replacements are in the middle of current store
             return candidate.index();
         }();
+
+        if (first_replacement_index == end_index) {
+            // Append-only: every entry in [offset_seg_it, offset_seg_end)
+            // lands strictly past the current tail, so no segment in *this is
+            // replaced.
+            for (; offset_seg_it != offset_seg_end; ++offset_seg_it) {
+                append(offset_seg_it->second);
+            }
+            return;
+        }
+
         // tuple of [begin, end] iterators to std::list<frame_t>
         auto to_clone_frames = std::apply(
           [&](auto&... col) {
@@ -684,6 +701,8 @@ public:
         // at the end.
         _hints.erase(it, _hints.end());
     }
+
+    size_t hints_size() const { return _hints.size(); }
 
     /// Return two values: inflated size (size without compression) followed
     /// by the actual size that takes compression into account.
@@ -1039,6 +1058,11 @@ public:
         return _col.size();
     }
 
+    size_t hints_size() const {
+        flush_write_buffer();
+        return _col.hints_size();
+    }
+
     bool empty() const { return _write_buffer.empty() && _col.empty(); }
 
     bool contains(model::offset o) {
@@ -1157,6 +1181,8 @@ bool segment_meta_cstore::contains(model::offset o) const {
 bool segment_meta_cstore::empty() const { return _impl->empty(); }
 
 size_t segment_meta_cstore::size() const { return _impl->size(); }
+
+size_t segment_meta_cstore::hints_size() const { return _impl->hints_size(); }
 
 segment_meta_cstore::const_iterator
 segment_meta_cstore::upper_bound(model::offset o) const {

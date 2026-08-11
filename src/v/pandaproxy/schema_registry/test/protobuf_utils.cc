@@ -10,6 +10,7 @@
 #include "pandaproxy/schema_registry/test/protobuf_utils.h"
 
 #include "pandaproxy/schema_registry/protobuf.h"
+#include "pandaproxy/schema_registry/test/store_fixture.h"
 
 namespace pp = pandaproxy;
 namespace pps = pp::schema_registry;
@@ -28,9 +29,9 @@ ss::sstring make_proto_schema(const pps::subject& sub, int n_fields) {
 
 std::string sanitize(
   std::string_view raw_proto, pps::normalize norm, pps::output_format format) {
-    pps::test_utils::simple_sharded_store s;
+    store_fixture s;
     iobuf buf = pps::make_canonical_protobuf_schema(
-                  s.store,
+                  s.store(),
                   pps::subject_schema{
                     pps::subject{"foo"},
                     pps::schema_definition{

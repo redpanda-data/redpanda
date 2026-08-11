@@ -11,6 +11,7 @@
 
 #pragma once
 
+#include "base/format_to.h"
 #include "features/fwd.h"
 #include "storage/batch_cache.h"
 #include "storage/file_sanitizer_types.h"
@@ -90,6 +91,9 @@ public:
 
     segment_set copy() const noexcept { return *this; }
 
+    /// Formats a bounded summary of the segments, as the set can be large.
+    fmt::iterator format_to(fmt::iterator out) const;
+
 private:
     segment_set(const segment_set&) noexcept = default;
 
@@ -128,3 +132,25 @@ ss::future<std::optional<segment_set>>
 maybe_create_contiguous_segment_set(segment_set::underlying_t segs);
 
 } // namespace storage
+
+/// Explicit full specialization so that formatter resolution always uses the
+/// bounded segment_set::format_to. segment_set is a range, and without this a
+/// matching partial specialization (e.g. fmt/ranges.h's range formatter, which
+/// outranks the ostream operator<< fallback since fmt 9) would print every
+/// segment unbounded.
+template<>
+struct fmt::formatter<storage::segment_set> {
+    constexpr fmt::format_parse_context::iterator
+    parse(fmt::format_parse_context& ctx) const {
+        auto it = ctx.begin();
+        if (it != ctx.end() && *it != '}') {
+            throw fmt::format_error("invalid format specifier for this type");
+        }
+        return it;
+    }
+
+    fmt::iterator
+    format(const storage::segment_set& s, fmt::format_context& ctx) const {
+        return s.format_to(ctx.out());
+    }
+};

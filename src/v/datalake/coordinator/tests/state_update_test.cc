@@ -7,7 +7,9 @@
  *
  * https://github.com/redpanda-data/redpanda/blob/master/licenses/rcl.md
  */
+#include "container/chunked_hash_map.h"
 #include "container/chunked_vector.h"
+#include "datalake/coordinator/partition_state_override.h"
 #include "datalake/coordinator/state.h"
 #include "datalake/coordinator/state_update.h"
 #include "datalake/coordinator/tests/state_test_utils.h"
@@ -313,4 +315,244 @@ TEST(StateUpdateTest, TestLifecycle) {
     ASSERT_TRUE(
       apply_lc_transition(state, rev3, topic_state::lifecycle_state_t::closed)
         .has_value());
+}
+
+TEST(StateUpdateTest, TestResetTopicState) {
+    topics_state state;
+    ASSERT_FALSE(
+      apply_lc_transition(state, rev, topic_state::lifecycle_state_t::live)
+        .has_error());
+
+    auto res = add_files_update::build(
+                 state, tp, rev, make_pending_files({{0, 100}}))
+                 .value()
+                 .apply(state, model::offset{});
+    ASSERT_FALSE(res.has_error());
+    ASSERT_NO_FATAL_FAILURE(
+      check_partition(state, tp, std::nullopt, {{0, 100}}));
+
+    // Reset with reset_all_partitions clears pending files.
+    reset_topic_state_update update{
+      .topic = topic,
+      .topic_revision = rev,
+      .reset_all_partitions = true,
+    };
+    ASSERT_FALSE(update.apply(state).has_error());
+    auto ps = state.partition_state(tp);
+    ASSERT_FALSE(ps.has_value());
+
+    // Reset with wrong revision fails.
+    reset_topic_state_update bad_rev{
+      .topic = topic,
+      .topic_revision = model::revision_id{999},
+    };
+    ASSERT_TRUE(bad_rev.apply(state).has_error());
+
+    // Reset on nonexistent topic is a no-op.
+    reset_topic_state_update missing{
+      .topic = model::topic{"no_such_topic"},
+      .topic_revision = rev,
+    };
+    ASSERT_FALSE(missing.apply(state).has_error());
+}
+
+TEST(StateUpdateTest, TestResetNoOp) {
+    topics_state state;
+    ASSERT_FALSE(
+      apply_lc_transition(state, rev, topic_state::lifecycle_state_t::live)
+        .has_error());
+
+    auto res = add_files_update::build(
+                 state, tp, rev, make_pending_files({{0, 100}}))
+                 .value()
+                 .apply(state, model::offset{});
+    ASSERT_FALSE(res.has_error());
+
+    // reset_all_partitions=false (default), no overrides: state is unchanged.
+    reset_topic_state_update update{
+      .topic = topic,
+      .topic_revision = rev,
+    };
+    ASSERT_FALSE(update.apply(state).has_error());
+    ASSERT_NO_FATAL_FAILURE(
+      check_partition(state, tp, std::nullopt, {{0, 100}}));
+}
+
+TEST(StateUpdateTest, TestResetAllWithOverrides) {
+    const model::partition_id pid1{1};
+    const model::topic_partition tp1{topic, pid1};
+
+    topics_state state;
+    ASSERT_FALSE(
+      apply_lc_transition(state, rev, topic_state::lifecycle_state_t::live)
+        .has_error());
+
+    // Add pending files to two partitions.
+    for (const auto& t : {tp, tp1}) {
+        auto res = add_files_update::build(
+                     state, t, rev, make_pending_files({{0, 100}}))
+                     .value()
+                     .apply(state, model::offset{});
+        ASSERT_FALSE(res.has_error());
+    }
+
+    // Full reset with an override on pid 0 only.
+    chunked_hash_map<model::partition_id, partition_state_override> overrides;
+    overrides[pid] = partition_state_override{
+      .last_committed = kafka::offset{50}};
+
+    reset_topic_state_update update2{
+      .topic = topic,
+      .topic_revision = rev,
+      .reset_all_partitions = true,
+      .partition_overrides = std::move(overrides),
+    };
+    ASSERT_FALSE(update2.apply(state).has_error());
+
+    // pid 0: cleared, last_committed set to 50.
+    ASSERT_NO_FATAL_FAILURE(check_partition(state, tp, 50, {}));
+    // pid 1: cleared entirely (no override).
+    auto ps1 = state.partition_state(tp1);
+    ASSERT_FALSE(ps1.has_value());
+}
+
+TEST(StateUpdateTest, TestPartialReset) {
+    const model::partition_id pid1{1};
+    const model::partition_id pid2{2};
+    const model::topic_partition tp1{topic, pid1};
+    const model::topic_partition tp2{topic, pid2};
+
+    topics_state state;
+    ASSERT_FALSE(
+      apply_lc_transition(state, rev, topic_state::lifecycle_state_t::live)
+        .has_error());
+
+    // Add pending files to pid 0 and pid 1.
+    for (const auto& t : {tp, tp1}) {
+        auto res = add_files_update::build(
+                     state, t, rev, make_pending_files({{0, 100}}))
+                     .value()
+                     .apply(state, model::offset{});
+        ASSERT_FALSE(res.has_error());
+    }
+
+    // Partial reset: override pid 0 and pid 2 (pid 2 doesn't exist yet).
+    chunked_hash_map<model::partition_id, partition_state_override> overrides;
+    overrides[pid] = partition_state_override{
+      .last_committed = kafka::offset{42}};
+    overrides[pid2] = partition_state_override{
+      .last_committed = kafka::offset{99}};
+
+    reset_topic_state_update update3{
+      .topic = topic,
+      .topic_revision = rev,
+      .partition_overrides = std::move(overrides),
+    };
+    ASSERT_FALSE(update3.apply(state).has_error());
+
+    // pid 0: pending cleared, last_committed set.
+    ASSERT_NO_FATAL_FAILURE(check_partition(state, tp, 42, {}));
+    // pid 1: untouched.
+    ASSERT_NO_FATAL_FAILURE(
+      check_partition(state, tp1, std::nullopt, {{0, 100}}));
+    // pid 2: created with last_committed.
+    ASSERT_NO_FATAL_FAILURE(check_partition(state, tp2, 99, {}));
+}
+
+namespace {
+size_t total_pending_entries(const topic_state& ts) {
+    size_t n = 0;
+    for (const auto& [_, p_state] : ts.pid_to_pending_files) {
+        n += p_state.pending_entries.size();
+    }
+    return n;
+}
+
+// Appends a single one-file pending entry for partition `p` at control-topic
+// offset `added_at`.
+void add_entry(
+  topic_state& ts,
+  model::partition_id p,
+  int64_t begin,
+  int64_t end,
+  model::offset added_at) {
+    auto ranges = make_pending_files({{begin, end}}, /*with_file=*/true);
+    ts.pid_to_pending_files[p].pending_entries.emplace_back(
+      pending_entry{
+        .data = std::move(ranges[0]), .added_pending_at = added_at});
+}
+} // namespace
+
+// Each entry is added by a separate control-topic batch, so each carries a
+// distinct added_pending_at; with one file per entry, the file budget maps to
+// a number of entries.
+TEST(CopyBoundedTest, TruncatesByControlOffsetWatermark) {
+    topic_state ts;
+    ts.revision = rev;
+    for (int i = 0; i < 5; ++i) {
+        add_entry(ts, pid, i * 10, i * 10 + 9, model::offset{1000 + i});
+    }
+
+    // Fewer than available: truncated to a downward-closed prefix, metadata
+    // preserved, and reported as bounded.
+    bool bounded = false;
+    auto chunk = ts.copy_bounded(3, bounded);
+    EXPECT_EQ(total_pending_entries(chunk), 3);
+    EXPECT_TRUE(bounded);
+    EXPECT_EQ(chunk.revision, rev);
+
+    // Exactly the limit, and more than available (equivalent to copy()): not
+    // bounded, nothing left out.
+    EXPECT_EQ(total_pending_entries(ts.copy_bounded(5, bounded)), 5);
+    EXPECT_FALSE(bounded);
+    EXPECT_EQ(total_pending_entries(ts.copy_bounded(100, bounded)), 5);
+    EXPECT_FALSE(bounded);
+}
+
+// Regression test: a subset commit must be downward-closed by added_pending_at
+// across partitions. Otherwise the Iceberg dedup watermark (the max committed
+// added_pending_at) would later cause the excluded earlier entries to be
+// silently skipped and dropped from the table.
+TEST(CopyBoundedTest, IsDownwardClosedAcrossPartitions) {
+    const model::partition_id pid0{0};
+    const model::partition_id pid1{1};
+    topic_state ts;
+    // Control offsets interleave across partitions: pid0@10, pid1@11, pid0@12,
+    // pid1@13.
+    add_entry(ts, pid0, 0, 9, model::offset{10});
+    add_entry(ts, pid1, 0, 9, model::offset{11});
+    add_entry(ts, pid0, 10, 19, model::offset{12});
+    add_entry(ts, pid1, 10, 19, model::offset{13});
+
+    // Budget of 2 files: the watermark lands at offset 11, so each partition
+    // keeps exactly its first (earliest) entry. A per-partition prefix that
+    // ignored offset ordering would instead keep both of one partition's
+    // entries (including offset 12) while dropping the other's offset-11 entry.
+    bool bounded = false;
+    auto chunk = ts.copy_bounded(2, bounded);
+    EXPECT_TRUE(bounded);
+    ASSERT_EQ(total_pending_entries(chunk), 2);
+    ASSERT_TRUE(chunk.pid_to_pending_files.contains(pid0));
+    ASSERT_TRUE(chunk.pid_to_pending_files.contains(pid1));
+    const auto& p0 = chunk.pid_to_pending_files.at(pid0).pending_entries;
+    const auto& p1 = chunk.pid_to_pending_files.at(pid1).pending_entries;
+    ASSERT_EQ(p0.size(), 1);
+    ASSERT_EQ(p1.size(), 1);
+    EXPECT_EQ(p0.front().added_pending_at, model::offset{10});
+    EXPECT_EQ(p1.front().added_pending_at, model::offset{11});
+}
+
+// A single control-offset batch is committed all-or-nothing: splitting it would
+// leave same-offset entries below the watermark, which the dedup would drop.
+TEST(CopyBoundedTest, IncludesWholeBatchEvenWhenOverLimit) {
+    topic_state ts;
+    // Five entries sharing one added_pending_at (one add_files_update batch).
+    for (int i = 0; i < 5; ++i) {
+        add_entry(ts, pid, i * 10, i * 10 + 9, model::offset{1000});
+    }
+    bool bounded = false;
+    EXPECT_EQ(total_pending_entries(ts.copy_bounded(1, bounded)), 5);
+    // The whole same-offset batch is included, so nothing is left over and the
+    // copy is not reported as bounded.
+    EXPECT_FALSE(bounded);
 }

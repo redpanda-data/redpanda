@@ -13,11 +13,13 @@
 
 #include "absl/container/flat_hash_set.h"
 #include "bytes/streambuf.h"
+#include "config/configuration.h"
 #include "json/allocator.h"
 #include "json/chunked_input_stream.h"
 #include "json/document.h"
 #include "json/json.h"
 #include "json/types.h"
+#include "pandaproxy/logger.h"
 #include "pandaproxy/schema_registry/compatibility.h"
 #include "pandaproxy/schema_registry/error.h"
 #include "pandaproxy/schema_registry/errors.h"
@@ -44,6 +46,7 @@
 #include <rapidjson/error/en.h>
 
 #include <exception>
+#include <map>
 #include <stack>
 #include <string_view>
 
@@ -278,6 +281,136 @@ result<void> sanitize(json::Value& v, sanitize_context& ctx);
 result<void> sanitize(json::Value::Object& o, sanitize_context& ctx);
 result<void> sanitize(json::Value::Array& a, sanitize_context& ctx);
 
+bool is_avro_type_name(std::string_view name) {
+    return string_switch<bool>(name)
+      .match("null", true)
+      .match("boolean", true)
+      .match("int", true)
+      .match("long", true)
+      .match("float", true)
+      .match("double", true)
+      .match("bytes", true)
+      .match("string", true)
+      .match("record", true)
+      .match("enum", true)
+      .match("array", true)
+      .match("map", true)
+      .match("fixed", true)
+      .default_match(false);
+}
+
+/// Shorten a fully-qualified named type reference to its simple name when the
+/// reference's namespace matches the enclosing namespace. Per the Avro spec
+/// (Names, section 2), such a reference is semantically equivalent to the
+/// unqualified form. This matches Confluent Schema Registry sanitization,
+/// which consistently unqualifies references so that equivalent schemas
+/// canonicalize identically.
+void unqualify_type_reference(json::Value& val, sanitize_context& ctx) {
+    if (!val.IsString() || val.GetStringLength() == 0) {
+        return;
+    }
+    std::string_view sv{val.GetString(), val.GetStringLength()};
+    auto last_dot = sv.find_last_of('.');
+    if (last_dot == std::string_view::npos) {
+        return;
+    }
+    std::string_view namespace_part = sv.substr(0, last_dot);
+    std::string_view name_part = sv.substr(last_dot + 1);
+    if (namespace_part == ctx.ns.top() && !is_avro_type_name(name_part)) {
+        auto shortened = ss::sstring{name_part};
+        val.SetString(shortened.data(), shortened.length(), ctx.alloc);
+    }
+}
+
+bool try_collapse_primitive_object(json::Value& v, sanitize_context& ctx) {
+    if (!v.IsObject()) {
+        return false;
+    }
+    auto o = v.GetObject();
+    if (o.MemberCount() != 1) {
+        return false;
+    }
+    auto it = o.FindMember("type");
+    if (it == o.MemberEnd() || !it->value.IsString()) {
+        return false;
+    }
+    std::string_view type{it->value.GetString(), it->value.GetStringLength()};
+    if (!string_switch<bool>(type)
+           .match("null", true)
+           .match("boolean", true)
+           .match("int", true)
+           .match("long", true)
+           .match("float", true)
+           .match("double", true)
+           .match("bytes", true)
+           .match("string", true)
+           .default_match(false)) {
+        return false;
+    }
+
+    // SetString frees v's storage (which backs `type`); copy first.
+    ss::sstring type_name{type};
+    v.SetString(type_name.data(), type_name.length(), ctx.alloc);
+    return true;
+}
+
+// Walk only Avro schema-bearing positions, leaving arbitrary custom metadata
+// untouched even when it happens to look like a schema object.
+void collapse_primitive_schema_objects(json::Value& v, sanitize_context& ctx) {
+    if (v.IsArray()) {
+        for (auto& e : v.GetArray()) {
+            collapse_primitive_schema_objects(e, ctx);
+        }
+        return;
+    }
+    if (!v.IsObject()) {
+        return;
+    }
+    auto o = v.GetObject();
+    if (try_collapse_primitive_object(v, ctx)) {
+        return;
+    }
+
+    auto type_it = o.FindMember("type");
+    if (type_it == o.MemberEnd()) {
+        return;
+    }
+    auto& type_v = type_it->value;
+    if (type_v.IsObject() || type_v.IsArray()) {
+        collapse_primitive_schema_objects(type_v, ctx);
+        return;
+    }
+    if (!type_v.IsString()) {
+        return;
+    }
+
+    std::string_view type_sv{type_v.GetString(), type_v.GetStringLength()};
+    if (type_sv == "record") {
+        auto fields_it = o.FindMember("fields");
+        if (fields_it == o.MemberEnd() || !fields_it->value.IsArray()) {
+            return;
+        }
+        for (auto& f : fields_it->value.GetArray()) {
+            if (!f.IsObject()) {
+                continue;
+            }
+            auto field_o = f.GetObject();
+            auto field_type_it = field_o.FindMember("type");
+            if (field_type_it != field_o.MemberEnd()) {
+                collapse_primitive_schema_objects(field_type_it->value, ctx);
+            }
+        }
+    } else if (type_sv == "array") {
+        if (auto it = o.FindMember("items"); it != o.MemberEnd()) {
+            collapse_primitive_schema_objects(it->value, ctx);
+        }
+    } else if (type_sv == "map") {
+        if (auto it = o.FindMember("values"); it != o.MemberEnd()) {
+            collapse_primitive_schema_objects(it->value, ctx);
+        }
+    }
+}
+
 result<void>
 sanitize_union_symbol_name(json::Value& name, sanitize_context& ctx) {
     // A name should have the leading dot stripped iff it's the only one
@@ -295,6 +428,8 @@ sanitize_union_symbol_name(json::Value& name, sanitize_context& ctx) {
         // SetString uses memcpy, take a copy so the range doesn't overlap.
         auto new_name = ss::sstring{fullname_sv};
         name.SetString(new_name.data(), new_name.length(), ctx.alloc);
+    } else if (last_dot != std::string::npos) {
+        unqualify_type_reference(name, ctx);
     }
     return outcome::success();
 }
@@ -335,6 +470,13 @@ result<void> sanitize_avro_type(
         for (auto& i : o) {
             if (auto res = sanitize(i.value, ctx); !res.has_value()) {
                 return res;
+            }
+            if (i.value.IsString()) {
+                std::string_view member_name{
+                  i.name.GetString(), i.name.GetStringLength()};
+                if (member_name == "items" || member_name == "values") {
+                    unqualify_type_reference(i.value, ctx);
+                }
             }
         }
         break;
@@ -453,6 +595,7 @@ result<void> sanitize(json::Value::Object& o, sanitize_context& ctx) {
         if (res.has_error()) {
             return res.assume_error();
         } else if (t_it->value.GetType() == json::Type::kStringType) {
+            unqualify_type_reference(t_it->value, ctx);
             std::string_view type_sv = {
               t_it->value.GetString(), t_it->value.GetStringLength()};
             auto res = sanitize_avro_type(o, type_sv, ctx);
@@ -528,7 +671,9 @@ ss::sstring avro_schema_definition::name() const {
     return _impl.root()->name().fullname();
 };
 
-class collected_schema {
+// Legacy implementation using schema concatenation.
+// Used when schema_registry_avro_use_named_references is false.
+class collected_schema_legacy {
 public:
     bool contains(const ss::sstring& name) const {
         return _names.contains(name);
@@ -554,9 +699,9 @@ private:
     std::vector<schema_definition::raw_string> _schemas;
 };
 
-ss::future<collected_schema> collect_schema(
+ss::future<collected_schema_legacy> collect_schema_legacy(
   schema_getter& store,
-  collected_schema collected,
+  collected_schema_legacy collected,
   ss::sstring name,
   subject_schema schema) {
     for (const auto& ref : schema.def().refs()) {
@@ -564,7 +709,7 @@ ss::future<collected_schema> collect_schema(
             try {
                 auto ss = co_await store.get_subject_schema(
                   ref.sub, ref.version, include_deleted::yes);
-                collected = co_await collect_schema(
+                collected = co_await collect_schema_legacy(
                   store, std::move(collected), ref.name, std::move(ss.schema));
             } catch (const exception& e) {
                 if (failed_subject_schema_lookup(e.code())) {
@@ -579,17 +724,169 @@ ss::future<collected_schema> collect_schema(
     co_return std::move(collected);
 }
 
-ss::future<avro_schema_definition>
-make_avro_schema_definition(schema_getter& store, subject_schema schema) {
+ss::future<avro_schema_definition> make_avro_schema_definition_legacy(
+  schema_getter& store, subject_schema schema) {
     std::optional<avro::Exception> ex;
     try {
         auto name = schema.sub()();
         auto schema_refs = schema.def().refs().copy();
-        auto refs = co_await collect_schema(store, {}, name, std::move(schema));
+        auto refs = co_await collect_schema_legacy(
+          store, {}, name, std::move(schema));
         iobuf_istream sis{std::move(refs).flatten()()};
         auto is = avro::istreamInputStream(sis.istream());
         co_return avro_schema_definition{
           avro::compileJsonSchemaFromStream(*is), std::move(schema_refs)};
+    } catch (const avro::Exception& e) {
+        ex = e;
+    }
+    co_return ss::coroutine::exception(
+      std::make_exception_ptr(as_exception(
+        error_info{
+          error_code::schema_invalid,
+          fmt::format("Invalid schema {}", ex->what())})));
+}
+
+// New implementation using named references.
+// Used when schema_registry_avro_use_named_references is true.
+class collected_schema {
+    struct schema_entry {
+        avro::ValidSchema schema;
+        subject source_subject;
+        schema_version source_version;
+    };
+
+public:
+    bool contains(const avro::Name& name) const {
+        return _schemas.contains(name);
+    }
+
+    std::optional<std::pair<subject, schema_version>>
+    get_source(const avro::Name& name) const {
+        auto it = _schemas.find(name);
+        if (it == _schemas.end()) {
+            return std::nullopt;
+        }
+        return std::make_pair(
+          it->second.source_subject, it->second.source_version);
+    }
+
+    bool insert(
+      avro::Name name,
+      avro::ValidSchema schema,
+      subject source_subject,
+      schema_version source_version) {
+        auto [it, inserted] = _schemas.try_emplace(
+          std::move(name),
+          schema_entry{
+            .schema = std::move(schema),
+            .source_subject = std::move(source_subject),
+            .source_version = source_version});
+        return inserted;
+    }
+
+    std::map<avro::Name, avro::ValidSchema> as_named_references() const {
+        std::map<avro::Name, avro::ValidSchema> result;
+        for (const auto& [name, entry] : _schemas) {
+            result.emplace(name, entry.schema);
+        }
+        return result;
+    }
+
+    void merge(collected_schema other) {
+        _schemas.merge(std::move(other._schemas));
+    }
+
+private:
+    std::map<avro::Name, schema_entry> _schemas;
+};
+
+avro::ValidSchema compile_avro_schema(
+  const schema_definition& def,
+  const std::map<avro::Name, avro::ValidSchema>& named_refs) {
+    auto ibuf = iobuf_istream{def.shared_raw()()};
+    return avro::compileJsonSchemaWithNamedReferences(
+      ibuf.istream(), named_refs);
+}
+
+// Recursively collect and compile all references for a schema
+ss::future<collected_schema> collect_references(
+  schema_getter& store, collected_schema collected, subject_schema sub_schema) {
+    for (const auto& ref : sub_schema.def().refs()) {
+        auto avro_ref_name = avro::Name{ref.name};
+        if (!collected.contains(avro_ref_name)) {
+            try {
+                auto ss = co_await store.get_subject_schema(
+                  ref.sub, ref.version, include_deleted::yes);
+
+                // Pass the collected schemas to avoid recompiling already
+                // compiled schemas and to detect redefinitions of the same
+                // name. It is safe to pass in more references to schemas than
+                // specified, as all schemas should be validated when added to
+                // the store, and all collected schemas may be referenced from
+                // the root schema.
+                collected = co_await collect_references(
+                  store, std::move(collected), ss.schema.share());
+                auto named_refs = collected.as_named_references();
+                auto compiled_schema = compile_avro_schema(
+                  ss.schema.def(), named_refs);
+
+                collected.insert(
+                  avro_ref_name,
+                  std::move(compiled_schema),
+                  ref.sub,
+                  ref.version);
+            } catch (const exception& e) {
+                if (failed_subject_schema_lookup(e.code())) {
+                    throw as_exception(
+                      no_reference_found_for(sub_schema, ref.sub, ref.version));
+                }
+                throw;
+            }
+        } else {
+            // Name already in collection - the reference implementation allows
+            // this, even if the source subject version (and the underlying
+            // schema definitions) differs, so we log a warning here instead of
+            // throwing an exception.
+            auto existing_source = collected.get_source(avro_ref_name);
+            if (existing_source
+                && (existing_source->first != ref.sub
+                    || existing_source->second != ref.version)) {
+                vlog(
+                  srlog.warn,
+                  "Schema reference {} from subject {} version {} conflicts "
+                  "with an already collected schema with the same name from "
+                  "subject {} version {}. Using the first definition. This may "
+                  "indicate different subjects defining schemas with the same "
+                  "fully qualified name.",
+                  avro_ref_name.fullname(),
+                  ref.sub,
+                  ref.version,
+                  existing_source->first,
+                  existing_source->second);
+            }
+        }
+    }
+    co_return std::move(collected);
+}
+
+ss::future<avro_schema_definition>
+make_avro_schema_definition(schema_getter& store, subject_schema schema) {
+    if (!config::shard_local_cfg()
+           .schema_registry_avro_use_named_references()) {
+        co_return co_await make_avro_schema_definition_legacy(
+          store, std::move(schema));
+    }
+
+    std::optional<avro::Exception> ex;
+    try {
+        auto collected = co_await collect_references(
+          store, collected_schema{}, schema.share());
+        auto named_refs = collected.as_named_references();
+        auto compiled_schema = compile_avro_schema(schema.def(), named_refs);
+        auto [sub, unparsed] = std::move(schema).destructure();
+        auto [def, type, refs] = std::move(unparsed).destructure();
+        co_return avro_schema_definition{
+          std::move(compiled_schema), std::move(refs)};
     } catch (const avro::Exception& e) {
         ex = e;
     }
@@ -631,6 +928,7 @@ sanitize_avro_schema_definition(schema_definition def) {
             res.assume_error().message(),
             p.read_string(p.bytes_left()))};
     }
+    collapse_primitive_schema_objects(doc, ctx);
 
     json::chunked_buffer buf;
     json::Writer<json::chunked_buffer> w{buf};

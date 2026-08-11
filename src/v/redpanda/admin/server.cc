@@ -147,6 +147,7 @@
 #include <limits>
 #include <memory>
 #include <numeric>
+#include <ranges>
 #include <stdexcept>
 #include <system_error>
 #include <type_traits>
@@ -1405,6 +1406,9 @@ ss::future<> admin_server::throw_on_error(
             // rather than a node ID appearing in a URL path.
             throw ss::httpd::bad_request_exception(
               fmt::format("Invalid request: {}", ec.message()));
+        case raft::errc::invalid_configuration_update:
+            throw ss::httpd::bad_request_exception(
+              fmt::format("Invalid request: {}", ec.message()));
         default:
             throw ss::httpd::server_error_exception(
               fmt::format("Unexpected raft error: {}", ec.message()));
@@ -2277,8 +2281,6 @@ admin_server::patch_cluster_config_handler(
         for (const auto& key : update.remove) {
             if (cfg.contains(key)) {
                 cfg.get(key).reset();
-            } else {
-                errors[key] = "Unknown property";
             }
         }
 
@@ -4669,8 +4671,8 @@ admin_server::get_cloud_storage_lifecycle(std::unique_ptr<ss::http::request>) {
 
     auto& topic_table = _controller->get_topics_state().local();
 
-    cluster::topic_table::lifecycle_markers_t markers
-      = topic_table.get_lifecycle_markers();
+    chunked_vector<cluster::topic_table::lifecycle_markers_t::value_type>
+      markers{std::from_range, topic_table.get_lifecycle_markers()};
 
     // Hack: persuade json response to always include the field even if empty
     response.markers._set = true;
@@ -5097,6 +5099,8 @@ admin_server::restart_service_handler(std::unique_ptr<ss::http::request> req) {
 
     vlog(
       adminlog.info, "Restart redpanda service: {}", to_string_view(*service));
-    co_await restart_redpanda_service(*service);
+    co_await container().invoke_on(0, [service](admin_server& server) {
+        return server.restart_redpanda_service(*service);
+    });
     co_return ss::json::json_return_type(ss::json::json_void());
 }

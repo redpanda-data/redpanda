@@ -10,6 +10,7 @@
 #include "absl/hash/hash.h"
 #include "absl/strings/string_view.h"
 #include "bytes/bytes.h"
+#include "bytes/hash.h"
 #include "hashing/crc32c.h"
 #include "hashing/murmur.h"
 #include "hashing/xx.h"
@@ -280,6 +281,11 @@ bytes generate_data() {
     return buf;
 }
 
+iobuf make_fragmented_iobuf(const bytes& buf) {
+    return tests::fragmented_iobuf(
+      {reinterpret_cast<const char*>(buf.data()), buf.size()}, 3);
+}
+
 template<size_t... Offset>
 size_t murmurhash3_x86_32_continuous() {
     auto buf = generate_data();
@@ -304,17 +310,40 @@ PERF_TEST(murmur_hash_x86_32, unaligned) {
     return murmurhash3_x86_32_continuous<1, 2, 3>();
 }
 
-PERF_TEST(murmur_hash_x86_32, iobuf) {
+template<bool Fragmented, typename HashFn>
+size_t iobuf_hash_body(HashFn hash_fn) {
     auto buf = generate_data();
-    iobuf split_buf = tests::fragmented_iobuf(
-      {reinterpret_cast<const char*>(buf.data()), buf.size()}, 3);
+
+    iobuf io;
+    if constexpr (Fragmented) {
+        io = make_fragmented_iobuf(buf);
+    } else {
+        io.append(reinterpret_cast<const char*>(buf.data()), buf.size());
+    }
+
     perf_tests::start_measuring_time();
     for (auto i = inner_iters; i--;) {
-        auto s = murmurhash3_x86_32(split_buf);
+        auto s = hash_fn(io);
         perf_tests::do_not_optimize(s);
     }
     perf_tests::stop_measuring_time();
+
     return inner_iters;
+}
+
+PERF_TEST(murmur_hash_x86_32, iobuf) {
+    return iobuf_hash_body<true>(
+      [](const iobuf& io) { return murmurhash3_x86_32(io); });
+}
+
+PERF_TEST(iobuf_hash, std_hash_contiguous) {
+    return iobuf_hash_body<false>(
+      [](const iobuf& io) { return std::hash<iobuf>{}(io); });
+}
+
+PERF_TEST(iobuf_hash, std_hash_fragmented) {
+    return iobuf_hash_body<true>(
+      [](const iobuf& io) { return std::hash<iobuf>{}(io); });
 }
 
 } // namespace

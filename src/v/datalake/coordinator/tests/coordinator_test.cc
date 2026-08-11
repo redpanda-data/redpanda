@@ -37,10 +37,9 @@ namespace {
 // No-op committer that doesn't commit anything.
 class noop_file_committer : public file_committer {
 public:
-    ss::future<checked<chunked_vector<mark_files_committed_update>, errc>>
-    commit_topic_files_to_catalog(
+    ss::future<checked<commit_result, errc>> commit_topic_files_to_catalog(
       model::topic, const topics_state&) const override {
-        co_return chunked_vector<mark_files_committed_update>{};
+        co_return commit_result{};
     }
 
     ss::future<checked<std::nullopt_t, errc>>
@@ -49,6 +48,54 @@ public:
     }
 
     ~noop_file_committer() override = default;
+};
+
+// Commits only the earliest pending entry of each partition per call, leaving
+// later entries pending. Mimics a committer bounded by a small chunk size, so
+// the coordinator must make multiple passes to fully drain a backlog.
+class chunked_file_committer : public file_committer {
+public:
+    ss::future<checked<commit_result, errc>> commit_topic_files_to_catalog(
+      model::topic t, const topics_state& state) const override {
+        chunked_vector<mark_files_committed_update> ret;
+        auto it = state.topic_to_state.find(t);
+        if (it == state.topic_to_state.end()) {
+            co_return commit_result{};
+        }
+        const auto& tstate = it->second;
+        bool has_more = false;
+        for (const auto& [pid, pstate] : tstate.pid_to_pending_files) {
+            if (pstate.pending_entries.empty()) {
+                continue;
+            }
+            // We commit only the front entry, so any later entries are left
+            // behind -- report that there is more to commit.
+            if (pstate.pending_entries.size() > 1) {
+                has_more = true;
+            }
+            const auto& front = pstate.pending_entries.front();
+            auto build_res = mark_files_committed_update::build(
+              state,
+              model::topic_partition{t, pid},
+              tstate.revision,
+              front.data.last_offset,
+              front.data.kafka_bytes_processed);
+            EXPECT_FALSE(build_res.has_error());
+            if (build_res.has_error()) {
+                co_return errc::failed;
+            }
+            ret.emplace_back(std::move(build_res.value()));
+        }
+        co_return commit_result{
+          .updates = std::move(ret), .has_more = has_more};
+    }
+
+    ss::future<checked<std::nullopt_t, errc>>
+    drop_table(const iceberg::table_identifier&, purge_data) const final {
+        co_return std::nullopt;
+    }
+
+    ~chunked_file_committer() override = default;
 };
 
 const model::topic topic_base{"test_topic"};
@@ -80,7 +127,8 @@ struct coordinator_node {
           *snapshot_remover,
           commit_interval_ms.bind(),
           default_partition_spec.bind(),
-          disable_snapshot_expiry.bind()) {}
+          disable_snapshot_expiry.bind(),
+          max_pending_files.bind()) {}
 
     ss::future<checked<std::nullopt_t, coordinator::errc>>
     remove_tombstone(const model::topic&, model::revision_id) {
@@ -100,6 +148,7 @@ struct coordinator_node {
     config::mock_property<ss::sstring> default_partition_spec{
       "(hour(redpanda.timestamp))"};
     config::mock_property<bool> disable_snapshot_expiry{false};
+    config::mock_property<size_t> max_pending_files{100000};
     cluster::data_migrations::migrated_resources mr;
     cluster::topic_table topic_table;
     datalake::binary_type_resolver type_resolver;
@@ -192,6 +241,9 @@ ss::future<> file_adder_loop(
 struct crd_test_param {
     bool with_chaos{false};
     bool noop_commits{true};
+    // Use a committer that commits only one entry per partition per call, so a
+    // backlog must be drained over multiple coordinator passes.
+    bool chunked_commits{false};
     std::chrono::milliseconds file_commit_interval{10ms};
 };
 
@@ -225,19 +277,19 @@ public:
               raft,
               config::mock_binding<std::chrono::seconds>(1s));
             node->start(std::move(builder)).get();
-            if (args.noop_commits) {
-                crds.at(id()) = std::make_unique<coordinator_node>(
-                  std::move(stm),
-                  std::make_unique<noop_file_committer>(),
-                  std::make_unique<noop_snapshot_remover>(),
-                  args.file_commit_interval);
+            std::unique_ptr<file_committer> committer;
+            if (args.chunked_commits) {
+                committer = std::make_unique<chunked_file_committer>();
+            } else if (args.noop_commits) {
+                committer = std::make_unique<noop_file_committer>();
             } else {
-                crds.at(id()) = std::make_unique<coordinator_node>(
-                  std::move(stm),
-                  std::make_unique<simple_file_committer>(),
-                  std::make_unique<noop_snapshot_remover>(),
-                  args.file_commit_interval);
+                committer = std::make_unique<simple_file_committer>();
             }
+            crds.at(id()) = std::make_unique<coordinator_node>(
+              std::move(stm),
+              std::move(committer),
+              std::make_unique<noop_snapshot_remover>(),
+              args.file_commit_interval);
         }
         for (auto& crd : crds) {
             crd->crd.start();
@@ -423,6 +475,48 @@ TEST_F(CoordinatorTest, TestAddFilesHappyPath) {
               c->stm.state(), tp00, std::nullopt, total_expected_00));
         }
     }
+}
+
+TEST_F(CoordinatorTest, TestBackpressure) {
+    opt_ref leader_opt;
+    ASSERT_NO_FATAL_FAILURE(wait_for_leader(leader_opt).get());
+    auto& leader = leader_opt->get();
+    // Shed load once two pending files accumulate.
+    leader.max_pending_files.update(2);
+    const auto tp00 = tp(0, 0);
+    const model::revision_id rev0{1};
+    register_in_topic_tables(tp00.topic, rev0);
+    leader.ensure_table(tp00.topic, rev0);
+
+    // First two single-file adds are under the threshold and accepted (the
+    // check sees the count from before the add).
+    for (const auto& v : {pairs_t{{0, 100}}, pairs_t{{101, 200}}}) {
+        auto add_res = leader.crd
+                         .sync_add_files(
+                           tp00,
+                           rev0,
+                           make_pending_files(v, /*with_file=*/true))
+                         .get();
+        ASSERT_FALSE(add_res.has_error()) << add_res.error();
+        wait_for_apply().get();
+    }
+
+    // Two pending files now meet the threshold, so further requests are shed.
+    auto add_res = leader.crd
+                     .sync_add_files(
+                       tp00,
+                       rev0,
+                       make_pending_files({{201, 300}}, /*with_file=*/true))
+                     .get();
+    ASSERT_TRUE(add_res.has_error());
+    ASSERT_EQ(add_res.error(), coordinator::errc::failed);
+
+    // Fetching offsets is not rejected: the offsets are still useful for lag
+    // reporting, so the request succeeds with the backpressure flag set to tell
+    // the translator to hold off on new translation.
+    auto last_res = leader.crd.sync_get_last_added_offsets(tp00, rev0).get();
+    ASSERT_FALSE(last_res.has_error()) << last_res.error();
+    ASSERT_TRUE(last_res.value().backpressure);
 }
 
 TEST_F(CoordinatorTest, TestLastAddedHappyPath) {
@@ -732,4 +826,60 @@ TEST_F(CoordinatorSleepingLoopTest, TestQuickShutdownOnLeadershipChange) {
     leader.crd.notify_leadership(std::nullopt);
     RPTEST_REQUIRE_EVENTUALLY(
       100ms, [&] { return !leader.crd.leader_loop_running(); });
+}
+
+class CoordinatorChunkedLoopTest : public CoordinatorTest {
+public:
+    crd_test_param param() const override {
+        return {
+          .with_chaos = false,
+          .noop_commits = false,
+          .chunked_commits = true,
+          // Long interval: if the loop slept between chunks, draining a backlog
+          // would take many seconds. The drain signal should let a single
+          // wake-up drain it promptly.
+          .file_commit_interval = 10s,
+        };
+    }
+};
+
+TEST_F(CoordinatorChunkedLoopTest, TestDrainsBacklogWithoutSleeping) {
+    // Stop the loop kicked off in SetUp and re-elect, so the loop is idle and
+    // we can stage the full backlog before a pass begins.
+    opt_ref leader_opt;
+    ASSERT_NO_FATAL_FAILURE(wait_for_leader(leader_opt).get());
+    // Step down and notify -- this causes the background loop to stop sleeping
+    // in the now-defunct term and wait for further notification.
+    leader_opt->get().stm.raft()->step_down("test").get();
+    leader_opt->get().crd.notify_leadership(std::nullopt);
+    ASSERT_NO_FATAL_FAILURE(wait_for_leader(leader_opt).get());
+    auto& leader = leader_opt->get();
+
+    const auto tp00 = tp(0, 0);
+    const model::revision_id rev0{1};
+    register_in_topic_tables(tp00.topic, rev0);
+    leader.ensure_table(tp00.topic, rev0);
+
+    // Stage a backlog of five entries while the loop is idle. The chunked
+    // committer commits only one entry per pass, so fully draining requires
+    // multiple passes.
+    auto add_res
+      = leader.crd
+          .sync_add_files(
+            tp00,
+            rev0,
+            make_pending_files(
+              {{0, 99}, {100, 199}, {200, 299}, {300, 399}, {400, 499}}))
+          .get();
+    ASSERT_FALSE(add_res.has_error()) << add_res.error();
+    wait_for_apply().get();
+
+    // Trigger a coordinator loop: despite the higher file commit interval, the
+    // backlog should be drained quickly.
+    leader.crd.notify_leadership(leader.stm.raft()->self().id());
+    RPTEST_REQUIRE_EVENTUALLY(5s, [&] {
+        auto tp_state = leader.stm.state().partition_state(tp00);
+        return tp_state.has_value()
+               && tp_state->get().last_committed == kafka::offset{499};
+    });
 }

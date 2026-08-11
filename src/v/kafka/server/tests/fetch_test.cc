@@ -8,6 +8,7 @@
 // by the Apache License, Version 2.0
 
 #include "base/units.h"
+#include "cluster/log_eviction_stm.h"
 #include "cluster/tests/cluster_test_fixture.h"
 #include "container/chunked_vector.h"
 #include "kafka/protocol/batch_consumer.h"
@@ -1208,4 +1209,241 @@ FIXTURE_TEST(fetch_response_bytes_eq_units, redpanda_thread_fixture) {
 
     BOOST_REQUIRE(octx.response_size > 0);
     BOOST_REQUIRE(octx.response_size == octx.total_response_memory_units());
+}
+
+// Regression test for CORE-14617: When a fetch is retried internally (due to
+// min_bytes not being satisfied), partitions with changed metadata (like
+// log_start_offset) must still be included in the final response.
+FIXTURE_TEST(
+  fetch_session_propagates_log_start_offset, redpanda_thread_fixture) {
+    model::topic topic("foo");
+    model::partition_id pid(0);
+    auto ntp = make_default_ntp(topic, pid);
+
+    wait_for_controller_leadership().get();
+    add_topic(model::topic_namespace_view(ntp)).get();
+    wait_for_partition_offset(ntp, model::offset(0)).get();
+
+    // Produce some data
+    auto shard = app.shard_table.local().shard_for(ntp);
+    app.partition_manager
+      .invoke_on(
+        *shard,
+        [ntp](cluster::partition_manager& mgr) {
+            return model::test::make_random_batches(model::offset(0), 20)
+              .then([ntp, &mgr](auto batches) {
+                  auto partition = mgr.get(ntp);
+                  return partition->raft()->replicate(
+                    chunked_vector<model::record_batch>(
+                      std::from_range,
+                      std::move(batches) | std::views::as_rvalue),
+                    raft::replicate_options(
+                      raft::consistency_level::quorum_ack));
+              });
+        })
+      .get();
+
+    auto client = make_kafka_client().get();
+    client.connect().get();
+
+    // Full fetch to establish session (session_epoch=0, invalid session_id)
+    kafka::fetch_request req1;
+    req1.data.max_bytes = std::numeric_limits<int32_t>::max();
+    req1.data.min_bytes = 1;
+    req1.data.max_wait_ms = 1000ms;
+    req1.data.session_id = kafka::invalid_fetch_session_id;
+    req1.data.session_epoch = kafka::initial_fetch_session_epoch;
+    req1.data.topics.emplace_back(
+      kafka::fetch_topic{
+        .topic = topic,
+        .partitions = {{
+          .partition = pid,
+          .fetch_offset = model::offset(5),
+        }},
+      });
+
+    auto resp1 = client.dispatch(std::move(req1), kafka::api_version(12)).get();
+    BOOST_REQUIRE_EQUAL(resp1.data.responses.size(), 1);
+    BOOST_REQUIRE_EQUAL(
+      resp1.data.responses[0].partitions[0].error_code,
+      kafka::error_code::none);
+    BOOST_REQUIRE_NE(resp1.data.session_id, kafka::invalid_fetch_session_id);
+
+    auto session_id = resp1.data.session_id;
+    auto initial_log_start
+      = resp1.data.responses[0].partitions[0].log_start_offset;
+
+    // Prefix truncate to change log_start_offset
+    auto trunc_err = app.partition_manager
+                       .invoke_on(
+                         *shard,
+                         [ntp](cluster::partition_manager& mgr) {
+                             auto partition = mgr.get(ntp);
+                             auto k_trunc_offset = kafka::offset(5);
+                             auto rp_trunc_offset
+                               = partition->log()->to_log_offset(
+                                 model::offset(k_trunc_offset));
+                             return partition->prefix_truncate(
+                               rp_trunc_offset,
+                               k_trunc_offset,
+                               ss::lowres_clock::time_point::max());
+                         })
+                       .get();
+    BOOST_REQUIRE(!trunc_err);
+
+    // Incremental fetch with min_bytes=1 - will retry internally waiting for
+    // data, but should still include the partition due to log_start_offset
+    // change even if no new data arrives during the retry window.
+    kafka::fetch_request req2;
+    req2.data.max_bytes = std::numeric_limits<int32_t>::max();
+    req2.data.min_bytes = 1;
+    req2.data.max_wait_ms = 1000ms;
+    req2.data.session_id = session_id;
+    req2.data.session_epoch = kafka::fetch_session_epoch(1);
+    req2.data.topics.emplace_back(
+      kafka::fetch_topic{
+        .topic = topic,
+        .partitions = {{
+          .partition = pid,
+          .fetch_offset = model::offset(20),
+        }},
+      });
+
+    auto resp2 = client.dispatch(std::move(req2), kafka::api_version(12)).get();
+    client.stop().then([&client] { client.shutdown(); }).get();
+
+    // The partition must be included even though no new data arrived, because
+    // log_start_offset changed. This is the regression test for CORE-14617.
+    BOOST_REQUIRE_EQUAL(resp2.data.responses.size(), 1);
+    BOOST_REQUIRE_EQUAL(resp2.data.responses[0].partitions.size(), 1);
+    auto new_log_start = resp2.data.responses[0].partitions[0].log_start_offset;
+    BOOST_REQUIRE_GT(new_log_start, initial_log_start);
+    BOOST_REQUIRE_EQUAL(new_log_start, model::offset(5));
+}
+
+// Regression test: when one partition's log_eviction_stm has its gate closed
+// (e.g. during shutdown/partition move), the multi-partition fetch should
+// still succeed for the remaining healthy partitions rather than failing the
+// entire request.
+FIXTURE_TEST(
+  fetch_multi_partition_with_mixed_failures, redpanda_thread_fixture) {
+    model::topic topic("foo");
+    constexpr int num_partitions = 4;
+    // The partition whose STM we will stop.
+    constexpr int stopped_partition_idx = 1;
+
+    wait_for_controller_leadership().get();
+    add_topic(model::topic_namespace(model::ns("kafka"), topic), num_partitions)
+      .get();
+
+    for (int i = 0; i < num_partitions; ++i) {
+        auto ntp = make_default_ntp(topic, model::partition_id(i));
+        wait_for_partition_offset(ntp, model::offset(0)).get();
+    }
+
+    // Write data to all partitions.
+    for (int i = 0; i < num_partitions; ++i) {
+        auto ntp = make_default_ntp(topic, model::partition_id(i));
+        auto shard = app.shard_table.local().shard_for(ntp);
+        app.partition_manager
+          .invoke_on(
+            *shard,
+            [ntp](cluster::partition_manager& mgr) {
+                return model::test::make_random_batches(model::offset(0), 5)
+                  .then([ntp, &mgr](auto batches) {
+                      auto partition = mgr.get(ntp);
+                      return partition->raft()->replicate(
+                        chunked_vector<model::record_batch>(
+                          std::from_range,
+                          std::move(batches) | std::views::as_rvalue),
+                        raft::replicate_options(
+                          raft::consistency_level::quorum_ack));
+                  });
+            })
+          .discard_result()
+          .get();
+    }
+
+    // Close the log_eviction_stm's gate on one partition to simulate a
+    // shutdown race. sync_kafka_start_offset_override will encounter a
+    // gate_closed_exception on this partition.
+    auto stopped_ntp = make_default_ntp(
+      topic, model::partition_id(stopped_partition_idx));
+    auto stopped_shard = app.shard_table.local().shard_for(stopped_ntp);
+    app.partition_manager
+      .invoke_on(
+        *stopped_shard,
+        [stopped_ntp](cluster::partition_manager& mgr) {
+            auto partition = mgr.get(stopped_ntp);
+            auto stm = partition->raft()
+                         ->stm_manager()
+                         ->get<cluster::log_eviction_stm>();
+            using accessor = cluster::testing::log_eviction_stm_accessor;
+            accessor::request_abort(*stm);
+            accessor::break_has_pending_truncation(*stm);
+            return accessor::close_gate(*stm);
+        })
+      .get();
+
+    // Build a fetch request spanning all partitions.
+    kafka::fetch_request req;
+    req.data.max_bytes = std::numeric_limits<int32_t>::max();
+    req.data.min_bytes = 1;
+    req.data.max_wait_ms = std::chrono::milliseconds(0);
+    req.data.session_id = kafka::invalid_fetch_session_id;
+    req.data.topics.emplace_back(
+      kafka::fetch_topic{
+        .topic = topic,
+        .partitions = {},
+      });
+    for (int i = 0; i < num_partitions; ++i) {
+        kafka::fetch_request::partition p;
+        p.partition = model::partition_id(i);
+        p.fetch_offset = model::offset(0);
+        p.partition_max_bytes = std::numeric_limits<int32_t>::max();
+        req.data.topics[0].partitions.push_back(p);
+    }
+
+    auto client = make_kafka_client().get();
+    client.connect().get();
+    auto resp = client.dispatch(std::move(req), kafka::api_version(4)).get();
+    client.stop().then([&client] { client.shutdown(); }).get();
+
+    // The fetch must return responses for all partitions.
+    BOOST_REQUIRE_EQUAL(resp.data.responses.size(), 1);
+    BOOST_REQUIRE_EQUAL(
+      resp.data.responses[0].partitions.size(), num_partitions);
+
+    for (int i = 0; i < num_partitions; ++i) {
+        const auto& partition_resp = resp.data.responses[0].partitions[i];
+        BOOST_REQUIRE_EQUAL(
+          partition_resp.partition_index, model::partition_id(i));
+
+        if (i == stopped_partition_idx) {
+            // The stopped partition should return an error, not crash the
+            // fetch.
+            BOOST_REQUIRE(partition_resp.error_code != kafka::error_code::none);
+        } else {
+            // Healthy partitions must return data successfully.
+            BOOST_REQUIRE_EQUAL(
+              partition_resp.error_code, kafka::error_code::none);
+            BOOST_REQUIRE(partition_resp.records);
+            BOOST_REQUIRE_GT(partition_resp.records->size_bytes(), 0);
+        }
+    }
+
+    // Reset the STM state so the fixture can shut down cleanly.
+    app.partition_manager
+      .invoke_on(
+        *stopped_shard,
+        [stopped_ntp](cluster::partition_manager& mgr) {
+            auto partition = mgr.get(stopped_ntp);
+            auto stm = partition->raft()
+                         ->stm_manager()
+                         ->get<cluster::log_eviction_stm>();
+            using accessor = cluster::testing::log_eviction_stm_accessor;
+            accessor::reset_gate(*stm);
+            accessor::reset_abort_source(*stm);
+        })
+      .get();
 }

@@ -49,6 +49,10 @@ std::string write_at_offset_stm::errc_category::message(int c) const {
                "supported by write at offset state machine";
     case errc::invalid_input:
         return "Invalid input provided to write at offset state machine";
+    case errc::not_leader:
+        return "Not leader";
+    case errc::invalid_truncation_offset:
+        return "Invalid truncation offset";
     }
     __builtin_unreachable();
 }
@@ -89,6 +93,81 @@ raft::replicate_stages write_at_offset_stm::replicate(
         timeout,
         std::move(as),
         std::move(enqueued_promise))};
+}
+
+ss::future<write_at_offset_stm::errc> write_at_offset_stm::ensure_truncatable(
+  kafka::offset new_start_offset,
+  model::timeout_clock::duration timeout,
+  std::optional<std::reference_wrapper<ss::abort_source>> as) {
+    if (new_start_offset <= kafka::offset{0}) {
+        co_return errc::invalid_truncation_offset;
+    }
+    auto holder = _gate.hold();
+    // this is a rare operation, so we hold units for the whole duration
+    const auto prev_insync_term = _insync_term;
+    auto u = co_await _sync_lock.get_units();
+    auto sync_result = co_await sync(timeout);
+    if (!sync_result) {
+        co_return errc::not_leader;
+    }
+    const auto current_insync_term = _insync_term;
+    /**
+     * There was a leadership change, reset inflight last offset as the stm
+     * should be caught up with so we do not need a cached value.
+     */
+    if (prev_insync_term != current_insync_term) {
+        _inflight_last_offset.reset();
+    }
+
+    const auto stm_last_offset = expected_last_offset();
+    if (new_start_offset <= stm_last_offset) {
+        // already truncatable
+        co_return errc::success;
+    }
+    vlog(
+      _log.debug,
+      "Ensuring truncatable up to offset {}, current stm last offset is {}",
+      new_start_offset,
+      stm_last_offset);
+    // replicate ghost batches to fill the gap
+    // term will be overriden later in the raft layer.
+    auto effective_last_offset = kafka::prev_offset(new_start_offset);
+    auto place_holders = model::make_compaction_placeholder_batches(
+      kafka::offset_cast(kafka::next_offset(stm_last_offset)),
+      kafka::offset_cast(effective_last_offset),
+      model::term_id{0});
+    chunked_vector<model::record_batch> to_replicate{
+      std::from_range, std::move(place_holders) | std::views::as_rvalue};
+
+    _inflight_last_offset = term_offset{
+      .offset = effective_last_offset, .in_sync_term = _insync_term};
+
+    try {
+        auto result = co_await _raft->replicate(
+          std::move(to_replicate),
+          raft::replicate_options(
+            raft::consistency_level::quorum_ack,
+            /*expected_term=*/_insync_term,
+            /*timeout=*/std::nullopt,
+            as));
+        if (result.has_error()) {
+            vlog(
+              _log.warn,
+              "Truncation replication failed with error: {}, inflight last "
+              "offset: {}",
+              result.error().message(),
+              _inflight_last_offset);
+            co_return errc::replicate_exception;
+        }
+        co_return errc::success;
+    } catch (...) {
+        vlog(
+          _log.warn,
+          "Replication failed with exception - {}, inflight last offset: {}",
+          std::current_exception(),
+          _inflight_last_offset);
+    }
+    co_return errc::replicate_exception;
 }
 
 ss::future<result<raft::replicate_result>> write_at_offset_stm::do_replicate(
@@ -341,6 +420,7 @@ operator<<(std::ostream& o, const write_at_offset_stm::term_offset& to) {
       o, "{{offset: {}, in_sync_term: {}}}", to.offset, to.in_sync_term);
     return o;
 }
+
 ss::future<raft::local_snapshot_applied>
 write_at_offset_stm::apply_local_snapshot(
   raft::stm_snapshot_header, iobuf&& data) {
@@ -401,3 +481,36 @@ void write_at_offset_stm_factory::create(
 }
 
 } // namespace kafka
+
+auto fmt::formatter<kafka::write_at_offset_stm::errc>::format(
+  const kafka::write_at_offset_stm::errc& err, fmt::format_context& ctx) const
+  -> decltype(ctx.out()) {
+    std::string_view msg = "unknown";
+    switch (err) {
+    case kafka::write_at_offset_stm::errc::success:
+        msg = "success";
+        break;
+        ;
+    case kafka::write_at_offset_stm::errc::invalid_offset:
+        msg = "invalid_offset";
+        break;
+    case kafka::write_at_offset_stm::errc::replicate_exception:
+        msg = "replicate_exception";
+        break;
+    case kafka::write_at_offset_stm::errc::invalid_batch_type:
+        msg = "invalid_batch_type";
+        break;
+    case kafka::write_at_offset_stm::errc::invalid_input:
+        msg = "invalid_input";
+        break;
+    case kafka::write_at_offset_stm::errc::not_leader:
+        msg = "not_leader";
+        break;
+        ;
+    case kafka::write_at_offset_stm::errc::invalid_truncation_offset:
+        msg = "invalid_truncation_offset";
+        break;
+    }
+    return fmt::format_to(
+      ctx.out(), "kafka::write_at_offset_stm::errc::{}", msg);
+}

@@ -426,7 +426,7 @@ public:
         topic_id_mapping_t _by_id;
     };
 
-    using lifecycle_markers_t = absl::node_hash_map<
+    using lifecycle_markers_t = chunked_hash_map<
       nt_revision,
       nt_lifecycle_marker,
       nt_revision_hash,

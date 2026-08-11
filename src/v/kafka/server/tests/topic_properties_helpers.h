@@ -13,10 +13,20 @@
 #include "kafka/protocol/create_partitions.h"
 #include "kafka/protocol/create_topics.h"
 #include "redpanda/tests/fixture.h"
+#include "test_utils/async.h"
 
 class topic_properties_test_fixture : public redpanda_thread_fixture {
 public:
     topic_properties_test_fixture() { wait_for_controller_leadership().get(); }
+
+    void wait_for_license_init() {
+        tests::cooperative_spin_wait_with_timeout(5s, [this] {
+            return app.controller->get_feature_table()
+              .local()
+              .get_license()
+              .has_value();
+        }).get();
+    }
 
     void revoke_license() {
         app.controller->get_feature_table()

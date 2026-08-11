@@ -115,6 +115,15 @@ checked<schema_update_required, schema_manager::errc> apply_evolution_rules(
           table_id);
         return schema_manager::errc::failed;
     }
+
+    vlog(
+      datalake_log.trace,
+      "check_schema_compat table={} dest={} source={} spec={}",
+      table_id,
+      dest_type,
+      schema.schema_struct,
+      *cur_spec);
+
     auto compat_res = check_schema_compat(
       dest_type, schema.schema_struct.copy(), *cur_spec);
     if (compat_res.has_error()) {
@@ -239,6 +248,14 @@ catalog_schema_manager::ensure_table_schema(
           table_id);
         co_return errc::failed;
     }
+
+    vlog(
+      datalake_log.trace,
+      "Current schema for table {}: id={} struct={}, writer struct: {}",
+      table_id,
+      current_schema->schema_id,
+      current_schema->schema_struct,
+      writer_struct_type);
 
     std::optional<iceberg::struct_type> new_schema;
     if (use_schema_merging) {

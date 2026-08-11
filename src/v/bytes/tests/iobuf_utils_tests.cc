@@ -15,6 +15,8 @@
 
 #include <seastar/testing/thread_test_case.hh>
 
+#include <iterator>
+
 SEASTAR_THREAD_TEST_CASE(test_reading_zero_bytes_empty_stream) {
     auto buf = iobuf();
     auto is = make_iobuf_input_stream(std::move(buf));
@@ -57,4 +59,27 @@ SEASTAR_THREAD_TEST_CASE(test_bytes_conversion) {
       absl::Hash<bytes>{}(roundtrip_buf), absl::Hash<bytes>{}(bytes_buf));
     BOOST_REQUIRE_EQUAL(
       absl::Hash<iobuf>{}(buf), absl::Hash<iobuf>{}(converted_back));
+}
+
+SEASTAR_THREAD_TEST_CASE(test_iobuf_hash_ignores_fragmentation) {
+    iobuf split_a;
+    split_a.append("aa", 2);
+    iobuf split_b;
+    split_b.append("bb", 2);
+
+    iobuf split;
+    split.append_fragments(std::move(split_a));
+    split.append_fragments(std::move(split_b));
+
+    iobuf contiguous;
+    contiguous.append("aabb", 4);
+
+    BOOST_REQUIRE_EQUAL(split, contiguous);
+    BOOST_REQUIRE_NE(
+      std::distance(split.cbegin(), split.cend()),
+      std::distance(contiguous.cbegin(), contiguous.cend()));
+    BOOST_REQUIRE_EQUAL(
+      std::hash<iobuf>{}(split), std::hash<iobuf>{}(contiguous));
+    BOOST_REQUIRE_EQUAL(
+      absl::Hash<iobuf>{}(split), absl::Hash<iobuf>{}(contiguous));
 }

@@ -12,6 +12,7 @@
 #pragma once
 
 #include "base/seastarx.h"
+#include "json/chunked_buffer.h"
 #include "json/types.h"
 #include "pandaproxy/json/rjson_parse.h"
 #include "pandaproxy/json/rjson_util.h"
@@ -54,6 +55,7 @@ class post_subject_versions_request_handler
         schema_definition::references refs;
     };
     mutable_schema _schema;
+    ::json::generic_chunked_buffer<Encoding> _schema_sink;
 
 public:
     using Ch = typename json::base_handler<Encoding>::Ch;
@@ -144,16 +146,30 @@ public:
         return set_integer_value(static_cast<int>(i));
     }
 
+    /// The schema string is consumed through a chunked sink so that the JSON
+    /// reader decodes it directly into an iobuf, avoiding a large contiguous
+    /// allocation in the reader's stack for big schemas.
+    using ChunkedStringSinkType = ::json::generic_chunked_buffer<Encoding>;
+
+    bool AcceptsChunkedString() const { return _state == state::schema; }
+
+    ChunkedStringSinkType& ChunkedStringSink() {
+        _schema_sink.Clear();
+        return _schema_sink;
+    }
+
+    bool ChunkedString(::json::SizeType) {
+        auto buf = std::move(_schema_sink).as_iobuf();
+        // drop the '\0' terminator appended by the reader
+        buf.trim_back(sizeof(Ch));
+        _schema.def = schema_definition::raw_string{std::move(buf)};
+        _state = state::record;
+        return true;
+    }
+
     bool String(const Ch* str, ::json::SizeType len, bool) {
         auto sv = std::string_view{str, len};
         switch (_state) {
-        case state::schema: {
-            iobuf buf;
-            buf.append(sv.data(), sv.size());
-            _schema.def = schema_definition::raw_string{std::move(buf)};
-            _state = state::record;
-            return true;
-        }
         case state::schema_type: {
             auto type = from_string_view<schema_type>(sv);
             if (type.has_value()) {
@@ -174,6 +190,8 @@ public:
         }
         case state::empty:
         case state::record:
+        // the schema string is handled by ChunkedString()
+        case state::schema:
         case state::id:
         case state::version:
         case state::metadata:

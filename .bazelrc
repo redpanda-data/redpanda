@@ -71,6 +71,17 @@ build --@seastar//:stack_guards=True
 # Debug mode by default. Disabled in release builds.
 build --@seastar//:debug=True
 
+# Protobuf 33.5 contains internal uses of deprecated APIs (specifically the
+# RepeatedPtrField constructor in map_field.h, deprecated in favor of
+# Arena::Create<RepeatedPtrField<...>>(Arena*)). Since this deprecation occurs
+# in third-party headers we cannot modify, we suppress the warning for internal
+# files that include protobuf-generated code. These warnings would otherwise be
+# treated as errors due to -Werror,-Wdeprecated-declarations.
+build --per_file_copt=src/v/serde/protobuf/tests/round_trip_test.cc@-Wno-deprecated-declarations
+build --per_file_copt=src/v/serde/protobuf/tests/parser_test.cc@-Wno-deprecated-declarations
+build --per_file_copt=src/v/iceberg/conversion/tests/iceberg_protobuf_tests.cc@-Wno-deprecated-declarations
+build --per_file_copt=src/v/pandaproxy/schema_registry/protobuf.cc@-Wno-deprecated-declarations
+
 # =================================
 # Fastbuild
 # =================================
@@ -205,5 +216,8 @@ test:lldb --strategy=TestRunner=local
 # always pass through the following variables if they are set in the environment
 test --test_env=REDPANDA_RNG_SEEDING_MODE
 test --test_env=REDPANDA_DEBUG_TEST_HOOKS
+
+# Empty in this branch: CI passes --config=ci-remote-cache unconditionally.
+build:ci-remote-cache --build
 
 try-import %workspace%/user.bazelrc

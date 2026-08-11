@@ -135,11 +135,22 @@ TEST_F_CORO(simple_fair_scheduling_policy_fixture, test_happy_path) {
            .translation_throughput_bytes_per_sec = 1_MiB,
            .num_concurrent_writers = 1}));
     }
-    // 120 * 10ms = 12s
-    static constexpr size_t expected_translations = 120;
+    // With no contention every translator should be scheduled repeatedly and
+    // accrue running time. Running time per translation is dominated by the
+    // mock's sleeps, not the 10ms quota: the running window spans
+    // translate + maybe_checkpoint + notify_done, and notify_done alone sleeps
+    // 100ms every cycle.
+    //   - large-lag (1min): never checkpoints during the test
+    //     -> ~110ms/translation
+    //   - small-lag (10ms): checkpoints every cycle (+100ms)
+    //     -> ~210ms/translation
+    // A large-lag translator reaches >12s running time at ~110 translations
+    // (~14s wall); a small-lag translator reaches >100 translations at ~23s
+    // wall. Both are well under the 45s deadline.
+    static constexpr size_t expected_translations = 100;
     static constexpr auto expected_runtime
       = std::chrono::duration_cast<clock::duration>(12s);
-    RPTEST_REQUIRE_EVENTUALLY_CORO(30s, [this]() {
+    RPTEST_REQUIRE_EVENTUALLY_CORO(45s, [this]() {
         const auto& translators = _scheduler->all_translators();
         return std::all_of(
           translators.begin(), translators.end(), [](const auto& it) {

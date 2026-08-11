@@ -10,6 +10,7 @@
  */
 #pragma once
 #include "bytes/iobuf.h"
+#include "hashing/xx.h"
 
 #include <boost/container_hash/hash.hpp>
 
@@ -17,12 +18,14 @@ namespace std {
 template<>
 struct hash<::iobuf> {
     size_t operator()(const ::iobuf& b) const {
-        size_t h = 0;
-        for (auto& f : b) {
-            boost::hash_combine(
-              h, std::hash<std::string_view>{}({f.get(), f.size()}));
+        incremental_xxhash64 h;
+        for (const auto& f : b) {
+            h.update(f.get(), f.size());
         }
-        return h;
+        // mix once
+        size_t seed = 0;
+        boost::hash_combine(seed, h.digest());
+        return seed;
     }
 };
 } // namespace std

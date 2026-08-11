@@ -12,8 +12,6 @@
 #include "datalake/coordinator/state.h"
 #include "datalake/coordinator/translated_offset_range.h"
 
-#include <iterator>
-
 namespace datalake::coordinator {
 
 std::ostream& operator<<(std::ostream& o, const update_key& u) {
@@ -24,6 +22,8 @@ std::ostream& operator<<(std::ostream& o, const update_key& u) {
         return o << "update_key::mark_files_committed";
     case update_key::topic_lifecycle_update:
         return o << "update_key::topic_lifecycle_update";
+    case update_key::reset_topic_state:
+        return o << "update_key::reset_topic_state";
     }
 }
 
@@ -291,6 +291,49 @@ topic_lifecycle_update::apply(topics_state& state) {
     return true;
 }
 
+checked<void, stm_update_error>
+reset_topic_state_update::can_apply(const topics_state& state) {
+    auto topic_it = state.topic_to_state.find(topic);
+    if (topic_it == state.topic_to_state.end()) {
+        // No topic at all, the reset is a no-op.
+        return outcome::success();
+    }
+    const auto& cur_topic = topic_it->second;
+    if (topic_revision != cur_topic.revision) {
+        return stm_update_error{fmt::format(
+          "topic {} revision mismatch: got {}, current rev {}",
+          topic,
+          topic_revision,
+          cur_topic.revision)};
+    }
+    return outcome::success();
+}
+
+checked<void, stm_update_error>
+reset_topic_state_update::apply(topics_state& state) {
+    auto allowed = can_apply(state);
+    if (allowed.has_error()) {
+        return allowed.error();
+    }
+
+    auto topic_it = state.topic_to_state.find(topic);
+    if (topic_it == state.topic_to_state.end()) {
+        return outcome::success();
+    }
+    auto& t_state = topic_it->second;
+    if (reset_all_partitions) {
+        t_state.pid_to_pending_files.clear();
+    }
+    for (auto& [pid, po] : partition_overrides) {
+        auto& ps = t_state.pid_to_pending_files[pid];
+        ps.pending_entries.clear();
+        if (po.last_committed.has_value()) {
+            ps.last_committed = po.last_committed.value();
+        }
+    }
+    return outcome::success();
+}
+
 std::ostream& operator<<(std::ostream& o, const add_files_update& u) {
     fmt::print(o, "{{tp: {}, revision: {}, entries: [", u.tp, u.topic_revision);
     static constexpr size_t max_to_log = 6;
@@ -326,6 +369,18 @@ std::ostream& operator<<(std::ostream& o, const topic_lifecycle_update& u) {
       u.topic,
       u.revision,
       u.new_state);
+    return o;
+}
+
+std::ostream& operator<<(std::ostream& o, const reset_topic_state_update& u) {
+    fmt::print(
+      o,
+      "{{topic: {}, revision: {}, reset_all_partitions: {}, "
+      "partition_overrides: {} entries}}",
+      u.topic,
+      u.topic_revision,
+      u.reset_all_partitions,
+      u.partition_overrides.size());
     return o;
 }
 

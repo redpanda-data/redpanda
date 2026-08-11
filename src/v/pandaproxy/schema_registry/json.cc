@@ -11,13 +11,12 @@
 
 #include "pandaproxy/schema_registry/json.h"
 
-#include "absl/container/flat_hash_map.h"
-#include "absl/container/flat_hash_set.h"
-#include "absl/container/inlined_vector.h"
+#include "base/format_to.h"
+#include "bytes/streambuf.h"
+#include "container/chunked_hash_map.h"
 #include "json/chunked_buffer.h"
 #include "json/chunked_input_stream.h"
 #include "json/document.h"
-#include "json/ostreamwrapper.h"
 #include "json/pointer.h"
 #include "json/writer.h"
 #include "pandaproxy/schema_registry/compatibility.h"
@@ -49,14 +48,60 @@
 #include <jsoncons_ext/jsonschema/jsonschema.hpp>
 #include <rapidjson/error/en.h>
 
+#include <array>
 #include <exception>
 #include <filesystem>
+#include <optional>
 #include <ranges>
 #include <string_view>
+#include <type_traits>
 
 namespace pandaproxy::schema_registry {
 
 namespace {
+
+// Helper to create schema errors without inlining fmt::format machinery
+// into the caller's stack frame.
+template<typename... Args>
+[[gnu::noinline]] error_info
+make_invalid_schema(fmt::format_string<Args...> fmt, Args&&... args) {
+    return error_info{
+      error_code::schema_invalid,
+      fmt::format(fmt, std::forward<Args>(args)...)};
+}
+
+template<typename... Args>
+[[noreturn]] void
+throw_invalid_schema(fmt::format_string<Args...> fmt, Args&&... args) {
+    throw as_exception(make_invalid_schema(fmt, std::forward<Args>(args)...));
+}
+
+template<typename E, std::size_t Size>
+requires std::is_enum_v<E>
+struct enum_bitset : std::bitset<Size> {
+    using std::bitset<Size>::bitset;
+    using std::bitset<Size>::set;
+
+    template<typename... Es>
+    requires(std::same_as<Es, E> && ...)
+    explicit enum_bitset(Es... es) {
+        (set(es), ...);
+    }
+
+    enum_bitset& set(E e, bool v = true) {
+        std::bitset<Size>::set(static_cast<size_t>(e), v);
+        return *this;
+    }
+
+    bool test(E e) const {
+        return std::bitset<Size>::test(static_cast<size_t>(e));
+    }
+
+    constexpr friend enum_bitset
+    set_difference(enum_bitset lhs, enum_bitset rhs) {
+        return {(lhs & ~rhs).to_ulong()};
+    }
+};
 
 using json_compatibility_result = raw_compatibility_result;
 
@@ -114,8 +159,9 @@ using json_id_uri = named_type<ss::sstring, struct json_id_uri_tag>;
 // mapping of $id to jsonpointer to the parent object
 // it contains at least the root $id for doc. If the root $id is not
 // present, then the default value "" is used
-using id_to_schema_pointer = absl::
-  flat_hash_map<json_id_uri, std::pair<json::Pointer, json_schema_dialect>>;
+using id_to_schema_pointer = chunked_hash_map<
+  json_id_uri,
+  std::pair<json::Pointer, json_schema_dialect>>;
 
 json_id_uri to_json_id_uri(const jsoncons::uri& uri) {
     // ensure that only scheme, host and path are used
@@ -246,23 +292,35 @@ ss::future<> check_references(sharded_store& store, subject_schema schema) {
     }
 }
 
+// OutputStream adapter for rapidjson Writer to write directly to fmt::iterator
+struct fmt_iterator_output_stream {
+    using Ch = char;
+    fmt::iterator& it;
+
+    void Put(Ch c) { *it++ = c; }
+    void Flush() {}
+};
+
 // helper struct to format json::Value
 struct pj {
     const json::Value& v;
-    friend std::ostream& operator<<(std::ostream& os, const pj& p) {
-        auto osw = json::OStreamWrapper{os};
-        auto writer = json::Writer<json::OStreamWrapper>{osw};
-        p.v.Accept(writer);
-        return os;
+
+    fmt::iterator format_to(fmt::iterator it) const {
+        fmt_iterator_output_stream os{it};
+        json::Writer<fmt_iterator_output_stream> writer{os};
+        v.Accept(writer);
+        return os.it;
     }
 };
 
+// helper struct to format json::Pointer
 struct pjp {
     const json::Pointer& p;
-    friend std::ostream& operator<<(std::ostream& os, const pjp& p) {
-        auto osw = json::OStreamWrapper{os};
-        p.p.Stringify(osw);
-        return os;
+
+    fmt::iterator format_to(fmt::iterator it) const {
+        fmt_iterator_output_stream os{it};
+        p.Stringify(os);
+        return os.it;
     }
 };
 
@@ -288,13 +346,20 @@ public:
 
 private:
     const json_schema_definition::impl& _schema;
-    static constexpr int max_recursion_depth{5};
+    static constexpr int max_recursion_depth{63};
     int _ref_units{max_recursion_depth};
 };
 
 struct context {
     schema_context older;
     schema_context newer;
+    // Track visited (older, newer) schema pairs for cycle detection.
+    // If we encounter the same pair twice during traversal, we've found a cycle
+    // and can return early (compatible by assumption - cycles that differ would
+    // have been caught on first visit).
+    using visited_locations
+      = chunked_hash_set<std::pair<const json::Value*, const json::Value*>>;
+    visited_locations& visited;
 };
 
 template<json_schema_dialect Dialect>
@@ -352,12 +417,10 @@ result<json_schema_dialect> validate_json_schema(
         // Throws when the schema is invalid with details about the failure
         metaschema_doc.validate(schema);
     } catch (const std::exception& e) {
-        return error_info{
-          error_code::schema_invalid,
-          fmt::format(
-            "Invalid json schema: '{}'. Error: '{}'",
-            schema.to_string(),
-            e.what())};
+        return make_invalid_schema(
+          "Invalid json schema: '{}'. Error: '{}'",
+          schema.to_string(),
+          e.what());
     }
 
     // schema is a syntactically valid json schema, where $schema == Dialect.
@@ -404,13 +467,11 @@ result<document_context> parse_json(iobuf buf) {
     reader.read(ec);
     if (ec || !decoder.is_valid()) {
         // not a valid json document, return error
-        return error_info{
-          error_code::schema_invalid,
-          fmt::format(
-            "Malformed json schema: {} at line {} column {}",
-            ec ? ec.message() : "Invalid document",
-            reader.line(),
-            reader.column())};
+        return make_invalid_schema(
+          "Malformed json schema: {} at line {} column {}",
+          ec ? ec.message() : "Invalid document",
+          reader.line(),
+          reader.column());
     }
     auto schema = decoder.get_result();
 
@@ -431,11 +492,9 @@ result<document_context> parse_json(iobuf buf) {
               it->value().is_string() == false || !maybe_dialect.has_value()) {
                 // if present, "$schema" have to be a string, and it has to be
                 // one the implemented dialects. If not, return an error
-                return error_info{
-                  error_code::schema_invalid,
-                  fmt::format(
-                    "Unsupported json schema dialect: '{}'",
-                    jsoncons::print(it->value()))};
+                return make_invalid_schema(
+                  "Unsupported json schema dialect: '{}'",
+                  jsoncons::print(it->value()));
             }
         }
     }
@@ -471,12 +530,10 @@ result<document_context> parse_json(iobuf buf) {
         // not a valid json document, return error
         // this is unlikely to happen, since we already parsed this stream with
         // jsoncons, but the possibility of a bug exists
-        return error_info{
-          error_code::schema_invalid,
-          fmt::format(
-            "Malformed json schema: {} at offset {}",
-            rapidjson::GetParseError_En(rapidjson_schema.GetParseError()),
-            rapidjson_schema.GetErrorOffset())};
+        return make_invalid_schema(
+          "Malformed json schema: {} at offset {}",
+          rapidjson::GetParseError_En(rapidjson_schema.GetParseError()),
+          rapidjson_schema.GetErrorOffset());
     }
 
     return {
@@ -494,7 +551,7 @@ json_compatibility_result is_superset(
   context ctx,
   const json::Value& older,
   const json::Value& newer,
-  std::filesystem::path p);
+  const std::filesystem::path& p);
 
 // close the implementation in a namespace to keep it contained
 namespace is_superset_impl {
@@ -508,8 +565,7 @@ enum class json_type : uint8_t {
     boolean = 5,
     null = 6
 };
-// enough inlined space to hold all the values of json_type
-using json_type_list = absl::InlinedVector<json_type, 7>;
+using json_type_list = enum_bitset<json_type, 7>;
 
 constexpr std::string_view to_string_view(json_type t) {
     switch (t) {
@@ -546,10 +602,7 @@ constexpr auto parse_json_type(const json::Value& v) {
     auto sv = as_string_view(v);
     auto type = from_string_view(sv);
     if (!type) {
-        throw as_exception(
-          error_info{
-            error_code::schema_invalid,
-            fmt::format("Invalid JSON Schema type: '{}'", sv)});
+        throw_invalid_schema("Invalid JSON Schema type: '{}'", sv);
     }
     return *type;
 }
@@ -629,25 +682,16 @@ json_type_list normalized_type(const json::Value& v) {
     auto ret = json_type_list{};
     if (type_it == v.MemberEnd()) {
         // omit keyword is like accepting all the types
-        ret = {
-          json_type::string,
-          json_type::integer,
-          json_type::number,
-          json_type::object,
-          json_type::array,
-          json_type::boolean,
-          json_type::null};
+        ret.set();
     } else if (type_it->value.IsArray()) {
         // schema ensures that all the values are unique
         for (auto& v : type_it->value.GetArray()) {
-            ret.push_back(parse_json_type(v));
+            ret.set(parse_json_type(v));
         }
     } else {
-        ret.push_back(parse_json_type(type_it->value));
+        ret.set(parse_json_type(type_it->value));
     }
 
-    // to support set difference operations, sort the elements
-    std::ranges::sort(ret);
     return ret;
 }
 
@@ -752,14 +796,11 @@ json::Pointer to_json_pointer(std::string_view sv) {
     auto candidate = json::Pointer{sv.data(), sv.size()};
     if (auto ec = candidate.GetParseErrorCode();
         ec != rapidjson::kPointerParseErrorNone) {
-        throw as_exception(
-          error_info{
-            error_code::schema_invalid,
-            fmt::format(
-              "invalid fragment '{}' error {} at {}",
-              sv,
-              ec,
-              candidate.GetParseErrorOffset())});
+        throw_invalid_schema(
+          "invalid fragment '{}' error {} at {}",
+          sv,
+          ec,
+          candidate.GetParseErrorOffset());
     }
 
     return candidate;
@@ -772,14 +813,10 @@ resolve_pointer(const json::Pointer& p, const json::Value& root) {
     auto unresolved_token = size_t{0};
     auto* value = p.Get(root, &unresolved_token);
     if (value == nullptr) {
-        throw as_exception(
-          error_info{
-            error_code::schema_invalid,
-            fmt::format(
-              "object not found for pointer '{}' unresolved token at index "
-              "{}",
-              pjp{p},
-              unresolved_token)});
+        throw_invalid_schema(
+          "object not found for pointer '{}' unresolved token at index {}",
+          pjp{p},
+          unresolved_token);
     }
 
     return *value;
@@ -813,10 +850,8 @@ resolve_reference(schema_context& ctx, const json::Value& candidate) {
         auto* lookup_p = ctx.find_bundled(id_uri);
         if (lookup_p == nullptr) {
             // TODO use a better error code
-            throw as_exception(
-              error_info{
-                error_code::schema_invalid,
-                fmt::format("schema pointer not found for uri '{}'", id_uri)});
+            throw_invalid_schema(
+              "schema pointer not found for uri '{}'", id_uri);
         }
         const auto& [schema_pointer, dialect] = *lookup_p;
 
@@ -840,19 +875,15 @@ resolve_reference(schema_context& ctx, const json::Value& candidate) {
             // this requirement could be relaxed but it requires to keep track
             // of the dialect for each json::Value
             if (dialect != ctx.dialect()) {
-                throw as_exception(
-                  error_info{
-                    error_code::schema_invalid,
-                    fmt::format(
-                      "schema dialect mismatch for uri '{}'", id_uri)});
+                throw_invalid_schema(
+                  "schema dialect mismatch for uri '{}'", id_uri);
             }
 
             return merge_references(references_objects);
         }
     }
-    throw std::runtime_error(
-      fmt::format(
-        "max traversals reached for uri {} '{}'", id_uri, pjp{fragment_p}));
+    throw_invalid_schema(
+      "max traversals reached for uri {} '{}'", id_uri, pjp{fragment_p});
 }
 
 // helper to convert a boolean to a schema, and to traverse $refs
@@ -866,11 +897,8 @@ json_const_object get_schema(schema_context& ctx, const json::Value& v) {
         // {}/{"not":{}}
         return v.GetBool() ? get_true_schema() : get_false_schema();
     }
-    throw as_exception(
-      error_info{
-        error_code::schema_invalid,
-        fmt::format(
-          "Invalid JSON Schema, should be object or boolean: '{}'", pj{v})});
+    throw_invalid_schema(
+      "Invalid JSON Schema, should be object or boolean: '{}'", pj{v});
 }
 
 // helper to retrieve the object value for a key, or an empty object if the key
@@ -892,11 +920,8 @@ get_object_or_empty(const json::Value& v, std::string_view key) {
         // {}/{"not":{}}
         return it->value.GetBool() ? get_true_schema() : get_false_schema();
     }
-    throw as_exception(
-      error_info{
-        error_code::schema_invalid,
-        fmt::format(
-          "Invalid JSON Schema, should be object or boolean: '{}'", pj{v})});
+    throw_invalid_schema(
+      "Invalid JSON Schema, should be object or boolean: '{}'", pj{v});
 }
 
 // helper to retrieve the array value for a key, or an empty array if the key
@@ -965,8 +990,9 @@ json_compatibility_result is_numeric_property_value_superset(
   const json::Value& newer,
   std::string_view prop_name,
   VPred&& value_predicate,
-  json_incompatibility changed_err,
-  json_incompatibility added_err,
+  json_incompatibility_type changed_err,
+  json_incompatibility_type added_err,
+  const std::filesystem::path& p,
   std::optional<double> default_value = std::nullopt) {
     // get value or default_value
     auto get_value = [&](const json::Value& v) -> std::optional<double> {
@@ -984,13 +1010,12 @@ json_compatibility_result is_numeric_property_value_superset(
         // representation. this cannot be caught with this, and it would require
         // some sort of decimal type
         if (!it->value.IsLosslessDouble()) {
-            throw as_exception(invalid_schema(
-              fmt::format(
-                R"(is_numeric_property_value_superset-{} not implemented for type {}. input: older: '{}', newer: '{}')",
-                prop_name,
-                it->value.GetType(),
-                pj{older},
-                pj{newer})));
+            throw_invalid_schema(
+              R"(is_numeric_property_value_superset-{} not implemented for type {}. input: older: '{}', newer: '{}')",
+              prop_name,
+              it->value.GetType(),
+              pj{older},
+              pj{newer});
         }
 
         return it->value.GetDouble();
@@ -1005,13 +1030,13 @@ json_compatibility_result is_numeric_property_value_superset(
               *older_value,
               *newer_value)) {
             return json_compatibility_result::of<json_incompatibility>(
-              changed_err);
+              p / prop_name, changed_err);
         }
     } else if (older_value.has_value()) {
         if (!default_value.has_value() || *older_value != *default_value) {
             // Non-default value was removed
             return json_compatibility_result::of<json_incompatibility>(
-              added_err);
+              p / prop_name, added_err);
         }
     }
 
@@ -1026,7 +1051,7 @@ json_compatibility_result is_additional_superset(
   const json::Value& older,
   const json::Value& newer,
   additional_field_for field_type,
-  std::filesystem::path p) {
+  const std::filesystem::path& p) {
     // "additional___" can be either true (if omitted it's true), false
     // or a schema. The check is performed with this table.
     // older ap | newer ap | compatible
@@ -1128,14 +1153,16 @@ json_compatibility_result is_additional_superset(
         [&ctx,
          &additional_path](const json::Value* older, const json::Value* newer) {
             // check subschemas for compatibility
-            return is_superset(ctx, *older, *newer, std::move(additional_path));
+            return is_superset(ctx, *older, *newer, additional_path);
         }),
       get_additional_props(ctx.older.dialect(), older),
       get_additional_props(ctx.newer.dialect(), newer));
 }
 
 json_compatibility_result is_string_superset(
-  const json::Value& older, const json::Value& newer, std::filesystem::path p) {
+  const json::Value& older,
+  const json::Value& newer,
+  const std::filesystem::path& p) {
     json_compatibility_result res;
 
     // note: "format" is not part of the checks
@@ -1145,8 +1172,9 @@ json_compatibility_result is_string_superset(
       newer,
       "minLength",
       std::less_equal<>{},
-      {p / "minLength", json_incompatibility_type::min_length_increased},
-      {p / "minLength", json_incompatibility_type::min_length_added},
+      json_incompatibility_type::min_length_increased,
+      json_incompatibility_type::min_length_added,
+      p,
       0));
 
     res.merge(is_numeric_property_value_superset(
@@ -1154,8 +1182,9 @@ json_compatibility_result is_string_superset(
       newer,
       "maxLength",
       std::greater_equal<>{},
-      {p / "maxLength", json_incompatibility_type::max_length_decreased},
-      {p / "maxLength", json_incompatibility_type::max_length_added}));
+      json_incompatibility_type::max_length_decreased,
+      json_incompatibility_type::max_length_added,
+      p));
 
     auto [maybe_gate_value, older_val_p, newer_val_p]
       = extract_property_and_gate_check(older, newer, "pattern");
@@ -1177,7 +1206,9 @@ json_compatibility_result is_string_superset(
 }
 
 json_compatibility_result is_numeric_superset(
-  const json::Value& older, const json::Value& newer, std::filesystem::path p) {
+  const json::Value& older,
+  const json::Value& newer,
+  const std::filesystem::path& p) {
     json_compatibility_result res;
 
     // preconditions:
@@ -1200,8 +1231,9 @@ json_compatibility_result is_numeric_superset(
       newer,
       "minimum",
       std::less_equal<>{},
-      {p / "minimum", json_incompatibility_type::minimum_increased},
-      {p / "minimum", json_incompatibility_type::minimum_added}));
+      json_incompatibility_type::minimum_increased,
+      json_incompatibility_type::minimum_added,
+      p));
 
     // older["maximum"] is not superset of newer["maximum"] because newer is
     // less strict
@@ -1210,8 +1242,9 @@ json_compatibility_result is_numeric_superset(
       newer,
       "maximum",
       std::greater_equal<>{},
-      {p / "maximum", json_incompatibility_type::maximum_decreased},
-      {p / "maximum", json_incompatibility_type::maximum_added}));
+      json_incompatibility_type::maximum_decreased,
+      json_incompatibility_type::maximum_added,
+      p));
 
     // TODO: return multiple_of_expanded instead of multiple_of_changed if older
     // is a multiple of newer
@@ -1219,7 +1252,7 @@ json_compatibility_result is_numeric_superset(
       older,
       newer,
       "multipleOf",
-      [](double older, double newer) {
+      [](double older_val, double newer_val) {
           // check that the reminder of newer/older is close enough to 0.
           // close enough is defined as being close to the Unit in the Last
           // Place of the bigger between the two.
@@ -1227,11 +1260,12 @@ json_compatibility_result is_numeric_superset(
           // representation it would be possible to perform an exact
           // reminder(newer, older)==0 check
           constexpr auto max_ulp_error = 3;
-          return std::abs(std::remainder(newer, older))
-                 <= (max_ulp_error * boost::math::ulp(newer));
+          return std::abs(std::remainder(newer_val, older_val))
+                 <= (max_ulp_error * boost::math::ulp(newer_val));
       },
-      {p / "multipleOf", json_incompatibility_type::multiple_of_changed},
-      {p / "multipleOf", json_incompatibility_type::multiple_of_added}));
+      json_incompatibility_type::multiple_of_changed,
+      json_incompatibility_type::multiple_of_added,
+      p));
 
     // exclusiveMinimum/exclusiveMaximum checks are mostly the same logic,
     // implemented in this helper
@@ -1257,12 +1291,11 @@ json_compatibility_result is_numeric_superset(
             if (it->value.IsLosslessDouble()) {
                 return it->value.GetDouble();
             }
-            // v could not be decodes as a double, likely a malformed json
-            throw as_exception(invalid_schema(
-              fmt::format(
-                R"(is_numeric_superset-{} not implemented for types other than "boolean" and "number". input: '{}')",
-                prop_name,
-                pj{v})));
+            // v could not be decoded as a double, likely a malformed json
+            throw_invalid_schema(
+              R"(is_numeric_superset-{} not implemented for types other than "boolean" and "number". input: '{}')",
+              prop_name,
+              pj{v});
         };
 
         return std::visit(
@@ -1297,12 +1330,11 @@ json_compatibility_result is_numeric_superset(
                 return json_compatibility_result{};
             },
             [&](auto, auto) -> json_compatibility_result {
-                throw as_exception(invalid_schema(
-                  fmt::format(
-                    R"(is_numeric_superset-{} not implemented for mixed types: older: '{}', newer: '{}')",
-                    prop_name,
-                    pj{older},
-                    pj{newer})));
+                throw_invalid_schema(
+                  R"(is_numeric_superset-{} not implemented for mixed types: older: '{}', newer: '{}')",
+                  prop_name,
+                  pj{older},
+                  pj{newer});
             }),
           get_value(older),
           get_value(newer));
@@ -1341,7 +1373,7 @@ json_compatibility_result is_array_superset(
   const context& ctx,
   const json::Value& older,
   const json::Value& newer,
-  std::filesystem::path p) {
+  const std::filesystem::path& p) {
     json_compatibility_result res;
 
     // "type": "array" is used to model an array or a tuple.
@@ -1360,8 +1392,9 @@ json_compatibility_result is_array_superset(
       newer,
       "minItems",
       std::less_equal<>{},
-      {p / "minItems", json_incompatibility_type::min_items_increased},
-      {p / "minItems", json_incompatibility_type::min_items_added},
+      json_incompatibility_type::min_items_increased,
+      json_incompatibility_type::min_items_added,
+      p,
       0));
 
     res.merge(is_numeric_property_value_superset(
@@ -1369,8 +1402,9 @@ json_compatibility_result is_array_superset(
       newer,
       "maxItems",
       std::greater_equal<>{},
-      {p / "maxItems", json_incompatibility_type::max_items_decreased},
-      {p / "maxItems", json_incompatibility_type::max_items_added}));
+      json_incompatibility_type::max_items_decreased,
+      json_incompatibility_type::max_items_added,
+      p));
 
     // uniqueItems makes sense mostly for arrays, but it's also allowed for
     // tuples, so the validation is done here
@@ -1528,7 +1562,7 @@ json_compatibility_result is_object_properties_superset(
   const context& ctx,
   const json::Value& older,
   const json::Value& newer,
-  std::filesystem::path p) {
+  const std::filesystem::path& p) {
     json_compatibility_result res;
     // check that every property in newer["properties"]
     // if it appears in older["properties"],
@@ -1626,7 +1660,9 @@ json_compatibility_result is_object_properties_superset(
 }
 
 json_compatibility_result is_object_required_superset(
-  const json::Value& older, const json::Value& newer, std::filesystem::path p) {
+  const json::Value& older,
+  const json::Value& newer,
+  const std::filesystem::path& p) {
     json_compatibility_result res;
     // to pass the check, a required property from newer has to be present in
     // older, or if new it needs to have a default value.
@@ -1670,7 +1706,7 @@ json_compatibility_result is_object_dependencies_superset(
   const context& ctx,
   const json::Value& older,
   const json::Value& newer,
-  std::filesystem::path p) {
+  const std::filesystem::path& p) {
     json_compatibility_result res;
     // "dependencies", if present, is a dict of <property, string_array |
     // schema>. To be compatible, each key in older has to be in newer and the
@@ -1708,7 +1744,7 @@ json_compatibility_result is_object_dependencies_superset(
             }
 
             // schemas: o and n needs to be compatible
-            res.merge(is_superset(ctx, o, n, std::move(path_dep)));
+            res.merge(is_superset(ctx, o, n, path_dep));
         } else if (o.IsArray()) {
             if (n_it == newer_p.MemberEnd()) {
                 res.emplace<json_incompatibility>(
@@ -1748,11 +1784,10 @@ json_compatibility_result is_object_dependencies_superset(
             }
             return;
         } else {
-            throw as_exception(invalid_schema(
-              fmt::format(
-                "dependencies can only be an array or an object for valid "
-                "schemas but it was: {}",
-                pj{o})));
+            throw_invalid_schema(
+              "dependencies can only be an array or an object for valid "
+              "schemas but it was: {}",
+              pj{o});
         }
     });
 
@@ -1763,7 +1798,7 @@ json_compatibility_result is_object_superset(
   const context& ctx,
   const json::Value& older,
   const json::Value& newer,
-  std::filesystem::path p) {
+  const std::filesystem::path& p) {
     json_compatibility_result res;
 
     // newer requires less properties to be set
@@ -1772,9 +1807,9 @@ json_compatibility_result is_object_superset(
       newer,
       "minProperties",
       std::less_equal<>{},
-      {p / "minProperties",
-       json_incompatibility_type::min_properties_increased},
-      {p / "minProperties", json_incompatibility_type::min_properties_added},
+      json_incompatibility_type::min_properties_increased,
+      json_incompatibility_type::min_properties_added,
+      p,
       0));
 
     // newer requires more properties to be set
@@ -1783,9 +1818,9 @@ json_compatibility_result is_object_superset(
       newer,
       "maxProperties",
       std::greater_equal<>{},
-      {p / "maxProperties",
-       json_incompatibility_type::max_properties_decreased},
-      {p / "maxProperties", json_incompatibility_type::max_properties_added}));
+      json_incompatibility_type::max_properties_decreased,
+      json_incompatibility_type::max_properties_added,
+      p));
 
     // Check if additional properties are compatible
     res.merge(is_additional_superset(
@@ -1810,13 +1845,15 @@ json_compatibility_result is_object_superset(
     res.merge(is_object_required_superset(older, newer, p));
 
     // Check if dependencies are compatible
-    res.merge(is_object_dependencies_superset(ctx, older, newer, std::move(p)));
+    res.merge(is_object_dependencies_superset(ctx, older, newer, p));
 
     return res;
 }
 
 json_compatibility_result is_enum_superset(
-  const json::Value& older, const json::Value& newer, std::filesystem::path p) {
+  const json::Value& older,
+  const json::Value& newer,
+  const std::filesystem::path& p) {
     json_compatibility_result res;
     auto enum_p = p / "enum";
 
@@ -1870,7 +1907,7 @@ json_compatibility_result is_not_combinator_superset(
   const context& ctx,
   const json::Value& older,
   const json::Value& newer,
-  std::filesystem::path p) {
+  const std::filesystem::path& p) {
     json_compatibility_result res;
 
     auto older_it = older.FindMember("not");
@@ -1890,7 +1927,7 @@ json_compatibility_result is_not_combinator_superset(
         // less strict than the older subschema, because this means that newer
         // validated less data than older
         auto is_not_superset = is_superset(
-          {ctx.newer, ctx.older},
+          {ctx.newer, ctx.older, ctx.visited},
           newer_it->value,
           older_it->value,
           ignored_path);
@@ -1921,7 +1958,7 @@ json_compatibility_result is_positive_combinator_superset(
   const context& ctx,
   const json::Value& older,
   const json::Value& newer,
-  std::filesystem::path p) {
+  const std::filesystem::path& p) {
     json_compatibility_result res;
 
     auto get_combinator = [](const json::Value& v) {
@@ -1934,8 +1971,8 @@ json_compatibility_result is_positive_combinator_superset(
                     // json schema allows more than one of {"oneOf", "anyOf",
                     // "allOf"} to appear, but it's not currently supported for
                     // is_superset
-                    throw as_exception(invalid_schema(
-                      fmt::format("{} has more than one combinator", pj{v})));
+                    throw_invalid_schema(
+                      "{} has more than one combinator", pj{v});
                 }
                 res = c;
             }
@@ -1954,7 +1991,7 @@ json_compatibility_result is_positive_combinator_superset(
     if (!maybe_newer_comb.has_value()) {
         // older has a combinator but newer does not. not compatible
         res.emplace<json_incompatibility>(
-          std::move(p), json_incompatibility_type::combined_type_changed);
+          p, json_incompatibility_type::combined_type_changed);
         return res;
     }
     // newer has a combinator
@@ -1980,7 +2017,7 @@ json_compatibility_result is_positive_combinator_superset(
               ignored_path);
             if (is_combinator_superset.has_error()) {
                 res.emplace<json_incompatibility>(
-                  std::move(p),
+                  p,
                   json_incompatibility_type::combined_type_subschemas_changed);
             }
             return res;
@@ -1999,7 +2036,7 @@ json_compatibility_result is_positive_combinator_superset(
               });
             if (!any_superset) {
                 res.emplace<json_incompatibility>(
-                  std::move(p),
+                  p,
                   json_incompatibility_type::combined_type_subschemas_changed);
             }
             return res;
@@ -2017,7 +2054,7 @@ json_compatibility_result is_positive_combinator_superset(
               });
             if (!any_superset) {
                 res.emplace<json_incompatibility>(
-                  std::move(p),
+                  p,
                   json_incompatibility_type::combined_type_subschemas_changed);
             }
             return res;
@@ -2025,7 +2062,7 @@ json_compatibility_result is_positive_combinator_superset(
 
         // different combinators, not a special case. not compatible
         res.emplace<json_incompatibility>(
-          std::move(p), json_incompatibility_type::combined_type_changed);
+          p, json_incompatibility_type::combined_type_changed);
         return res;
     }
 
@@ -2038,7 +2075,7 @@ json_compatibility_result is_positive_combinator_superset(
         if (older_comb == p_combinator::allOf) {
             // older has more restrictions than newer, not compatible
             res.emplace<json_incompatibility>(
-              std::move(p), json_incompatibility_type::product_type_extended);
+              p, json_incompatibility_type::product_type_extended);
             return res;
         }
     } else if (older_schemas.Size() < newer_schemas.Size()) {
@@ -2047,7 +2084,7 @@ json_compatibility_result is_positive_combinator_superset(
           || newer_comb == p_combinator::oneOf) {
             // newer has more degrees of freedom than older, not compatible
             res.emplace<json_incompatibility>(
-              std::move(p), json_incompatibility_type::sum_type_narrowed);
+              p, json_incompatibility_type::sum_type_narrowed);
             return res;
         }
     }
@@ -2093,8 +2130,7 @@ json_compatibility_result is_positive_combinator_superset(
         // is_superset() relation with the other schema array, or that the
         // algorithm couldn't find a unique compatible pattern.
         res.emplace<json_incompatibility>(
-          std::move(p),
-          json_incompatibility_type::combined_type_subschemas_changed);
+          p, json_incompatibility_type::combined_type_subschemas_changed);
         return res;
     }
 
@@ -2112,13 +2148,24 @@ json_compatibility_result is_superset(
   context ctx,
   const json::Value& older_schema,
   const json::Value& newer_schema,
-  std::filesystem::path p) {
+  const std::filesystem::path& p) {
     json_compatibility_result res;
 
     // break recursion if parameters are atoms:
     if (is_true_schema(older_schema) || is_false_schema(newer_schema)) {
         // either older is the superset of every possible schema, or newer is
         // the subset of every possible schema
+        return res;
+    }
+
+    // Cycle detection: if we've already visited this (older_schema,
+    // newer_schema) pair, we're in a cycle. Return early as compatible - any
+    // incompatibility would have been detected on the first visit to this pair.
+    // We use the input schema pointers (before ref resolution) because they are
+    // stable pointers into the original documents, whereas resolved schemas may
+    // be synthesized with different addresses on each call.
+    auto [_, inserted] = ctx.visited.emplace(&older_schema, &newer_schema);
+    if (!inserted) {
         return res;
     }
 
@@ -2131,65 +2178,52 @@ json_compatibility_result is_superset(
 
     // looking for types that are new in `newer`. done as newer_types
     // \ older_types
-    auto newer_minus_older = json_type_list{};
-    std::ranges::set_difference(
-      newer_types, older_types, std::back_inserter(newer_minus_older));
+    auto newer_minus_older = set_difference(newer_types, older_types);
     if (
-      !newer_minus_older.empty()
+      newer_minus_older.any()
       && !(
         newer_minus_older == json_type_list{json_type::integer}
-        && std::ranges::count(older_types, json_type::number) != 0)) {
+        && older_types.test(json_type::number))) {
         // newer_types_not_in_older accepts integer, and we can accept an
         // evolution from number -> integer. everything else is makes `newer`
         // less strict than older
 
-        auto older_minus_newer = json_type_list{};
-        std::ranges::set_difference(
-          older_types, newer_types, std::back_inserter(older_minus_newer));
+        auto older_minus_newer = set_difference(older_types, newer_types);
 
         if (
-          older_minus_newer.empty()
+          older_minus_newer.none()
           || (older_minus_newer == json_type_list{json_type::integer} && newer_minus_older == json_type_list{json_type::number})) {
             // type_narrowed is reported when older has fewer elements or the
             // same but with integer in older instead of number in newer
             res.emplace<json_incompatibility>(
-              std::move(p), json_incompatibility_type::type_narrowed);
+              p, json_incompatibility_type::type_narrowed);
         } else {
             // Otherwise report the more general type_changed
             res.emplace<json_incompatibility>(
-              std::move(p), json_incompatibility_type::type_changed);
+              p, json_incompatibility_type::type_changed);
         }
         return res;
     }
 
     // newer accepts less (or equal) types. for each type, try to find a less
     // strict check
-    for (auto t : newer_types) {
-        // TODO this will perform a depth first search, but it might be better
-        // to do a breadth first search to find a counterexample
-        switch (t) {
-        case json_type::string:
-            res.merge(is_string_superset(older, newer, p));
-            break;
-        case json_type::integer:
-            [[fallthrough]];
-        case json_type::number:
-            res.merge(is_numeric_superset(older, newer, p));
-            break;
-        case json_type::object:
-            res.merge(is_object_superset(ctx, older, newer, p));
-            break;
-        case json_type::array:
-            res.merge(is_array_superset(ctx, older, newer, p));
-            break;
-        case json_type::boolean:
-            // no check needed for boolean;
-            break;
-        case json_type::null:
-            // no check needed for null;
-            break;
-        }
+    // TODO this will perform a depth first search, but it might be better
+    // to do a breadth first search to find a counterexample
+    if (newer_types.test(json_type::string)) {
+        res.merge(is_string_superset(older, newer, p));
     }
+    if (
+      newer_types.test(json_type::integer)
+      || newer_types.test(json_type::number)) {
+        res.merge(is_numeric_superset(older, newer, p));
+    }
+    if (newer_types.test(json_type::object)) {
+        res.merge(is_object_superset(ctx, older, newer, p));
+    }
+    if (newer_types.test(json_type::array)) {
+        res.merge(is_array_superset(ctx, older, newer, p));
+    }
+    // no check needed for boolean and null types
 
     res.merge(is_enum_superset(older, newer, p));
     res.merge(is_not_combinator_superset(ctx, older, newer, p));
@@ -2229,12 +2263,117 @@ constexpr const char* id_keyword(json_schema_dialect jsd) {
     return "$id";
 }
 
-void collect_bundled_schemas_and_fix_refs(
+// Where a subschema can appear relative to a keyword. Used to walk a schema
+// without mistaking a property name for a keyword: e.g. under "properties" the
+// keys are arbitrary names and only the values are subschemas, so the keyword
+// position of an enclosing schema (such as "id"/"$id") must not be looked up
+// against those names.
+enum class subschema_position : uint8_t {
+    // not a subschema-bearing keyword, do not descend
+    none,
+    // value is a subschema, or an array of subschemas (e.g. "not", "allOf",
+    // "items"); descend by shape
+    schema,
+    // value is a map of name -> subschema (e.g. "properties", "$defs"); descend
+    // into the values, never the map itself
+    map,
+};
+
+// A subschema-bearing keyword and the dialects it applies to. The
+// json_schema_dialect enum is ordered chronologically (draft4 < draft6 < ... <
+// draft202012), so the keyword applies from `since` up to (and including)
+// `until`.
+struct keyword_spec {
+    std::string_view name;
+    subschema_position position;
+    json_schema_dialect since;
+    // last dialect the keyword applies to; nullopt means "from `since` onward
+    // forever" (including future dialects). Set only for keywords that a later
+    // draft removed, so they are not walked in dialects that ignore them.
+    std::optional<json_schema_dialect> until = std::nullopt;
+
+    constexpr bool applies_to(json_schema_dialect dialect) const {
+        return dialect >= since && (!until || dialect <= *until);
+    }
+};
+
+// Classify a keyword by where subschemas appear under it, for the given
+// dialect. The table is organised as a spec changelog: one row per keyword,
+// grouped by the draft that introduced it. A key that is not a keyword in
+// `dialect` (e.g.
+// "$defs" under draft-04) returns `none`, so it is treated as an ordinary name
+// rather than a schema position.
+//
+// NOTE: when adding a new json_schema_dialect, review this table for keywords
+// that dialect introduces.
+constexpr subschema_position
+classify_keyword(json_schema_dialect dialect, std::string_view key) {
+    using enum subschema_position;
+    using enum json_schema_dialect;
+    constexpr auto specs = std::to_array<keyword_spec>({
+      // draft-04 core vocabulary
+      {.name = "properties", .position = map, .since = draft4},
+      {.name = "patternProperties", .position = map, .since = draft4},
+      {.name = "additionalProperties", .position = schema, .since = draft4},
+      {.name = "items", .position = schema, .since = draft4},
+      // "additionalItems" was removed in 2020-12 and "dependencies" split into
+      // "dependentSchemas"/"dependentRequired" in 2019-09; bound them so they
+      // are not walked in later dialects that treat the name as opaque data.
+      {.name = "additionalItems",
+       .position = schema,
+       .since = draft4,
+       .until = draft201909},
+      {.name = "dependencies",
+       .position = map,
+       .since = draft4,
+       .until = draft7},
+      {.name = "allOf", .position = schema, .since = draft4},
+      {.name = "anyOf", .position = schema, .since = draft4},
+      {.name = "oneOf", .position = schema, .since = draft4},
+      {.name = "not", .position = schema, .since = draft4},
+      // ("definitions" is intentionally left unbounded: 2020-12 schemas
+      // commonly still use it as a definitions container.)
+      {.name = "definitions", .position = map, .since = draft4},
+      // draft-06
+      {.name = "propertyNames", .position = schema, .since = draft6},
+      {.name = "contains", .position = schema, .since = draft6},
+      // draft-07
+      {.name = "if", .position = schema, .since = draft7},
+      {.name = "then", .position = schema, .since = draft7},
+      {.name = "else", .position = schema, .since = draft7},
+      // 2019-09
+      {.name = "$defs", .position = map, .since = draft201909},
+      {.name = "dependentSchemas", .position = map, .since = draft201909},
+      {.name = "unevaluatedProperties",
+       .position = schema,
+       .since = draft201909},
+      {.name = "unevaluatedItems", .position = schema, .since = draft201909},
+      {.name = "contentSchema", .position = schema, .since = draft201909},
+      // 2020-12
+      {.name = "prefixItems", .position = schema, .since = draft202012},
+    });
+
+    auto spec = std::ranges::find_if(specs, [&](const keyword_spec& s) {
+        return s.name == key && s.applies_to(dialect);
+    });
+    if (spec != specs.end()) {
+        return spec->position;
+    }
+    return none;
+}
+
+// Work item for iterative schema collection.
+struct collect_work_item {
+    jsoncons::uri base_uri;
+    jsoncons::jsonpointer::json_pointer obj_ptr;
+    jsoncons::ojson* obj;
+    json_schema_dialect dialect;
+};
+
+void process_work_item(
   id_to_schema_pointer& bundled_schemas,
-  jsoncons::uri base_uri,
-  jsoncons::jsonpointer::json_pointer this_obj_ptr,
-  jsoncons::ojson& this_obj,
-  json_schema_dialect dialect) {
+  chunked_vector<collect_work_item>& work_stack,
+  collect_work_item item) {
     // scan the json schema object for bundled schema.
     // A bundled schema is defined as a schema with `"$id" : a_base_uri`.
     // all relative refs under this bundled schema will be relative
@@ -2254,12 +2393,12 @@ void collect_bundled_schemas_and_fix_refs(
     //   "id"  |  draft4  |       yes
 
     auto maybe_new_dialect = [&]() -> std::optional<json_schema_dialect> {
-        const auto dialect_it = this_obj.find("$schema");
-        if (dialect_it == this_obj.object_range().end()) {
+        const auto dialect_it = item.obj->find("$schema");
+        if (dialect_it == item.obj->object_range().end()) {
             // If no $schema is declared in an embedded schema, it defaults
             // to using the dialect of the parent schema. from
             // https://json-schema.org/understanding-json-schema/structuring#bundling
-            return dialect;
+            return item.dialect;
         }
 
         // we have a $schema keyword, use this dialect if we find out that
@@ -2273,17 +2412,17 @@ void collect_bundled_schemas_and_fix_refs(
         throw as_exception(invalid_schema(
           fmt::format(
             "bundled schema without a known dialect: '{}'",
-            this_obj["$schema"].as_string_view())));
+            (*item.obj)["$schema"].as_string_view())));
     }
 
-    const auto id_it = this_obj.find(id_keyword(maybe_new_dialect.value()));
+    const auto id_it = item.obj->find(id_keyword(maybe_new_dialect.value()));
 
-    if (id_it != this_obj.object_range().end()) {
+    if (id_it != item.obj->object_range().end()) {
         // we are visiting a bundled schema.
 
         // run validation since we are not a guaranteed to be in proper schema
         if (auto validation = validate_json_schema(
-              maybe_new_dialect.value(), this_obj);
+              maybe_new_dialect.value(), *item.obj);
             validation.has_error()) {
             // stop exploring this branch, the schema is invalid
             throw as_exception(invalid_schema(
@@ -2295,40 +2434,96 @@ void collect_bundled_schemas_and_fix_refs(
         // it's a validated schema. we can register this as a bundled schema and
         // continue scanning. (run resolve because it could be relative to the
         // parent schema).
-        base_uri = jsoncons::uri{id_it->value().as_string()}.resolve(base_uri);
-        dialect = maybe_new_dialect.value();
+        item.base_uri = jsoncons::uri{id_it->value().as_string()}.resolve(
+          item.base_uri);
+        item.dialect = maybe_new_dialect.value();
         bundled_schemas.insert_or_assign(
-          to_json_id_uri(base_uri),
-          std::pair{json::Pointer{this_obj_ptr.to_string()}, dialect});
+          to_json_id_uri(item.base_uri),
+          std::pair{json::Pointer{item.obj_ptr.to_string()}, item.dialect});
     }
 
-    if (auto ref_it = this_obj.find("$ref");
-        ref_it != this_obj.object_range().end()) {
+    if (auto ref_it = item.obj->find("$ref");
+        ref_it != item.obj->object_range().end()) {
         // ensure refs are absolute uris
         ref_it->value() = jsoncons::uri{ref_it->value().as_string()}
-                            .resolve(base_uri)
+                            .resolve(item.base_uri)
                             .string();
     }
 
-    // lambda to recursively scan the object for more bundled schemas and $refs
-    auto collect_and_fix = [&](const auto& key, auto& value) {
-        collect_bundled_schemas_and_fix_refs(
-          bundled_schemas, base_uri, this_obj_ptr / key, value, dialect);
-    };
-
-    // recursively scan the object for more bundled schemas and $refs
-    for (auto& e : this_obj.object_range()) {
-        const auto& key = e.key();
-        auto& value = e.value();
-        if (value.is_object()) {
-            collect_and_fix(key, value);
-        } else if (value.is_array()) {
-            for (auto i = 0u; i < value.size(); ++i) {
-                if (value[i].is_object()) {
-                    collect_and_fix(i, value[i]);
-                }
+    // lambda to enqueue a nested subschema for scanning
+    auto push_schema =
+      [&](jsoncons::jsonpointer::json_pointer ptr, jsoncons::ojson& value) {
+          work_stack.push_back(
+            {.base_uri = item.base_uri,
+             .obj_ptr = std::move(ptr),
+             .obj = &value,
+             .dialect = item.dialect});
+      };
+    // enqueue every object element of an array position (e.g. "allOf")
+    auto push_array_schemas = [&](
+                                const jsoncons::jsonpointer::json_pointer& base,
+                                jsoncons::ojson& arr) {
+        for (auto i = 0u; i < arr.size(); ++i) {
+            if (arr[i].is_object()) {
+                push_schema(base / i, arr[i]);
             }
         }
+    };
+    // enqueue every object value of a map position (e.g. "properties"); the
+    // keys are arbitrary names, only the values are subschemas
+    auto push_map_schemas = [&](
+                              const jsoncons::jsonpointer::json_pointer& base,
+                              jsoncons::ojson& obj) {
+        for (auto& m : obj.object_range()) {
+            if (m.value().is_object()) {
+                push_schema(base / m.key(), m.value());
+            }
+        }
+    };
+
+    // Iteratively scan the object for more bundled schemas and $refs. Only
+    // descend into genuine subschema positions: under keywords like
+    // "properties" the keys are arbitrary property names, so they must not be
+    // treated as schemas (otherwise a property named "id"/"$id"/"$ref" would be
+    // misread as the corresponding keyword).
+    for (auto& e : item.obj->object_range()) {
+        const auto& key = e.key();
+        auto& value = e.value();
+        switch (classify_keyword(item.dialect, key)) {
+        case subschema_position::none:
+            break;
+        case subschema_position::map:
+            if (value.is_object()) {
+                push_map_schemas(item.obj_ptr / key, value);
+            }
+            break;
+        case subschema_position::schema:
+            if (value.is_object()) {
+                push_schema(item.obj_ptr / key, value);
+            } else if (value.is_array()) {
+                push_array_schemas(item.obj_ptr / key, value);
+            }
+            break;
+        }
+    }
+}
+
+// Iterative version of collect_bundled_schemas_and_fix_refs.
+// Uses an explicit stack to avoid stack overflow on deeply nested schemas.
+void collect_bundled_schemas_and_fix_refs(
+  id_to_schema_pointer& bundled_schemas,
+  jsoncons::uri base_uri,
+  jsoncons::jsonpointer::json_pointer obj_ptr,
+  jsoncons::ojson& obj,
+  json_schema_dialect dialect) {
+    chunked_vector<collect_work_item> work_stack;
+    work_stack.push_back(
+      {std::move(base_uri), std::move(obj_ptr), &obj, dialect});
+
+    while (!work_stack.empty()) {
+        auto item = std::move(work_stack.back());
+        work_stack.pop_back();
+        process_work_item(bundled_schemas, work_stack, std::move(item));
     }
 }
 
@@ -2357,10 +2552,10 @@ result<id_to_schema_pointer> collect_bundled_schema_and_fix_refs(
       {root_id, std::pair{json::Pointer{}, dialect}}};
 
     if (doc.is_object()) {
-        // note: current implementation is overly strict and reject any bundled
-        // schema that is deemed invalid. this could be relaxed if the invalid
-        // schema is not actually accessed by a $ref, but it requires to scan
-        // the document in two passes.
+        // note: current implementation is overly strict and reject any
+        // bundled schema that is deemed invalid. this could be relaxed if
+        // the invalid schema is not actually accessed by a $ref, but it
+        // requires to scan the document in two passes.
         try {
             collect_bundled_schemas_and_fix_refs(
               bundled_schemas, jsoncons::uri{}, {}, doc, dialect);
@@ -2421,7 +2616,8 @@ compatibility_result check_compatible(
     auto raw_compat_result = [&]() {
         // reader is a superset of writer iff every schema that is valid for
         // writer is also valid for reader
-        context ctx{.older{reader()}, .newer{writer()}};
+        context::visited_locations visited;
+        context ctx{.older{reader()}, .newer{writer()}, .visited = visited};
         return is_superset(ctx, reader().ctx.doc, writer().ctx.doc, "#/");
     }();
 

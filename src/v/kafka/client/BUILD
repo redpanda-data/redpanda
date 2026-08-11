@@ -326,6 +326,7 @@ redpanda_cc_library(
         "//src/v/bytes:iostream",
         "//src/v/bytes:scattered_message",
         "//src/v/config",
+        "//src/v/container:chunked_circular_buffer",
         "//src/v/container:chunked_hash_map",
         "//src/v/container:chunked_vector",
         "//src/v/hashing:murmur",

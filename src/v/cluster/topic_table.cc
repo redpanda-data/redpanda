@@ -1718,7 +1718,8 @@ ss::future<> topic_table::apply_snapshot(
 
     // Lifecycle markers is a simple static collection without notifications
     // etc, so we can just copy directly into place.
-    _lifecycle_markers = controller_snap.topics.lifecycle_markers;
+    _lifecycle_markers.replace(
+      controller_snap.topics.lifecycle_markers.values().copy());
 
     reset_partitions_to_force_reconfigure(
       controller_snap.topics.partitions_to_force_recover);

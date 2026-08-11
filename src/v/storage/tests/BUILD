@@ -388,6 +388,7 @@ redpanda_cc_gtest(
         "//src/v/test_utils:gtest",
         "//src/v/test_utils:random_bytes",
         "@googletest//:gtest",
+        "@seastar",
         "@seastar//:testing",
     ],
 )
@@ -649,6 +650,7 @@ redpanda_cc_gtest(
         "//src/v/storage:resources",
         "//src/v/test_utils:gtest",
         "//src/v/utils:directory_walker",
+        "@fmt",
         "@googletest//:gtest",
         "@seastar",
     ],

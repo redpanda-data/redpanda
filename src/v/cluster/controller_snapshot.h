@@ -184,7 +184,7 @@ struct topics_t
     chunked_hash_map<model::topic_namespace, topic_t> topics;
     raft::group_id highest_group_id;
 
-    absl::node_hash_map<
+    chunked_hash_map<
       nt_revision,
       nt_lifecycle_marker,
       nt_revision_hash,

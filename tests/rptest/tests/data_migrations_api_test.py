@@ -496,6 +496,7 @@ class DataMigrationsApiTest(DataMigrationTestMixin):
             self.execute_data_migration_action_flaky(
                 in_migration_id, MigrationAction.prepare
             )
+
             self.wait_for_migration_states(in_migration_id, ["preparing"])
             time.sleep(10)
             # still preparing, i.e. stuck
@@ -503,6 +504,13 @@ class DataMigrationsApiTest(DataMigrationTestMixin):
             # and the topic is not there
             self.wait_partitions_disappear([topic.name])
 
+        # Make sure all nodes are back up
+        self.wait_for_migration_states(in_migration_id, ["preparing"])
+        # And make wait a little to process any stalled calls to
+        # `DataMigrationTestMixin.assure_not_deletable` on woken up nodes
+        time.sleep(2)
+
+        with self.finj_thread():
             time_before_final_action = now()
             self.execute_data_migration_action_flaky(
                 in_migration_id, MigrationAction.cancel

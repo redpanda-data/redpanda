@@ -32,6 +32,13 @@ service DatalakeService {
             authz: SUPERUSER
         };
     }
+
+    rpc CoordinatorResetTopicState(CoordinatorResetTopicStateRequest)
+        returns (CoordinatorResetTopicStateResponse) {
+        option (pbgen.rpc) = {
+            authz: SUPERUSER
+        };
+    }
 }
 
 message GetCoordinatorStateRequest {
@@ -43,6 +50,26 @@ message GetCoordinatorStateRequest {
 message GetCoordinatorStateResponse {
     CoordinatorState state = 1;
 }
+
+message PartitionStateOverride {
+    // Overrides last_committed for the partition. If not set, last_committed is
+    // not modified.
+    optional int64 last_committed = 1;
+}
+
+// When reset_all_partitions is true, clears all per partition state
+// (pending entries, last_committed, etc), then applies overrides.
+// When false, clears pending entries only for partitions in partition_overrides
+// and applies optional overrides. No-op if reset_all_partitions is false and
+// partition_overrides is empty.
+message CoordinatorResetTopicStateRequest {
+    string topic_name = 1;
+    int64 revision = 2;
+    bool reset_all_partitions = 3;
+    map<int32, PartitionStateOverride> partition_overrides = 4;
+}
+
+message CoordinatorResetTopicStateResponse {}
 
 message CoordinatorState {
     map<string, TopicState> topic_states = 1;

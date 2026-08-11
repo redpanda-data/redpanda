@@ -252,7 +252,7 @@ source_topic_syncer::run_impl(ss::abort_source& as) {
     if (!controller_id) {
         auto msg = ssx::sformat(
           "Failed to get controller id for link {}",
-          get_link()->get_config().name);
+          get_link()->get_config()->name);
         vlog(logger().warn, "{}", msg);
         co_return state_transition{
           .desired_state = model::task_state::link_unavailable,
@@ -329,7 +329,7 @@ source_topic_syncer::run_impl(ss::abort_source& as) {
         vlog(
           logger().debug,
           "No candidate topics for creation or update for link {}",
-          get_link()->get_config().name);
+          get_link()->get_config()->name);
         co_return state_transition{
           .desired_state = model::task_state::active,
           .reason
@@ -719,7 +719,7 @@ source_topic_syncer::find_candidate_topics_for_creation(
             continue;
         }
 
-        if (get_link()->config().state.mirror_topics.contains(topic)) {
+        if (get_link()->get_config()->state.mirror_topics.contains(topic)) {
             vlog(logger().trace, "Topic {} is already being mirrored", topic);
             continue;
         }
@@ -870,6 +870,6 @@ source_topic_syncer_factory::created_task_name() const noexcept {
 }
 
 std::unique_ptr<task> source_topic_syncer_factory::create_task(link* link) {
-    return std::make_unique<source_topic_syncer>(link, link->get_config());
+    return std::make_unique<source_topic_syncer>(link, *(link->get_config()));
 }
 } // namespace cluster_link

@@ -17,6 +17,7 @@
 #include "pandaproxy/schema_registry/sharded_store.h"
 #include "pandaproxy/schema_registry/test/compatibility_common.h"
 #include "pandaproxy/schema_registry/test/protobuf_utils.h"
+#include "pandaproxy/schema_registry/test/store_fixture.h"
 #include "pandaproxy/schema_registry/types.h"
 
 #include <seastar/testing/thread_test_case.hh>
@@ -37,14 +38,14 @@ bool check_compatible(
   pps::compatibility_level lvl,
   std::string_view reader,
   std::string_view writer) {
-    ppstu::simple_sharded_store store;
-    store.store.set_compatibility(lvl).get();
+    ppstu::store_fixture store;
+    store.store().set_compatibility(lvl).get();
     store.insert(
       pandaproxy::schema_registry::subject_schema{
         pps::subject{"sub"},
         pps::schema_definition{writer, pps::schema_type::protobuf}},
       pps::schema_version{1});
-    return store.store
+    return store.store()
       .is_compatible(
         pps::schema_version{1},
         pps::subject_schema{
@@ -69,23 +70,23 @@ pps::compatibility_result check_compatible_verbose(
 } // namespace
 
 SEASTAR_THREAD_TEST_CASE(test_protobuf_simple) {
-    ppstu::simple_sharded_store store;
+    ppstu::store_fixture store;
 
     auto schema1 = pps::subject_schema{pps::subject{"simple"}, simple.share()};
     store.insert(schema1.share(), pps::schema_version{1});
     auto valid_simple = pps::make_protobuf_schema_definition(
-                          store.store, schema1.share())
+                          store.store(), schema1.share())
                           .get();
     BOOST_REQUIRE_EQUAL(valid_simple.name({0}).value(), "Simple");
 }
 
 SEASTAR_THREAD_TEST_CASE(test_protobuf_nested) {
-    ppstu::simple_sharded_store store;
+    ppstu::store_fixture store;
 
     auto schema1 = pps::subject_schema{pps::subject{"nested"}, nested.share()};
     store.insert(schema1.share(), pps::schema_version{1});
     auto valid_nested = pps::make_protobuf_schema_definition(
-                          store.store, schema1.share())
+                          store.store(), schema1.share())
                           .get();
     BOOST_REQUIRE_EQUAL(valid_nested.name({0}).value(), "A0");
     BOOST_REQUIRE_EQUAL(valid_nested.name({1, 0, 2}).value(), "A1.B0.C2");
@@ -93,14 +94,15 @@ SEASTAR_THREAD_TEST_CASE(test_protobuf_nested) {
 }
 
 SEASTAR_THREAD_TEST_CASE(test_protobuf_imported_failure) {
-    ppstu::simple_sharded_store store;
+    ppstu::store_fixture store;
 
     // imported depends on simple, which han't been inserted
     auto schema1 = pps::subject_schema{
       pps::subject{"imported"}, imported.share()};
     store.insert(schema1.share(), pps::schema_version{1});
     BOOST_REQUIRE_EXCEPTION(
-      pps::make_protobuf_schema_definition(store.store, schema1.share()).get(),
+      pps::make_protobuf_schema_definition(store.store(), schema1.share())
+        .get(),
       pps::exception,
       [](const pps::exception& ex) {
           return ex.code() == pps::error_code::schema_missing_reference
@@ -110,7 +112,7 @@ SEASTAR_THREAD_TEST_CASE(test_protobuf_imported_failure) {
 }
 
 SEASTAR_THREAD_TEST_CASE(test_protobuf_imported_not_referenced) {
-    ppstu::simple_sharded_store store;
+    ppstu::store_fixture store;
 
     auto schema1 = pps::subject_schema{pps::subject{"simple"}, simple.share()};
     auto schema2 = pps::subject_schema{
@@ -119,10 +121,11 @@ SEASTAR_THREAD_TEST_CASE(test_protobuf_imported_not_referenced) {
     store.insert(schema1.share(), pps::schema_version{1});
 
     auto valid_simple = pps::make_protobuf_schema_definition(
-                          store.store, schema1.share())
+                          store.store(), schema1.share())
                           .get();
     BOOST_REQUIRE_EXCEPTION(
-      pps::make_protobuf_schema_definition(store.store, schema2.share()).get(),
+      pps::make_protobuf_schema_definition(store.store(), schema2.share())
+        .get(),
       pps::exception,
       [](const pps::exception& ex) {
           return ex.code() == pps::error_code::schema_invalid;
@@ -130,7 +133,7 @@ SEASTAR_THREAD_TEST_CASE(test_protobuf_imported_not_referenced) {
 }
 
 SEASTAR_THREAD_TEST_CASE(test_protobuf_referenced) {
-    ppstu::simple_sharded_store store;
+    ppstu::store_fixture store;
 
     auto schema1 = pps::subject_schema{
       pps::subject{"simple.proto"}, simple.share()};
@@ -144,18 +147,18 @@ SEASTAR_THREAD_TEST_CASE(test_protobuf_referenced) {
     store.insert(schema3.share(), pps::schema_version{1});
 
     auto valid_simple = pps::make_protobuf_schema_definition(
-                          store.store, schema1.share())
+                          store.store(), schema1.share())
                           .get();
     auto valid_imported = pps::make_protobuf_schema_definition(
-                            store.store, schema2.share())
+                            store.store(), schema2.share())
                             .get();
     auto valid_imported_again = pps::make_protobuf_schema_definition(
-                                  store.store, schema3.share())
+                                  store.store(), schema3.share())
                                   .get();
 }
 
 SEASTAR_THREAD_TEST_CASE(test_protobuf_recursive_reference) {
-    ppstu::simple_sharded_store store;
+    ppstu::store_fixture store;
 
     auto schema1 = pps::subject_schema{
       pps::subject{"simple.proto"}, simple.share()};
@@ -169,21 +172,21 @@ SEASTAR_THREAD_TEST_CASE(test_protobuf_recursive_reference) {
     store.insert(schema3.share(), pps::schema_version{1});
 
     auto valid_simple = pps::make_protobuf_schema_definition(
-                          store.store, schema1.share())
+                          store.store(), schema1.share())
                           .get();
     auto valid_imported = pps::make_protobuf_schema_definition(
-                            store.store, schema2.share())
+                            store.store(), schema2.share())
                             .get();
     auto valid_imported_again = pps::make_protobuf_schema_definition(
-                                  store.store, schema3.share())
+                                  store.store(), schema3.share())
                                   .get();
 }
 
 SEASTAR_THREAD_TEST_CASE(test_binary_protobuf) {
-    ppstu::simple_sharded_store store;
+    ppstu::store_fixture store;
 
     BOOST_REQUIRE_NO_THROW(
-      store.store
+      store.store()
         .make_valid_schema(
           pps::subject_schema{
             pps::subject{"com.redpanda.Payload.proto"},
@@ -193,7 +196,7 @@ SEASTAR_THREAD_TEST_CASE(test_binary_protobuf) {
 }
 
 SEASTAR_THREAD_TEST_CASE(test_invalid_binary_protobuf) {
-    ppstu::simple_sharded_store store;
+    ppstu::store_fixture store;
 
     auto broken_base64_raw_proto = base64_raw_proto.substr(1);
 
@@ -203,7 +206,7 @@ SEASTAR_THREAD_TEST_CASE(test_invalid_binary_protobuf) {
         broken_base64_raw_proto, pps::schema_type::protobuf}};
 
     BOOST_REQUIRE_EXCEPTION(
-      store.store
+      store.store()
         .make_valid_schema(
           pps::subject_schema{
             pps::subject{"com.redpanda.Payload.proto"},
@@ -218,7 +221,7 @@ SEASTAR_THREAD_TEST_CASE(test_invalid_binary_protobuf) {
 }
 
 SEASTAR_THREAD_TEST_CASE(test_protobuf_well_known) {
-    ppstu::simple_sharded_store store;
+    ppstu::store_fixture store;
 
     auto schema = pps::subject_schema{
       pps::subject{"test_auto_well_known"},
@@ -255,6 +258,7 @@ import "google/type/quaternion.proto";
 import "google/type/timeofday.proto";
 import "confluent/meta.proto";
 import "confluent/types/decimal.proto";
+import "buf/validate/validate.proto";
 
 message well_known_types {
   google.protobuf.Any any = 1;
@@ -304,12 +308,22 @@ message well_known_types {
   google.type.TimeOfDay time_of_day = 46;
   confluent.Meta c_meta = 47;
   confluent.type.Decimal c_decimal = 48;
+  buf.validate.FieldRules field_rules = 49;
+  buf.validate.StringRules string_rules = 50;
+  buf.validate.Int32Rules int32_rules = 51;
+  buf.validate.MessageRules message_rules = 52;
+  buf.validate.RepeatedRules repeated_rules = 53;
+  buf.validate.MapRules map_rules = 54;
+  buf.validate.AnyRules any_rules = 55;
+  buf.validate.DurationRules duration_rules = 56;
+  buf.validate.TimestampRules timestamp_rules = 57;
 })",
         pps::schema_type::protobuf}};
     store.insert(schema.share(), pps::schema_version{1});
 
-    auto valid_empty
-      = pps::make_protobuf_schema_definition(store.store, schema.share()).get();
+    auto valid_empty = pps::make_protobuf_schema_definition(
+                         store.store(), schema.share())
+                         .get();
 }
 
 SEASTAR_THREAD_TEST_CASE(test_protobuf_compatibility_empty) {
@@ -1765,6 +1779,71 @@ service FooService {
   rpc Foo(.foo.Bar) returns (.foo.Baz);
 }
 )"));
+}
+
+SEASTAR_THREAD_TEST_CASE(test_protobuf_compatibility_remove_map_field) {
+    constexpr std::string_view with_map = R"(syntax = "proto3";
+
+message Product {
+  string name = 1;
+  map<string, string> tags = 10;
+}
+)";
+    constexpr std::string_view without_map = R"(syntax = "proto3";
+
+message Product {
+  string name = 1;
+}
+)";
+
+    BOOST_REQUIRE(check_compatible(
+      pps::compatibility_level::backward, without_map, with_map));
+    BOOST_REQUIRE(check_compatible(
+      pps::compatibility_level::backward_transitive, without_map, with_map));
+    BOOST_REQUIRE(
+      check_compatible(pps::compatibility_level::full, without_map, with_map));
+    BOOST_REQUIRE(check_compatible(
+      pps::compatibility_level::full_transitive, without_map, with_map));
+
+    BOOST_REQUIRE(check_compatible(
+      pps::compatibility_level::forward, with_map, without_map));
+    BOOST_REQUIRE(check_compatible(
+      pps::compatibility_level::forward_transitive, with_map, without_map));
+}
+
+SEASTAR_THREAD_TEST_CASE(test_protobuf_compatibility_map_in_nested_message) {
+    constexpr std::string_view with_map = R"(syntax = "proto3";
+
+message Outer {
+  message Inner {
+    string id = 1;
+    map<string, string> tags = 2;
+  }
+  Inner inner = 1;
+}
+)";
+    constexpr std::string_view without_map = R"(syntax = "proto3";
+
+message Outer {
+  message Inner {
+    string id = 1;
+  }
+  Inner inner = 1;
+}
+)";
+    BOOST_REQUIRE(check_compatible(
+      pps::compatibility_level::backward, without_map, with_map));
+    BOOST_REQUIRE(check_compatible(
+      pps::compatibility_level::backward_transitive, without_map, with_map));
+    BOOST_REQUIRE(
+      check_compatible(pps::compatibility_level::full, without_map, with_map));
+    BOOST_REQUIRE(check_compatible(
+      pps::compatibility_level::full_transitive, without_map, with_map));
+
+    BOOST_REQUIRE(check_compatible(
+      pps::compatibility_level::forward, with_map, without_map));
+    BOOST_REQUIRE(check_compatible(
+      pps::compatibility_level::forward_transitive, with_map, without_map));
 }
 
 SEASTAR_THREAD_TEST_CASE(test_protobuf_compatibility_message_removed) {

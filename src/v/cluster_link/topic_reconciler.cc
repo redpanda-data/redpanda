@@ -110,7 +110,7 @@ ss::future<> topic_reconciler::do_reconcile_topic(model::id_t link_id) {
 
     chunked_hash_map<::model::topic, model::mirror_topic_metadata>
       mirror_topics;
-    const auto& to_copy = link->get().state.mirror_topics;
+    const auto& to_copy = link->state.mirror_topics;
     mirror_topics.reserve(to_copy.size());
     for (const auto& [k, v] : to_copy) {
         mirror_topics.emplace(k, v.copy());

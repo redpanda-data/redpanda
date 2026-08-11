@@ -17,11 +17,14 @@
 
 #include <seastar/core/seastar.hh>
 
+#include <fmt/format.h>
+#include <gmock/gmock.h>
 #include <gtest/gtest.h>
 
 #include <filesystem>
 #include <optional>
 #include <ranges>
+#include <sstream>
 
 static ss::logger segment_set_test_log("segment_set_test");
 
@@ -264,6 +267,54 @@ TEST_F(SegmentSetFixtureTest, recovery) {
     for (size_t idx = 0; idx < test_cases.size(); ++idx) {
         run_test_case(idx, test_cases[idx]).get();
     }
+}
+
+namespace {
+size_t count_occurrences(std::string_view haystack, std::string_view needle) {
+    size_t count = 0;
+    for (auto pos = haystack.find(needle); pos != std::string_view::npos;
+         pos = haystack.find(needle, pos + needle.size())) {
+        ++count;
+    }
+    return count;
+}
+} // anonymous namespace
+
+// Formatting a segment_set must stay bounded regardless of its size: it
+// prints at most 8 segments. The fmt path is asserted separately from
+// operator<< because fmt resolves formatters independently of the ostream
+// operator (e.g. fmt/ranges.h matches segment_set as a range) and has
+// silently printed every segment in the past, OOM-aborting shards
+// mid-log-statement on partitions with thousands of segments.
+TEST_F(SegmentSetFixtureTest, format_is_bounded) {
+    using o = model::offset;
+    size_t dir_idx = 100;
+    auto make_set = [&](int num_segs) {
+        ss::make_directory(ss::format("{}", dir_idx)).get();
+        segment_set::underlying_t segs;
+        for (int i = 0; i < num_segs; ++i) {
+            segs.push_back(
+              make_segment(
+                dir_idx, test_case::segment_spec(o{2 * i}, o{2 * i + 1}))
+                .get());
+        }
+        ++dir_idx;
+        return segment_set{std::move(segs)};
+    };
+
+    auto large = make_set(10);
+    auto via_fmt = fmt::format("{}", large);
+    EXPECT_EQ(count_occurrences(via_fmt, "offset_tracker"), 8);
+    EXPECT_THAT(via_fmt, testing::HasSubstr("{size: 10, ["));
+    EXPECT_THAT(via_fmt, testing::HasSubstr("..."));
+
+    std::ostringstream os;
+    os << large;
+    EXPECT_EQ(os.str(), via_fmt);
+
+    auto small_fmt = fmt::format("{}", make_set(3));
+    EXPECT_EQ(count_occurrences(small_fmt, "offset_tracker"), 3);
+    EXPECT_THAT(small_fmt, testing::Not(testing::HasSubstr("...")));
 }
 
 } // namespace storage

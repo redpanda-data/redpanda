@@ -18,6 +18,7 @@
 #include "model/fundamental.h"
 #include "model/namespace.h"
 #include "raft/fundamental.h"
+#include "raft/types.h"
 
 #include <vector>
 namespace cluster {
@@ -26,7 +27,8 @@ inline ss::future<consensus_ptr> create_raft0(
   ss::sharded<partition_manager>& pm,
   ss::sharded<shard_table>& st,
   const ss::sstring& data_directory,
-  const std::vector<model::node_id>& initial_nodes) {
+  const std::vector<model::node_id>& initial_nodes,
+  raft::with_learner_recovery_throttle enable_learner_recovery_throttle) {
     if (!initial_nodes.empty()) {
         vlog(clusterlog.info, "Current node is a cluster founder");
     }
@@ -46,7 +48,7 @@ inline ss::future<consensus_ptr> create_raft0(
           model::controller_ntp, data_directory, std::move(overrides)),
         raft::group_id(0),
         std::move(initial_vnodes),
-        raft::with_learner_recovery_throttle::no,
+        enable_learner_recovery_throttle,
         raft::keep_snapshotted_log::no,
         std::nullopt)
       .then([&st](consensus_ptr p) {

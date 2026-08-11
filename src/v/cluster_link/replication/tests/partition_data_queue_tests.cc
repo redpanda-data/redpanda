@@ -60,6 +60,15 @@ TEST_F_CORO(PartitionDataQueueTest, testWaiterBehavior) {
         ASSERT_TRUE(_queue->empty());
     });
 
+    // enqueue empty batches
+    fetch_future = _queue->fetch(as);
+    ASSERT_FALSE_CORO(fetch_future.available());
+    _queue->enqueue(chunked_vector<model::record_batch>{});
+    co_await std::move(fetch_future).then([this](fetch_data data) {
+        ASSERT_TRUE(data.batches.empty());
+        ASSERT_TRUE(_queue->empty());
+    });
+
     // enqueue before waiter
     co_await enqueue_some_data();
     ASSERT_FALSE_CORO(_queue->empty());

@@ -20,6 +20,7 @@ from rptest.services.redpanda import RESTART_LOG_ALLOW_LIST
 from rptest.services.redpanda_installer import RedpandaInstaller, wait_for_num_versions
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.util import expect_exception, wait_until_result
+from rptest.utils.node_operations import NodeDecommissionWaiter
 from rptest.utils.rpenv import sample_license, sample_license_v1
 
 FEATURE_ALPHA_NAME = "__test_alpha"
@@ -720,3 +721,134 @@ class FeaturesUpgradeActivationTest(FeaturesTestBase):
             self._wait_for_feature_everywhere(
                 lambda fm: fm[FEATURE_BRAVO_NAME]["state"] == "active"
             )
+
+
+class FeatureManagerDecommissionRegressionTest(FeaturesTestBase):
+    """
+    Regression test for the bug where feature_manager fails to advance
+    cluster_version after the last version-blocking node is fully
+    decommissioned.
+
+    Mirrors a production-observed scenario: a cluster of v_old nodes is
+    upgraded by adding v_high nodes that join because their earliest
+    tolerates v_old, then the v_old nodes are decommissioned.
+    cluster_version must auto-advance to v_high once the v_old nodes
+    leave the members table.
+
+    The bug: feature_manager's background loop is parked on
+    _update_wait after the last health-report tick. Health reports
+    cease once a node is fully removed, and no leader change is
+    guaranteed, so without an explicit wake-up from members_table
+    changes the loop never re-evaluates and cluster_version stays
+    pinned at v_old indefinitely.
+    """
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, num_brokers=5, **kwargs)
+
+    def setUp(self):
+        super().setUp()
+        # We will bootstrap by hand with controlled per-node logical
+        # versions. Stop the cluster that the base setUp started and
+        # wipe persistent state so the next start is a fresh
+        # bootstrap at the synthetic v_old below.
+        self.redpanda.stop()
+        for node in self.redpanda.nodes:
+            self.redpanda.clean_node(node, preserve_current_install=True)
+
+    @cluster(num_nodes=5)
+    def test_decommission_advances_cluster_version(self):
+        v_high = self.head_latest_logical_version
+        v_old = v_high - 1
+        assert v_old >= 1, f"v_high={v_high} too low to synthesize a v_old below it"
+
+        old_nodes = self.redpanda.nodes[0:2]
+        new_nodes = self.redpanda.nodes[2:5]
+
+        # Step 1: bootstrap a fresh 2-node cluster reporting v_old.
+        self.redpanda.set_environment(
+            {
+                "__REDPANDA_LATEST_LOGICAL_VERSION": f"{v_old}",
+                "__REDPANDA_EARLIEST_LOGICAL_VERSION": f"{v_old}",
+            }
+        )
+        self.redpanda.start(old_nodes)
+        wait_until(
+            lambda: self.admin.get_features(node=old_nodes[0])["cluster_version"]
+            == v_old,
+            timeout_sec=30,
+            backoff_sec=1,
+            err_msg=f"cluster_version did not reach v_old={v_old} after bootstrap",
+        )
+
+        # Step 2: add 3 new nodes reporting v_high. Their earliest
+        # tolerates v_old so they join the existing cluster.
+        self.redpanda.set_environment(
+            {
+                "__REDPANDA_LATEST_LOGICAL_VERSION": f"{v_high}",
+                "__REDPANDA_EARLIEST_LOGICAL_VERSION": f"{v_old}",
+            }
+        )
+        for node in new_nodes:
+            self.redpanda.start_node(node)
+
+        # Wait for all five brokers to be present and alive from the
+        # leader's perspective. is_alive is computed by the leader's
+        # health monitor from received reports, and feature_manager's
+        # node callback fires off the same reports — so when this
+        # predicate holds, feature_manager has observed v_high from
+        # every new node and has had its chance to attempt an advance.
+        def cluster_at_steady_state():
+            brokers = self.admin.get_brokers(node=new_nodes[0])
+            return len(brokers) == 5 and all(b.get("is_alive", False) for b in brokers)
+
+        wait_until(
+            cluster_at_steady_state,
+            timeout_sec=60,
+            backoff_sec=1,
+            err_msg="cluster did not reach a 5-broker alive steady state",
+        )
+
+        # With v_old members still present, the correct decision is
+        # to hold cluster_version at v_old. Assert that's where we
+        # are before triggering the decommission.
+        assert self.admin.get_features(node=new_nodes[0])["cluster_version"] == v_old, (
+            "cluster_version advanced before v_old nodes were decommissioned"
+        )
+
+        # Step 3: decommission both v_old nodes via a v_high node,
+        # sequentially. raft0 only has two voters in this bootstrap
+        # cluster, so the first decommission must complete (replicas
+        # rebalanced onto v_high nodes) before the second is safe.
+        # Tell the waiter to exclude *both* v_old node ids from
+        # progress queries: while one is being removed the other is
+        # still a member but is the only remaining v_old node and is
+        # busy with raft0/partition rebalancing, so picking it for
+        # status queries causes transient 503s in the waiter loop.
+        old_ids = [self.redpanda.node_id(n) for n in old_nodes]
+        for old_id in old_ids:
+            self.admin.decommission_broker(old_id, node=new_nodes[0])
+            waiter = NodeDecommissionWaiter(
+                self.redpanda,
+                old_id,
+                self.logger,
+                progress_timeout=60,
+                decommissioned_node_ids=old_ids,
+            )
+            waiter.wait_for_removal()
+
+        # Step 4: with both v_old nodes gone, cluster_version must
+        # advance to v_high. Pre-fix, feature_manager's loop is parked
+        # on _update_wait and no event source wakes it on member
+        # removal, so the advance never lands and this times out.
+        wait_until(
+            lambda: self.admin.get_features(node=new_nodes[0])["cluster_version"]
+            == v_high,
+            timeout_sec=60,
+            backoff_sec=1,
+            err_msg=(
+                f"cluster_version stuck at v_old={v_old} after decommissioning "
+                f"all v_old nodes; expected v_high={v_high}. "
+                "feature_manager likely failed to wake on member removal."
+            ),
+        )

@@ -32,11 +32,13 @@ type healthResponse struct {
 	ControllerID              int      `json:"controller_id" yaml:"controller_id"`
 	AllNodes                  []int    `json:"all_nodes" yaml:"all_nodes"`
 	NodesDown                 []int    `json:"nodes_down" yaml:"nodes_down"`
+	NodesInMaintenance        []int    `json:"nodes_in_maintenance" yaml:"nodes_in_maintenance"`
 	NodesInRecoveryMode       []int    `json:"nodes_in_recovery_mode" yaml:"nodes_in_recovery_mode"`
 	LeaderlessPartitions      []string `json:"leaderless_partitions" yaml:"leaderless_partitions"`
 	LeaderlessCount           *int     `json:"leaderless_count,omitempty" yaml:"leaderless_count,omitempty"`
 	UnderReplicatedCount      *int     `json:"under_replicated_count,omitempty" yaml:"under_replicated_count,omitempty"`
 	UnderReplicatedPartitions []string `json:"under_replicated_partitions" yaml:"under_replicated_partitions"`
+	HighDiskUsageNodes        []int    `json:"high_disk_usage_nodes" yaml:"high_disk_usage_nodes"`
 }
 
 func newHealthOverviewCommand(fs afero.Fs, p *config.Params) *cobra.Command {
@@ -98,8 +100,12 @@ Get cluster health information and exit when the cluster is healthy:
 				ret, err := cl.GetHealthOverview(cmd.Context())
 				out.MaybeDie(err, "unable to request cluster health: %v", err)
 				exit10 = !ret.IsHealthy
+				brokers, err := cl.Brokers(cmd.Context())
+				if err != nil {
+					zap.L().Sugar().Warnf("unable to get broker list for maintenance status: %v; skipping maintenance status", err)
+				}
 				if !reflect.DeepEqual(ret, lastOverview) {
-					hr := buildHealthResponses(&ret, clusterUUID)
+					hr := buildHealthResponses(&ret, brokers, clusterUUID)
 					if isText, _, s, err := f.Format(hr); !isText {
 						out.MaybeDie(err, "unable to print in the required format %q: %v", f.Kind, err)
 						fmt.Println(s)
@@ -129,12 +135,18 @@ Get cluster health information and exit when the cluster is healthy:
 	return cmd
 }
 
-func buildHealthResponses(hov *rpadmin.ClusterHealthOverview, clusterUUID *string) healthResponse {
+func buildHealthResponses(hov *rpadmin.ClusterHealthOverview, brokers []rpadmin.Broker, clusterUUID *string) healthResponse {
 	// This is needed as NodesInRecoveryMode can be nil, and the json formatter
 	// will print "null" instead of an empty array.
 	nodesInRecoveryMode := hov.NodesInRecoveryMode
 	if len(nodesInRecoveryMode) == 0 {
 		nodesInRecoveryMode = []int{}
+	}
+	nodesInMaintenance := []int{}
+	for _, b := range brokers {
+		if b.Maintenance != nil && b.Maintenance.Draining {
+			nodesInMaintenance = append(nodesInMaintenance, b.NodeID)
+		}
 	}
 	return healthResponse{
 		ClusterUUID:               clusterUUID,
@@ -143,11 +155,13 @@ func buildHealthResponses(hov *rpadmin.ClusterHealthOverview, clusterUUID *strin
 		ControllerID:              hov.ControllerID,
 		AllNodes:                  hov.AllNodes,
 		NodesDown:                 hov.NodesDown,
+		NodesInMaintenance:        nodesInMaintenance,
 		NodesInRecoveryMode:       nodesInRecoveryMode,
 		LeaderlessPartitions:      hov.LeaderlessPartitions,
 		LeaderlessCount:           hov.LeaderlessCount,
 		UnderReplicatedCount:      hov.UnderReplicatedCount,
 		UnderReplicatedPartitions: hov.UnderReplicatedPartitions,
+		HighDiskUsageNodes:        hov.HighDiskUsageNodes,
 	}
 }
 
@@ -179,9 +193,13 @@ func printHealthOverview(hr healthResponse) {
 	tw.Print("Controller ID:", hr.ControllerID)
 	tw.Print("All nodes:", hr.AllNodes)
 	tw.Print("Nodes down:", hr.NodesDown)
+	if len(hr.NodesInMaintenance) > 0 {
+		tw.Print("Nodes in maintenance:", hr.NodesInMaintenance)
+	}
 	if hr.NodesInRecoveryMode != nil {
 		tw.Print("Nodes in recovery mode:", hr.NodesInRecoveryMode)
 	}
+	tw.Print("Nodes with high disk usage:", hr.HighDiskUsageNodes)
 	tw.Print(lp, hr.LeaderlessPartitions)
 	tw.Print(urp, hr.UnderReplicatedPartitions)
 	if hr.ClusterUUID != nil {

@@ -39,16 +39,16 @@ import (
 
 var Tinygo = Buildpack{
 	Name:     "tinygo",
-	baseURL:  "https://github.com/tinygo-org/tinygo/releases/download/v0.37.0/tinygo0.37.0",
+	baseURL:  "https://github.com/tinygo-org/tinygo/releases/download/v0.40.1/tinygo0.40.1",
 	template: "{{.BaseURL}}.{{.GOOS}}-{{.GOARCH}}.tar.gz",
 	shaSums: map[string]map[string]string{
 		"darwin": {
-			"amd64": "90961d9302e147ccb296d0afb800f4fe3c65df9dcc08b470003f6bf130870508",
-			"arm64": "54e6d952164181a122dd98658da9f187b54a3e18eb767856945196dd46621754",
+			"amd64": "36c9423a63f9548d142908b06c67e198d878a0fed076b8ec5dbf8a3350a73eb4",
+			"arm64": "a20841a616de3b3403e52e3789cb60c147ab52b3fe6c33b31fdffba0164ae031",
 		},
 		"linux": {
-			"amd64": "ff3680acc0e2295db453e8e241a0cab5ea44f84586f4c5c00860822380713397",
-			"arm64": "dece4264cef3f553636482c2ba15e04ac4e1597dafc092b27c6e3da3acc4ad73",
+			"amd64": "064fc0c07f4d71f7369b168c337caa88ef32a6b00b16449cea44790ccadfc2b4",
+			"arm64": "4720693b333826569d5c1ed746a735c4d1983719c95af5bdd4d9dfeaa755e933",
 		},
 	},
 }

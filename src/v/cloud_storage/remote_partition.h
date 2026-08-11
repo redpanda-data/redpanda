@@ -77,9 +77,14 @@ public:
     /// offsets. All offset translation is done internally. The returned record
     /// batch reader will produce batches with kafka offsets and the config will
     /// be updated using kafka offsets.
+    /// \param config is a reader config
+    /// \param deadline is an optional time point which is used to debounce
+    ///        readers which are waiting for an offset. This is not a
+    ///        cancellation deadline.  Not used for tiered-storage.
     ss::future<storage::translating_reader> make_reader(
       cloud_storage::cloud_log_reader_config config,
-      std::optional<model::timeout_clock::time_point> deadline = std::nullopt);
+      std::optional<model::timeout_clock::time_point> debounce_deadline
+      = std::nullopt);
 
     static size_t reader_mem_use_estimate() noexcept;
 
@@ -94,7 +99,8 @@ public:
     /// record in the log.
     bool bounds_timestamp(model::timestamp) const;
 
-    /// Return first uploaded kafka offset
+    /// Return first uploaded kafka offset.
+    /// Precondition: is_data_available() == true
     kafka::offset first_uploaded_offset();
 
     /// Return the offset one past the end of the last offset (i.e. the high
@@ -118,6 +124,8 @@ public:
     // returns term last kafka offset
     ss::future<std::optional<kafka::offset>>
       get_term_last_offset(model::term_id) const;
+
+    std::optional<model::term_id> highest_term() const;
 
     // Get list of aborted transactions that overlap with the offset range
     ss::future<std::vector<model::tx_range>>

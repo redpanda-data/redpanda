@@ -49,6 +49,7 @@ redpanda_cc_library(
     implementation_deps = [
         "//src/v/cluster:topic_memory_per_partition_default",
         "//src/v/datalake:partition_spec_parser",
+        "//src/v/datalake:validators",
         "//src/v/thirdparty/openssl",
     ],
     visibility = ["//visibility:public"],

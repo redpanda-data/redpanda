@@ -434,7 +434,7 @@ private:
     // Highest producer ID applied to this stm.
     model::producer_id _highest_producer_id;
     // for monotonicity of computed LSO.
-    model::offset _last_known_lso{-1};
+    model::offset _last_known_lso{model::invalid_lso};
     /**
      * LSO lock protects the LSO from being exposed before transaction begin
      * batch is applied.

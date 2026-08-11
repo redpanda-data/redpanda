@@ -49,21 +49,42 @@ size_t move_bench() {
     return inner_iters * 2;
 }
 
-template<size_t Size, typename cmp_fn, bool same>
+// Overloaded make_rhs: convert iobuf to the desired RHS type
+template<typename T>
+T make_rhs(iobuf&& src);
+
+template<>
+iobuf make_rhs<iobuf>(iobuf&& src) {
+    return std::move(src);
+}
+
+template<>
+ss::sstring make_rhs<ss::sstring>(iobuf&& src) {
+    return src.linearize_to_string();
+}
+
+// Get the view type for comparison (iobuf& or string_view)
+const iobuf& as_cmp_arg(const iobuf& b) { return b; }
+std::string_view as_cmp_arg(const ss::sstring& b) { return b; }
+
+template<size_t Size, typename cmp_fn, bool same, typename rhs_type = iobuf>
 size_t cmp_bench() {
-    iobuf a = make_iobuf(Size);
-    iobuf a_copy = a.copy();
-    iobuf b = make_iobuf(Size, !same);
-    iobuf b_copy;
-    for (const auto& frag : b) {
+    // LHS: iobuf (single fragment and fragmented variants)
+    iobuf lhs = make_iobuf(Size);
+    iobuf lhs_fragmented;
+    for (const auto& frag : lhs) {
         for (char c : std::string_view(frag.get(), frag.size())) {
-            b_copy.append(&c, 1);
+            lhs_fragmented.append(&c, 1);
         }
     }
+
+    // RHS: converted to target type (iobuf or ss::sstring)
+    auto rhs = make_rhs<rhs_type>(make_iobuf(Size, !same));
+
     perf_tests::start_measuring_time();
     for (auto i = inner_iters; i--;) {
-        perf_tests::do_not_optimize(cmp_fn{}(a, b));
-        perf_tests::do_not_optimize(cmp_fn{}(a_copy, b_copy));
+        perf_tests::do_not_optimize(cmp_fn{}(lhs, as_cmp_arg(rhs)));
+        perf_tests::do_not_optimize(cmp_fn{}(lhs_fragmented, as_cmp_arg(rhs)));
     }
     perf_tests::stop_measuring_time();
     return inner_iters * 2;
@@ -147,3 +168,20 @@ PERF_TEST(iobuf, eq_bench_large_same) {
 PERF_TEST(iobuf, append_bench_small) { return append_bench<1'000, 4>(); }
 PERF_TEST(iobuf, append_bench_medium) { return append_bench<1'000, 40_KiB>(); }
 PERF_TEST(iobuf, append_bench_large) { return append_bench<1'000, 400_KiB>(); }
+
+// iobuf vs string_view comparisons
+// clang-format off
+PERF_TEST(iobuf, sv_eq_0000)      { return cmp_bench<   0, std::equal_to<>, false, ss::sstring>(); }
+PERF_TEST(iobuf, sv_eq_0001)      { return cmp_bench<   1, std::equal_to<>, false, ss::sstring>(); }
+PERF_TEST(iobuf, sv_eq_1024)      { return cmp_bench<1024, std::equal_to<>, false, ss::sstring>(); }
+PERF_TEST(iobuf, sv_eq_0000_same) { return cmp_bench<   0, std::equal_to<>, true,  ss::sstring>(); }
+PERF_TEST(iobuf, sv_eq_0001_same) { return cmp_bench<   1, std::equal_to<>, true,  ss::sstring>(); }
+PERF_TEST(iobuf, sv_eq_1024_same) { return cmp_bench<1024, std::equal_to<>, true,  ss::sstring>(); }
+
+PERF_TEST(iobuf, sv_cmp_0000)      { return cmp_bench<   0, std::less<>, false, ss::sstring>(); }
+PERF_TEST(iobuf, sv_cmp_0001)      { return cmp_bench<   1, std::less<>, false, ss::sstring>(); }
+PERF_TEST(iobuf, sv_cmp_1024)      { return cmp_bench<1024, std::less<>, false, ss::sstring>(); }
+PERF_TEST(iobuf, sv_cmp_0000_same) { return cmp_bench<   0, std::less<>, true,  ss::sstring>(); }
+PERF_TEST(iobuf, sv_cmp_0001_same) { return cmp_bench<   1, std::less<>, true,  ss::sstring>(); }
+PERF_TEST(iobuf, sv_cmp_1024_same) { return cmp_bench<1024, std::less<>, true,  ss::sstring>(); }
+// clang-format on

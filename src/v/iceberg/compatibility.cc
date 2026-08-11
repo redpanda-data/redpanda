@@ -463,18 +463,37 @@ schema_transform_result validate_schema_transform(
         return schema_evolution_errc::partition_spec_conflict;
     }
     auto state = annotate_res.value();
-    if (auto res = for_each_field(
-          dest,
-          [&state, &spec](nested_field* f) {
-              vassert(
-                f->has_evolution_metadata(),
-                "Should have visited every destination field");
-              return std::visit(
-                validate_transform_visitor{f, state, spec}, f->meta);
-          });
-        res.has_error()) {
-        return res.error();
+
+    chunked_vector<nested_field*> stack;
+    reverse_field_collecting_visitor{stack}(dest);
+
+    while (!stack.empty()) {
+        auto* field = stack.back();
+        stack.pop_back();
+        if (field == nullptr) {
+            return schema_evolution_errc::null_nested_field;
+        }
+        vassert(
+          field->has_evolution_metadata(),
+          "Should have visited every destination field");
+        const bool is_new_field = std::holds_alternative<nested_field::is_new>(
+          field->meta);
+        if (auto res = std::visit(
+              validate_transform_visitor{field, state, spec}, field->meta);
+            res.has_error()) {
+            return res.error();
+        }
+        if (is_new_field) {
+            // Treat a new field's substructure as part of the new type
+            // definition. Required descendants (map keys, list elements
+            // declared required, struct fields declared required) must not
+            // trigger new_required_field; that check applies only to
+            // top-level new columns.
+            continue;
+        }
+        std::visit(reverse_field_collecting_visitor(stack), field->type);
     }
+
     return state;
 }
 

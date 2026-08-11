@@ -87,10 +87,10 @@ public:
     notification_id register_for_updates(notification_callback);
     void unregister_for_updates(notification_id);
 
-    std::optional<std::reference_wrapper<const ::cluster_link::model::metadata>>
+    ::cluster_link::model::metadata_ptr
     find_link_by_id(::cluster_link::model::id_t id) const;
 
-    std::optional<std::reference_wrapper<const ::cluster_link::model::metadata>>
+    ::cluster_link::model::metadata_ptr
     find_link_by_name(const ::cluster_link::model::name_t& name) const;
 
     std::optional<::cluster_link::model::id_t>

@@ -11,8 +11,7 @@
 
 #include "base/seastarx.h"
 #include "config/property.h"
-#include "ssx/semaphore.h"
-#include "utils/adjustable_semaphore.h"
+#include "utils/mutex.h"
 #include "utils/token_bucket.h"
 
 #include <seastar/core/abort_source.hh>
@@ -29,6 +28,13 @@ class io_resources {
     friend class throttled_dl_source;
 
 public:
+    // Workaround for scylladb/seastar#3370: there is no API to clear the cap
+    // set by scheduling_group::update_io_bandwidth. Pass a value that is
+    // "effectively unlimited" and below the internal max_rate threshold so it
+    // does not throw. 1 PiB/s is well above any real device and comfortably
+    // below the ~1.31 EB/s ceiling computed from shared_token_bucket::max_rate.
+    static constexpr uint64_t effectively_unlimited_bw = uint64_t{1} << 50u;
+
     explicit io_resources(seastar::scheduling_group);
 
     ss::future<> start();
@@ -66,6 +72,7 @@ private:
     bool _throttling_disabled{false};
     std::optional<size_t> _device_throughput;
     seastar::scheduling_group _scheduling_group;
+    mutex _update_lock{"cloud_io/io_resources/update"};
 };
 
 } // namespace cloud_io

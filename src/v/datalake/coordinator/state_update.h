@@ -10,7 +10,9 @@
 #pragma once
 
 #include "base/outcome.h"
+#include "container/chunked_hash_map.h"
 #include "container/chunked_vector.h"
+#include "datalake/coordinator/partition_state_override.h"
 #include "datalake/coordinator/state.h"
 #include "datalake/coordinator/translated_offset_range.h"
 #include "iceberg/manifest_entry.h"
@@ -26,6 +28,7 @@ enum class update_key : uint8_t {
     add_files = 0,
     mark_files_committed = 1,
     topic_lifecycle_update = 2,
+    reset_topic_state = 3,
 };
 std::ostream& operator<<(std::ostream&, const update_key&);
 
@@ -114,6 +117,31 @@ struct topic_lifecycle_update
     model::topic topic;
     model::revision_id revision;
     topic_state::lifecycle_state_t new_state;
+};
+
+struct reset_topic_state_update
+  : public serde::envelope<
+      reset_topic_state_update,
+      serde::version<0>,
+      serde::compat_version<0>> {
+    static constexpr auto key{update_key::reset_topic_state};
+
+    model::topic topic;
+    model::revision_id topic_revision;
+    bool reset_all_partitions{false};
+    chunked_hash_map<model::partition_id, partition_state_override>
+      partition_overrides;
+
+    auto serde_fields() {
+        return std::tie(
+          topic, topic_revision, reset_all_partitions, partition_overrides);
+    }
+
+    checked<void, stm_update_error> can_apply(const topics_state&);
+    checked<void, stm_update_error> apply(topics_state&);
+
+    friend std::ostream&
+    operator<<(std::ostream&, const reset_topic_state_update&);
 };
 
 } // namespace datalake::coordinator

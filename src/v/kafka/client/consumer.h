@@ -30,6 +30,7 @@
 
 #include <chrono>
 #include <iterator>
+#include <utility>
 
 namespace kafka::client {
 
@@ -102,6 +103,33 @@ private:
     ss::future<describe_groups_response> describe_group();
 
     ss::future<fetch_response> dispatch_fetch(broker_reqs_t::value_type br);
+
+    /// \brief Seed the fetch position of every assigned partition that has no
+    /// position yet from the group's committed offset, mirroring the Java
+    /// consumer's updateFetchPositions -> refreshCommittedOffsetsIfNeeded.
+    ///
+    /// Runs at the start of each fetch() but issues an OffsetFetch only when a
+    /// partition is still initializing (freshly (re)assigned). Partitions that
+    /// already carry an in-RAM position -- e.g. a same-instance rebalance --
+    /// keep it. A partition with no committed offset is seeded to earliest,
+    /// which also marks it initialized so committed is not re-fetched on every
+    /// poll.
+    ss::future<> seed_positions_from_committed();
+
+    /// \brief Build one fetch_request per broker leading a partition in the
+    /// current assignment, seeded with each broker's fetch_session id/epoch
+    /// and each partition's tracked fetch offset.
+    broker_reqs_t build_fetch_requests(
+      std::chrono::milliseconds timeout, std::optional<int32_t> max_bytes);
+
+    /// \brief Run one fetch round against every assigned broker: dispatch,
+    /// collect, reseed out-of-range partitions to the log start, advance each
+    /// session, and reduce into a single response with the reseeded (empty)
+    /// partitions stripped. Throws on a dispatch failure so the caller's retry
+    /// can refresh metadata. Returns the delivered response and whether any
+    /// partition was reseeded (i.e. the round may need repeating).
+    ss::future<std::pair<fetch_response, bool>> fetch_round(
+      std::chrono::milliseconds timeout, std::optional<int32_t> max_bytes);
 
     template<typename RequestFactory>
     requires requires(const RequestFactory v) { v.operator()(); }

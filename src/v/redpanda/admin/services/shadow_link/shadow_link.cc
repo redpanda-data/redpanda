@@ -56,7 +56,7 @@ shadow_link_service_impl::create_shadow_link(
       co_await _service->local().upsert_cluster_link(std::move(md)));
 
     proto::admin::create_shadow_link_response sl_resp;
-    sl_resp.set_shadow_link(metadata_to_shadow_link(std::move(resp), {}));
+    sl_resp.set_shadow_link(metadata_to_shadow_link(resp, {}));
 
     co_return sl_resp;
 }
@@ -132,9 +132,9 @@ shadow_link_service_impl::list_shadow_links(
     links.reserve(resp.size());
     for (auto& md : resp) {
         auto status_report = handle_error(
-          co_await _service->local().shadow_link_report(md.name));
+          co_await _service->local().shadow_link_report(md->name));
         links.emplace_back(
-          metadata_to_shadow_link(std::move(md), std::move(status_report)));
+          metadata_to_shadow_link(md, std::move(status_report)));
     }
 
     list_resp.set_shadow_links(std::move(links));
@@ -245,9 +245,9 @@ shadow_link_service_impl::get_shadow_topic(
     auto resp = handle_error(_service->local().get_cluster_link(
       cluster_link::model::name_t{req.get_shadow_link_name()}));
 
-    const auto& it = resp.state.mirror_topics.find(
+    const auto& it = resp->state.mirror_topics.find(
       model::topic_view{req.get_name()});
-    if (it == resp.state.mirror_topics.end()) {
+    if (it == resp->state.mirror_topics.end()) {
         throw serde::pb::rpc::not_found_exception(
           ssx::sformat(
             "Shadow topic {} not found on link {}",
@@ -293,9 +293,9 @@ shadow_link_service_impl::list_shadow_topics(
         cluster_link::model::name_t{req.get_shadow_link_name()}));
 
     chunked_vector<proto::admin::shadow_topic> shadow_topics;
-    shadow_topics.reserve(resp.state.mirror_topics.size());
+    shadow_topics.reserve(resp->state.mirror_topics.size());
     std::ranges::transform(
-      resp.state.mirror_topics,
+      resp->state.mirror_topics,
       std::back_inserter(shadow_topics),
       [&shadow_link_report](const auto& p) {
           return model_to_shadow_topic(p.first, p.second, shadow_link_report);

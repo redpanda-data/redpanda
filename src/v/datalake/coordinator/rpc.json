@@ -34,6 +34,11 @@
             "name": "get_topic_state",
             "input_type": "get_topic_state_request",
             "output_type": "get_topic_state_reply"
+        },
+        {
+            "name": "reset_topic_state",
+            "input_type": "reset_topic_state_request",
+            "output_type": "reset_topic_state_reply"
         }
     ]
 }

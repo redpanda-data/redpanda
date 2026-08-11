@@ -113,14 +113,24 @@ void cluster::update_timer_callback() {
           });
     });
 }
-ss::future<> cluster::stop() {
-    vlog(_logger.info, "Stopping");
+void cluster::shutdown_input() {
+    vlog(_logger.info, "Shutting down input");
     _as.request_abort();
     _metadata_update_timer.cancel();
     _update_lock.broken();
+}
+
+ss::future<> cluster::drain() {
+    vlog(_logger.info, "Draining");
     co_await _update_config_queue.shutdown();
     co_await _gate.close();
     co_await _brokers.stop();
+}
+
+ss::future<> cluster::stop() {
+    vlog(_logger.info, "Stopping");
+    shutdown_input();
+    co_await drain();
 }
 
 ss::future<> cluster::update_metadata(

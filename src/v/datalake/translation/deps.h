@@ -216,6 +216,7 @@ enum translation_errc {
     shutting_down,
     out_of_disk,
     type_resolution_error,
+    unknown_error,
 };
 
 std::ostream& operator<<(std::ostream&, translation_errc);
@@ -277,6 +278,10 @@ public:
 
     // Report and update the lag of data that has yet to be committed.
     virtual void report_commit_lag(int64_t new_lag) = 0;
+
+    // Note that translation backed off because the coordinator signaled
+    // backpressure (too many pending files).
+    virtual void report_backpressure_backoff() = 0;
 
     static std::unique_ptr<translation_context>
     make_default_translation_context(

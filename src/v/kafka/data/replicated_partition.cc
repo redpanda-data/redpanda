@@ -12,6 +12,7 @@
 
 #include "cloud_storage/types.h"
 #include "cluster/partition.h"
+#include "cluster/partition_kafka_offsets.h"
 #include "cluster/rm_stm.h"
 #include "kafka/data/log_reader_config.h"
 #include "kafka/protocol/errors.h"
@@ -105,8 +106,8 @@ replicated_partition::sync_effective_start(
               }
               return error_code;
           }
-          return kafka_start_offset_with_override(
-            synced_start_offset_override.value());
+          return cluster::kafka_start_offset_with_override(
+            *_partition, synced_start_offset_override.value());
       });
 }
 
@@ -115,23 +116,11 @@ model::offset replicated_partition::local_start_offset() const {
 }
 
 model::offset replicated_partition::start_offset() const {
-    const auto start_offset_override
-      = _partition->kafka_start_offset_override();
-    if (!start_offset_override.has_value()) {
-        return partition_kafka_start_offset();
-    }
-    return kafka_start_offset_with_override(start_offset_override.value());
+    return cluster::kafka_start_offset(*_partition);
 }
 
 model::offset replicated_partition::high_watermark() const {
-    if (_partition->is_read_replica_mode_enabled()) {
-        if (_partition->cloud_data_available()) {
-            return _partition->next_cloud_offset();
-        } else {
-            return model::offset(0);
-        }
-    }
-    return _translator->from_log_offset(_partition->high_watermark());
+    return cluster::kafka_high_watermark(*_partition);
 }
 /**
  * According to Kafka protocol semantics a log_end_offset is an offset that
@@ -417,44 +406,6 @@ raft::replicate_stages replicated_partition::replicate(
     return out;
 }
 
-model::offset replicated_partition::partition_kafka_start_offset() const {
-    if (
-      _partition->is_read_replica_mode_enabled()
-      && _partition->cloud_data_available()) {
-        // Always assume remote read in this case.
-        return _partition->start_cloud_offset();
-    }
-
-    auto local_kafka_start_offset = _translator->from_log_offset(
-      _partition->raft_start_offset());
-    if (
-      _partition->is_remote_fetch_enabled()
-      && _partition->cloud_data_available()
-      && (_partition->start_cloud_offset() < local_kafka_start_offset)) {
-        return _partition->start_cloud_offset();
-    }
-    return local_kafka_start_offset;
-}
-
-model::offset replicated_partition::kafka_start_offset_with_override(
-  model::offset start_kafka_offset_override) const {
-    if (start_kafka_offset_override == model::offset{}) {
-        return partition_kafka_start_offset();
-    }
-    if (_partition->is_read_replica_mode_enabled()) {
-        // The start override may fall ahead of the HWM since read replicas
-        // compute HWM based on uploaded segments, and the override may
-        // appear in the manifest before uploading corresponding segments.
-        // Clamp down to the HWM.
-        const auto hwm = high_watermark();
-        if (hwm <= start_kafka_offset_override) {
-            return hwm;
-        }
-    }
-    return std::max(
-      partition_kafka_start_offset(), start_kafka_offset_override);
-}
-
 ss::future<std::optional<model::offset>>
 replicated_partition::get_leader_epoch_last_offset(
   kafka::leader_epoch epoch) const {
@@ -484,8 +435,7 @@ replicated_partition::get_leader_epoch_last_offset_unbounded(
     vlog(
       kdlog.debug,
       "{} get_leader_epoch_last_offset_unbounded, term {}, first local offset "
-      "{}, "
-      "first local term {}, last local term {}, is read replica {}",
+      "{}, first local term {}, last local term {}, is read replica {}",
       _partition->get_ntp_config().ntp(),
       term,
       first_local_offset,
@@ -493,26 +443,8 @@ replicated_partition::get_leader_epoch_last_offset_unbounded(
       last_local_term,
       is_read_replica);
 
-    if (!is_read_replica && term > last_local_term) {
-        // Request for term that is in the future
-        co_return std::nullopt;
-    }
-    // Look for the highest offset in the requested term, or the first offset
-    // in the next term. This mirrors behavior in Kafka, see
-    // https://github.com/apache/kafka/blob/97105a8e5812135515f5a0fa4d5ff554d80df2fe/storage/src/main/java/org/apache/kafka/storage/internals/epoch/LeaderEpochFileCache.java#L255-L281
-    if (!is_read_replica && term >= first_local_term) {
-        auto last_offset = _partition->get_term_last_offset(term);
-        if (last_offset) {
-            co_return _translator->from_log_offset(*last_offset);
-        }
-    }
-    // The requested term falls below our earliest local segment.
-
-    // Check cloud storage for a viable offset.
-    if (
-      is_read_replica
-      || (_partition->is_remote_fetch_enabled() && _partition->cloud_data_available())) {
-        if (is_read_replica && !_partition->cloud_data_available()) {
+    if (is_read_replica) {
+        if (!_partition->cloud_data_available()) {
             // If we didn't sync the manifest yet the cloud_data_available will
             // return false. We can't call `get_cloud_term_last_offset` in this
             // case but we also can't use `first_local_offset` for read replica.
@@ -522,11 +454,57 @@ replicated_partition::get_leader_epoch_last_offset_unbounded(
           term);
         if (last_offset) {
             co_return last_offset;
-        } else {
-            // Return the offset of this next-highest term, but from the
-            // cloud
+        }
+        // The term was not found in cloud storage.
+        const auto highest_cloud_term = _partition->highest_cloud_term();
+        if (highest_cloud_term.has_value() && term > *highest_cloud_term) {
+            // A read replica has no local log, so a term above the highest
+            // cloud term is an unknown (future) epoch for it.
+            co_return std::nullopt;
+        }
+        // The term is below the earliest cloud segment; the next-highest term
+        // still lives in cloud, so return the cloud start offset.
+        co_return _partition->start_cloud_offset();
+    }
+
+    if (term > last_local_term) {
+        // Request for term that is in the future
+        co_return std::nullopt;
+    }
+    // Look for the highest offset in the requested term, or the first offset
+    // in the next term. This mirrors behavior in Kafka, see
+    // https://github.com/apache/kafka/blob/97105a8e5812135515f5a0fa4d5ff554d80df2fe/storage/src/main/java/org/apache/kafka/storage/internals/epoch/LeaderEpochFileCache.java#L255-L281
+    if (term >= first_local_term) {
+        auto last_offset = _partition->get_term_last_offset(term);
+        if (last_offset) {
+            co_return _translator->from_log_offset(*last_offset);
+        }
+    }
+    // The requested term falls below our earliest local segment. Check cloud
+    // storage for a viable offset.
+    if (
+      _partition->is_remote_fetch_enabled()
+      && _partition->cloud_data_available()) {
+        auto last_offset = co_await _partition->get_cloud_term_last_offset(
+          term);
+        if (last_offset) {
+            co_return last_offset;
+        }
+        // The requested term is below the first local term (so its data is not
+        // in the local log) and was not found in cloud storage. Here, we use
+        // the highest cloud term to disambiguate two cases.
+        const auto highest_cloud_term = _partition->highest_cloud_term();
+        if (highest_cloud_term.has_value() && term <= *highest_cloud_term) {
+            // The term must be lower than the lowest cloud term: the
+            // next-highest term still lives in cloud, so the answer is the
+            // cloud start offset (the effective log start).
             co_return _partition->start_cloud_offset();
         }
+        // The term is higher than the highest cloud term: its data lives
+        // only in the local log (e.g. the local start offset advanced ahead
+        // of the cloud upload watermark during partition movement). The
+        // next-highest term begins at the first local offset.
+        co_return _translator->from_log_offset(first_local_offset);
     }
 
     // Return the offset of this next-highest term.

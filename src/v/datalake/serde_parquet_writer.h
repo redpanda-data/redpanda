@@ -27,6 +27,9 @@ private:
     writer_mem_tracker& _mem_tracker;
     int64_t _buffered_bytes{0};
     int64_t _flushed_bytes{0};
+    // Used to store any errors that occur after a row write is successful.
+    writer_error _error{writer_error::ok};
+    writer_error set_error(writer_error);
 };
 
 class serde_parquet_writer_factory : public parquet_ostream_factory {

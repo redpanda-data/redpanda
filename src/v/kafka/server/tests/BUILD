@@ -236,6 +236,7 @@ redpanda_cc_gtest(
     deps = [
         "//src/v/container:chunked_circular_buffer",
         "//src/v/container:chunked_hash_map",
+        "//src/v/container:chunked_vector",
         "//src/v/kafka/protocol",
         "//src/v/kafka/server",
         "//src/v/model",
@@ -290,6 +291,7 @@ redpanda_cc_btest(
         "//src/v/model:timeout_clock",
         "//src/v/redpanda/tests:fixture",
         "//src/v/security",
+        "//src/v/ssx:sformat",
         "//src/v/test_utils:scoped_config",
         "//src/v/test_utils:seastar_boost",
         "//src/v/utils:base64",
@@ -781,6 +783,7 @@ redpanda_cc_btest(
     cpu = 1,
     deps = [
         "//src/v/base",
+        "//src/v/cluster",
         "//src/v/cluster/tests:cluster_test_fixture",
         "//src/v/container:chunked_vector",
         "//src/v/kafka/protocol",

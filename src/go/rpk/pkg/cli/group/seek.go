@@ -231,9 +231,9 @@ func seek(
 			var err error
 			switch to {
 			case "start":
-				listed, err = adm.ListStartOffsets(context.Background(), topics...)
+				listed, err = kafka.ListStartOffsetsWithRetries(context.Background(), adm, topics...)
 			case "end":
-				listed, err = adm.ListEndOffsets(context.Background(), topics...)
+				listed, err = kafka.ListEndOffsetsWithRetries(context.Background(), adm, topics...)
 			default:
 				var milli int64
 				milli, err = strconv.ParseInt(to, 10, 64)
@@ -247,7 +247,7 @@ func seek(
 				default:
 					out.Die("--to timestamp %q is not a second, nor a millisecond, nor a nanosecond", to)
 				}
-				listed, err = adm.ListOffsetsAfterMilli(context.Background(), milli, topics...)
+				listed, err = kafka.ListOffsetsAfterMilliWithRetries(context.Background(), adm, milli, topics...)
 			}
 			if err == nil { // ListOffsets can return ShardErrors, but we want to be entirely successful
 				err = listed.Error()

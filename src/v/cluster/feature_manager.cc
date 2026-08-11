@@ -170,6 +170,20 @@ feature_manager::start(std::vector<model::node_id>&& cluster_founder_nodes) {
             }
         });
 
+    // Wake the background loop on any membership change. The active-
+    // version check in do_maybe_update_active_version is gated on the
+    // set of current members (members_table::node_ids()); when a node
+    // is fully removed (e.g. its decommission completes) no health
+    // report or leader change re-triggers the loop, so without this
+    // notification the active version can stay stuck below the
+    // cluster's actual minimum until the next leader change.
+    _members_notify_handle
+      = _members.local().register_members_updated_notification(
+        [this](model::node_id, model::membership_state) {
+            _members_changed = true;
+            _update_wait.signal();
+        });
+
     // Detach fiber for active version updater.
     // The writes of active version run in the background, because we
     // do it in response to callbacks (e.g. node version change from
@@ -201,6 +215,8 @@ ss::future<> feature_manager::stop() {
     _group_manager.local().unregister_leadership_notification(
       _leader_notify_handle);
     _hm_backend.local().unregister_node_callback(_health_notify_handle);
+    _members.local().unregister_members_updated_notification(
+      _members_notify_handle);
     _update_wait.broken();
     _verified_enterprise_license.broken();
     co_await _gate.close();
@@ -525,7 +541,7 @@ void feature_manager::update_node_version(
       update_node,
       v);
 
-    _updates.emplace(update_node, v);
+    _updates.insert_or_assign(update_node, v);
     _update_wait.signal();
 }
 
@@ -543,6 +559,11 @@ ss::future<> feature_manager::do_maybe_update_active_version() {
     // not leader, so that we drain it and allow maybe_update_active_version
     // to sleep on _update_wait.
     auto updates = std::exchange(_updates, {});
+
+    // Clear the membership-change wake bit before evaluating, so any
+    // change that races our read of members_table re-sets it and
+    // triggers another pass.
+    _members_changed = false;
 
     if (!_am_controller_leader) {
         co_return;

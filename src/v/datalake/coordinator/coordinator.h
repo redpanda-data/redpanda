@@ -12,12 +12,19 @@
 #include "absl/hash/hash.h"
 #include "cluster/fwd.h"
 #include "config/property.h"
+#include "container/chunked_hash_map.h"
 #include "container/chunked_vector.h"
+#include "datalake/coordinator/coordinator_probe.h"
 #include "datalake/coordinator/file_committer.h"
+#include "datalake/coordinator/partition_state_override.h"
 #include "datalake/coordinator/snapshot_remover.h"
 #include "datalake/coordinator/state_machine.h"
 #include "datalake/fwd.h"
 #include "model/fundamental.h"
+
+#include <seastar/core/lowres_clock.hh>
+
+#include <optional>
 
 namespace datalake::coordinator {
 
@@ -49,7 +56,8 @@ public:
       snapshot_remover& snapshot_remover,
       config::binding<std::chrono::milliseconds> commit_interval,
       config::binding<ss::sstring> default_partition_spec,
-      config::binding<bool> disable_snapshot_expiry)
+      config::binding<bool> disable_snapshot_expiry,
+      config::binding<size_t> max_pending_files)
       : stm_(std::move(stm))
       , topic_table_(topics)
       , type_resolver_(type_resolver)
@@ -59,7 +67,9 @@ public:
       , snapshot_remover_(snapshot_remover)
       , commit_interval_(std::move(commit_interval))
       , default_partition_spec_(std::move(default_partition_spec))
-      , disable_snapshot_expiry_(std::move(disable_snapshot_expiry)) {}
+      , disable_snapshot_expiry_(std::move(disable_snapshot_expiry))
+      , max_pending_files_(std::move(max_pending_files))
+      , probe_(stm_->raft()->ntp()) {}
 
     void start();
     ss::future<> stop_and_wait();
@@ -80,6 +90,9 @@ public:
     struct last_offsets {
         std::optional<kafka::offset> last_added_offset;
         std::optional<kafka::offset> last_committed_offset;
+        // Set when the coordinator has too many pending files: the offsets are
+        // still valid, but the translator should hold off on new translation.
+        bool backpressure{false};
     };
     ss::future<checked<last_offsets, errc>> sync_get_last_added_offsets(
       model::topic_partition tp, model::revision_id topic_rev);
@@ -88,6 +101,13 @@ public:
 
     ss::future<checked<chunked_hash_map<model::topic, topic_state>, errc>>
     sync_get_topic_state(chunked_vector<model::topic> topics);
+
+    ss::future<checked<void, errc>> sync_reset_topic_state(
+      model::topic topic,
+      model::revision_id topic_rev,
+      bool reset_all_partitions,
+      chunked_hash_map<model::partition_id, partition_state_override>
+        partition_overrides);
 
     void notify_leadership(std::optional<model::node_id>);
 
@@ -156,6 +176,11 @@ private:
     // capabilities" out.
     bool using_glue_catalog() const;
 
+    // Returns whether the coordinator state has too many pending files, which
+    // is used as a signal to reject adding new files and instruct translators
+    // to not create new files.
+    bool has_too_many_pending_files();
+
     ss::shared_ptr<coordinator_stm> stm_;
     cluster::topic_table& topic_table_;
     type_resolver& type_resolver_;
@@ -166,6 +191,9 @@ private:
     config::binding<std::chrono::milliseconds> commit_interval_;
     config::binding<ss::sstring> default_partition_spec_;
     config::binding<bool> disable_snapshot_expiry_;
+    // Threshold of total pending files across this coordinator's topics above
+    // which it rejects new files.
+    config::binding<size_t> max_pending_files_;
 
     ss::gate gate_;
     ss::abort_source as_;
@@ -177,6 +205,12 @@ private:
 
     ensure_table_map_t in_flight_main_;
     ensure_table_map_t in_flight_dlq_;
+
+    // Timestamp at which the total number of files was computed to be above
+    // `max_pending_files_`, if ever.
+    std::optional<ss::lowres_clock::time_point> backpressured_as_of_;
+
+    coordinator_probe probe_;
 };
 std::ostream& operator<<(std::ostream&, coordinator::errc);
 

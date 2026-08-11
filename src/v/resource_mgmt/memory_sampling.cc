@@ -32,11 +32,6 @@
 
 constexpr std::string_view diagnostics_header() { return "Top-N alloc sites:"; }
 
-constexpr std::string_view confluence_reference() {
-    return "If you work at Redpanda please refer to "
-           "https://vectorizedio.atlassian.net/l/cp/iuEMd2NN\n";
-}
-
 fmt::appender fmt::formatter<seastar::memory::allocation_site>::format(
   const seastar::memory::allocation_site& site,
   fmt::format_context& ctx) const {
@@ -158,11 +153,6 @@ memory_sampling::get_oom_diagnostics_callback() {
                   format_buf.data(),
                   std::min(bytes_written, format_buf.size())));
             }
-        }
-
-        writer(confluence_reference());
-        if (oom_recorder.has_value()) {
-            (*oom_recorder)(confluence_reference());
         }
     };
 }

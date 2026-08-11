@@ -402,22 +402,19 @@ record_multiplexer::finish(
             _error = res.error();
             continue;
         }
-        if (_result) {
-            auto& files = res.value();
-            vlog(
-              _log.trace, "writer finished: files_created={})", files.size());
-            std::move(
-              files.begin(),
-              files.end(),
-              std::back_inserter(finished_files.data_files));
-        }
+        auto& files = res.value();
+        vlog(_log.trace, "writer finished: files_created={})", files.size());
+        std::move(
+          files.begin(),
+          files.end(),
+          std::back_inserter(finished_files.data_files));
     }
     if (_invalid_record_writer) {
         auto writer = std::move(_invalid_record_writer);
         auto res = co_await std::move(*writer).finish();
         if (res.has_error()) {
             _error = res.error();
-        } else if (_result) {
+        } else {
             auto& files = res.value();
             vlog(
               _log.trace,

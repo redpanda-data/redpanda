@@ -31,6 +31,7 @@ from rptest.services.redpanda_installer import (
     RedpandaVersionLine,
     RedpandaVersionTriple,
 )
+from rptest.services.admin import Admin
 from rptest.services.redpanda import MetricsEndpoint
 from rptest.tests.partition_movement import PartitionMovementMixin
 from rptest.tests.prealloc_nodes import PreallocNodesTest
@@ -904,7 +905,6 @@ class LogCompactionTxRemovalTestBase(
             "raft_recovery_concurrency_per_shard": math.ceil(
                 raft_max_recovery_memory / self.raft_learner_recovery_rate
             ),
-            "raft_recovery_default_read_size": self.raft_learner_recovery_rate,
             "health_monitor_max_metadata_age": 100,  # ms
             "enable_leader_balancer": False,
             "partition_autobalancing_mode": "off",
@@ -1038,10 +1038,23 @@ class LogCompactionTxRemovalUpgradeTestBase(LogCompactionTxRemovalTestBase):
         super().__init__(test_context)
         self.initial_version: RedpandaVersion = initial_version
 
+    # Transaction timeout long enough to survive the upgrade phase which
+    # may involve downloading intermediate versions.
+    TX_TIMEOUT_MS = 300000
+
     def setUp(self):
         self.redpanda._installer.start()
         self.redpanda._installer.install(self.redpanda.nodes, self.initial_version)
         self.redpanda.start()
+
+    def make_tx_producer(self, transactional_id):
+        return ck.Producer(
+            {
+                "bootstrap.servers": self.redpanda.brokers(),
+                "transactional.id": transactional_id,
+                "transaction.timeout.ms": self.TX_TIMEOUT_MS,
+            }
+        )
 
     def upgrade_to_version(self, target_version):
         def logical_version():
@@ -1096,12 +1109,7 @@ class LogCompactionTxRemovalUpgradeTestBase(LogCompactionTxRemovalTestBase):
 
         # Produce multiple-segment transactional data without closing transactions.
         producers = [
-            ck.Producer(
-                {
-                    "bootstrap.servers": self.redpanda.brokers(),
-                    "transactional.id": f"tx_producer_{producer_id}",
-                }
-            )
+            self.make_tx_producer(f"tx_producer_{producer_id}")
             for producer_id in [0, 1]
         ]
         for p in producers:
@@ -1141,16 +1149,21 @@ class LogCompactionTxRemovalUpgradeTestBase(LogCompactionTxRemovalTestBase):
 
         self.wait_for_all_tx_batches_removed(produce_func)
 
-    def nth_segment_recovered(self, n: int, node: int) -> bool:
-        reconfigurations = self.redpanda._admin.list_reconfigurations(
-            node=self.redpanda.get_node_by_id(node)
-        )
-        self.redpanda.logger.debug(f"reconfigurations: {reconfigurations}")
-        if not reconfigurations:
-            return False
-        bytes_moved = reconfigurations[0]["bytes_moved"]
-        assert bytes_moved <= 2 * n * self.segment_size, "node recovered too fast"
-        return bytes_moved >= n * self.segment_size
+    def learner_recovered_offset(
+        self, leader_node: int, learner_node: int
+    ) -> int | None:
+        """Offset the learner replica has been recovered up to, as reported by the
+        partition leader, or None while the leader does not list it as a follower."""
+        for replica in self.get_partition_state(
+            self.redpanda.get_node_by_id(leader_node)
+        ):
+            raft_state = replica["raft_state"]
+            if not raft_state["is_leader"]:
+                continue
+            for follower in raft_state.get("followers", []):
+                if follower["id"] == learner_node:
+                    return follower["match_index"]
+        return None
 
     def run_2segment_scenario(self):
         def produce_func():
@@ -1171,12 +1184,7 @@ class LogCompactionTxRemovalUpgradeTestBase(LogCompactionTxRemovalTestBase):
         )
 
         # produce tx data in segment 1 and commit around segment 9
-        tx_producer = ck.Producer(
-            {
-                "bootstrap.servers": self.redpanda.brokers(),
-                "transactional.id": "tx_producer",
-            }
-        )
+        tx_producer = self.make_tx_producer("tx_producer")
         tx_producer.init_transactions()
         tx_producer.begin_transaction()
 
@@ -1223,7 +1231,9 @@ class LogCompactionTxRemovalUpgradeTestBase(LogCompactionTxRemovalTestBase):
             err_msg="timed out waiting for MTRO to advance",
         )
 
-        # init a replica and let it recover the first 2 segments only
+        # init a replica and let it recover the beginning of the log only: it needs
+        # the open transaction from segment 1 but not the commit batch that follows
+        # segment 8, so any offset in between will do
         new_replica_node = leader_node % len(self.redpanda.nodes) + 1
         self.redpanda._admin.set_partition_replicas(
             topic=self.topic_spec.name,
@@ -1233,8 +1243,18 @@ class LogCompactionTxRemovalUpgradeTestBase(LogCompactionTxRemovalTestBase):
                 {"node_id": new_replica_node, "core": 0},
             ],
         )
+        max_partially_recovered_offset = 7 * messages_per_segment
+
+        def partially_recovered() -> bool:
+            offset = self.learner_recovered_offset(leader_node, new_replica_node)
+            self.redpanda.logger.debug(f"learner recovered up to offset {offset}")
+            if offset is None:
+                return False
+            assert offset < max_partially_recovered_offset, "node recovered too fast"
+            return offset > messages_per_segment
+
         wait_until(
-            lambda: self.nth_segment_recovered(2, leader_node),
+            partially_recovered,
             timeout_sec=60,
             backoff_sec=0.5,
             err_msg="timed out waiting for partial recovery",
@@ -1262,7 +1282,10 @@ class LogCompactionTxRemovalUpgradeTestBase(LogCompactionTxRemovalTestBase):
         )
 
         # make sure the replica didn't recover much further
-        assert not self.nth_segment_recovered(7, leader_node)
+        offset = self.learner_recovered_offset(leader_node, new_replica_node)
+        assert offset is not None and offset < max_partially_recovered_offset, (
+            f"learner recovered too far, up to offset {offset}"
+        )
 
         # temporarily disable tx removal
         self.redpanda.set_cluster_config(
@@ -1323,3 +1346,302 @@ class LogCompactionTxRemovalUpgradeFrom25_3_1_Test(
     @cluster(num_nodes=4)
     def test_tx_control_batch_removal_with_upgrade_and_recovery(self):
         self.run_2segment_scenario()
+
+
+class PriorityPartitionCompactionTest(LogCompactionTestBase, PreallocNodesTest):
+    """
+    Tests that priority partitions (e.g. __consumer_offsets) are compacted
+    promptly even when heavy compaction is running on other topics.
+
+    This validates the priority compaction preemption mechanism added to
+    prevent starvation of __consumer_offsets when colocated with heavy
+    compaction workloads.
+    """
+
+    def __init__(self, test_context):
+        self.test_context = test_context
+        # Configure for heavy compaction with small segments.
+        self.extra_rp_conf = {
+            # Start with compaction effectively disabled - will enable later
+            "log_compaction_interval_ms": 3600 * 1000,  # 1 hour
+            "log_segment_size": 1024 * 1024,  # 1 MiB
+            "compacted_log_segment_size": 1024 * 1024,  # 1 MiB
+            "log_compaction_max_priority_wait_ms": 100,
+            "group_topic_partitions": 1,
+            "group_new_member_join_timeout": 3000,
+            "group_initial_rebalance_delay": 0,
+            # Frequent segment rolls
+            "log_segment_ms": 2000,
+            "log_segment_ms_min": 2000,
+            # Disable all forms of shard balancing for this test.
+            "enable_leader_balancer": False,
+            "partition_autobalancing_mode": "off",
+            "core_balancing_on_core_count_change": False,
+            "core_balancing_continuous": False,
+            # Allow altering __consumer_offsets config (e.g. min.cleanable.dirty.ratio)
+            "kafka_nodelete_topics": [],
+        }
+
+        environment = {"__REDPANDA_TEST_DISABLE_BOUNDED_PROPERTY_CHECKS": "ON"}
+
+        super().__init__(
+            test_context=test_context,
+            num_brokers=3,
+            node_prealloc_count=1,
+            extra_rp_conf=self.extra_rp_conf,
+            environment=environment,
+        )
+
+        self.rpk = RpkTool(self.redpanda)
+        self.admin = Admin(self.redpanda)
+
+    def get_consumer_offsets_dirty_bytes(self, nodes=None):
+        """Get dirty segment bytes for __consumer_offsets topic."""
+        return self.redpanda.metric_sum(
+            metric_name="vectorized_storage_log_dirty_segment_bytes",
+            metrics_endpoint=MetricsEndpoint.METRICS,
+            topic="__consumer_offsets",
+            nodes=nodes,
+        )
+
+    def generate_consumer_offset_activity(self, stop_event, num_groups):
+        """
+        Generate activity on __consumer_offsets by creating consumer groups
+        and continuously committing offsets until stop_event is set.
+        """
+        # Create consumers and commit offsets to populate __consumer_offsets
+        consumers = []
+        for group_idx in range(num_groups):
+            group_id = f"test_group_{group_idx}"
+            consumer = ck.Consumer(
+                {
+                    "bootstrap.servers": self.redpanda.brokers(),
+                    "group.id": group_id,
+                    "auto.offset.reset": "earliest",
+                    "enable.auto.commit": False,
+                }
+            )
+            consumer.subscribe([self.topic_spec.name])
+            consumers.append(consumer)
+
+        while not stop_event.is_set():
+            for consumer in consumers:
+                msg = consumer.poll(timeout=0.1)
+                if msg is not None and not msg.error():
+                    try:
+                        consumer.commit(asynchronous=False)
+                    except Exception:
+                        pass  # Ignore commit errors
+
+        for consumer in consumers:
+            consumer.close()
+
+    def move_partition_to_same_shard_as_consumer_offsets(self):
+        """
+        Move the heavy topic partition to the same shard as __consumer_offsets/0
+        on each node. This ensures both partitions are processed by the same
+        housekeeping loop, which is required for the preemption mechanism to work.
+        """
+        co_cores = self._get_current_node_cores(
+            self.admin, "__consumer_offsets", partition_id=0
+        )
+        if not co_cores:
+            return False
+
+        co_shards = {r["node_id"]: r["core"] for r in co_cores}
+        self.redpanda.logger.info(
+            f"__consumer_offsets/0 actual local shard placement: {co_shards}"
+        )
+
+        heavy_cores = self._get_current_node_cores(
+            self.admin, self.topic_spec.name, partition_id=0
+        )
+        if not heavy_cores:
+            return False
+
+        heavy_shards = {r["node_id"]: r["core"] for r in heavy_cores}
+        self.redpanda.logger.info(
+            f"{self.topic_spec.name}/0 actual local shard placement: {heavy_shards}"
+        )
+
+        # Build target assignments: move heavy topic to same cores as __consumer_offsets
+        target_assignments = []
+        needs_move = False
+        for node_id, target_core in co_shards.items():
+            if node_id in heavy_shards:
+                target_assignments.append({"node_id": node_id, "core": target_core})
+                if heavy_shards[node_id] != target_core:
+                    needs_move = True
+                    self.redpanda.logger.info(
+                        f"Will move {self.topic_spec.name}/0 replica on node {node_id} "
+                        f"from core {heavy_shards[node_id]} to core {target_core}"
+                    )
+
+        if not needs_move:
+            self.redpanda.logger.info(
+                "Partitions already on same shards, no move needed"
+            )
+            return True
+
+        self._set_partition_assignments(
+            self.topic_spec.name, partition=0, assignments=target_assignments
+        )
+
+        self._wait_post_move(
+            self.topic_spec.name,
+            partition=0,
+            assignments=target_assignments,
+            timeout_sec=30,
+        )
+
+        return True
+
+    def produce_multiple_rounds(self, rounds=10, msgs_per_round=50000):
+        for round_num in range(rounds):
+            try:
+                producer = KgoVerifierProducer(
+                    context=self.test_context,
+                    redpanda=self.redpanda,
+                    topic=self.topic_spec.name,
+                    msg_size=1024,
+                    msg_count=msgs_per_round,
+                    rate_limit_bps=100 * 1024 * 1024,  # 100 MiBps
+                    key_set_cardinality=500,
+                    custom_node=self.preallocated_nodes,
+                )
+                producer.start()
+                producer.wait(timeout_sec=180)
+            finally:
+                producer.stop()
+
+    def continuous_produce(self, stop_event, msgs_per_batch):
+        """
+        Continuously produce data to the main topic until stop_event is set.
+        This ensures compaction has ongoing work and takes longer to complete.
+        """
+        while not stop_event.is_set():
+            try:
+                producer = KgoVerifierProducer(
+                    context=self.test_context,
+                    redpanda=self.redpanda,
+                    topic=self.topic_spec.name,
+                    msg_size=1024,
+                    msg_count=msgs_per_batch,
+                    rate_limit_bps=50 * 1024 * 1024,  # 50 MiBps
+                    key_set_cardinality=500,
+                    custom_node=self.preallocated_nodes,
+                )
+                producer.start()
+                producer.wait(timeout_sec=60)
+            except Exception:
+                pass  # Ignore errors, keep producing until stopped
+            finally:
+                producer.stop()
+
+    @skip_debug_mode
+    @cluster(num_nodes=4)
+    def test_priority_partition_not_starved(self):
+        """
+        Test that __consumer_offsets is compacted promptly even when heavy
+        compaction is running on other topics.
+
+        This test:
+        1. Creates a topic with heavy compaction workload with
+           compaction disabled during data production
+        2. Starts consumer offset commits
+        3. Enables compaction - heavy compaction and consumer offset activity run
+           concurrently
+        4. Verifies preemption was triggered
+        5. Verifies subsequent compaction still works
+        """
+        self.topic_setup(
+            cleanup_policy=TopicSpec.CLEANUP_COMPACT,
+            replication_factor=3,
+            partition_count=1,
+            min_cleanable_dirty_ratio=0.0,
+        )
+
+        # Compaction is disabled during this phase (interval is 1 hour).
+        self.produce_multiple_rounds()
+
+        # Start consumer offset activity BEFORE enabling compaction.
+        # This creates consumer offset data that will need compaction.
+        stop_event = threading.Event()
+        consumer_thread = threading.Thread(
+            target=self.generate_consumer_offset_activity,
+            args=(stop_event, 30),
+        )
+
+        # Start continuous background production to ensure compaction has
+        # ongoing work. This prevents the heavy compaction from completing
+        # before preemption can be triggered.
+        producer_thread = threading.Thread(
+            target=self.continuous_produce, args=(stop_event, 10000)
+        )
+
+        try:
+            consumer_thread.start()
+            producer_thread.start()
+
+            # Move heavy topic partition to same shard as `__consumer_offsets/0`
+            wait_until(
+                lambda: self.move_partition_to_same_shard_as_consumer_offsets(),
+                timeout_sec=120,
+                backoff_sec=1,
+                retry_on_exc=True,
+                err_msg="Timed out waiting for __consumer_offsets and main topic's partition to be placed on the same shard",
+            )
+
+            # Set min.cleanable.dirty.ratio=0 for __consumer_offsets so it
+            # always needs compaction when there's any dirty data.
+            self.rpk.alter_topic_config(
+                "__consumer_offsets", "min.cleanable.dirty.ratio", 0.0
+            )
+
+            # Enable frequent compactions
+            self.rpk.cluster_config_set("log_compaction_interval_ms", "1000")
+
+            # Check for preemption log message
+            wait_until(
+                lambda: self.redpanda.search_log_any(
+                    "preempting for priority partitions"
+                ),
+                timeout_sec=120,
+                backoff_sec=1,
+                err_msg="Priority compaction preemption was NOT triggered - expected to see 'preempting for priority partitions' in logs",
+            )
+        finally:
+            stop_event.set()
+            consumer_thread.join(timeout=30)
+            producer_thread.join(timeout=30)
+
+        # __consumer_offsets should be compacted quickly (dirty bytes go to 0)
+        # even while heavy compaction is ongoing
+        def consumer_offsets_is_clean():
+            co_dirty = self.get_consumer_offsets_dirty_bytes()
+            heavy_dirty = self.get_dirty_segment_bytes()
+            self.redpanda.logger.debug(
+                f"__consumer_offsets dirty: {co_dirty}, heavy topic dirty: {heavy_dirty}"
+            )
+            return co_dirty == 0
+
+        # Wait for __consumer_offsets to be fully compacted
+        wait_until(
+            consumer_offsets_is_clean,
+            timeout_sec=60,
+            backoff_sec=2,
+            err_msg="__consumer_offsets was not compacted in time",
+        )
+
+        # Set the configured priority wait timeout back to something more reasonable
+        self.rpk.cluster_config_set("log_compaction_max_priority_wait_ms", 3600 * 1000)
+
+        # Verify subsequent compaction on the main topic still make progress after pre-emption
+        initial_rounds = self.get_complete_sliding_window_rounds()
+        self.produce_multiple_rounds()
+        wait_until(
+            lambda: self.get_complete_sliding_window_rounds() > initial_rounds,
+            timeout_sec=120,
+            backoff_sec=1,
+            err_msg="Did not see subsequent compactions after pre-emption.",
+        )

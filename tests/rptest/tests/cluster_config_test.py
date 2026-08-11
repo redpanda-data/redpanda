@@ -2021,6 +2021,40 @@ class ClusterConfigIcebergTest(RedpandaTest):
             expect_restart=True,
         )
 
+    @cluster(num_nodes=1)
+    def test_iceberg_rest_catalog_endpoint_url_validation(self):
+        """
+        Verifies that malformed `iceberg_rest_catalog_endpoint` values are
+        rejected, while well-formed URLs are accepted.
+        """
+        malformed_values = [
+            "not a url",
+            "://missing-scheme",
+            "http://host:not-a-port",
+            "http://host:99999",
+        ]
+        for value in malformed_values:
+            with expect_exception(
+                requests.exceptions.HTTPError,
+                lambda e: e.response.status_code == 400,
+            ):
+                self.redpanda.set_cluster_config(
+                    {"iceberg_rest_catalog_endpoint": value},
+                    expect_restart=True,
+                )
+
+        # Well-formed values should be accepted.
+        valid_values = [
+            "http://localhost:8181",
+            "https://catalog.example.com",
+            "https://catalog.example.com:443/path",
+        ]
+        for value in valid_values:
+            self.redpanda.set_cluster_config(
+                {"iceberg_rest_catalog_endpoint": value},
+                expect_restart=True,
+            )
+
 
 class PropertyAliasData(NamedTuple):
     """Data structure for property alias testing configuration."""
@@ -2693,6 +2727,42 @@ class ClusterConfigUnknownTest(RedpandaTest):
 
         # issue would appear when reloading the property back
         self.redpanda.restart_nodes(self.redpanda.nodes[0])
+
+    @cluster(num_nodes=3)
+    def test_unknown_value_can_be_removed(self):
+        """
+        Test that an unknown property forced into the log can be removed through the admin API _without_
+        use of ?force=true.
+        """
+        FAKE_PROPERTY = "my_fake_property"
+        # Force-write a removed property into the raft log
+        self.admin.patch_cluster_config(upsert={FAKE_PROPERTY: "true"}, force=True)
+
+        def _unknown_visible(expect_visible):
+            statuses = self.admin.get_cluster_config_status()
+            return all(
+                (FAKE_PROPERTY in s.get("unknown", [])) == expect_visible
+                for s in statuses
+            )
+
+        # Wait for all nodes to report it as unknown
+        wait_until(
+            lambda: _unknown_visible(True),
+            timeout_sec=30,
+            backoff_sec=1,
+            err_msg=f"{FAKE_PROPERTY} did not appear as unknown on all nodes",
+        )
+
+        # Remove the unknown property without force=true
+        self.admin.patch_cluster_config(remove=[FAKE_PROPERTY], force=False)
+
+        # Wait for all nodes to no longer report it as unknown
+        wait_until(
+            lambda: _unknown_visible(False),
+            timeout_sec=30,
+            backoff_sec=1,
+            err_msg=f"{FAKE_PROPERTY} was not removed from unknown on all nodes",
+        )
 
 
 class DevelopmentFeatureTest(RedpandaTest):

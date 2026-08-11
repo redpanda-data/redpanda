@@ -868,7 +868,7 @@ func (g *implGenerator) generateMessageTraversalHelper(msg protoreflect.MessageD
 				w.Printf(".name = enum_to_string(get_%s()),\n", f.Name())
 				w.Dedent()
 				w.Println("};")
-			} else if f.Kind() == protoreflect.BytesKind {
+			} else if f.Kind() == protoreflect.BytesKind || isIOBuf(f) {
 				w.Printf("found.value = get_%s().share();\n", f.Name())
 			} else {
 				w.Printf("found.value = get_%s();\n", f.Name())

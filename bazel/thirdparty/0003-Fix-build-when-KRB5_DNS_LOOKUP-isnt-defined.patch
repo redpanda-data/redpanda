@@ -1,0 +1,50 @@
+From 3c672caba714164f26a7464ba82873dff750573c Mon Sep 17 00:00:00 2001
+From: Greg Hudson <ghudson@mit.edu>
+Subject: [PATCH] Fix build when KRB5_DNS_LOOKUP isn't defined
+
+Commit fabbf11f457a84904a5fa251584fd660a52fa583 mistakenly defined the
+kdclist and kdclist_entry structures inside a KRB5_DNS_LOOKUP
+conditional.  Move the definitions outside of the conditional.
+---
+ src/lib/krb5/os/locate_kdc.c | 20 ++++++++++----------
+ 1 file changed, 10 insertions(+), 10 deletions(-)
+
+diff --git a/src/lib/krb5/os/locate_kdc.c b/src/lib/krb5/os/locate_kdc.c
+--- a/src/lib/krb5/os/locate_kdc.c
++++ b/src/lib/krb5/os/locate_kdc.c
+@@ -27,16 +27,6 @@
+ #include "k5-int.h"
+ #include "fake-addrinfo.h"
+ #include "os-proto.h"
+-
+-#ifdef KRB5_DNS_LOOKUP
+-
+-#define DEFAULT_LOOKUP_KDC 1
+-#if KRB5_DNS_LOOKUP_REALM
+-#define DEFAULT_LOOKUP_REALM 1
+-#else
+-#define DEFAULT_LOOKUP_REALM 0
+-#endif
+-#define DEFAULT_URI_LOOKUP TRUE
+
+ struct kdclist_entry {
+     krb5_data realm;
+@@ -47,6 +37,16 @@
+     size_t count;
+     struct kdclist_entry *list;
+ };
++
++#ifdef KRB5_DNS_LOOKUP
++
++#define DEFAULT_LOOKUP_KDC 1
++#if KRB5_DNS_LOOKUP_REALM
++#define DEFAULT_LOOKUP_REALM 1
++#else
++#define DEFAULT_LOOKUP_REALM 0
++#endif
++#define DEFAULT_URI_LOOKUP TRUE
+
+ static int
+ maybe_use_dns (krb5_context context, const char *name, int defalt)
+--
+2.34.1

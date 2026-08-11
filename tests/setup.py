@@ -25,7 +25,7 @@ setup(
         "falcon==4.0.2",
         "psutil==5.9.0",
         "numpy==1.26.4",
-        "pygal==3.0",
+        "pygal==3.0.5",
         "pytest==7.1.2",
         "jump-consistent-hash==3.2.0",
         "azure-storage-blob==12.14.1",
@@ -41,7 +41,7 @@ setup(
         "proto-plus==1.26.1",
         "rsa==4.9",
         "python-keycloak==3.12.0",
-        "z3-solver==4.12.2",
+        "z3-solver==4.12.6",
         "hypothesis==6.82",
         "jsonschema==4.10.0",
         "redpanda-polaris-catalog-python==1.0.0.post3",  # See: .github/workflows/publish-apache-polaris-python-client.yml

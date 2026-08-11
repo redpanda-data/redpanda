@@ -40,12 +40,6 @@ alias(
 )
 
 alias(
-    name = "direct_consumer_verifier",
-    actual = "//src/v/kafka/client/direct_consumer/verifier:direct_consumer_verifier",
-    visibility = ["//visibility:public"],
-)
-
-alias(
     name = "cc_gen",
     actual = "//bazel/compilation_database_generator",
 )

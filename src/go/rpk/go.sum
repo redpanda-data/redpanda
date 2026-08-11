@@ -253,8 +253,8 @@ github.com/redpanda-data/common-go/net v0.1.0 h1:JnJioRJuL961r1QXiJQ1tW9+yEaJfu8
 github.com/redpanda-data/common-go/net v0.1.0/go.mod h1:iOdNkjxM7a1T8F3cYHTaKIPFCHzzp/ia6TN+Z+7Tt5w=
 github.com/redpanda-data/common-go/proto v0.0.0-20250820120127-9b518fca5ecf h1:Oe0Sc3+/37Xgdpze7klkWyvB6eAt/nuUhrn93Rd4ESA=
 github.com/redpanda-data/common-go/proto v0.0.0-20250820120127-9b518fca5ecf/go.mod h1:GMoRcdMz6CIpr+8vKrSJvr8fJDlojETRV45BD6A0DvU=
-github.com/redpanda-data/common-go/rpadmin v0.2.1 h1:N3GUI3d1h661Nta6Jc4MyaVKWxRIg28yO4MG912gCXQ=
-github.com/redpanda-data/common-go/rpadmin v0.2.1/go.mod h1:qmu76v7RRKgEXLS3UXxZ8KDpObtSNq6RinOIejJNWzw=
+github.com/redpanda-data/common-go/rpadmin v0.2.2 h1:xD31YJBkUs9Z/KkZUIkVRHKk/EQ6MrPAvgiFUVcFFu0=
+github.com/redpanda-data/common-go/rpadmin v0.2.2/go.mod h1:qmu76v7RRKgEXLS3UXxZ8KDpObtSNq6RinOIejJNWzw=
 github.com/redpanda-data/common-go/rpsr v0.1.2 h1:DThUeyfBH8fkL9WoP1sEbRhT2NVV22zmsTpcCtzfusQ=
 github.com/redpanda-data/common-go/rpsr v0.1.2/go.mod h1:2j2416onosg5FKaKz52NooRE+q/9EJqQn0kyTcTXWHc=
 github.com/redpanda-data/go-avro/v2 v2.0.0-20240405204525-77b1144dc525 h1:vskZrV6q8W8flL0Ud23AJUYAd8ZgTadO45+loFnG2G0=
@@ -420,8 +420,8 @@ golang.org/x/sys v0.0.0-20220722155257-8c9f86f7a55f/go.mod h1:oPkhp1MJrh7nUepCBc
 golang.org/x/sys v0.0.0-20220811171246-fbc7d0a398ab/go.mod h1:oPkhp1MJrh7nUepCBck5+mAzfO9JrbApNNgaTdGDITg=
 golang.org/x/sys v0.1.0/go.mod h1:oPkhp1MJrh7nUepCBck5+mAzfO9JrbApNNgaTdGDITg=
 golang.org/x/sys v0.6.0/go.mod h1:oPkhp1MJrh7nUepCBck5+mAzfO9JrbApNNgaTdGDITg=
-golang.org/x/sys v0.37.0 h1:fdNQudmxPjkdUTPnLn5mdQv7Zwvbvpaxqs831goi9kQ=
-golang.org/x/sys v0.37.0/go.mod h1:OgkHotnGiDImocRcuBABYBEXf8A9a87e/uXjp9XT3ks=
+golang.org/x/sys v0.38.0 h1:3yZWxaJjBmCWXqhN1qh02AkOnCQ1poK6oF+a7xWL6Gc=
+golang.org/x/sys v0.38.0/go.mod h1:OgkHotnGiDImocRcuBABYBEXf8A9a87e/uXjp9XT3ks=
 golang.org/x/term v0.0.0-20201126162022-7de9c90e9dd1/go.mod h1:bj7SfCRtBDWHUb9snDiAeCFNEtKQo2Wmx5Cou7ajbmo=
 golang.org/x/term v0.0.0-20210927222741-03fcf44c2211/go.mod h1:jbD1KX2456YbFQfuXm/mYQcufACuNUgVhRMnK/tPxf8=
 golang.org/x/term v0.36.0 h1:zMPR+aF8gfksFprF/Nc/rd1wRS1EI6nDBGyWAvDzx2Q=

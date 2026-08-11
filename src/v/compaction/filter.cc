@@ -10,6 +10,7 @@
 #include "filter.h"
 
 #include "compaction/utils.h"
+#include "container/chunked_vector.h"
 #include "model/batch_compression.h"
 #include "model/record.h"
 
@@ -37,8 +38,8 @@ filter::filter_batch(model::record_batch b) const {
     }
 
     // compute which records to keep
-    std::vector<int32_t> offset_deltas = co_await compute_offset_deltas_to_keep(
-      b);
+    chunked_vector<int32_t> offset_deltas
+      = co_await compute_offset_deltas_to_keep(b);
 
     auto ret = co_await filter_batch_with_offset_deltas(
       std::move(b), std::move(offset_deltas));
@@ -46,7 +47,7 @@ filter::filter_batch(model::record_batch b) const {
 }
 
 ss::future<std::optional<model::record_batch>> filter::do_filter_batch(
-  model::record_batch b, std::vector<int32_t> offset_deltas) const {
+  model::record_batch b, chunked_vector<int32_t> offset_deltas) const {
     // no records to keep
     if (offset_deltas.empty()) {
         co_return std::nullopt;

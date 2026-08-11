@@ -126,6 +126,7 @@ redpanda_thread_fixture::redpanda_thread_fixture(
           audit_log_client_config(kafka_port),
           sch_groups);
         app.check_environment();
+        app.wire_up_and_start_crypto_services();
         app.wire_up_and_start(*app_signal, true);
     } catch (...) {
         // shutdown half-initialized app nicely so that its destructor doesn't
@@ -340,6 +341,7 @@ void redpanda_thread_fixture::restart(should_wipe w) {
     }).get();
     app.initialize(proxy_config(), proxy_client_config());
     app.check_environment();
+    app.wire_up_and_start_crypto_services();
     app.wire_up_and_start(*app_signal, true);
 }
 

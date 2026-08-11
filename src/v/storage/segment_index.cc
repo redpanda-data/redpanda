@@ -10,6 +10,7 @@
 #include "storage/segment_index.h"
 
 #include "base/vassert.h"
+#include "bytes/iostream.h"
 #include "compaction/utils.h"
 #include "model/fundamental.h"
 #include "model/timestamp.h"
@@ -21,6 +22,7 @@
 #include <seastar/core/fstream.hh>
 #include <seastar/core/iostream.hh>
 #include <seastar/core/seastar.hh>
+#include <seastar/coroutine/as_future.hh>
 
 #include <bits/stdint-uintn.h>
 #include <boost/container/container_fwd.hpp>
@@ -202,13 +204,23 @@ ss::future<bool> segment_index::materialize_index() {
 
 ss::future<bool> segment_index::materialize_index_from_file(ss::file f) {
     auto size = co_await f.size();
-    auto buf = co_await f.dma_read_bulk<char>(0, size);
     _disk_usage_size = size;
-    if (buf.empty()) {
+
+    auto in = ss::make_file_input_stream(std::move(f));
+    auto fut = co_await ss::coroutine::as_future(read_iobuf_exactly(in, size));
+    co_await in.close();
+    if (fut.failed()) {
+        std::rethrow_exception(fut.get_exception());
+    }
+    auto b = fut.get();
+    if (b.empty()) {
         co_return false;
     }
-    iobuf b;
-    b.append(std::move(buf));
+
+    if (b.size_bytes() != size) {
+        throw std::runtime_error("Short read of segment index file");
+    }
+
     try {
         _state = serde::from_iobuf<index_state>(std::move(b));
         co_return true;

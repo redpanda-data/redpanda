@@ -10,20 +10,24 @@
 #include "kafka/server/handlers/metadata.h"
 
 #include "base/likely.h"
+#include "cluster/members_table.h"
 #include "cluster/metadata_cache.h"
 #include "cluster/topics_frontend.h"
 #include "cluster/types.h"
 #include "config/configuration.h"
 #include "config/node_config.h"
 #include "container/chunked_vector.h"
+#include "kafka/protocol/errors.h"
 #include "kafka/protocol/schemata/metadata_response.h"
 #include "kafka/protocol/types.h"
 #include "kafka/server/errors.h"
 #include "kafka/server/fwd.h"
+#include "kafka/server/group_initializer.h"
 #include "kafka/server/handlers/describe_cluster.h"
 #include "kafka/server/handlers/details/leader_epoch.h"
 #include "kafka/server/handlers/details/security.h"
 #include "kafka/server/handlers/topics/topic_utils.h"
+#include "kafka/server/handlers/topics/types.h"
 #include "kafka/server/response.h"
 #include "model/errc.h"
 #include "model/metadata.h"
@@ -31,6 +35,7 @@
 #include "model/timeout_clock.h"
 #include "random/generators.h"
 #include "security/acl.h"
+#include "security/audit/audit_log_topic.h"
 #include "utils/to_string.h"
 
 #include <seastar/core/coroutine.hh>
@@ -157,7 +162,31 @@ metadata_response::topic make_topic_response_from_topic_metadata(
         auto lt = get_leader_term(tp_ns, p_as.id, md_cache, replicas);
         if (lt && !is_node_isolated && p.error_code == error_code::none) {
             p.leader_id = lt->leader.value_or(no_leader);
-            p.leader_epoch = leader_epoch_from_term(lt->term);
+
+            if (lt->term.has_value()) {
+                p.leader_epoch = leader_epoch_from_term(lt->term);
+            } else {
+                // We don't have term information for the partition, so submit a
+                // stale guess of term 0. We deliberately avoid the invalid
+                // epoch (-1): the Java client treats -1 as a signal to drop its
+                // cached leader epochs, which interferes with truncation
+                // detection (KIP-320). Term 0 is parsed as an ordinary (stale)
+                // epoch instead.
+                p.leader_epoch = leader_epoch_from_term(model::term_id(0));
+
+                // Pair the stale guess with an error so clients refetch
+                // metadata.
+                //
+                // Franz go skips processing the partition altogether if there
+                // is an error, regardless of the term, opting to retry later.
+                // https://github.com/twmb/franz-go/blob/8268a5d078c01d29ca0daa1748fac264e0fc2f11/pkg/kgo/metadata.go#L1011
+                //
+                // The Java client still parses the stale guess from above, but
+                // also treats this error as a signal to request another update
+                // immediately.
+                // https://github.com/apache/kafka/blob/5db02ead60fbc937b3c51a51ecd6e93936dddf88/clients/src/main/java/org/apache/kafka/clients/Metadata.java#L306-L310
+                p.error_code = error_code::leader_not_available;
+            }
         }
         if (is_node_isolated && p.error_code == error_code::none) {
             auto replicas_for_sfuffle = replicas;
@@ -171,6 +200,11 @@ metadata_response::topic make_topic_response_from_topic_metadata(
                     break;
                 }
             }
+
+            // An isolated node only has a stale guess at leadership, so apply
+            // the same term 0 + error as the missing-term case above.
+            p.leader_epoch = leader_epoch_from_term(model::term_id(0));
+            p.error_code = error_code::leader_not_available;
         }
         p.replica_nodes = std::move(replicas);
         p.isr_nodes = p.replica_nodes;
@@ -182,6 +216,45 @@ metadata_response::topic make_topic_response_from_topic_metadata(
 }
 
 namespace {
+/// Internal topics requested by name are created with their owning
+/// subsystem's configuration rather than cluster defaults, mirroring Apache
+/// Kafka's special-casing of internal topics during metadata-driven topic
+/// auto-creation.
+cluster::topic_configuration
+autocreate_topic_configuration(request_context& ctx, model::topic topic) {
+    if (topic == model::kafka_consumer_offsets_topic) {
+        return consumer_offsets_topic_configuration(
+          model::kafka_consumer_offsets_nt,
+          cluster::internal_topic_replication(
+            ctx.metadata_cache().node_count()));
+    }
+    if (topic == model::schema_registry_internal_tp.topic) {
+        return schema_registry_topic_configuration(
+          cluster::internal_topic_replication(
+            ctx.metadata_cache().node_count()));
+    }
+    if (topic == model::kafka_audit_logging_topic) {
+        auto replication_factor
+          = config::shard_local_cfg().audit_log_replication_factor().value_or(
+            cluster::internal_topic_replication(
+              ctx.metadata_cache().node_count()));
+        cluster::topic_configuration cfg{
+          model::kafka_namespace,
+          std::move(topic),
+          config::shard_local_cfg().audit_log_num_partitions(),
+          replication_factor};
+        cfg.properties = security::audit::audit_log_topic_properties();
+        return cfg;
+    }
+    // default topic configuration
+    cluster::topic_configuration cfg{
+      model::kafka_namespace,
+      std::move(topic),
+      config::shard_local_cfg().default_topic_partitions(),
+      config::shard_local_cfg().default_topic_replication()};
+    return cfg;
+}
+
 ss::future<metadata_response::topic> create_topic(
   request_context& ctx,
   model::topic topic,
@@ -197,16 +270,10 @@ ss::future<metadata_response::topic> create_topic(
         t.error_code = error_code::broker_not_available;
         co_return t;
     }
-    // default topic configuration
-    cluster::topic_configuration cfg{
-      model::kafka_namespace,
-      topic,
-      config::shard_local_cfg().default_topic_partitions(),
-      config::shard_local_cfg().default_topic_replication()};
     auto tout = config::shard_local_cfg().create_topic_timeout_ms();
     try {
         auto res = co_await ctx.topics_frontend().autocreate_topics(
-          {std::move(cfg)}, tout);
+          {autocreate_topic_configuration(ctx, topic)}, tout);
         vassert(res.size() == 1, "expected single result");
         // error, neither success nor topic exists
         if (!(res[0].ec == cluster::errc::success
@@ -223,10 +290,11 @@ ss::future<metadata_response::topic> create_topic(
           ctx.controller_api(),
           tout + model::timeout_clock::now());
 
-        auto tp_md = ctx.metadata_cache().get_topic_metadata(res[0].tp_ns);
+        auto tp_md = ctx.metadata_cache().get_topic_metadata(
+          model::topic_namespace_view(model::kafka_namespace, topic));
         if (!tp_md) {
             metadata_response::topic t;
-            t.name = std::move(res[0].tp_ns.tp);
+            t.name = std::move(topic);
             t.error_code = error_code::invalid_topic_exception;
             co_return t;
         }

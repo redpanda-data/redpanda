@@ -17,7 +17,6 @@
 #include "ssx/rate_limited_function.h"
 
 #include <seastar/core/metrics.hh>
-#include <seastar/core/smp.hh>
 
 namespace archival {
 
@@ -126,7 +125,8 @@ void ntp_level_probe::setup_public_metrics(const model::ntp& ntp) {
          "segments",
          [this] { return _stm->manifest().size(); },
          sm::description(
-           "Total number of accounted segments in the cloud for the topic"),
+           "Number of segments tracked in the STM region (excludes "
+           "spillover)."),
          labels)
          .aggregate(aggregate_labels),
        sm::make_gauge(
@@ -149,8 +149,8 @@ void ntp_level_probe::setup_public_metrics(const model::ntp& ntp) {
            },
            segments_pending_deletion_refresh_rate),
          sm::description(
-           "Total number of segments pending deletion from the "
-           "cloud for the topic"),
+           "Number of segments pending deletion tracked in the STM region "
+           "(excludes spillover)."),
          labels)
          .aggregate(aggregate_labels),
        sm::make_gauge(

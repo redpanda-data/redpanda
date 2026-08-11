@@ -47,6 +47,7 @@ redpanda_cc_library(
     visibility = ["//visibility:public"],
     deps = [
         ":iobuf",
+        "//src/v/hashing:xx",
         "@boost//:container_hash",
     ],
 )

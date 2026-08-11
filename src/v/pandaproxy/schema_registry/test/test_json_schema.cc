@@ -15,6 +15,7 @@
 #include "pandaproxy/schema_registry/json.h"
 #include "pandaproxy/schema_registry/sharded_store.h"
 #include "pandaproxy/schema_registry/test/compatibility_common.h"
+#include "pandaproxy/schema_registry/test/store_fixture.h"
 #include "pandaproxy/schema_registry/types.h"
 
 #include <seastar/core/sstring.hh>
@@ -30,6 +31,7 @@ namespace pp = pandaproxy;
 namespace pps = pp::schema_registry;
 using incompat_t = pps::json_incompatibility_type;
 using incompatibility = pps::json_incompatibility;
+using pps::test_utils::store_fixture;
 
 bool check_compatible(
   const pps::json_schema_definition& reader_schema,
@@ -51,16 +53,6 @@ pps::compatibility_result check_compatible_verbose(
         .get(),
       pps::verbose::yes);
 }
-
-struct store_fixture {
-    store_fixture() {
-        store.start(pps::is_mutable::yes, ss::default_smp_service_group())
-          .get();
-    }
-    ~store_fixture() { store.stop().get(); }
-
-    pps::sharded_store store;
-};
 
 struct error_test_case {
     ss::sstring def;
@@ -159,9 +151,11 @@ static const auto error_test_cases = std::to_array({
 {
   "$comment": "the root schema is valid but the bundled schema is not",
   "$defs": {
-      "$comment": "dialect is unkown",
+    "bundled": {
+      "$comment": "dialect is unknown",
       "$id": "https://example.com/mismatch_id",
       "$schema": "http://json-schema.org/draft-3000/schema#"
+    }
   }
 }
 )",
@@ -170,19 +164,62 @@ static const auto error_test_cases = std::to_array({
       "bundled schema without a known dialect: "
       "'http://json-schema.org/draft-3000/schema#'"}},
   error_test_case{
+    // The bundled schema declares draft-04, where "exclusiveMinimum" must be a
+    // boolean; the numeric value is valid under the root's 2020-12 metaschema
+    // (so the root is valid and "$defs" is walked) but invalid once the walk
+    // re-validates the bundled schema against its own dialect.
     R"(
 {
   "$comment": "the root schema is valid but the bundled schema is not",
   "$defs": {
+    "bundled": {
       "$comment": "schema is invalid",
-      "$id": "https://example.com/mismatch_id",
-      "type": "potato"
+      "id": "https://example.com/mismatch_id",
+      "$schema": "http://json-schema.org/draft-04/schema#",
+      "exclusiveMinimum": 5
+    }
   }
 }
 )",
     pps::error_info{
       pps::error_code::schema_invalid,
-      R"(bundled schema is invalid. Invalid json schema: '{"$comment":"schema is invalid","$id":"https://example.com/mismatch_id","type":"potato"}'. Error: '/type: Must be valid against at least one schema, but found no matching schemas')"}},
+      R"(bundled schema is invalid. Invalid json schema: '{"$comment":"schema is invalid","$schema":"http://json-schema.org/draft-04/schema#","exclusiveMinimum":5,"id":"https://example.com/mismatch_id"}'. Error: '/exclusiveMinimum: Expected boolean, found uint64')"}},
+  // the walk must descend into array positions: a bundled schema under "allOf"
+  // with an unknown dialect is reached and rejected
+  error_test_case{
+    R"(
+{
+  "allOf": [
+    {
+      "$id": "https://example.com/bundled",
+      "$schema": "http://json-schema.org/draft-3000/schema#"
+    }
+  ]
+}
+)",
+    pps::error_info{
+      pps::error_code::schema_invalid,
+      "bundled schema without a known dialect: "
+      "'http://json-schema.org/draft-3000/schema#'"}},
+  // the walk must descend into the tuple-array form of "items" (the
+  // single-or-array fallthrough): the array value forces the dialect to
+  // 2019-09, where "items" may be a tuple, and the bundled element is reached
+  error_test_case{
+    R"(
+{
+  "type": "array",
+  "items": [
+    {
+      "$id": "https://example.com/bundled",
+      "$schema": "http://json-schema.org/draft-3000/schema#"
+    }
+  ]
+}
+)",
+    pps::error_info{
+      pps::error_code::schema_invalid,
+      "bundled schema without a known dialect: "
+      "'http://json-schema.org/draft-3000/schema#'"}},
 });
 SEASTAR_THREAD_TEST_CASE(test_make_invalid_json_schema) {
     for (const auto& data : error_test_cases) {
@@ -190,7 +227,7 @@ SEASTAR_THREAD_TEST_CASE(test_make_invalid_json_schema) {
         BOOST_TEST_CONTEXT(data) {
             try {
                 pps::make_canonical_json_schema(
-                  f.store,
+                  f.store(),
                   {pps::subject{"test"}, {data.def, pps::schema_type::json}})
                   .get();
                 BOOST_CHECK_MESSAGE(
@@ -279,6 +316,111 @@ static constexpr auto valid_test_cases = std::to_array<std::string_view>({
     }
   }
 })json",
+  // Keyword-named properties and out-of-dialect keywords must be treated as
+  // ordinary names, not schema keywords (CORE-16282). Each registers cleanly;
+  // before the fix these were misread as the "id"/"$id"/"$ref" keyword.
+  //
+  // the exact reported schema: a property named "id" under draft-04
+  R"json(
+{
+  "$schema": "http://json-schema.org/draft-04/schema#",
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": ["string", "null"],
+      "description": "The ID of the element"
+    }
+  }
+})json",
+  // draft-06 (and later) use "$id" as the identifier, so a property named "id"
+  // is an ordinary name here -- only draft-04 has the "id" collision
+  R"json(
+{
+  "$schema": "http://json-schema.org/draft-06/schema#",
+  "type": "object",
+  "properties": {
+    "id": { "type": "string" }
+  }
+})json",
+  // a property named "id" nested under "definitions"/"patternProperties" is
+  // also just a property name
+  R"json(
+{
+  "$schema": "http://json-schema.org/draft-04/schema#",
+  "definitions": {
+    "elem": {
+      "type": "object",
+      "properties": { "id": { "type": "string" } }
+    }
+  },
+  "patternProperties": {
+    "^x-": { "properties": { "id": { "type": "integer" } } }
+  }
+})json",
+  // other reserved keyword names used as property names must not be treated as
+  // keywords either (their values are subschemas)
+  R"json(
+{
+  "$schema": "http://json-schema.org/draft-04/schema#",
+  "type": "object",
+  "properties": {
+    "$ref": { "type": "string" },
+    "$schema": { "type": "string" }
+  }
+})json",
+  // from draft-06 the identifier keyword is "$id" (not "id"), so a property
+  // named "$id" is the >=draft6 analogue of the reported bug and must likewise
+  // be treated as a property name, not the schema identifier
+  R"json(
+{
+  "$schema": "http://json-schema.org/draft-06/schema#",
+  "type": "object",
+  "properties": {
+    "$id": { "type": "string" }
+  }
+})json",
+  // keyword classification is dialect-aware: "$defs" was only introduced in
+  // draft 2019-09, so under draft-04 it is an ordinary member and must not be
+  // walked as a map of subschemas. If it were, the walk would treat the inner
+  // object as a bundled schema (it has the draft-04 "id" keyword) and reject it
+  // for the invalid "type", but draft-04 ignores the unknown "$defs", so the
+  // schema is valid.
+  R"json(
+{
+  "$schema": "http://json-schema.org/draft-04/schema#",
+  "$defs": {
+    "notAKeywordInDraft4": {
+      "id": "https://example.com/x",
+      "type": "potato"
+    }
+  }
+})json",
+  // dialect gating again, for an array position: "prefixItems" only exists from
+  // 2020-12, so under draft-07 it is an ordinary member and is not walked --
+  // the bundled element with an unknown dialect is never reached, so the schema
+  // is valid (were it walked, the unknown dialect would be rejected)
+  R"json(
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "prefixItems": [
+    {
+      "$id": "https://example.com/bundled",
+      "$schema": "http://json-schema.org/draft-3000/schema#"
+    }
+  ]
+})json",
+  // dialect gating for a removed keyword: "additionalItems" was dropped in
+  // 2020-12, so it is an ordinary member there and is not walked -- the bundled
+  // value with an unknown dialect is never reached, so the schema is valid
+  // (under an earlier draft, where it is a keyword, it would be rejected)
+  R"json(
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalItems": {
+    "$id": "https://example.com/bundled",
+    "$schema": "http://json-schema.org/draft-3000/schema#"
+  }
+})json",
 });
 SEASTAR_THREAD_TEST_CASE(test_make_valid_json_schema) {
     for (const auto& data : valid_test_cases) {
@@ -286,9 +428,9 @@ SEASTAR_THREAD_TEST_CASE(test_make_valid_json_schema) {
         BOOST_TEST_CONTEXT(data) {
             try {
                 pps::make_json_schema_definition(
-                  f.store,
+                  f.store(),
                   pps::make_canonical_json_schema(
-                    f.store,
+                    f.store(),
                     {pps::subject{"test"}, {data, pps::schema_type::json}})
                     .get())
                   .get();
@@ -380,7 +522,8 @@ SEASTAR_THREAD_TEST_CASE(test_json_schema_references) {
             pps::schema_version ver{0};
             pps::subject_schema canonical{};
             auto make_canonical = [&]() {
-                canonical = f.store.make_canonical_schema(schema.share()).get();
+                canonical
+                  = f.store().make_canonical_schema(schema.share()).get();
             };
 
             if (result.code() == pps::error_code{}) {
@@ -393,7 +536,7 @@ SEASTAR_THREAD_TEST_CASE(test_json_schema_references) {
                       return ex.code() == ec;
                   });
             }
-            f.store
+            f.store()
               .upsert(
                 pps::seq_marker{},
                 canonical.share(),
@@ -1664,7 +1807,7 @@ static const auto compatibility_test_cases = std::to_array<compatibility_test_ca
     .compat_result = {{"#/properties/a/exclusiveMinimum", incompat_t::exclusive_minimum_added}},
   },
   {
-// simple infinite recursive ref
+// simple infinite recursive ref - cycle detection handles this case
     .reader_schema = R"(
 {
   "type": "object",
@@ -1689,7 +1832,7 @@ static const auto compatibility_test_cases = std::to_array<compatibility_test_ca
   }
 })",
     .compat_result = {},
-    .expected_exception = true,
+    .expected_exception = false,
   },
   {
 // simple multiple recursive ref
@@ -2190,9 +2333,9 @@ SEASTAR_THREAD_TEST_CASE(test_compatibility_check) {
     store_fixture f;
     auto make_json_schema = [&](std::string_view schema) {
         return pps::make_json_schema_definition(
-                 f.store,
+                 f.store(),
                  pps::make_canonical_json_schema(
-                   f.store,
+                   f.store(),
                    {pps::subject{"test"}, {schema, pps::schema_type::json}})
                    .get())
           .get();
@@ -2341,6 +2484,68 @@ SEASTAR_THREAD_TEST_CASE(test_json_compat_messages) {
     }
 }
 
+namespace {
+
+// Generate a deeply nested JSON schema with the specified depth.
+// Each level wraps the previous in an object property, creating a schema
+// like:
+// {"type":"object","properties":{"p":{"type":"object","properties":{...}}}}
+ss::sstring generate_deeply_nested_schema(int depth) {
+    if (depth <= 0) {
+        return R"({"type": "string"})";
+    }
+    ss::sstring result = R"({"type": "string"})";
+    for (int i = 0; i < depth; ++i) {
+        result = fmt::format(
+          R"({{"type":"object","properties":{{"p":{}}}}})", result);
+    }
+    return result;
+}
+
+} // namespace
+
+// Test that compatibility checking can handle deeply nested schemas without
+// stack overflow.
+SEASTAR_THREAD_TEST_CASE(test_object_recursion_depths) {
+    store_fixture f;
+    auto make_json_schema = [&](std::string_view schema) {
+        return pps::make_json_schema_definition(
+                 f.store(),
+                 pps::make_canonical_json_schema(
+                   f.store(),
+                   {pps::subject{"test"}, {schema, pps::schema_type::json}})
+                   .get())
+          .get();
+    };
+
+    // Test increasing depths to find stack limits.
+    // Note: jsoncons validation overflows the stack at about 31.
+    // With validation disabled, setting the limit above ~130 causes corruption
+    // of the heap due to stack overflow, which typically manifests as a crash
+    // during Seastar shutdown, or during is_superset.
+    constexpr int max_test_depth = 30;
+
+    for (int depth = 1; depth <= max_test_depth; ++depth) {
+        BOOST_TEST_MESSAGE(fmt::format("Testing depth {}", depth));
+        try {
+            auto schema = generate_deeply_nested_schema(depth);
+            auto json_schema = make_json_schema(schema);
+
+            auto result = pps::check_compatible(
+              json_schema, json_schema, pps::verbose::yes);
+
+            BOOST_CHECK_MESSAGE(
+              result.is_compat,
+              fmt::format(
+                "Schema at depth {} should be compatible with itself", depth));
+        } catch (const std::exception& e) {
+            BOOST_TEST_MESSAGE(
+              fmt::format("Depth {} failed: {}", depth, e.what()));
+            break;
+        }
+    }
+}
+
 SEASTAR_THREAD_TEST_CASE(test_refs_fixing) {
     // test that look check that in the in-memory representation of a schema,
     // the refs are absolute
@@ -2406,9 +2611,9 @@ SEASTAR_THREAD_TEST_CASE(test_refs_fixing) {
     // in-memory where refs are resolved
     auto json_schema_def
       = pps::make_json_schema_definition(
-          f.store,
+          f.store(),
           pps::make_canonical_json_schema(
-            f.store,
+            f.store(),
             {pps::subject{"test"},
              {fmt::format("{}", jsoncons::print(input_schema)),
               pps::schema_type::json}})

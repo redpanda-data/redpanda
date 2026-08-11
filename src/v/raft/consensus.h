@@ -51,6 +51,7 @@
 #include <seastar/core/sharded.hh>
 #include <seastar/util/bool_class.hh>
 
+#include <expected>
 #include <optional>
 #include <string_view>
 
@@ -172,6 +173,20 @@ public:
      * majority.
      */
     ss::future<std::error_code> force_replace_configuration_locally(
+      std::vector<vnode> voters,
+      std::vector<vnode> learners,
+      model::revision_id);
+
+    /**
+     * Forcibly replaces the group configuration by replicating a brand new
+     * configuration through the group, bypassing the usual "configuration
+     * change in progress" guard so it supersedes any in-flight reconfiguration.
+     * Unlike force_replace_configuration_locally this requires leadership and a
+     * functioning quorum, but the change is durable and propagates
+     * deterministically to all replicas via normal replication. Unclean by
+     * design; intended for breaking a wedged but quorate group.
+     */
+    ss::future<std::error_code> force_replace_configuration_replicated(
       std::vector<vnode> voters,
       std::vector<vnode> learners,
       model::revision_id);
@@ -479,6 +494,10 @@ public:
 
     void update_heartbeat_status(vnode, bool);
 
+    /// Zero `heartbeats_failed` for followers matching `node_id`. Called
+    /// after `ensure_disconnect` replaces the cached transport.
+    void reset_heartbeat_failures(model::node_id);
+
     bool should_reconnect_follower(const follower_index_metadata&);
 
     std::vector<follower_metrics> get_follower_metrics() const;
@@ -595,6 +614,10 @@ private:
       = ss::bool_class<struct update_last_quorum_index>;
     using flush_delay_t
       = std::variant<std::chrono::milliseconds, std::chrono::years>;
+    // Acquire the op lock, translating the broken-semaphore shutdown case into
+    // an errc rather than an exception.
+    ss::future<std::expected<ssx::semaphore_units, std::error_code>>
+    acquire_op_lock_units();
     // all these private functions assume that we are under exclusive operations
     // via the _op_sem
     void do_step_down(std::string_view);

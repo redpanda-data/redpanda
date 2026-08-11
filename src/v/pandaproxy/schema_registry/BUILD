@@ -79,6 +79,7 @@ redpanda_cc_library(
     implementation_deps = [
         "//src/v/bytes:iobuf_parser",
         "//src/v/bytes:streambuf",
+        "//src/v/container:chunked_hash_map",
         "//src/v/container:chunked_vector",
         "//src/v/container:json",
         "//src/v/hashing:jump_consistent",
@@ -121,6 +122,7 @@ redpanda_cc_library(
         "@protobuf//src/google/protobuf/compiler:importer",
         "@protobuf//src/google/protobuf/io",
         "@protobuf//src/google/protobuf/io:tokenizer",
+        "@protovalidate//proto/protovalidate/buf/validate:validate_proto_cc",
         "@rapidjson",
         "@re2",
     ] + well_known_cc_protos,

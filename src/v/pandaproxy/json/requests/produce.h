@@ -150,6 +150,49 @@ public:
         return false;
     }
 
+    /// Record keys and values (base64 strings for binary_v2/none) are
+    /// consumed through a chunked sink so that the JSON reader decodes them
+    /// directly into an iobuf, avoiding a large contiguous allocation in the
+    /// reader's stack for big records. The base64 payload is then decoded
+    /// fragment-by-fragment. For json_v2 the embedded json is forwarded to
+    /// _json_writer via String() as before.
+    using ChunkedStringSinkType = ::json::generic_chunked_buffer<Encoding>;
+
+    bool AcceptsChunkedString() const {
+        return (state == state::key || state == state::value) && !_json_writer;
+    }
+
+    ChunkedStringSinkType& ChunkedStringSink() {
+        _sink.Clear();
+        return _sink;
+    }
+
+    bool ChunkedString(::json::SizeType len) {
+        auto decode = [this, len] {
+            // Small strings that never spilled out of the sink's inline
+            // stage are decoded from contiguous memory, skipping the iobuf
+            // round-trip.
+            if (auto v = _sink.contiguous_view(); v.has_value()) {
+                // drop the '\0' terminator appended by the reader
+                return rjson_parse_impl<iobuf>(_fmt)(v->substr(0, len));
+            }
+            auto encoded = std::move(_sink).as_iobuf();
+            // drop the '\0' terminator appended by the reader
+            encoded.trim_back(sizeof(Ch));
+            return rjson_parse_impl<iobuf>(_fmt)(std::move(encoded));
+        };
+        auto [res, buf] = decode();
+        if (res) {
+            if (state == state::key) {
+                result.back().key = std::move(buf);
+            } else {
+                result.back().value = std::move(buf);
+            }
+            state = state::record;
+        }
+        return res;
+    }
+
     bool String(const Ch* str, ::json::SizeType len, bool b) {
         if (auto res = maybe_json<bool (json_writer::*)(
               const Ch*, ::json::SizeType, bool)>(
@@ -157,23 +200,7 @@ public:
             res.has_optional_value()) {
             return res.value();
         }
-        if (state == state::key) {
-            auto [res, buf] = rjson_parse_impl<iobuf>(_fmt)(
-              std::string_view(str, len));
-            if (res) {
-                result.back().key = std::move(buf);
-            }
-            state = state::record;
-            return res;
-        } else if (state == state::value) {
-            auto [res, buf] = rjson_parse_impl<iobuf>(_fmt)(
-              std::string_view(str, len));
-            if (res) {
-                result.back().value = std::move(buf);
-            }
-            state = state::record;
-            return res;
-        }
+        // key/value strings are handled by ChunkedString()
         return false;
     }
 
@@ -261,6 +288,7 @@ public:
 private:
     ::json::chunked_buffer _buf;
     std::optional<json_writer> _json_writer;
+    ChunkedStringSinkType _sink;
 };
 
 } // namespace pandaproxy::json

@@ -135,6 +135,7 @@ redpanda_cc_library(
         "//src/v/utils:base64",
         "//src/v/utils:file_io",
         "//src/v/utils:named_type",
+        "//src/v/utils:xml",
         "@abseil-cpp//absl/strings",
         "@ada",
         "@boost//:algorithm",

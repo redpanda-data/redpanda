@@ -22,6 +22,7 @@
 #include "features/feature_table.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
+#include "model/namespace.h"
 #include "random/simple_time_jitter.h"
 #include "storage/batch_cache.h"
 #include "storage/disk.h"
@@ -260,6 +261,12 @@ public:
     std::optional<batch_cache_index> create_cache(with_cache);
 
 private:
+    using bflags = log_housekeeping_meta::bitflags;
+
+    static bool is_not_set(bflags var, bflags flag) {
+        return (var & flag) != flag;
+    }
+
     using logs_type
       = chunked_hash_map<model::ntp, std::unique_ptr<log_housekeeping_meta>>;
     using compaction_list_type
@@ -294,6 +301,39 @@ private:
     bool _gc_triggered{false};
     ssx::semaphore _gc_sem{0, "log_manager::gc"};
 
+    // Clears bitflags for all log metas in the provided list (one of _logs_list
+    // or _priority_logs_list).
+    void clear_log_meta_flags(compaction_list_type&);
+
+    // Iterates over the provided list (one of _logs_list
+    // or _priority_logs_list) and applies `segment.ms` to each.
+    ss::future<> apply_segment_ms_to_logs(compaction_list_type&);
+
+    // Iterates over the provided list (one of _logs_list
+    // or _priority_logs_list) and sorts it based on a defined compaction
+    // heuristic.
+    void sort_logs_by_compaction_heuristic(compaction_list_type& logs_list);
+
+    // Check if an NTP is a priority partition for compaction.
+    bool is_priority_ntp(const model::ntp& ntp) const;
+
+    // Returns true if any priority logs need compaction.
+    bool priority_logs_need_compaction() const;
+
+    // Run housekeeping (gc + compaction) on a single partition.
+    // The optional abort source is combined with _abort_source to create
+    // a composite that triggers on either (used for timer-based preemption).
+    ss::future<> do_housekeeping(
+      log_housekeeping_meta& meta,
+      model::timestamp collection_threshold,
+      model::opt_abort_source_t preempt_source = std::nullopt);
+
+    // Perform housekeeping on any priority partitions that need it. Called
+    // before each regular housekeeping iteration to ensure priority logs aren't
+    // starved.
+    ss::future<>
+    priority_housekeeping_scan(model::timestamp collection_threshold);
+
     disk_space_alert _disk_space_alert{disk_space_alert::ok};
 
     ss::future<> dispatch_topic_dir_deletion(ss::sstring dir);
@@ -310,6 +350,8 @@ private:
     simple_time_jitter<ss::lowres_clock> _trigger_gc_jitter;
     logs_type _logs;
     compaction_list_type _logs_list;
+    // List of priority partitions managed by housekeeping_loop().
+    compaction_list_type _priority_logs_list;
     batch_cache _batch_cache;
 
     // Hash key-map to use across multiple compactions to reuse reserved memory

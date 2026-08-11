@@ -22,7 +22,7 @@ namespace cluster_link::replication {
 struct partition_offsets_report {
     kafka::offset source_start_offset{-1};
     kafka::offset source_hwm{-1};
-    kafka::offset source_lso{-1};
+    kafka::offset source_lso{::model::invalid_lso};
     ss::lowres_clock::time_point update_time{};
     kafka::offset shadow_hwm{-1};
 

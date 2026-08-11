@@ -300,13 +300,13 @@ rm_partition_frontend::do_begin_tx_on_partition_shard(
         co_return begin_tx_reply{std::move(ntp), tx::errc::stm_not_found};
     }
 
-    auto topic_md = _metadata_cache.local().get_topic_metadata(
+    auto topic_md = _metadata_cache.local().get_topic_metadata_ref(
       model::topic_namespace_view(ntp));
     if (!topic_md) {
         co_return begin_tx_reply{
           std::move(ntp), tx::errc::partition_not_exists};
     }
-    auto topic_revision = topic_md->get_revision();
+    auto topic_revision = topic_md->get().get_revision();
 
     auto etag = co_await stm->begin_tx(pid, tx_seq, transaction_timeout_ms, tm);
     if (!etag.has_value()) {

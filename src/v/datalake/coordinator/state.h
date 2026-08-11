@@ -126,6 +126,18 @@ struct topic_state
     std::optional<iceberg::snapshot_id> last_committed_snapshot_id;
     topic_state copy() const;
 
+    // Like copy() but limits the pending entries to only include up to the
+    // given number of files. The entries in the returned state are consistent
+    // with respect to a coordinator offset upper bound: if an entry at offset
+    // O is included, every entry (in any partition) at offset <= O is as well.
+    // This is required for Iceberg commit dedup, which uses the coordinator
+    // offset as a cursor.
+    //
+    // `was_bounded` is set to true if the limit left some pending entries out
+    // of the copy, so the caller knows a subsequent copy is needed to drain the
+    // remainder.
+    topic_state copy_bounded(size_t max_files, bool& was_bounded) const;
+
     // TODO: add table-wide metadata like Kafka schema id, Iceberg table uuid,
     // etc.
 };

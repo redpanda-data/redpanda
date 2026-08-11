@@ -5,8 +5,12 @@ redpanda_cc_library(
     srcs = ["converter.cc"],
     hdrs = ["converter.h"],
     implementation_deps = [
+        "//src/v/bytes:iobuf_parser",
+        "//src/v/config",
         "//src/v/crypto",
+        "//src/v/serde/protobuf:rpc",
         "//src/v/utils:base64",
+        "@seastar",
     ],
     visibility = ["//src/v/redpanda/admin/services/shadow_link:__subpackages__"],
     deps = [

@@ -171,16 +171,18 @@ cluster_link_manager_test_fixture::upsert_link(model::metadata metadata) {
       [this](model::id_t& id, model::metadata& metadata) {
           return _table.invoke_on_all(
             [id, &metadata](cluster::cluster_link::table& table) {
-                return table
-                  .apply_update(
-                    cluster::cluster_link::testing::create_upsert_command(
-                      ::model::offset{id()}, metadata.copy()))
-                  .then([](std::error_code ec) {
-                      vassert(
-                        ec.value() == 0,
-                        "Failed to upsert link: {}",
-                        ec.message());
-                  });
+                return metadata.copy().then([id, &table](model::metadata md) {
+                    return table
+                      .apply_update(
+                        cluster::cluster_link::testing::create_upsert_command(
+                          ::model::offset{id()}, std::move(md)))
+                      .then([](std::error_code ec) {
+                          vassert(
+                            ec.value() == 0,
+                            "Failed to upsert link: {}",
+                            ec.message());
+                      });
+                });
             });
       });
 }
@@ -213,13 +215,12 @@ ss::future<> cluster_link_manager_test_fixture::update_link(
       });
 }
 
-std::optional<std::reference_wrapper<const model::metadata>>
+model::metadata_ptr
 cluster_link_manager_test_fixture::find_link_by_id(model::id_t id) {
     return _table.local().find_link_by_id(id);
 }
 
-std::optional<std::reference_wrapper<const model::metadata>>
-cluster_link_manager_test_fixture::find_link_by_name(
+model::metadata_ptr cluster_link_manager_test_fixture::find_link_by_name(
   const model::name_t& name) {
     return _table.local().find_link_by_name(name);
 }

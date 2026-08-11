@@ -108,10 +108,24 @@ public:
      */
     void uncork();
 
+    /**
+     * Make every subsequent call to `write` throw, mimicking the real
+     * rpc_client_sink failing to produce (e.g. "Current node is not a leader
+     * for partition").
+     */
+    void fail_writes();
+
+    /**
+     * Stop failing writes, mimicking the transient produce failure (e.g. a
+     * leadership transfer) resolving so the sink can make progress again.
+     */
+    void resume_writes();
+
 private:
     ss::chunked_fifo<model::record> _records;
     ss::condition_variable _cond_var;
     ssx::semaphore _cork = {ssx::semaphore::max_counter(), "fake_sink"};
+    bool _fail = false;
 };
 
 class fake_offset_tracker : public offset_tracker {

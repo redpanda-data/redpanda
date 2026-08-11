@@ -212,7 +212,9 @@ std::vector<std::string_view> get_enterprise_features(
         features.emplace_back("leadership pinning");
     }
     if (config::shard_local_cfg().iceberg_enabled.is_restricted()) {
-        if (properties.iceberg_mode != model::iceberg_mode::disabled) {
+        if (
+          properties.iceberg_mode == model::iceberg_mode::disabled
+          && updated_properties.iceberg_mode != model::iceberg_mode::disabled) {
             features.emplace_back("iceberg");
         }
     }

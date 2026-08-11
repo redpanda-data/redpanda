@@ -70,6 +70,18 @@ public:
         return _error_on_add_translated_files;
     }
 
+    void set_coordinator_backpressure(bool b) { _coordinator_backpressure = b; }
+
+    bool coordinator_backpressure() const { return _coordinator_backpressure; }
+
+    void note_backpressure_rejection() { _backpressure_rejections++; }
+
+    ss::future<> wait_for_backpressure_rejections(
+      size_t n, std::chrono::seconds timeout = 10s) {
+        RPTEST_REQUIRE_EVENTUALLY_CORO(
+          timeout, [n, this] { return _backpressure_rejections >= n; });
+    }
+
     // translation error propagation
     void set_error_on_translation(bool error) { _error_on_translation = error; }
 
@@ -129,6 +141,8 @@ private:
     kafka::offset _max_translatable_offset{};
 
     bool _error_on_add_translated_files{false};
+    bool _coordinator_backpressure{false};
+    size_t _backpressure_rejections{0};
     bool _error_on_translation{false};
     bool _error_on_flush{false};
     size_t _num_translation_attempts{0};
@@ -247,6 +261,10 @@ public:
         if (it != _last_added_offsets.end()) {
             reply.last_added_offset = it->second;
         }
+        if (_test_ctx.coordinator_backpressure()) {
+            _test_ctx.note_backpressure_rejection();
+            reply.backpressure = true;
+        }
         co_return reply;
     }
 
@@ -339,6 +357,8 @@ public:
     void report_translation_lag(int64_t) final {}
 
     void report_commit_lag(int64_t) final {}
+
+    void report_backpressure_backoff() final {}
 
 private:
     size_t _translated_bytes{0};
@@ -469,6 +489,22 @@ TEST_F_CORO(partition_translator_fixture, test_coordinator_retries) {
     // Ensure translation does not make any progress
     ASSERT_LT_CORO(test_ctx.max_translated_offset(), kafka::offset{0});
     test_ctx.set_error_on_add_translated_files(false);
+    co_await test_ctx.wait_for_translation_attempts(10);
+    ASSERT_GT_CORO(test_ctx.max_translated_offset(), kafka::offset{0});
+}
+
+TEST_F_CORO(partition_translator_fixture, test_coordinator_backpressure) {
+    auto& test_ctx = make_test_context();
+    test_ctx.set_coordinator_backpressure(true);
+    co_await add_translator(test_ctx);
+
+    // Wait until the translator has actually been rejected a few times, so we
+    // know it polled and backed off rather than simply not having started yet.
+    co_await test_ctx.wait_for_backpressure_rejections(3);
+    ASSERT_LT_CORO(test_ctx.max_translated_offset(), kafka::offset{0});
+
+    // Once the coordinator stops shedding load, translation resumes.
+    test_ctx.set_coordinator_backpressure(false);
     co_await test_ctx.wait_for_translation_attempts(10);
     ASSERT_GT_CORO(test_ctx.max_translated_offset(), kafka::offset{0});
 }

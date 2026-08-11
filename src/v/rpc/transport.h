@@ -36,6 +36,7 @@
 
 #include <concepts>
 #include <cstdint>
+#include <functional>
 #include <memory>
 #include <optional>
 #include <utility>
@@ -114,25 +115,13 @@ public:
     client_probe& operator=(client_probe&&) = delete;
     ~client_probe() = default;
 
-    void request() {
-        ++_requests;
-        ++_requests_pending;
-    }
+    void request() { ++_requests; }
 
-    void request_completed() {
-        ++_requests_completed;
-        --_requests_pending;
-    }
+    void request_completed() { ++_requests_completed; }
 
-    void request_timeout() {
-        ++_request_timeouts;
-        --_requests_pending;
-    }
+    void request_timeout() { ++_request_timeouts; }
 
-    void request_error() {
-        ++_request_errors;
-        --_requests_pending;
-    }
+    void request_error() { ++_request_errors; }
 
     void add_bytes_sent(size_t sent) { _out_bytes += sent; }
 
@@ -150,11 +139,11 @@ public:
 
     std::vector<ss::metrics::metric_definition> defs(
       const std::vector<ss::metrics::label_instance>& labels,
-      const std::vector<ss::metrics::label>& aggregate_labels);
+      const std::vector<ss::metrics::label>& aggregate_labels,
+      std::function<size_t()> pending_count);
 
 private:
     uint64_t _requests = 0;
-    uint32_t _requests_pending = 0;
     uint32_t _request_errors = 0;
     uint64_t _request_timeouts = 0;
     uint64_t _requests_completed = 0;

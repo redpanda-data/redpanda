@@ -1,5 +1,7 @@
 #include "kafka/data/rpc/test/deps.h"
 
+#include "rpc/rpc_server.h"
+
 namespace kafka::data::rpc::test {
 
 void kafka_data_test_fixture::wire_up_and_start() {
@@ -77,12 +79,17 @@ void kafka_data_test_fixture::wire_up_and_start() {
 }
 
 void kafka_data_test_fixture::register_services(
-  std::vector<std::unique_ptr<::rpc::service>>& services) {
+  std::vector<std::unique_ptr<::rpc::service>>& services,
+  ::rpc::rpc_server* server) {
     services.push_back(
       std::make_unique<kafka::data::rpc::network_service>(
         ss::default_scheduling_group(),
         ss::default_smp_service_group(),
-        &_remote_services));
+        &_remote_services,
+        kafka::data::rpc::network_service::memory_config{
+          .memory = server ? &server->memory() : nullptr,
+          .total = server ? server->cfg.max_service_memory_per_core : 0,
+        }));
 }
 
 void kafka_data_test_fixture::elect_leader(

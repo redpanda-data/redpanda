@@ -48,9 +48,11 @@
           "nickname": "initialize_cluster_recovery",
           "parameters": [
             {
-              "name": "body",
-              "paramType": "body",
-              "required": false
+              "in": "body",
+              "required": false,
+              "schema": {
+                "$ref": "#/definitions/automated_recovery_request_body"
+              }
             }
           ],
           "responseMessages": [

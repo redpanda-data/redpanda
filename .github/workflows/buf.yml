@@ -43,7 +43,7 @@ jobs:
     if: github.event_name == 'push' || github.event_name == 'merge_group' || github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - name: Buf – lint & breaking
         uses: bufbuild/buf-action@v1
         with:
@@ -71,7 +71,7 @@ jobs:
           secret-ids: |
             ,sdlc/prod/github/buf_token
           parse-json-secrets: true
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - name: Preprocess proto files for buf publishing
         run: |
           # WORKAROUND: Our Bazel structure puts proto files to live under a "proto/"

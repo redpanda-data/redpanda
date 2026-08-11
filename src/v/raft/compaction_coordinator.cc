@@ -62,20 +62,21 @@ compaction_coordinator::compaction_coordinator(
 }
 
 void compaction_coordinator::on_leadership_change(
-  std::optional<vnode> new_leader_id) {
+  std::optional<vnode> new_leader_id, model::term_id new_term) {
+    cancel_timer();
     bool new_is_leader = (new_leader_id && *new_leader_id == _self);
-    if (new_is_leader != _is_leader) {
-        _is_leader = new_is_leader;
-        if (_is_leader) {
-            arm_timer_if_needed(true);
-        } else {
-            cancel_timer();
-        }
+    _need_force_update = new_is_leader
+                         && (!_leader_term_id || new_term > *_leader_term_id);
+    if (new_is_leader) {
+        _leader_term_id = {new_term};
+        arm_timer_if_needed(true);
+    } else {
+        _leader_term_id = std::nullopt;
     }
 }
 
 void compaction_coordinator::on_group_configuration_change() {
-    if (_started && _is_leader) {
+    if (_started && _leader_term_id) {
         recalculate_group_offsets();
     }
 }
@@ -124,7 +125,7 @@ compaction_coordinator::do_distribute_group_offsets(
     // We may be a follower lagging behind, so our MCCO or even max offset
     // may be below MTRO. Fix that: any log below MTRO, even not replicated
     // yet, is cleanly compacted. Same for MXFO/MXRO.
-    on_local_replica_offsets_update(req.mtro, req.mxro);
+    record_updated_local_replica_offsets(req.mtro, req.mxro);
 
     return distribute_compaction_mtro_reply{
       .success = distribute_compaction_mtro_reply::is_success::yes};
@@ -180,13 +181,17 @@ void compaction_coordinator::on_ntp_config_change() {
 }
 
 void compaction_coordinator::update_local_replica_offsets() {
-    on_local_replica_offsets_update(
+    bool updated = record_updated_local_replica_offsets(
       _log->cleanly_compacted_prefix_offset(),
       _log->transaction_free_prefix_offset());
+    if (_leader_term_id && updated) {
+        recalculate_group_offsets();
+    }
 }
 
 void compaction_coordinator::collect_all_replica_offsets() {
-    if (!_is_leader || _raft_as.abort_requested() || _raft_bg.is_closed()) {
+    if (
+      !_leader_term_id || _raft_as.abort_requested() || _raft_bg.is_closed()) {
         return;
     }
     update_local_replica_offsets();
@@ -281,7 +286,7 @@ ss::future<> compaction_coordinator::get_and_process_replica_offsets(
       = *maybe_remote_replica_offsets->mcco;
     fs_it->second.max_transaction_free_offset
       = *maybe_remote_replica_offsets->mxfo;
-    if (_is_leader) [[likely]] {
+    if (_leader_term_id) [[likely]] {
         recalculate_group_offsets();
     }
 }
@@ -314,7 +319,8 @@ compaction_coordinator::get_remote_replica_offsets(vnode node_id) {
     co_return reply.value();
 }
 
-void compaction_coordinator::on_local_replica_offsets_update(
+// returns whether recorded offsets were changed
+bool compaction_coordinator::record_updated_local_replica_offsets(
   model::offset new_mcco, model::offset new_mxfo) {
     bool mcco_updated = bump_offset_value(
       &compaction_coordinator::_local_mcco,
@@ -324,12 +330,14 @@ void compaction_coordinator::on_local_replica_offsets_update(
       &compaction_coordinator::_local_mxfo,
       new_mxfo,
       "local max transaction free offset");
-    if (_is_leader && (mcco_updated || mxfo_updated)) {
-        recalculate_group_offsets();
-    }
+    return mcco_updated || mxfo_updated;
 }
 
 void compaction_coordinator::send_group_offsets_to_followers() {
+    vlog(
+      _logger.debug,
+      "compaction coordinator planning to distribute group offsets in {}",
+      group_offsets_send_delay);
     for (const auto& [node_id, fstate] : _fstates) {
         ssx::background = fstate.coordinated_compaction_offsets_sender->submit(
           [this, holder = _raft_bg.hold(), node_id](
@@ -399,8 +407,7 @@ compaction_coordinator::send_group_offsets_to_follower(vnode node_id) {
 }
 
 void compaction_coordinator::recalculate_group_offsets() {
-    vassert(
-      _is_leader, "only leader can recalculate max tombstone remove offset");
+    vassert(_leader_term_id, "only leader can recalculate group offsets");
     model::offset new_mtro = _local_mcco;
     model::offset new_mxro = _local_mxfo;
     for (const auto& [node_id, fstate] : _fstates) {
@@ -436,13 +443,15 @@ void compaction_coordinator::update_group_offsets(
       &compaction_coordinator::_mxro,
       new_mxro,
       "max transaction remove offset");
-    if (mtro_updated || mxro_updated) {
-        on_group_offsets_update();
-    }
-}
-
-void compaction_coordinator::on_group_offsets_update() {
-    if (_is_leader) {
+    if (
+      _leader_term_id && (mtro_updated || mxro_updated || _need_force_update)) {
+        // Reset the flag now. If sending updated offsets to followers fails,
+        // we will retry later anyway. Retries may be cancelled
+        // a) on leadership change, where the flag will be reset back to true;
+        // or
+        // b) on a further call to `update_group_offsets` due to
+        // MTRO/MXRO change.
+        _need_force_update = false;
         send_group_offsets_to_followers();
     }
     _log->stm_manager()->set_max_tombstone_remove_offset(
@@ -451,11 +460,14 @@ void compaction_coordinator::on_group_offsets_update() {
       model::prev_offset(_mxro));
 }
 
-void compaction_coordinator::cancel_timer() { _timer.cancel(); }
+void compaction_coordinator::cancel_timer() {
+    vlog(_logger.debug, "canceling compaction coordinator timer");
+    _timer.cancel();
+}
 
 void compaction_coordinator::arm_timer_if_needed(bool jitter_only) {
     if (
-      !_started || !_is_leader || _raft_as.abort_requested()
+      !_started || !_leader_term_id || _raft_as.abort_requested()
       || _raft_bg.is_closed()) {
         return;
     }

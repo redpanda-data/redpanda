@@ -33,7 +33,32 @@ translation_probe::translation_probe(model::ntp ntp)
         register_invalid_record_metric();
         register_throughput_metrics();
         register_lag_metrics();
+        register_backpressure_metric();
     }
+}
+
+void translation_probe::register_backpressure_metric() {
+    namespace sm = ss::metrics;
+    std::vector<sm::label_instance> labels{
+      namespace_label(_ntp.ns()),
+      topic_label(_ntp.tp.topic()),
+      partition_label(_ntp.tp.partition()),
+    };
+    _public_metrics->add_group(
+      group_name,
+      {
+        sm::make_counter(
+          "backpressure_backoffs",
+          _backpressure_backoffs,
+          sm::description(
+            "Number of times translation backed off because the coordinator "
+            "signaled backpressure (too many pending files)"),
+          labels)
+          .aggregate({
+            sm::shard_label,
+            partition_label,
+          }),
+      });
 }
 
 void translation_probe::register_lag_metrics() {

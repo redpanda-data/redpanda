@@ -48,6 +48,7 @@ redpanda_cc_bench(
     ],
     deps = [
         "//src/v/bytes",
+        "//src/v/bytes:hash",
         "//src/v/hashing:crc32c",
         "//src/v/hashing:murmur",
         "//src/v/hashing:xx",

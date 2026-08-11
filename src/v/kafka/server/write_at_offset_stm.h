@@ -37,6 +37,8 @@ public:
         replicate_exception,
         invalid_batch_type,
         invalid_input,
+        not_leader,
+        invalid_truncation_offset,
     };
     struct errc_category final : public std::error_category {
         const char* name() const noexcept final;
@@ -47,8 +49,6 @@ public:
     const std::error_category& error_category() noexcept;
 
     std::error_code make_error_code(errc e) noexcept;
-
-    friend std::ostream& operator<<(std::ostream&, const errc&);
 
     write_at_offset_stm(
       raft::consensus* raft,
@@ -113,6 +113,19 @@ public:
       chunked_vector<model::record_batch>,
       chunked_vector<kafka::offset> expected_base_offsets,
       std::optional<kafka::offset> prev_log_offset,
+      model::timeout_clock::duration timeout,
+      std::optional<std::reference_wrapper<ss::abort_source>> as
+      = std::nullopt);
+
+    /**
+     * Ensures that the log is truncatable up to (inclusive) new_start_offset
+     * - 1. This method will replicate any missing ghost batches to fill the gap
+     * if necessary. Effective hwm after the method returns is atleast
+     * new_start_offset, this guarantees everything before new_start_offset can
+     * be safely truncated.
+     */
+    ss::future<errc> ensure_truncatable(
+      kafka::offset new_start_offset,
       model::timeout_clock::duration timeout,
       std::optional<std::reference_wrapper<ss::abort_source>> as
       = std::nullopt);
@@ -197,3 +210,11 @@ private:
 };
 
 } // namespace kafka
+
+template<>
+struct fmt::formatter<kafka::write_at_offset_stm::errc>
+  : fmt::formatter<std::string_view> {
+    auto format(
+      const kafka::write_at_offset_stm::errc&, fmt::format_context& ctx) const
+      -> decltype(ctx.out());
+};

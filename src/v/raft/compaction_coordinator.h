@@ -74,7 +74,8 @@ public:
       ss::gate& bg);
 
     // handle leadership changes
-    void on_leadership_change(std::optional<vnode> new_leader_id);
+    void on_leadership_change(
+      std::optional<vnode> new_leader_id, model::term_id new_term);
 
     // handle group configuration changes (e.g. new nodes added to the group)
     void on_group_configuration_change();
@@ -107,9 +108,6 @@ private:
     // from leader (on a follower) or from calculated values (on leader)
     void update_group_offsets(model::offset new_mtro, model::offset new_mxro);
 
-    // notify storage and followers (if leader) about MTRO and/or MXRO update
-    void on_group_offsets_update();
-
     // Ideally should be push-, not pull-based, but currently storage doesn't
     // provide such functionality. This is the entry point for periodic MCCO
     // and MXFO collection, which may trigger MTRO and MXRO update in turn.
@@ -129,7 +127,7 @@ private:
     get_and_process_replica_offsets(vnode node_id, ss::abort_source& op_as);
     ss::future<std::optional<get_compaction_mcco_reply>>
     get_remote_replica_offsets(vnode node_id);
-    void on_local_replica_offsets_update(
+    bool record_updated_local_replica_offsets(
       model::offset new_mcco, model::offset new_mxfo);
 
     // the next 2 functions are for sending MTRO and MXRO to followers
@@ -197,8 +195,8 @@ private:
     model::offset _mtro;
     model::offset _mxro;
 
-    // current leader, std::nullopt if no leader
-    bool _is_leader{false};
+    // current leadership term, std::nullopt if not leader
+    std::optional<model::term_id> _leader_term_id;
 
     // cancels the timer when consensus' abort source is triggered
     ss::optimized_optional<ss::abort_source::subscription> _as_sub;
@@ -210,7 +208,8 @@ private:
     // prevent RPC storm at startup
     bool _has_seen_a_leader{false};
 
-    // force sending the same MTRO to followers, as recipients may have changed
+    // force sending the same MTRO to followers, as recipients may have missed
+    // the last update due to a leadership change
     bool _need_force_update{false};
 
     bool _started{false};

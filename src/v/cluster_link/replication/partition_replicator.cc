@@ -259,7 +259,7 @@ ss::future<> partition_replicator::fetch_and_replicate() {
         while (!_gate.is_closed() && !as.abort_requested()) {
             auto inflight_units = co_await ss::get_units(_max_requests, 1, as);
             auto data = co_await _source->fetch_next(as);
-            maybe_synchronize_start_offset();
+            co_await maybe_synchronize_start_offset();
             if (data.batches.empty()) {
                 continue;
             }
@@ -295,6 +295,13 @@ ss::future<> partition_replicator::fetch_and_replicate() {
     }
     co_await gate.close();
     if (!_gate.is_closed() && !_as.abort_requested()) {
+        auto sink_reset_f = co_await ss::coroutine::as_future(_sink->reset());
+        if (sink_reset_f.failed()) {
+            auto ex = sink_reset_f.get_exception();
+            vlog(_log.warn, "Failed to reset data sink on failure: {}", ex);
+            _sink->notify_replicator_failure(_term);
+            co_return;
+        }
         auto reset_offset = _start_offset;
         if (_sink->last_replicated_offset() >= kafka::offset{0}) {
             reset_offset = kafka::next_offset(_sink->last_replicated_offset());
@@ -303,32 +310,31 @@ ss::future<> partition_replicator::fetch_and_replicate() {
         auto sleep_for = _backoff_policy.current_backoff_duration();
         vlog(
           _log.trace,
-          "Backing off for {}ms",
-          sleep_for / std::chrono::milliseconds{1});
+          "Backing off for {}ms, reset source to offset {}",
+          sleep_for / std::chrono::milliseconds{1},
+          reset_offset);
         co_await ss::sleep_abortable(sleep_for, _as);
         _backoff_policy.next_backoff();
     }
 }
 
-void partition_replicator::maybe_synchronize_start_offset() {
+ss::future<> partition_replicator::maybe_synchronize_start_offset() {
     auto shadow_partition_hwm = _sink->high_watermark();
     auto shadow_partition_start_offset = _sink->start_offset();
     auto source_offsets = _source->get_offsets();
 
-    if (_in_progress_truncate_offset.has_value()) {
-        vlog(
-          _log.trace,
-          "Truncation already in progress to offset {}",
-          _in_progress_truncate_offset.value());
-        return;
+    if (!_sink->can_prefix_truncate()) {
+        vlog(_log.trace, "Partition does not support prefix truncation");
+        co_return;
     }
 
     if (!source_offsets.has_value()) {
         vlog(_log.debug, "Source partition not reporting offsets");
-        return;
+        co_return;
     }
 
     auto source_start_offset = source_offsets->source_start_offset;
+    auto source_lso = source_offsets->source_lso;
 
     if (source_start_offset <= shadow_partition_start_offset) {
         vlog(
@@ -337,36 +343,46 @@ void partition_replicator::maybe_synchronize_start_offset() {
           "shadow: {}",
           source_start_offset,
           shadow_partition_start_offset);
-        return;
+        co_return;
     }
 
-    if (source_start_offset > shadow_partition_hwm) {
+    // The source partition may perform a prefix truncation that lands in the
+    // middle of a batch. Redpanda's data replicators will replicate the whole
+    // batch, including data that starts before the start offset. If we prefix
+    // truncate the shadow partition before that batch is replicated, this will
+    // interfere with our ability to replicate the entire batch, leading to data
+    // loss. To prevent being too eager, we only perform prefix truncation when
+    // we know that we have fully replicated all batches up to or past the
+    // source start offset. This means: source_start_offset <
+    // shadow_partition_hwm OR source_start_offset == source_lso.
+    if (
+      source_lso != source_start_offset
+      && source_start_offset > shadow_partition_hwm) {
         vlog(
-          _log.trace,
-          "Source start offset {} greater than shadow HWM {}, cannot truncate",
+          _log.debug,
+          "Shadow partition has not replicated up to the source start offset "
+          "yet, deferring prefix truncation. source_start_offset: {}, "
+          "source_lso: {}, shadow_partition_hwm: {}",
           source_start_offset,
+          source_lso,
           shadow_partition_hwm);
-        return;
+        co_return;
     }
 
-    _in_progress_truncate_offset = source_start_offset;
-
+    auto truncate_offset = std::max(_start_offset, source_start_offset);
     vlog(
       _log.debug,
       "Truncating shadow partition from {} -> {}",
       shadow_partition_start_offset,
-      source_start_offset);
+      truncate_offset);
 
-    ssx::spawn_with_gate(_gate, [this, source_start_offset] {
-        return prefix_truncate(source_start_offset);
-    });
+    co_await prefix_truncate(truncate_offset);
 }
 
 ss::future<> partition_replicator::prefix_truncate(kafka::offset o) {
     static constexpr auto prefix_truncate_timeout = 5s;
     auto prefix_f = co_await ss::coroutine::as_future(_sink->prefix_truncate(
       o, ss::lowres_clock::now() + prefix_truncate_timeout));
-    _in_progress_truncate_offset = std::nullopt;
     if (prefix_f.failed()) {
         auto ex = prefix_f.get_exception();
         auto level = ssx::is_shutdown_exception(ex) ? ss::log_level::debug
@@ -380,10 +396,14 @@ ss::future<> partition_replicator::prefix_truncate(kafka::offset o) {
     // less than or equal to this offset
 
     if (ec != kafka::error_code::none) {
-        vlog(_log.warn, "Failed to truncate source partition to {}: {}", o, ec);
+        vlog(
+          _log.warn,
+          "Failed to prefix truncate shadow partition to {}: {}",
+          o,
+          ec);
         co_return;
     }
-    vlog(_log.debug, "Successfully truncated shadow partition to {}", o);
+    vlog(_log.debug, "Successfully prefix truncated shadow partition to {}", o);
 }
 
 } // namespace cluster_link::replication

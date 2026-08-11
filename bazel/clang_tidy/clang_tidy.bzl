@@ -232,10 +232,6 @@ def is_c_translation_unit(src, tags):
     return src.extension == "c"
 
 def _clang_tidy_aspect_impl(target, ctx):
-    # if not a C/C++ target, we are not interested
-    if not CcInfo in target:
-        return []
-
     # Ignore external targets
     if target.label.workspace_root.startswith("external"):
         return []
@@ -299,6 +295,7 @@ clang_tidy_aspect = aspect(
         "_clang_tidy_executable": attr.label(default = Label("@current_llvm_toolchain//:clang-tidy")),
         "_clang_tidy_config": attr.label(default = Label("//:clang_tidy_config")),
     },
+    required_providers = [[CcInfo]],
     toolchains = [
         "@bazel_tools//tools/cpp:toolchain_type",
         "@rules_python//python:toolchain_type",

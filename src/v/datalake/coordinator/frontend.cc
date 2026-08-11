@@ -101,7 +101,7 @@ ss::future<fetch_latest_translated_offset_reply> fetch_latest_offset(
     }
     auto& val = ret.value();
     co_return fetch_latest_translated_offset_reply{
-      val.last_added_offset, val.last_committed_offset};
+      val.last_added_offset, val.last_committed_offset, val.backpressure};
 }
 } // namespace
 
@@ -214,6 +214,13 @@ template auto frontend::remote_dispatch<&frontend::client::get_topic_state>(
 template auto frontend::process<
   &frontend::get_topic_state_locally,
   &frontend::client::get_topic_state>(get_topic_state_request, bool);
+
+template auto frontend::process<
+  &frontend::reset_topic_state_locally,
+  &frontend::client::reset_topic_state>(reset_topic_state_request, bool);
+
+template auto frontend::remote_dispatch<&frontend::client::reset_topic_state>(
+  reset_topic_state_request, model::node_id);
 
 // -- explicit instantiations ---
 
@@ -492,6 +499,44 @@ ss::future<get_topic_state_reply> frontend::get_topic_state(
     co_return co_await process<
       &frontend::get_topic_state_locally,
       &client::get_topic_state>(std::move(request), bool(local_only_exec));
+}
+
+ss::future<reset_topic_state_reply> frontend::reset_topic_state_locally(
+  reset_topic_state_request request,
+  const model::ntp& coordinator_partition,
+  ss::shard_id shard) {
+    auto holder = _gate.hold();
+    co_return co_await _coordinator_mgr->invoke_on(
+      shard,
+      [coordinator_partition, &request](coordinator_manager& mgr) mutable {
+          auto partition = mgr.get(coordinator_partition);
+          if (!partition) {
+              return ssx::now(reset_topic_state_reply{errc::not_leader});
+          }
+          return partition
+            ->sync_reset_topic_state(
+              request.topic,
+              request.topic_revision,
+              request.reset_all_partitions,
+              std::move(request.partition_overrides))
+            .then([](auto result) {
+                reset_topic_state_reply resp{};
+                if (result.has_error()) {
+                    resp.errc = to_rpc_errc(result.error());
+                } else {
+                    resp.errc = errc::ok;
+                }
+                return ssx::now(std::move(resp));
+            });
+      });
+}
+
+ss::future<reset_topic_state_reply> frontend::reset_topic_state(
+  reset_topic_state_request request, local_only local_only_exec) {
+    auto holder = _gate.hold();
+    co_return co_await process<
+      &frontend::reset_topic_state_locally,
+      &client::reset_topic_state>(std::move(request), bool(local_only_exec));
 }
 
 } // namespace datalake::coordinator

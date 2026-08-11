@@ -461,6 +461,112 @@ static const std::vector<struct_evolution_test_case> valid_cases{
       },
   },
   struct_evolution_test_case{
+    .description = "we can add a new field with required descendants "
+                   "(map key is structurally required)",
+    .generator =
+      [](unique_id_generator& ids) {
+          struct_type s{};
+          s.fields.emplace_back(
+            nested_field::create(
+              ids.get_one(), "foo", field_required::yes, int_type{}));
+          return s;
+      },
+    .update =
+      [](struct_type& s) {
+          s.fields.emplace_back(
+            nested_field::create(
+              0,
+              "a_map",
+              field_required::no,
+              map_type::create(
+                0, string_type{}, 0, field_required::no, long_type{})));
+      },
+    .validator =
+      [](const struct_type& src, const struct_type& dst) {
+          if (dst.fields.size() != 2) {
+              return false;
+          }
+          const auto& new_map_field = dst.fields.back();
+          if (!added(*new_map_field)) {
+              return false;
+          }
+          const auto& new_map = get<map_type>(new_map_field);
+          return updated(*src.fields.front(), *dst.fields.front())
+                 && added(*new_map.key_field) && added(*new_map.value_field);
+      },
+  },
+  struct_evolution_test_case{
+    .description = "we can add a new field with required descendants "
+                   "(list element declared required)",
+    .generator =
+      [](unique_id_generator& ids) {
+          struct_type s{};
+          s.fields.emplace_back(
+            nested_field::create(
+              ids.get_one(), "foo", field_required::yes, int_type{}));
+          return s;
+      },
+    .update =
+      [](struct_type& s) {
+          s.fields.emplace_back(
+            nested_field::create(
+              0,
+              "a_list",
+              field_required::no,
+              list_type::create(0, field_required::yes, long_type{})));
+      },
+    .validator =
+      [](const struct_type& src, const struct_type& dst) {
+          if (dst.fields.size() != 2) {
+              return false;
+          }
+          const auto& new_list_field = dst.fields.back();
+          if (!added(*new_list_field)) {
+              return false;
+          }
+          const auto& new_list = get<list_type>(new_list_field);
+          return updated(*src.fields.front(), *dst.fields.front())
+                 && added(*new_list.element_field);
+      },
+  },
+  struct_evolution_test_case{
+    .description = "we can add a new field with required descendants "
+                   "(struct subfield declared required)",
+    .generator =
+      [](unique_id_generator& ids) {
+          struct_type s{};
+          s.fields.emplace_back(
+            nested_field::create(
+              ids.get_one(), "foo", field_required::yes, int_type{}));
+          return s;
+      },
+    .update =
+      [](struct_type& s) {
+          struct_type inner{};
+          inner.fields.emplace_back(
+            nested_field::create(0, "inner", field_required::yes, int_type{}));
+          s.fields.emplace_back(
+            nested_field::create(
+              0, "a_struct", field_required::no, std::move(inner)));
+      },
+    .validator =
+      [](const struct_type& src, const struct_type& dst) {
+          if (dst.fields.size() != 2) {
+              return false;
+          }
+          const auto& new_struct_field = dst.fields.back();
+          if (!added(*new_struct_field)) {
+              return false;
+          }
+          const auto& new_struct = get<struct_type>(new_struct_field);
+          if (new_struct.fields.size() != 1) {
+              return false;
+          }
+          return updated(*src.fields.front(), *dst.fields.front())
+                 && added(*new_struct.fields.front());
+      },
+  },
+  struct_evolution_test_case{
     .description = "we can 'add' nested fields",
     .generator = [](unique_id_generator&) { return struct_type{}; },
     .update =

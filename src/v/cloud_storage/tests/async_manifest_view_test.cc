@@ -1098,6 +1098,75 @@ FIXTURE_TEST(
     BOOST_REQUIRE(past_term_query.value() == std::nullopt);
 }
 
+namespace {
+// Append `count` segments carrying `term` to the end of the manifest.
+void add_term_segments(
+  async_manifest_view_fixture& fx, model::term_id term, int count) {
+    auto segs = fx.generate_random_segments(fx.stm_manifest, count);
+    for (auto& s : segs) {
+        s.segment_term = term;
+        s.archiver_term = term;
+    }
+    fx.add_segments_to_stm_manifest(std::move(segs));
+}
+} // namespace
+
+// `highest_term()` returns the term of the newest segment while the STM
+// manifest holds segments -- including after spillover leaves a tail behind.
+FIXTURE_TEST(
+  test_async_manifest_view_highest_term_stm, async_manifest_view_fixture) {
+    // Empty manifest: no term.
+    BOOST_REQUIRE(view.highest_term() == std::nullopt);
+
+    add_term_segments(*this, model::term_id{1}, 3);
+    BOOST_REQUIRE_EQUAL(view.highest_term().value(), model::term_id{1});
+
+    add_term_segments(*this, model::term_id{2}, 2);
+    add_term_segments(*this, model::term_id{5}, 4);
+    // The highest term is the term of the last (highest-offset) segment.
+    BOOST_REQUIRE_EQUAL(view.highest_term().value(), model::term_id{5});
+
+    // Spilling the oldest segments (keeping a tail in the STM manifest) does
+    // not change the highest term.
+    trigger_spillover(3);
+    BOOST_REQUIRE(!stm_manifest.empty());
+    BOOST_REQUIRE_EQUAL(view.highest_term().value(), model::term_id{5});
+}
+
+// When every segment has spilled and the STM manifest is empty,
+// `highest_term()` falls back to the spillover map and returns the term of the
+// newest spillover manifest (i.e. the last entry of the term column, not the
+// first).
+FIXTURE_TEST(
+  test_async_manifest_view_highest_term_spillover_only,
+  async_manifest_view_fixture) {
+    add_term_segments(*this, model::term_id{1}, 2);
+    add_term_segments(*this, model::term_id{2}, 2);
+    add_term_segments(*this, model::term_id{3}, 2);
+
+    // Spill terms 1-2 into one spillover manifest, then term 3 into another,
+    // leaving the STM manifest empty.
+    auto spill_up_to = [&](model::term_id max_term) {
+        spillover_manifest spm(manifest_ntp, manifest_rev);
+        for (const auto& meta : stm_manifest) {
+            if (meta.segment_term > max_term) {
+                break;
+            }
+            spm.add(meta);
+        }
+        BOOST_REQUIRE_GT(spm.size(), 0);
+        spill_manifest(spm, /*hydrate=*/true);
+    };
+    spill_up_to(model::term_id{2});
+    spill_up_to(model::term_id{3});
+
+    BOOST_REQUIRE(stm_manifest.empty());
+    BOOST_REQUIRE_GT(stm_manifest.get_spillover_map().size(), 1);
+    // Falls back to the spillover map: the newest spillover manifest carries
+    // the highest segment term (3), not the first spillover manifest's term.
+    BOOST_REQUIRE_EQUAL(view.highest_term().value(), model::term_id{3});
+}
+
 FIXTURE_TEST(
   test_async_manifest_view_spill_concurrently, async_manifest_view_fixture) {
     // Enumerate all segments while spilling.

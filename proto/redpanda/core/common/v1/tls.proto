@@ -50,13 +50,16 @@ message TLSFileSettings {
 // Used when providing the TLS information in PEM format
 message TLSPEMSettings {
     // The CA
-    string ca = 1;
+    string ca = 1 [(redpanda.core.pbgen.iobuf) = true];
     // Key and Cert are optional but if one is provided, then both must be
     // The key
-    string key = 2
-        [(google.api.field_behavior) = INPUT_ONLY, debug_redact = true];
+    string key = 2 [
+        (google.api.field_behavior) = INPUT_ONLY,
+        debug_redact = true,
+        (redpanda.core.pbgen.iobuf) = true
+    ];
     // The SHA-256 of the key, in base64 format
     string key_fingerprint = 3 [(google.api.field_behavior) = OUTPUT_ONLY];
     // The cert
-    string cert = 4;
+    string cert = 4 [(redpanda.core.pbgen.iobuf) = true];
 }

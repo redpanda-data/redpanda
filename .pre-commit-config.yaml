@@ -40,5 +40,5 @@ repos:
         name: C++ formatting (clang-format)
         entry: ./tools/clang-format -i
         language: script
-        types_or: [c++, c, proto]
+        types_or: [c++, c, proto, java]
 

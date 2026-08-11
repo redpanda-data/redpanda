@@ -17,6 +17,8 @@
 
 #include <seastar/core/iostream.hh>
 
+#include <stdexcept>
+
 namespace kafka {
 
 namespace {
@@ -92,6 +94,10 @@ parse_tags(ss::input_stream<char>& src) {
     while (num_tags-- > 0) {
         auto id = co_await read_unsigned_vint(total_bytes_read, src);
         auto next_len = co_await read_unsigned_vint(total_bytes_read, src);
+        if (next_len > 128_KiB) {
+            throw std::invalid_argument(
+              fmt::format("Too large of a tagged field: {}", next_len));
+        }
         auto buf = co_await src.read_exactly(next_len);
         bytes data(bytes::initialized_later{}, buf.size());
         std::copy_n(buf.begin(), buf.size(), data.begin());

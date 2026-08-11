@@ -250,7 +250,7 @@ class CompactionTest(RedpandaTest):
         verifier.start()
         verifier.wait()
 
-        for partition, offset_consumed in verifier._max_consumed_offsets.items():
+        for partition, offset_consumed in verifier.max_consumed_offsets.items():
             assert (
                 consumer.consumer_status.validator.max_offsets_consumed[str(partition)]
                 == offset_consumed

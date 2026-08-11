@@ -135,11 +135,12 @@ struct primitive_value_avro_visitor {
         return {data};
     }
     avro::GenericDatum operator()(const decimal_value& v) {
-        auto bytes = encode_avro_decimal(v.val);
-
+        maybe_throw_invalid_schema(avro_schema_, avro::AVRO_FIXED);
+        auto encoded = encode_avro_fixed_decimal(
+          v.val, avro_schema_->fixedSize());
         return {
           avro_schema_,
-          avro::GenericFixed(avro_schema_, {bytes.begin(), bytes.end()})};
+          avro::GenericFixed(avro_schema_, {encoded.begin(), encoded.end()})};
     }
     avro::GenericDatum operator()(const fixed_value& fixed) {
         std::vector<uint8_t> bytes(fixed.val.size_bytes());
@@ -368,18 +369,8 @@ struct primitive_value_parsing_visitor {
         lt.setScale(dt.scale);
         maybe_throw_wrong_logical_type(data_.logicalType(), lt);
         const auto& v = data_.value<avro::GenericFixed>().value();
-        if (v.size() > 16) {
-            throw std::invalid_argument(
-              fmt::format(
-                "decimals with more than 16 bytes are not supported, current "
-                "value size: {}",
-                v.size()));
-        }
-        bytes decimal_bytes(bytes::initialized_zero{}, 16);
-
-        std::copy(v.begin(), v.end(), decimal_bytes.begin());
-
-        return decimal_value{.val = decode_avro_decimal(decimal_bytes)};
+        return decimal_value{
+          .val = decode_avro_decimal(bytes{v.begin(), v.end()})};
     }
 };
 

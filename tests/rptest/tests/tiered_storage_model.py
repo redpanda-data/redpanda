@@ -1494,7 +1494,7 @@ class TS_Spillover_GarbageCollect(Expression):
         return [
             LogBasedValidator(
                 "TS_Spillover_GarbageCollect_log",
-                "ntp_archiver_service.*Deleted .* spillover segments from the cloud",
+                "ntp_archiver_service.*Archive GC deleted .* segments",
                 confidence_threshold=LOW_THRESHOLD,
                 execution_stage=TestRunStage.Intermediate,
             ),

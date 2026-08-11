@@ -182,43 +182,27 @@ std::strong_ordering iobuf::operator<=>(const iobuf& o) const {
 }
 
 bool iobuf::operator==(std::string_view o) const {
-    if (_size != o.size()) {
-        return false;
-    }
-    bool are_equal = true;
-    std::string_view::size_type n = 0;
-    auto in = iobuf::iterator_consumer(cbegin(), cend());
-    std::ignore = in.consume(
-      size_bytes(), [&are_equal, &o, &n](const char* src, size_t fg_sz) {
-          /// Both strings are equiv in total size, so its safe to assume
-          /// the next chunk to compare is the remaining to cmp or the
-          /// fragment size
-          const auto size = std::min((o.size() - n), fg_sz);
-          std::string_view a_view(src, size);
-          std::string_view b_view(o.data() + n, size);
-          n += size;
-          are_equal &= (a_view == b_view);
-          return !are_equal ? ss::stop_iteration::yes : ss::stop_iteration::no;
-      });
-    return are_equal;
+    return size_bytes() == o.size()
+           && (*this <=> o) == std::strong_ordering::equal;
 }
 
 std::strong_ordering iobuf::operator<=>(std::string_view o) const {
-    std::strong_ordering cmp = std::strong_ordering::equal;
-    auto in = iobuf::iterator_consumer(cbegin(), cend());
-    std::string_view other = o;
-    std::ignore = in.consume(
-      std::min(size_bytes(), o.size()),
-      [&cmp, &other](const char* src, size_t fg_sz) {
-          cmp = std::string_view(src, fg_sz) <=> other;
-          other.remove_prefix(std::min(fg_sz, other.size()));
-          return cmp == std::strong_ordering::equal ? ss::stop_iteration::yes
-                                                    : ss::stop_iteration::no;
-      });
-    if (cmp == std::strong_ordering::equal) {
-        cmp = size_bytes() <=> o.size();
+    auto other = o;
+    // first compare the common length prefix
+    for (const auto& frag : *this) {
+        auto compare_len = std::min(frag.size(), other.size());
+        std::strong_ordering cmp = std::string_view(frag.get(), compare_len)
+                                   <=> other.substr(0, compare_len);
+        if (cmp != std::strong_ordering::equal) {
+            return cmp;
+        }
+        other.remove_prefix(compare_len);
+        if (other.empty()) {
+            break;
+        }
     }
-    return cmp;
+    // prefix was equal, only size matters now
+    return size_bytes() <=> o.size();
 }
 
 /**

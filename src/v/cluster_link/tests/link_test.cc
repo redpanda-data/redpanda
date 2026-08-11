@@ -48,7 +48,7 @@ public:
       manager* manager,
       ss::lowres_clock::duration task_reconciler_interval,
       link_test* link_test,
-      model::metadata metadata,
+      model::metadata_ptr metadata,
       std::unique_ptr<kafka::client::cluster> cluster_connection);
 
     ss::future<> start() override;
@@ -69,7 +69,7 @@ public:
       ::model::node_id self,
       model::id_t link_id,
       manager* manager,
-      model::metadata metadata,
+      model::metadata_ptr metadata,
       std::unique_ptr<kafka::client::cluster> cluster_connection) override {
         return std::make_unique<test_link>(
           self,
@@ -240,7 +240,7 @@ test_link::test_link(
   manager* manager,
   ss::lowres_clock::duration task_reconciler_interval,
   link_test* link_test,
-  model::metadata metadata,
+  model::metadata_ptr metadata,
   std::unique_ptr<kafka::client::cluster> cluster_connection)
   : link(
       self,
@@ -256,11 +256,11 @@ test_link::test_link(
 
 ss::future<> test_link::start() {
     co_await link::start();
-    _link_test->add_link_to_list(config().uuid, this);
+    _link_test->add_link_to_list(get_config()->uuid, this);
 }
 
 ss::future<> test_link::stop() noexcept {
-    _link_test->remove_link_from_list(config().uuid);
+    _link_test->remove_link_from_list(get_config()->uuid);
     co_await link::stop();
 }
 } // namespace
@@ -278,14 +278,14 @@ TEST_F_CORO(link_test, start_with_table_entries) {
     auto remove_callback = ss::defer(
       [this, callback_id] { unregister_callback(callback_id); });
 
-    co_await upsert_link(link_id, link.copy());
+    co_await upsert_link(link_id, co_await link.copy());
     co_await _manager->start();
     ASSERT_NO_THROW_CORO(co_await cv.wait(5s))
       << "Timed out waiting for link creation";
     auto it = _links.find(link_uuid);
     ASSERT_NE_CORO(it, _links.end())
       << "Unable to find link with UUID: " << link_uuid;
-    EXPECT_EQ(it->second->config(), link);
+    EXPECT_EQ(*(it->second->get_config()), link);
     co_await _manager->stop();
 }
 
@@ -302,31 +302,31 @@ TEST_F_CORO(link_test_manager_started, test_create_link_and_update) {
     auto remove_callback = ss::defer(
       [this, callback_id] { unregister_callback(callback_id); });
 
-    co_await upsert_link(link_id, link.copy());
+    co_await upsert_link(link_id, co_await link.copy());
     ASSERT_NO_THROW_CORO(co_await cv.wait(5s))
       << "Timed out waiting for link creation";
     auto it = _links.find(link_uuid);
     ASSERT_NE_CORO(it, _links.end())
       << "Unable to find link with UUID: " << link_uuid;
-    EXPECT_EQ(it->second->config(), link);
+    EXPECT_EQ(*(it->second->get_config()), link);
 
     model::metadata updated_link{
       .name = model::name_t("link1"),
       .uuid = link_uuid,
       .connection = model::connection_config{
         .bootstrap_servers{net::unresolved_address{"localhost", 9092}}}};
-    co_await upsert_link(link_id, updated_link.copy());
+    co_await upsert_link(link_id, co_await updated_link.copy());
 
     it = _links.find(link_uuid);
     ASSERT_NE_CORO(it, _links.end())
       << "Unable to find link with UUID: " << link_uuid;
     for (auto i = 0; i < 5; ++i) {
-        if (it->second->config() == updated_link) {
+        if (*(it->second->get_config()) == updated_link) {
             break;
         }
         co_await ss::sleep(100ms);
     }
-    ASSERT_EQ_CORO(it->second->config(), updated_link)
+    ASSERT_EQ_CORO(*(it->second->get_config()), updated_link)
       << "Link configuration did not update after 5 attempts";
 }
 
@@ -343,7 +343,7 @@ TEST_F_CORO(link_test_manager_started, test_remove_link) {
     auto remove_callback = ss::defer(
       [this, callback_id] { unregister_callback(callback_id); });
 
-    co_await upsert_link(link_id, link.copy());
+    co_await upsert_link(link_id, std::move(link));
     ASSERT_NO_THROW_CORO(co_await cv.wait(5s))
       << "Timed out waiting for link creation";
     auto it = _links.find(link_uuid);
@@ -393,7 +393,7 @@ public:
       ::model::node_id self,
       model::id_t link_id,
       manager* manager,
-      model::metadata metadata,
+      model::metadata_ptr metadata,
       std::unique_ptr<kafka::client::cluster> cluster_connection) override {
         return std::make_unique<evil_link>(
           self,
@@ -468,7 +468,7 @@ TEST_F_CORO(evil_link_test, test_evil_link_start_stop) {
       .connection = model::connection_config{}};
     model::id_t link_id(1);
 
-    co_await upsert_link(link_id, link.copy());
+    co_await upsert_link(link_id, std::move(link));
 
     // Enough time for the upsert callback to fire but no link should be present
     co_await ss::sleep(500ms);
@@ -492,6 +492,107 @@ TEST_F_CORO(evil_link_test, test_evil_link_start_stop) {
     report = _manager->get_task_status_report();
     EXPECT_TRUE(report.link_reports.empty())
       << "Link should be removed after reconciler loop";
+}
+
+namespace {
+
+/// A task that refreshes metadata from the source cluster, mirroring the
+/// first step of source_topic_syncer::run_impl. request_metadata_update()
+/// takes no abort source: its waits (metadata update lock, seed reconnect
+/// backoff) answer only to the kafka::client::cluster's internal abort
+/// source.
+class metadata_refresh_task : public task {
+public:
+    static constexpr auto task_name = "metadata_refresh_task";
+    explicit metadata_refresh_task(link* link)
+      : task(link, 100ms, task_name) {}
+
+    bool should_start_impl(ss::shard_id, ::model::node_id) const override {
+        return true;
+    }
+    bool should_stop_impl(ss::shard_id, ::model::node_id) const override {
+        return false;
+    }
+    void update_config(const model::metadata&) override {}
+    model::enabled_t is_enabled() const final { return model::enabled_t::yes; }
+
+    ss::future<state_transition> run_impl(ss::abort_source&) override {
+        try {
+            co_await get_link()
+              ->get_cluster_connection()
+              .request_metadata_update();
+        } catch (const std::exception& e) {
+            co_return state_transition{
+              .desired_state = model::task_state::link_unavailable,
+              .reason = ssx::sformat(
+                "Failed to update metadata: {}", e.what())};
+        }
+        co_return state_transition{
+          .desired_state = model::task_state::active, .reason = "ok"};
+    }
+};
+
+class metadata_refresh_task_factory : public task_factory {
+public:
+    std::string_view created_task_name() const noexcept override {
+        return metadata_refresh_task::task_name;
+    }
+    std::unique_ptr<task> create_task(link* link) override {
+        return std::make_unique<metadata_refresh_task>(link);
+    }
+};
+
+} // namespace
+
+// Regression test for deadlock between `link::stop()` and `cluster::stop()`.
+TEST_F_CORO(
+  link_test_manager_started,
+  stop_completes_with_task_wedged_in_source_cluster) {
+    auto link_uuid = model::uuid_t(::uuid_t::create());
+    auto md = ss::make_lw_shared<const model::metadata>(model::metadata{
+      .name = model::name_t("wedged_link"),
+      .uuid = link_uuid,
+      .connection = model::connection_config{}});
+
+    // A source cluster connection with no seed brokers: start() succeeds
+    // vacuously (nothing to connect to).
+    auto wedged_link = std::make_unique<link>(
+      ::model::node_id(0),
+      model::id_t(1),
+      _manager.get(),
+      1s,
+      md,
+      std::make_unique<kafka::client::cluster>(
+        kafka::client::connection_configuration{
+          .client_id = "wedge-test",
+        }),
+      std::make_unique<default_config_provider>(),
+      std::make_unique<data_src_factory>(),
+      std::make_unique<data_sink_factory>());
+    co_await wedged_link->start();
+
+    // Now point it at a seed broker that refuses connections, with a large
+    // connection_timeout so the reconnect loop parks in long backoff
+    // sleeps — the production wedge for a link whose source cluster is
+    // unreachable.
+    wedged_link->get_cluster_connection().update_configuration(
+      kafka::client::connection_configuration{
+        .initial_brokers = {net::unresolved_address{"127.0.0.1", 1}},
+        .client_id = "wedge-test",
+        .connection_timeout = 10min,
+      });
+
+    metadata_refresh_task_factory tf;
+    auto res = co_await wedged_link->register_task(&tf);
+    ASSERT_TRUE_CORO(res.has_value());
+
+    // Let the task run into the wedge: connect to the dead seed, fail,
+    // and park in the reconnect backoff.
+    co_await ss::sleep(1s);
+
+    // Stopping the link must complete even with the task fiber wedged in
+    // the source cluster's reconnect backoff.
+    co_await wedged_link->stop();
 }
 
 } // namespace cluster_link::tests

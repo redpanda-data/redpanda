@@ -68,7 +68,7 @@ public:
     }
 
     ss::future<cluster::cluster_link::errc> upsert_cluster_link(metadata m) {
-        cluster::cluster_link_upsert_cmd cmd{0, m.copy()};
+        cluster::cluster_link_upsert_cmd cmd{0, co_await m.copy()};
         auto ec = _validator->validate_mutation(std::move(cmd));
         if (ec == cluster::cluster_link::errc::success) {
             auto existing = _table.local().find_id_by_name(m.name);
@@ -1177,9 +1177,9 @@ TEST_F_CORO(frontend_validation_test, update_cluster_link_configuration) {
       errc::success);
 
     auto meta = _table.local().find_link_by_id(*id);
-    ASSERT_TRUE_CORO(meta.has_value());
-    EXPECT_EQ(meta->get().connection, update_cmd.connection);
-    EXPECT_EQ(meta->get().configuration, update_cmd.link_config);
+    ASSERT_TRUE_CORO(meta);
+    EXPECT_EQ(meta->connection, update_cmd.connection);
+    EXPECT_EQ(meta->configuration, update_cmd.link_config);
 }
 
 TEST_F_CORO(

@@ -355,7 +355,7 @@ ss::future<err_info> manager::link_preflight_checks(const model::metadata& md) {
     co_return return_error;
 }
 
-ss::future<cl_result<model::metadata>>
+ss::future<cl_result<model::metadata_ptr>>
 manager::upsert_cluster_link(model::metadata md) {
     static constexpr auto wait_for_link_creation_timeout = 30s;
     auto hold = _g.hold();
@@ -383,7 +383,7 @@ manager::upsert_cluster_link(model::metadata md) {
         }
         co_await _link_created_cv.wait(
           wait_for_link_creation_timeout, [this, name] {
-              return _registry->find_link_by_name(name).has_value();
+              return _registry->find_link_by_name(name) != nullptr;
           });
     } catch (const ss::condition_variable_timed_out&) {
         co_return err_info(
@@ -404,10 +404,10 @@ manager::upsert_cluster_link(model::metadata md) {
           fmt::format("Failed to find cluster link with name '{}'", name));
     }
 
-    co_return metadata_resp->get().copy();
+    co_return metadata_resp;
 }
 
-cl_result<model::metadata>
+cl_result<model::metadata_ptr>
 manager::get_cluster_link(const model::name_t& name) {
     auto metadata_resp = _registry->find_link_by_name(name);
     if (!metadata_resp) {
@@ -415,12 +415,12 @@ manager::get_cluster_link(const model::name_t& name) {
           errc::link_id_not_found,
           fmt::format("Failed to find cluster link with name '{}'", name));
     }
-    return metadata_resp->get().copy();
+    return metadata_resp;
 }
 
-cl_result<chunked_vector<model::metadata>> manager::list_cluster_links() {
+cl_result<chunked_vector<model::metadata_ptr>> manager::list_cluster_links() {
     auto link_ids = _registry->get_all_link_ids();
-    chunked_vector<model::metadata> resp;
+    chunked_vector<model::metadata_ptr> resp;
     resp.reserve(link_ids.size());
 
     for (const auto id : link_ids) {
@@ -430,13 +430,13 @@ cl_result<chunked_vector<model::metadata>> manager::list_cluster_links() {
             continue;
         }
 
-        resp.emplace_back(maybe_md.value().get().copy());
+        resp.emplace_back(maybe_md);
     }
 
     return resp;
 }
 
-ss::future<cl_result<model::metadata>> manager::update_cluster_link(
+ss::future<cl_result<model::metadata_ptr>> manager::update_cluster_link(
   model::name_t name, model::update_cluster_link_configuration_cmd cmd) {
     static constexpr auto model_timeout = 30s;
     auto hold = _g.hold();
@@ -471,10 +471,10 @@ ss::future<cl_result<model::metadata>> manager::update_cluster_link(
           fmt::format("Failed to find cluster link with name '{}'", name));
     }
 
-    co_return metadata_resp->get().copy();
+    co_return metadata_resp;
 }
 
-ss::future<cl_result<model::metadata>> manager::update_mirror_topic_status(
+ss::future<cl_result<model::metadata_ptr>> manager::update_mirror_topic_status(
   model::name_t link_name,
   ::model::topic topic,
   model::mirror_topic_status status,
@@ -518,10 +518,10 @@ ss::future<cl_result<model::metadata>> manager::update_mirror_topic_status(
           errc::link_id_not_found,
           fmt::format("Failed to find cluster link with id '{}'", *link_id));
     }
-    co_return metadata_resp->get().copy();
+    co_return metadata_resp;
 }
 
-ss::future<cl_result<model::metadata>>
+ss::future<cl_result<model::metadata_ptr>>
 manager::failover_link_topics(model::name_t link_name) {
     static constexpr auto failover_command_timeout = 5s;
     auto hold = _g.hold();
@@ -552,7 +552,7 @@ manager::failover_link_topics(model::name_t link_name) {
           errc::link_id_not_found,
           fmt::format("Failed to find cluster link with id '{}'", *link_id));
     }
-    co_return metadata_resp->get().copy();
+    co_return metadata_resp;
 }
 
 ss::future<cl_result<void>>
@@ -578,7 +578,7 @@ manager::delete_cluster_link(model::name_t name, bool force_delete_link) {
         }
     };
 
-    const auto mirror_topic_states = cl_resp.assume_value().state.mirror_topics
+    const auto mirror_topic_states = cl_resp.assume_value()->state.mirror_topics
                                      | std::views::values
                                      | std::views::transform(
                                        &model::mirror_topic_metadata::status);
@@ -612,7 +612,8 @@ manager::delete_cluster_link(model::name_t name, bool force_delete_link) {
     co_return outcome::success();
 }
 
-ss::future<cl_result<model::metadata>> manager::remove_shadow_topic_from_link(
+ss::future<cl_result<model::metadata_ptr>>
+manager::remove_shadow_topic_from_link(
   model::name_t link_name, ::model::topic shadow_topic) {
     vlog(
       cllog.info,
@@ -680,8 +681,8 @@ manager::handle_on_link_change(model::id_t id, ::model::revision_id revision) {
             _link_status_reconciler->reconcile();
         }
     });
-    auto link_opt = _registry->find_link_by_id(id);
-    if (!link_opt) {
+    auto link_metadata = _registry->find_link_by_id(id);
+    if (!link_metadata) {
         vlog(cllog.debug, "Detected cluster link id={} has been removed", id);
         auto it = _links.find(id);
         if (it != _links.end()) {
@@ -706,9 +707,6 @@ manager::handle_on_link_change(model::id_t id, ::model::revision_id revision) {
         co_return;
     }
 
-    // Make a copy of metadata to avoid holding a reference to
-    // the source copy across scheduling points.
-    auto link_metadata = link_opt->get().copy();
     auto it = _links.find(id);
     if (it != _links.end()) {
         // Link already exists, update its configuration
@@ -717,7 +715,7 @@ manager::handle_on_link_change(model::id_t id, ::model::revision_id revision) {
           "Updating cluster link id={} with new config: {}",
           id,
           link_metadata);
-        it->second->update_config(link_metadata.copy(), revision);
+        it->second->update_config(link_metadata, revision);
         _cfg_change_notifications.notify(id, link_metadata);
     } else {
         // Create a new link
@@ -732,8 +730,8 @@ manager::handle_on_link_change(model::id_t id, ::model::revision_id revision) {
               _self,
               id,
               this,
-              link_metadata.copy(),
-              _cluster_factory->create_cluster(link_metadata));
+              link_metadata,
+              _cluster_factory->create_cluster(*link_metadata));
             vassert(
               new_link, "Link factory returned a null link for id={}", id);
             // Register tasks for the link
@@ -871,8 +869,8 @@ ss::future<> manager::link_task_reconciler() {
         vlog(
           cllog.trace,
           "Reconciling tasks for cluster link {} ({})",
-          link->config().name,
-          link->config().uuid);
+          link->get_config()->name,
+          link->get_config()->uuid);
         for (const auto& task_factory : _task_factories) {
             auto task_name = task_factory->created_task_name();
             if (!link->task_is_registered(task_name)) {
@@ -880,8 +878,8 @@ ss::future<> manager::link_task_reconciler() {
                   cllog.debug,
                   "Registering task {} for cluster link {} ({})",
                   task_name,
-                  link->config().name,
-                  link->config().uuid);
+                  link->get_config()->name,
+                  link->get_config()->uuid);
                 auto ec = co_await link->register_task(task_factory.get());
                 if (!ec) {
                     vlog(

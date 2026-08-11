@@ -18,6 +18,7 @@
 #include "model/metadata.h"
 #include "model/timestamp.h"
 #include "resource_mgmt/memory_groups.h"
+#include "ssx/abort_source.h"
 #include "ssx/async-clear.h"
 #include "ssx/future-util.h"
 #include "ssx/watchdog.h"
@@ -53,6 +54,7 @@
 #include <seastar/core/semaphore.hh>
 #include <seastar/core/shared_ptr.hh>
 #include <seastar/core/thread.hh>
+#include <seastar/core/timer.hh>
 #include <seastar/core/with_scheduling_group.hh>
 #include <seastar/coroutine/maybe_yield.hh>
 #include <seastar/coroutine/parallel_for_each.hh>
@@ -69,8 +71,19 @@
 #include <filesystem>
 #include <functional>
 #include <optional>
+#include <ranges>
 
 using namespace std::chrono_literals;
+
+namespace {
+
+class priority_compaction_exception final : public std::runtime_error {
+public:
+    explicit priority_compaction_exception(const std::string& msg)
+      : std::runtime_error(msg) {}
+};
+
+} // namespace
 
 namespace storage {
 using logs_type = absl::flat_hash_map<model::ntp, log_housekeeping_meta>;
@@ -85,7 +98,6 @@ log_config::log_config(
   , segment_size_jitter(0) // For deterministic behavior in unit tests.
   , compacted_segment_size(config::mock_binding<size_t>(256_MiB))
   , max_compacted_segment_size(config::mock_binding<size_t>(5_GiB))
-
   , retention_bytes(config::mock_binding<std::optional<size_t>>(std::nullopt))
   , compaction_interval(
       config::mock_binding<std::chrono::milliseconds>(std::chrono::minutes(10)))
@@ -227,21 +239,11 @@ ss::future<> log_manager::stop() {
  */
 ss::future<>
 log_manager::housekeeping_scan(model::timestamp collection_threshold) {
-    using bflags = log_housekeeping_meta::bitflags;
-
-    static constexpr auto is_not_set = [](bflags var, auto flag) {
-        return (var & flag) != flag;
-    };
-
     // reset flags for the next two loops, segment_ms and compaction.
     // since there are suspension points during the traversal of _logs_list, the
     // algorithm is: mark the logs visited, rotate _logs_list, op, and loop
     // until empty or reaching a marked log
-    for (auto& log_meta : _logs_list) {
-        log_meta.flags &= ~(
-          bflags::compacted | bflags::lifetime_checked
-          | bflags::compaction_checked | bflags::should_compact);
-    }
+    clear_log_meta_flags(_logs_list);
 
     /*
      * Apply segment ms will roll the active segment if it is old enough. This
@@ -254,40 +256,16 @@ log_manager::housekeeping_scan(model::timestamp collection_threshold) {
      *   compaction is already sequential when this will be unified with
      *   compaction, the whole task could be made concurrent
      */
-    while (!_logs_list.empty()
-           && is_not_set(_logs_list.front().flags, bflags::lifetime_checked)) {
-        if (_abort_source.abort_requested()) {
-            co_return;
-        }
+    co_await apply_segment_ms_to_logs(_logs_list);
 
-        auto& current_log = _logs_list.front();
-        _logs_list.shift_forward();
-
-        current_log.flags |= bflags::lifetime_checked;
-
-        // Hold the housekeeping gate to prevent issues with concurrent removal
-        // of the log meta.
-        auto gate = current_log.housekeeping_gate.hold();
-
-        // Obtain housekeeping lock to prevent concurrency of
-        // log->apply_segment_ms() with gc fibre.
-        auto housekeeping_lock_holder
-          = co_await current_log.housekeeping_lock.get_units();
-
-        if (!current_log.link.is_linked()) {
-            continue;
-        }
-
-        // NOTE: apply_segment_ms holds _compaction_housekeeping_gate, that
-        // prevents the removal of the parent object. this makes awaiting
-        // apply_segment_ms safe against removal of segments from _logs_list
-        co_await current_log.handle->apply_segment_ms();
+    if (_abort_source.abort_requested()) {
+        co_return;
     }
 
     if (
       config::shard_local_cfg().log_compaction_use_sliding_window.value()
-      && !_compaction_hash_key_map && !_logs_list.empty()
-      && is_not_set(_logs_list.front().flags, bflags::compacted)) {
+      && !_compaction_hash_key_map
+      && (!_logs_list.empty() || !_priority_logs_list.empty())) {
         auto compaction_mem_bytes
           = memory_groups().compaction_reserved_memory();
         auto compaction_map
@@ -296,59 +274,10 @@ log_manager::housekeeping_scan(model::timestamp collection_threshold) {
         _compaction_hash_key_map = std::move(compaction_map);
     }
 
-    using compaction_heuristic_t = uint64_t;
+    sort_logs_by_compaction_heuristic(_logs_list);
 
-    // There can be no scheduling points between here and the sorting done
-    // below, as we are holding pointers to log_housekeeping_meta in this
-    // btree_map.
-    // This needs to be sorted in ascending order, as we are pushing `log_meta`s
-    // to the front of the `_log_list`.
-    absl::
-      btree_map<compaction_heuristic_t, chunked_vector<log_housekeeping_meta*>>
-        compaction_heuristic_to_log_metas;
-    for (auto& log_meta : _logs_list) {
-        auto should_compact_log = [](ss::shared_ptr<log> l) {
-            auto needs_compact = l->needs_compaction();
-            if (!needs_compact) {
-                vlog(
-                  gclog.trace,
-                  "{}: dirty ratio ({}) < min.cleanable.dirty.ratio ({}) and "
-                  "time since earliest dirty timestamp does not exceed "
-                  "max.compaction.lag.ms ({}), skipping compaction.",
-                  l->config().ntp(),
-                  l->dirty_ratio(),
-                  l->config().min_cleanable_dirty_ratio(),
-                  l->config().max_compaction_lag_ms());
-            }
-            return needs_compact;
-        };
-
-        const auto compact_log = should_compact_log(log_meta.handle);
-
-        if (compact_log) {
-            log_meta.flags |= bflags::should_compact;
-
-            // Order ntps by compaction heuristic.
-            // Currently, this is just the dirty ratio.
-            auto compute_compaction_heuristic =
-              [](ss::shared_ptr<log> l) -> compaction_heuristic_t {
-                auto res = (100.0 * l->dirty_ratio());
-                return static_cast<compaction_heuristic_t>(res);
-            };
-
-            auto compaction_heuristic_weight = compute_compaction_heuristic(
-              log_meta.handle);
-            compaction_heuristic_to_log_metas[compaction_heuristic_weight]
-              .push_back(&log_meta);
-        }
-    }
-
-    for (const auto& [weight, log_metas] : compaction_heuristic_to_log_metas) {
-        for (auto* meta_ptr : log_metas) {
-            meta_ptr->link.unlink();
-            _logs_list.push_front(*meta_ptr);
-        }
-    }
+    // Housekeep priority partitions first.
+    co_await priority_housekeeping_scan(collection_threshold);
 
     while (
       !_logs_list.empty()
@@ -357,8 +286,20 @@ log_manager::housekeeping_scan(model::timestamp collection_threshold) {
             co_return;
         }
 
-        auto& current_log = _logs_list.front();
+        // Before each regular housekeeping application, housekeep any priority
+        // logs that need it. This ensures priority partitions (e.g.
+        // __consumer_offsets) are not starved by long-running compactions.
+        if (priority_logs_need_compaction()) {
+            co_await priority_housekeeping_scan(collection_threshold);
+        }
 
+        // Re-check log list size before accessing front() after the above
+        // scheduling point.
+        if (_logs_list.empty()) {
+            co_return;
+        }
+
+        auto& current_log = _logs_list.front();
         _logs_list.shift_forward();
 
         current_log.flags |= bflags::compaction_checked;
@@ -382,12 +323,6 @@ log_manager::housekeeping_scan(model::timestamp collection_threshold) {
             continue;
         }
 
-        current_log.flags |= bflags::compacted;
-        current_log.last_compaction = ss::lowres_clock::now();
-
-        auto ntp_sanitizer_cfg = _config.maybe_get_ntp_sanitizer_config(
-          current_log.handle->config().ntp());
-
         // Obtain housekeeping lock to prevent concurrency of
         // log->housekeeping() with gc fibre.
         auto housekeeping_lock_holder
@@ -397,87 +332,44 @@ log_manager::housekeeping_scan(model::timestamp collection_threshold) {
             continue;
         }
 
-        // Until we better implement bailing out of compaction, the best thing
-        // we can do for observability is add a watchdog here.
-        auto ntp = current_log.handle->config().ntp();
-        ssx::watchdog wd5m(5min, [ntp] {
-            vlog(
-              gclog.warn, "{}: Housekeeping process exceeding 5 minutes", ntp);
-        });
+        // Set up timer-based preemption: if compaction exceeds the configured
+        // timeout and a priority partition needs compaction, abort so priority
+        // partitions can be serviced. If no priority partition needs
+        // compaction, rearm the timer to check on a shorter interval to check
+        // more frequently after `log_compaction_max_priority_wait_ms` has
+        // already passed.
+        ss::abort_source preempt_as;
+        const auto& ntp = current_log.handle->config().ntp();
+        auto timeout
+          = config::shard_local_cfg().log_compaction_max_priority_wait_ms();
+        ss::timer<ss::lowres_clock> preempt_timer;
+        preempt_timer.set_callback(
+          [this, &preempt_as, &ntp, &preempt_timer, timeout] {
+              bool priority_needs_compaction = priority_logs_need_compaction();
+              if (priority_needs_compaction) {
+                  vlog(
+                    gclog.info,
+                    "{}: compaction exceeded {}ms, preempting for priority "
+                    "partitions",
+                    ntp,
+                    timeout.count());
+                  preempt_as.request_abort_ex(priority_compaction_exception(
+                    "Compaction pre-empted for compaction of priority "
+                    "partition"));
+              } else {
+                  // Rearm at a fraction of the initial timeout
+                  preempt_timer.arm(timeout / 8);
+              }
+          });
+        preempt_timer.arm(timeout);
 
-        // NOTE: housekeeping holds _compaction_housekeeping_gate, that prevents
-        // the removal of the parent object. this makes awaiting housekeeping
-        // safe against removal of segments from _logs_list
-        auto& log = current_log.handle;
-        auto pinned_kafka_offset
-          = current_log.handle->stm_manager()->lowest_pinned_data_offset();
-        std::optional<model::offset> max_unpinned_offset;
-        if (pinned_kafka_offset) {
-            auto local_log_start = log->offsets().start_offset;
-            auto kafka_local_start = model::offset_cast(
-              log->from_log_offset(local_log_start));
-            if (*pinned_kafka_offset >= kafka_local_start) {
-                // Translate the pinned Kafka offset.
-                max_unpinned_offset = model::prev_offset(
-                  log->to_log_offset(kafka::offset_cast(*pinned_kafka_offset)));
-            } else {
-                // The pin falls below the log start, in which case the entire
-                // local log is pinned.
-                max_unpinned_offset = model::prev_offset(
-                  log->offsets().start_offset);
-            }
+        try {
+            co_await do_housekeeping(
+              current_log, collection_threshold, preempt_as);
+        } catch (const priority_compaction_exception& e) {
+            // Preempted for priority partition compaction.
+            vlog(gclog.info, "{} - {}", ntp, e);
         }
-        model::offset max_compactible_offset
-          = current_log.handle->stm_manager()->max_removable_local_log_offset();
-        model::offset max_tombstone_remove_offset
-          = current_log.handle->stm_manager()->max_tombstone_remove_offset();
-        model::offset max_tx_end_remove_offset
-          = current_log.handle->stm_manager()->max_tx_end_remove_offset();
-        model::offset tx_snapshot_offset
-          = current_log.handle->stm_manager()->tx_snapshot_offset();
-        // We clamp the offset up to which we can remove transactional control
-        // batches to the last snapshot taken by the transactional stm. This
-        // ensures that we do not remove control batches that may be needed to
-        // reconstruct the state machine during recovery.
-        model::offset max_tx_remove_offset = std::min(
-          max_tx_end_remove_offset, tx_snapshot_offset);
-
-        vlog(
-          gclog.trace,
-          "{}: max tombstone remove offset: {}, max tx remove offset: {}, max "
-          "tx end remove snapshot: {}, tx_snapshot_offset: {}",
-          ntp,
-          max_tombstone_remove_offset,
-          max_tx_remove_offset,
-          max_tx_end_remove_offset,
-          tx_snapshot_offset);
-        if (
-          max_unpinned_offset
-          && *max_unpinned_offset < max_compactible_offset) {
-            vlog(
-              gclog.debug,
-              "{}: Compaction is pinned by offset: pinned Kafka offset: {}, "
-              "log offsets max unpinned {} < max removable {}",
-              ntp,
-              *pinned_kafka_offset,
-              *max_unpinned_offset,
-              max_compactible_offset);
-            max_compactible_offset = *max_unpinned_offset;
-        }
-        co_await current_log.handle->housekeeping(
-          housekeeping_config::make_config(
-            collection_threshold,
-            _config.retention_bytes(),
-            max_compactible_offset,
-            max_tombstone_remove_offset,
-            max_tx_remove_offset,
-            current_log.handle->config().delete_retention_ms(),
-            current_log.handle->config().delete_retention_ms(),
-            current_log.handle->config().min_compaction_lag_ms(),
-            _abort_source,
-            std::move(ntp_sanitizer_cfg),
-            _compaction_hash_key_map.get()));
-        _probe->housekeeping_log_processed();
     }
 }
 
@@ -685,6 +577,265 @@ ss::future<> log_manager::gc_loop() {
     }
 }
 
+void log_manager::clear_log_meta_flags(compaction_list_type& logs) {
+    for (auto& log_meta : logs) {
+        log_meta.flags &= ~(
+          bflags::compacted | bflags::lifetime_checked
+          | bflags::compaction_checked | bflags::should_compact);
+    }
+}
+
+ss::future<> log_manager::apply_segment_ms_to_logs(compaction_list_type& logs) {
+    while (!logs.empty()
+           && is_not_set(logs.front().flags, bflags::lifetime_checked)) {
+        if (_abort_source.abort_requested()) {
+            co_return;
+        }
+
+        auto& current_log = logs.front();
+        logs.shift_forward();
+
+        current_log.flags |= bflags::lifetime_checked;
+
+        // Hold the housekeeping gate to prevent issues with concurrent removal
+        // of the log meta.
+        auto gate = current_log.housekeeping_gate.hold();
+
+        // Obtain housekeeping lock to prevent concurrency of
+        // log->apply_segment_ms() with gc fibre.
+        auto housekeeping_lock_holder
+          = co_await current_log.housekeeping_lock.get_units();
+
+        if (!current_log.link.is_linked()) {
+            continue;
+        }
+
+        // NOTE: apply_segment_ms holds _compaction_housekeeping_gate, that
+        // prevents the removal of the parent object. this makes awaiting
+        // apply_segment_ms safe against removal of segments from logs
+        co_await current_log.handle->apply_segment_ms();
+    }
+}
+
+void log_manager::sort_logs_by_compaction_heuristic(
+  compaction_list_type& logs) {
+    using compaction_heuristic_t = uint64_t;
+    // There can be no scheduling points between here and the sorting done
+    // below, as we are holding pointers to log_housekeeping_meta in this
+    // btree_map.
+    // This needs to be sorted in ascending order, as we are pushing `log_meta`s
+    // to the front of `logs`.
+    absl::
+      btree_map<compaction_heuristic_t, chunked_vector<log_housekeeping_meta*>>
+        compaction_heuristic_to_log_metas;
+    for (auto& log_meta : logs) {
+        auto should_compact_log = [](ss::shared_ptr<log> l) {
+            auto needs_compact = l->needs_compaction();
+            if (!needs_compact) {
+                vlog(
+                  gclog.trace,
+                  "{}: dirty ratio ({}) < min.cleanable.dirty.ratio ({}) and "
+                  "time since earliest dirty timestamp does not exceed "
+                  "max.compaction.lag.ms ({}), skipping compaction.",
+                  l->config().ntp(),
+                  l->dirty_ratio(),
+                  l->config().min_cleanable_dirty_ratio(),
+                  l->config().max_compaction_lag_ms());
+            }
+            return needs_compact;
+        };
+
+        const auto compact_log = should_compact_log(log_meta.handle);
+
+        if (compact_log) {
+            log_meta.flags |= bflags::should_compact;
+
+            // Order ntps by compaction heuristic.
+            // Currently, this is just the dirty ratio.
+            auto compute_compaction_heuristic =
+              [](ss::shared_ptr<log> l) -> compaction_heuristic_t {
+                auto res = (100.0 * l->dirty_ratio());
+                return static_cast<compaction_heuristic_t>(res);
+            };
+
+            auto compaction_heuristic_weight = compute_compaction_heuristic(
+              log_meta.handle);
+            compaction_heuristic_to_log_metas[compaction_heuristic_weight]
+              .push_back(&log_meta);
+        }
+    }
+
+    for (const auto& [weight, log_metas] : compaction_heuristic_to_log_metas) {
+        for (auto* meta_ptr : log_metas) {
+            meta_ptr->link.unlink();
+            logs.push_front(*meta_ptr);
+        }
+    }
+}
+
+bool log_manager::is_priority_ntp(const model::ntp& ntp) const {
+    return model::is_consumer_offsets_topic(ntp);
+}
+
+bool log_manager::priority_logs_need_compaction() const {
+    return std::ranges::any_of(_priority_logs_list, [](const auto& l) {
+        return l.handle->needs_compaction();
+    });
+}
+
+ss::future<>
+log_manager::priority_housekeeping_scan(model::timestamp collection_threshold) {
+    // reset flags for the next two loops, segment_ms and compaction.
+    clear_log_meta_flags(_priority_logs_list);
+
+    co_await apply_segment_ms_to_logs(_priority_logs_list);
+
+    if (_abort_source.abort_requested()) {
+        co_return;
+    }
+
+    sort_logs_by_compaction_heuristic(_priority_logs_list);
+
+    while (!_priority_logs_list.empty()
+           && is_not_set(
+             _priority_logs_list.front().flags, bflags::compaction_checked)) {
+        if (_abort_source.abort_requested()) {
+            co_return;
+        }
+
+        auto& current_log = _priority_logs_list.front();
+        _priority_logs_list.shift_forward();
+
+        current_log.flags |= bflags::compaction_checked;
+
+        auto gate = current_log.housekeeping_gate.hold();
+
+        if (is_not_set(current_log.flags, bflags::should_compact)) {
+            // Still perform gc() here.
+            auto units = current_log.housekeeping_lock.try_get_units();
+            if (units.has_value()) {
+                co_await current_log.handle->gc(
+                  gc_config(collection_threshold, _config.retention_bytes()));
+            }
+
+            continue;
+        }
+
+        auto housekeeping_lock_holder
+          = co_await current_log.housekeeping_lock.get_units();
+
+        if (!current_log.link.is_linked()) {
+            continue;
+        }
+
+        co_await do_housekeeping(current_log, collection_threshold);
+    }
+}
+
+ss::future<> log_manager::do_housekeeping(
+  log_housekeeping_meta& meta,
+  model::timestamp collection_threshold,
+  model::opt_abort_source_t preempt_source) {
+    if (!meta.link.is_linked()) {
+        co_return;
+    }
+
+    auto ntp = meta.handle->config().ntp();
+    auto ntp_sanitizer_cfg = _config.maybe_get_ntp_sanitizer_config(ntp);
+
+    // Until we better implement bailing out of compaction, the best thing
+    // we can do for observability is add a watchdog here.
+    ssx::watchdog wd5m(5min, [ntp] {
+        vlog(gclog.warn, "{}: Housekeeping process exceeding 5 minutes", ntp);
+    });
+
+    // Create a composite abort source that triggers on shutdown or
+    // preemption. If no preempt_source is provided, just use _abort_source
+    // directly.
+    std::optional<ssx::composite_abort_source> composite_as;
+    auto& as = [this, &preempt_source, &composite_as]() -> ss::abort_source& {
+        if (preempt_source.has_value()) {
+            composite_as.emplace(_abort_source, preempt_source->get());
+            return composite_as->as();
+        }
+        return _abort_source;
+    }();
+
+    // NOTE: housekeeping holds _compaction_housekeeping_gate, that prevents
+    // the removal of the parent object. this makes awaiting housekeeping
+    // safe against removal of segments from _logs_list
+    auto& log = meta.handle;
+    auto pinned_kafka_offset = log->stm_manager()->lowest_pinned_data_offset();
+    std::optional<model::offset> max_unpinned_offset;
+    if (pinned_kafka_offset) {
+        auto local_log_start = log->offsets().start_offset;
+        auto kafka_local_start = model::offset_cast(
+          log->from_log_offset(local_log_start));
+        if (*pinned_kafka_offset >= kafka_local_start) {
+            max_unpinned_offset = model::prev_offset(
+              log->to_log_offset(kafka::offset_cast(*pinned_kafka_offset)));
+        } else {
+            max_unpinned_offset = model::prev_offset(
+              log->offsets().start_offset);
+        }
+    }
+
+    model::offset max_compactible_offset
+      = log->stm_manager()->max_removable_local_log_offset();
+    model::offset max_tombstone_remove_offset
+      = log->stm_manager()->max_tombstone_remove_offset();
+    model::offset max_tx_end_remove_offset
+      = log->stm_manager()->max_tx_end_remove_offset();
+    model::offset tx_snapshot_offset = log->stm_manager()->tx_snapshot_offset();
+    // We clamp the offset up to which we can remove transactional control
+    // batches to the last snapshot taken by the transactional stm. This
+    // ensures that we do not remove control batches that may be needed to
+    // reconstruct the state machine during recovery.
+    model::offset max_tx_remove_offset = std::min(
+      max_tx_end_remove_offset, tx_snapshot_offset);
+
+    vlog(
+      gclog.trace,
+      "{}: max tombstone remove offset: {}, max tx remove offset: {}, max "
+      "tx end remove snapshot: {}, tx_snapshot_offset: {}",
+      ntp,
+      max_tombstone_remove_offset,
+      max_tx_remove_offset,
+      max_tx_end_remove_offset,
+      tx_snapshot_offset);
+
+    if (max_unpinned_offset && *max_unpinned_offset < max_compactible_offset) {
+        vlog(
+          gclog.debug,
+          "{}: Compaction is pinned by offset: pinned Kafka offset: {}, "
+          "log offsets max unpinned {} < max removable {}",
+          ntp,
+          *pinned_kafka_offset,
+          *max_unpinned_offset,
+          max_compactible_offset);
+        max_compactible_offset = *max_unpinned_offset;
+    }
+
+    co_await log->housekeeping(
+      housekeeping_config::make_config(
+        collection_threshold,
+        _config.retention_bytes(),
+        max_compactible_offset,
+        max_tombstone_remove_offset,
+        max_tx_remove_offset,
+        log->config().delete_retention_ms(),
+        log->config().delete_retention_ms(),
+        log->config().min_compaction_lag_ms(),
+        as,
+        std::move(ntp_sanitizer_cfg),
+        _compaction_hash_key_map.get()));
+
+    meta.flags |= log_housekeeping_meta::bitflags::compacted;
+    meta.last_compaction = ss::lowres_clock::now();
+
+    _probe->housekeeping_log_processed();
+}
+
 /**
  *
  * @param read_buf_size size of underlying ss::input_stream's buffer
@@ -802,7 +953,18 @@ ss::future<ss::shared_ptr<log>> log_manager::do_manage(
       std::move(translator_batch_types));
     auto [it, success] = _logs.emplace(
       l->config().ntp(), std::make_unique<log_housekeeping_meta>(l));
-    _logs_list.push_back(*it->second);
+
+    // Add to appropriate list based on whether this is a priority NTP.
+    if (is_priority_ntp(l->config().ntp())) {
+        _priority_logs_list.push_back(*it->second);
+        vlog(
+          stlog.debug,
+          "Tracking {} as priority partition for compaction",
+          l->config().ntp());
+    } else {
+        _logs_list.push_back(*it->second);
+    }
+
     update_log_count();
     vassert(success, "Could not keep track of:{} - concurrency issue", l);
     co_return l;

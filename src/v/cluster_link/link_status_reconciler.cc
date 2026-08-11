@@ -191,14 +191,13 @@ link_status_reconciler::per_link_reconciler::reconcile_status_changes() {
     while (!_as.abort_requested()) {
         co_await _cv.wait([this] { return has_pending_reconciliations(); });
         vlog(cllog.trace, "[{}] Starting reconciliation iteration", _link_id);
-        const auto& link_md = _registry.find_link_by_id(_link_id);
-        if (!link_md) {
+        const auto& md = _registry.find_link_by_id(_link_id);
+        if (!md) {
             continue;
         }
-        const auto& md = link_md->get();
         // check if there are any topics still not failing over
         chunked_vector<::model::topic> pending_failover_topics;
-        const auto& mirror_topics = md.state.mirror_topics;
+        const auto& mirror_topics = md->state.mirror_topics;
         for (const auto& [topic, mt] : mirror_topics) {
             if (mt.status == model::mirror_topic_status::failing_over) {
                 pending_failover_topics.push_back(topic);
@@ -214,13 +213,12 @@ link_status_reconciler::per_link_reconciler::reconcile_status_changes() {
 
 bool link_status_reconciler::per_link_reconciler::has_pending_reconciliations()
   const {
-    const auto& link_md = _registry.find_link_by_id(_link_id);
-    if (!link_md) {
+    const auto& md = _registry.find_link_by_id(_link_id);
+    if (!md) {
         // link no longer exists, will be cleaned up via notification
         return false;
     }
-    const auto& md = link_md->get();
-    const auto& mirror_topics = md.state.mirror_topics;
+    const auto& mirror_topics = md->state.mirror_topics;
     for (const auto& [_, mt] : mirror_topics) {
         switch (mt.status) {
         case model::mirror_topic_status::active:

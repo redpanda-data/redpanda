@@ -812,3 +812,83 @@ BOOST_AUTO_TEST_CASE(test_segment_meta_cstore_append_retrieve_edge_case) {
       = metadata[cloud_storage::cstore_max_frame_size * 2].base_offset;
     BOOST_CHECK_NO_THROW(store.lower_bound(last_frame_first_offset));
 }
+
+// Reproduces a hint-index leak: a store whose size sits at a multiple of
+// the hint sampling interval (FOR_buffer_depth * cstore_sampling_rate = 128)
+// while being churned by interleaved appends and prefix truncations. The
+// sampling condition used to key off the total store size, so at such sizes
+// every append inserted a hint (~one per element instead of one per 128).
+// The accumulated hints inflated inflated_actual_size() several-fold, which
+// in turn made the archiver's spillover size heuristics diverge from the
+// size of a freshly encoded manifest with identical content.
+BOOST_AUTO_TEST_CASE(test_segment_meta_cstore_steady_state_churn_hints) {
+    namespace rg = random_generators;
+    segment_meta_cstore store;
+
+    int64_t next_base = 5000000;
+    int64_t ts = 1780000000000;
+    int64_t delta = 400000;
+    std::deque<int64_t> live_bases;
+
+    auto make_next = [&]() {
+        auto base = next_base;
+        auto committed = base + 75 + rg::get_int(0, 20);
+        segment_meta m{
+          .is_compacted = false,
+          .size_bytes = static_cast<size_t>(16000 + rg::get_int(0, 4000)),
+          .base_offset = model::offset(base),
+          .committed_offset = model::offset(committed),
+          .base_timestamp = model::timestamp(ts),
+          .max_timestamp = model::timestamp(ts + 300000 + rg::get_int(0, 9000)),
+          .delta_offset = model::offset_delta(delta),
+          .ntp_revision = model::initial_revision_id(1),
+          .archiver_term = model::term_id(115),
+          .segment_term = model::term_id(115),
+          .delta_offset_end = model::offset_delta(
+            delta + 10 + rg::get_int(0, 4)),
+          .sname_format = segment_name_format::v3,
+          .metadata_size_hint = 0,
+        };
+        next_base = committed + 1;
+        ts = m.max_timestamp.value() + 100;
+        delta = m.delta_offset_end();
+        live_bases.push_back(base);
+        return m;
+    };
+
+    // Must be a multiple of 128 and larger than one frame (1024) so hints
+    // in the trailing frames survive head truncation.
+    constexpr size_t steady_size = 1920;
+    for (size_t i = 0; i < steady_size; ++i) {
+        store.insert(make_next());
+    }
+    store.flush_write_buffer();
+
+    for (size_t round = 0; round < 3000; ++round) {
+        store.insert(make_next());
+        // production reads between mutations flush single-entry batches
+        (void)store.size();
+        live_bases.pop_front();
+        store.prefix_truncate(model::offset(live_bases.front()));
+    }
+
+    // rebuild a store with identical content, the way the spillover
+    // path re-encodes the manifest tail
+    segment_meta_cstore fresh;
+    for (auto it = store.begin(); it != store.end(); ++it) {
+        fresh.insert(*it);
+        fresh.flush_write_buffer();
+    }
+    auto [churned_inflated, churned_actual] = store.inflated_actual_size();
+    auto [fresh_inflated, fresh_actual] = fresh.inflated_actual_size();
+    BOOST_TEST_MESSAGE(
+      "churned: " << churned_actual << " bytes, " << store.hints_size()
+                  << " hints; fresh: " << fresh_actual << " bytes, "
+                  << fresh.hints_size() << " hints");
+
+    // design density is one hint per 128 elements
+    BOOST_REQUIRE_LE(store.hints_size(), 2 * steady_size / 128 + 4);
+    // accounting of the churned store must stay comparable to the
+    // freshly encoded equivalent
+    BOOST_REQUIRE_LE(churned_actual, 4 * fresh_actual);
+}

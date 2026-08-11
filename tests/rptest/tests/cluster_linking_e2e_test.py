@@ -28,7 +28,13 @@ from rptest.clients.admin.proto.redpanda.core.admin.v2 import (
     shadow_link_pb2,
 )
 from rptest.clients.kafka_cli_tools import KafkaCliToolsError
-from rptest.clients.rpk import RpkTool, RPKACLInput, RpkException, RpkGroup
+from rptest.clients.rpk import (
+    RpkPartition,
+    RpkTool,
+    RPKACLInput,
+    RpkException,
+    RpkGroup,
+)
 from rptest.clients.types import TopicSpec
 from rptest.services.cluster import TestContext
 from rptest.services.admin import Admin
@@ -1665,10 +1671,8 @@ class ShadowLinkingReplicationTests(ShadowLinkPreAllocTestBase):
                     self.logger.debug(
                         f"Partition {partition_id}: source hwm={hwm}, shadow_hwm{p_info.source_high_watermark}, last_update={p_info.source_last_updated_timestamp}"
                     )
-                    # TODO: Re-enable once CORE-14617 is addressed
-                    # TODO: CORE-14653
-                    # if p_info.source_high_watermark != hwm:
-                    #     return False
+                    if p_info.source_high_watermark != hwm:
+                        return False
         return True
 
     def _fetch_shadow_topic_and_compare_results(
@@ -2033,6 +2037,171 @@ class ShadowLinkingReplicationTests(ShadowLinkPreAllocTestBase):
         with self._maybe_failure_injector(with_failures):
             with self.producer_consumer(topic=topic.name, msg_size=128, msg_cnt=100000):
                 self._perform_auto_prefix_trimming(topic.name, partition_count)
+
+    @cluster(num_nodes=7)
+    @ignore(
+        with_failures=True,
+        source_cluster_spec=SecondaryClusterSpec(
+            ServiceType.KAFKA, kafka_version="3.8.0", kafka_quorum="COMBINED_KRAFT"
+        ),
+    )
+    @matrix(
+        with_failures=[True, False],
+        source_cluster_spec=[
+            SecondaryClusterSpec(ServiceType.REDPANDA),
+            SecondaryClusterSpec(
+                ServiceType.KAFKA, kafka_version="3.8.0", kafka_quorum="COMBINED_KRAFT"
+            ),
+        ],
+    )
+    def test_start_offset_catch_up(self, with_failures, source_cluster_spec):
+        """
+        Test that verifies shadow link can catch up to a source topic that has been
+        prefix-trimmed to its HWM (i.e., all data has been trimmed).
+
+        1. Create a source topic with 5 partitions
+        2. Write data to the topic across all partitions
+        3. Trim the prefix of each partition of the source topic to the partition's HWM
+        4. Create a new Shadow Link on the Shadow Cluster
+        5. Wait for the shadow topic to be created on the Shadow Cluster
+        6. Verify that the start offset and HWM of all shadow partitions match the source partitions
+        7. Write data to the source partitions
+        8. Verify that the shadow partitions replicate that data
+        """
+        partition_count = 5
+        topic = TopicSpec(
+            name="source-topic", partition_count=partition_count, replication_factor=3
+        )
+        self.source_default_client().create_topic(topic)
+
+        # Step 2: Write data to the topic across all partitions
+        initial_msg_count = 1000
+        KgoVerifierProducer.oneshot(
+            self.test_context,
+            self.source_cluster.service,
+            topic=topic.name,
+            msg_size=128,
+            msg_count=initial_msg_count,
+            custom_node=self.preallocated_nodes,
+        )
+
+        # Wait for all messages to be written (sum of HWMs across all partitions should equal msg_count)
+        def all_messages_written():
+            total_hwm = 0
+            for part in self.source_cluster_rpk.describe_topic(topic.name):
+                total_hwm += part.high_watermark or 0
+            return total_hwm >= initial_msg_count
+
+        self.source_cluster.service.wait_until(
+            all_messages_written,
+            timeout_sec=30,
+            backoff_sec=1,
+            err_msg=f"Timed out waiting for {initial_msg_count} messages to be written",
+        )
+
+        # Step 3: Trim the prefix of each partition to its HWM
+        # First, collect the HWM for each partition
+        source_hwms: dict[int, int] = {}
+        for part in self.source_cluster_rpk.describe_topic(topic.name):
+            source_hwms[part.id] = part.high_watermark
+            self.logger.info(f"Source partition {part.id}: HWM={part.high_watermark}")
+
+        # Trim each partition to its HWM
+        for part_id, hwm in source_hwms.items():
+            self.logger.info(f"Trimming partition {part_id} to offset {hwm}")
+            self.source_cluster_rpk.trim_prefix(
+                topic=topic.name, offset=hwm, partitions=[part_id]
+            )
+
+        # Wait for the trim to take effect on all partitions
+        def all_partitions_trimmed():
+            for part in self.source_cluster_rpk.describe_topic(topic.name):
+                expected_offset = source_hwms[part.id]
+                if (part.start_offset or 0) != expected_offset:
+                    self.logger.debug(
+                        f"Partition {part.id}: start_offset={part.start_offset}, expected={expected_offset}"
+                    )
+                    return False
+            return True
+
+        self.source_cluster.service.wait_until(
+            all_partitions_trimmed,
+            timeout_sec=30,
+            backoff_sec=1,
+            err_msg="Timed out waiting for prefix trim to take effect",
+        )
+
+        # Step 4: Create a new Shadow Link on the Shadow Cluster
+        with self._maybe_failure_injector(with_failures):
+            self.create_link("test-link")
+
+            # Step 5: Wait for the shadow topic to be created on the Shadow Cluster
+            self.target_cluster.service.wait_until(
+                lambda: self.topic_partitions_exists_in_target(topic),
+                timeout_sec=30,
+                backoff_sec=1,
+                err_msg=f"Topic {topic.name} not found in target cluster",
+            )
+
+            # Step 6: Verify that the start offset and HWM of all shadow partitions match the source partitions
+            def shadow_partitions_match_source():
+                target_parts = {
+                    p.id: p for p in self.target_cluster_rpk.describe_topic(topic.name)
+                }
+                source_parts = {
+                    p.id: p for p in self.source_cluster_rpk.describe_topic(topic.name)
+                }
+
+                if len(target_parts) != partition_count:
+                    self.logger.debug(
+                        f"Target partition count mismatch: {len(target_parts)} != {partition_count}"
+                    )
+                    return False
+
+                for part_id in range(partition_count):
+                    if part_id not in target_parts or part_id not in source_parts:
+                        return False
+
+                    target_part = target_parts[part_id]
+                    source_part = source_parts[part_id]
+
+                    # Start offset should match
+                    if target_part.start_offset != source_part.start_offset:
+                        self.logger.debug(
+                            f"Partition {part_id}: target start_offset={target_part.start_offset}, "
+                            f"source start_offset={source_part.start_offset}"
+                        )
+                        return False
+
+                    # HWM should match (both should be equal to start_offset since topic was trimmed to HWM)
+                    if target_part.high_watermark != source_part.high_watermark:
+                        self.logger.debug(
+                            f"Partition {part_id}: target HWM={target_part.high_watermark}, "
+                            f"source HWM={source_part.high_watermark}"
+                        )
+                        return False
+
+                return True
+
+            self.target_cluster.service.wait_until(
+                shadow_partitions_match_source,
+                timeout_sec=60,
+                backoff_sec=1,
+                err_msg="Shadow partitions do not match source partitions after prefix trim",
+            )
+
+            # Log the final state after matching
+            self.logger.info(
+                "Shadow partitions match source partitions after prefix trim:"
+            )
+            for part in self.target_cluster_rpk.describe_topic(topic.name):
+                self.logger.info(
+                    f"  Partition {part.id}: start_offset={part.start_offset}, HWM={part.high_watermark}"
+                )
+
+            # Step 7 & 8: Write data to the source partitions and verify replication
+            with self.producer_consumer(topic=topic.name, msg_size=128, msg_cnt=10000):
+                self.verify()
 
     @cluster(num_nodes=7)
     @matrix(
@@ -3739,3 +3908,148 @@ class ShadowLinkCustomStartOffsetSelectionTests(ShadowLinkPreAllocTestBase):
             assert source_offsets == target_offsets, (
                 f"Expected source and target offsets to match, got {target_offsets} vs {source_offsets}"
             )
+
+    @cluster(num_nodes=7)
+    @matrix(
+        source_cluster_spec=[
+            SecondaryClusterSpec(ServiceType.REDPANDA),
+            SecondaryClusterSpec(
+                ServiceType.KAFKA,
+                kafka_version="3.8.0",
+                kafka_quorum="COMBINED_KRAFT",
+            ),
+        ],
+    )
+    def test_start_at_future_timestamp(
+        self,
+        source_cluster_spec: SecondaryClusterSpec,
+    ):
+        """
+        Verify that when a shadow link is configured with a start timestamp
+        past the end of the source log, replication begins at the LSO rather
+        than offset 0.
+
+        ListOffsets returns offset -1 with error_code=none when the requested
+        timestamp exceeds all data in the partition. The fix detects this and
+        falls back to the LSO so only new data is replicated.
+        """
+        _ = source_cluster_spec
+        topic = TopicSpec(name="source-topic", partition_count=1, replication_factor=3)
+        self.source_default_client().create_topic(topic)
+
+        # Produce historical data that must NOT be replicated to the target.
+        initial_msg_count = 1000
+        KgoVerifierProducer.oneshot(
+            self.test_context,
+            self.source_cluster.service,
+            topic=topic.name,
+            msg_size=4 * 1024,
+            msg_count=initial_msg_count,
+            custom_node=self.preallocated_nodes,
+        )
+
+        def get_partition_0_info(rpk: RpkTool) -> RpkPartition | None:
+            try:
+                for part in rpk.describe_topic(topic.name, timeout=3):
+                    if part.id == 0:
+                        return part
+            except Exception as e:
+                self.logger.debug(f"Failed to describe topic: {e}")
+            return None
+
+        def source_hwm_reached_msg_count() -> int | None:
+            p_info = get_partition_0_info(self.source_cluster_rpk)
+            if p_info and p_info.high_watermark >= initial_msg_count:
+                return p_info.high_watermark
+            return None
+
+        source_orig_hwm = wait_until_result(
+            source_hwm_reached_msg_count,
+            timeout_sec=30,
+            backoff_sec=1,
+            err_msg="Timed out waiting for source HWM to reach expected count",
+        )
+        self.logger.info(f"Source HWM before link creation: {source_orig_hwm}")
+
+        # Configure the link with a timestamp far in the future so that
+        # ListOffsets returns offset -1 (no record at or after that timestamp).
+        req = self.create_default_link_request("test-link")
+        timestamp_pb = google.protobuf.timestamp_pb2.Timestamp()
+        timestamp_pb.FromMilliseconds(
+            int(
+                time.mktime(time.strptime("2100-01-01T00:00:00", "%Y-%m-%dT%H:%M:%S"))
+                * 1000
+            )
+        )
+        req.shadow_link.configurations.topic_metadata_sync_options.start_at_timestamp.CopyFrom(
+            timestamp_pb
+        )
+        self.create_link_with_request(req=req)
+
+        self.target_cluster.service.wait_until(
+            lambda: self.topic_partitions_exists_in_target(topic),
+            timeout_sec=30,
+            backoff_sec=1,
+            err_msg=f"Topic {topic.name} not found in target cluster",
+        )
+
+        # Confirm that the link is not replicating historical data (both HWM and start offset stay 0 on the target).
+        sleep(5)
+        prev_target_info = get_partition_0_info(self.target_cluster_rpk)
+        assert prev_target_info is not None, "Failed to get target partition info"
+        assert prev_target_info.high_watermark == 0, (
+            f"Expected target HWM to be 0, got {prev_target_info.high_watermark}"
+        )
+        assert prev_target_info.start_offset == 0, (
+            f"Expected target start offset to be 0, got {prev_target_info.start_offset}"
+        )
+
+        self.logger.info("Producing one new record to the source topic")
+        self.source_cluster_rpk.produce(
+            topic=topic.name, key="key", msg="value", partition=0
+        )
+
+        source_info = get_partition_0_info(self.source_cluster_rpk)
+        assert source_info is not None, (
+            "Failed to get source partition info after producing new record"
+        )
+        assert source_info.high_watermark == source_orig_hwm + 1, (
+            f"Expected source HWM to advance by 1 after producing new record, "
+            f"got {source_info.high_watermark} vs previous {source_orig_hwm}"
+        )
+
+        def target_has_new_data():
+            target_info = get_partition_0_info(self.target_cluster_rpk)
+            if target_info is None:
+                return False
+
+            return (
+                target_info.high_watermark == source_info.high_watermark,
+                target_info,
+            )
+
+        target_info: RpkPartition = wait_until_result(
+            target_has_new_data,
+            timeout_sec=60,
+            backoff_sec=2,
+            err_msg="New data was not replicated to the target cluster",
+            retry_on_exc=True,
+        )
+
+        assert target_info.high_watermark == source_info.high_watermark, (
+            f"Expected target HWM to be {source_info.high_watermark} after replicating new record, got {target_info.high_watermark}"
+        )
+
+        source_last_record = json.loads(
+            self.source_cluster_rpk.consume(
+                topic=topic.name, n=1, partition=0, offset=-1
+            )
+        )
+        target_first_record = json.loads(
+            self.target_cluster_rpk.consume(
+                topic=topic.name, n=1, partition=0, offset="start"
+            )
+        )
+        assert source_last_record == target_first_record, (
+            f"Record mismatch: source={source_last_record}, target={target_first_record}"
+        )

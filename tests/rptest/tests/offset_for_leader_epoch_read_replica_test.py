@@ -162,9 +162,15 @@ class OffsetForLeaderEpochReadReplicaTest(EndToEndTest):
                 self.logger.info(
                     f"querying epoch {epoch} end offsets, expected to get {offset}"
                 )
-                epoch_end_offset = kcl.offset_for_leader_epoch(
+                result = kcl.offset_for_leader_epoch(
                     topics=self.topic_name, leader_epoch=epoch
-                )[0].epoch_end_offset
+                )
+                if len(result) == 0:
+                    # A broker can briefly report the partition's leader as
+                    # unavailable while leadership propagates (e.g. right after
+                    # creating the read replica), yielding no result. Retry.
+                    return False
+                epoch_end_offset = result[0].epoch_end_offset
                 if epoch_end_offset < 0:
                     # NOT_LEADER_FOR_PARTITION error, retry
                     return False

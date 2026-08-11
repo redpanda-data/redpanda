@@ -27,6 +27,8 @@
 #include "iceberg/values_bytes.h"
 #include "storage/api.h"
 
+#include <seastar/coroutine/maybe_yield.hh>
+
 #include <exception>
 #include <optional>
 
@@ -251,7 +253,8 @@ public:
     }
 
 public:
-    checked<std::nullopt_t, file_committer::errc> process_pending_entry(
+    ss::future<checked<std::nullopt_t, file_committer::errc>>
+    process_pending_entry(
       const model::topic& topic,
       model::revision_id topic_revision,
       const iceberg::manifest_io& io,
@@ -275,9 +278,11 @@ public:
               table_commit_offset_);
         } else {
             for (const auto& f : files) {
+                // NOTE: we are operating on a copy of the topic state.
+                co_await ss::coroutine::maybe_yield();
                 auto pk = build_partition_key(topic, table_, f);
                 if (pk.has_error()) {
-                    return pk.error();
+                    co_return pk.error();
                 }
 
                 iceberg::data_file file{
@@ -311,7 +316,7 @@ public:
           new_committed_offset_,
           std::make_optional<model::offset>(added_pending_at));
 
-        return std::nullopt;
+        co_return std::nullopt;
     }
 
     ss::future<checked<iceberg::table_metadata, file_committer::errc>> commit(
@@ -434,8 +439,7 @@ get_cluster_uuid(storage::api& storage) {
 
 } // namespace
 
-ss::future<
-  checked<chunked_vector<mark_files_committed_update>, file_committer::errc>>
+ss::future<checked<file_committer::commit_result, file_committer::errc>>
 iceberg_file_committer::commit_topic_files_to_catalog(
   model::topic topic, const topics_state& state) const {
     vlog(datalake_log.debug, "Beginning commit for topic {}", topic);
@@ -450,12 +454,17 @@ iceberg_file_committer::commit_topic_files_to_catalog(
       tp_it == state.topic_to_state.end()
       || !tp_it->second.has_pending_entries()) {
         vlog(datalake_log.debug, "Topic {} has no pending entries", topic);
-        co_return chunked_vector<mark_files_committed_update>{};
+        co_return commit_result{};
     }
     // Make a copy up here so we don't have to worry about the state changing
     // underneath us. The STM should be robust enough to detect and reject
-    // concurrent changes that result in invalid state updates.
-    auto tp_state = tp_it->second.copy();
+    // concurrent changes that result in invalid state updates. The copy is
+    // bounded so that a large backlog is committed in chunks across multiple
+    // passes rather than materialized all at once. If the copy was bounded,
+    // report it so the caller can drain the remainder promptly.
+    bool topic_has_more = false;
+    auto tp_state = tp_it->second.copy_bounded(
+      max_files_per_commit_(), topic_has_more);
     auto topic_revision = tp_state.revision;
 
     // Main table (may not exist if all records so far were invalid and the
@@ -517,6 +526,8 @@ iceberg_file_committer::commit_topic_files_to_catalog(
     chunked_hash_map<model::partition_id, offset_and_bytes> pending_commits;
     for (const auto& [pid, p_state] : tp_state.pid_to_pending_files) {
         for (const auto& e : p_state.pending_entries) {
+            // NOTE: we are operating on a copy of the topic state.
+            co_await ss::coroutine::maybe_yield();
             pending_commits[pid].last_offset = e.data.last_offset;
             pending_commits[pid].kafka_bytes_processed
               += e.data.kafka_bytes_processed;
@@ -525,8 +536,13 @@ iceberg_file_committer::commit_topic_files_to_catalog(
                 vassert(
                   main_table_commit_builder.has_value(),
                   "Should have main table builder");
-                auto res = main_table_commit_builder->process_pending_entry(
-                  topic, topic_revision, io_, e.added_pending_at, e.data.files);
+                auto res
+                  = co_await main_table_commit_builder->process_pending_entry(
+                    topic,
+                    topic_revision,
+                    io_,
+                    e.added_pending_at,
+                    e.data.files);
                 if (res.has_error()) {
                     co_return res.error();
                 }
@@ -536,12 +552,13 @@ iceberg_file_committer::commit_topic_files_to_catalog(
                 vassert(
                   dlq_table_commit_builder.has_value(),
                   "Should have DLQ table builder");
-                auto dlq_res = dlq_table_commit_builder->process_pending_entry(
-                  topic,
-                  topic_revision,
-                  io_,
-                  e.added_pending_at,
-                  e.data.dlq_files);
+                auto dlq_res
+                  = co_await dlq_table_commit_builder->process_pending_entry(
+                    topic,
+                    topic_revision,
+                    io_,
+                    e.added_pending_at,
+                    e.data.dlq_files);
                 if (dlq_res.has_error()) {
                     co_return dlq_res.error();
                 }
@@ -554,11 +571,12 @@ iceberg_file_committer::commit_topic_files_to_catalog(
           "No new data to mark committed for topic {} revision {}",
           topic,
           topic_revision);
-        co_return chunked_vector<mark_files_committed_update>{};
+        co_return commit_result{.has_more = topic_has_more};
     }
     chunked_vector<mark_files_committed_update> updates;
     updates.reserve(pending_commits.size());
     for (const auto& [pid, entry] : pending_commits) {
+        co_await ss::coroutine::maybe_yield();
         auto tp = model::topic_partition(topic, pid);
         auto update_res = mark_files_committed_update::build(
           state,
@@ -628,7 +646,8 @@ iceberg_file_committer::commit_topic_files_to_catalog(
       main_table_files,
       dlq_table_files);
 
-    co_return updates;
+    co_return commit_result{
+      .updates = std::move(updates), .has_more = topic_has_more};
 }
 
 ss::future<checked<std::nullopt_t, file_committer::errc>>

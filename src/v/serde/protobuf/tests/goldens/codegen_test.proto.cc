@@ -1477,6 +1477,156 @@ std::optional<serde::pb::field> well_known_protos::lookup_field(std::span<const 
   return found;
 }
 
+io_buf_string_field::io_buf_string_field() noexcept = default;
+io_buf_string_field::io_buf_string_field(io_buf_string_field&&) noexcept = default;
+io_buf_string_field& io_buf_string_field::operator=(io_buf_string_field&&) noexcept = default;
+io_buf_string_field::~io_buf_string_field() noexcept = default;
+iobuf& io_buf_string_field::get_large_data() { return large_data_; }
+const iobuf& io_buf_string_field::get_large_data() const { return large_data_; }
+void io_buf_string_field::set_large_data(iobuf&& v) { large_data_ = std::move(v); }
+bool io_buf_string_field::operator==(const io_buf_string_field& other) const {
+  return (large_data_ == other.large_data_);
+}
+fmt::iterator io_buf_string_field::format_to(fmt::iterator it) const {
+  return fmt::format_to(it, "{{large_data: {}}}", large_data_);
+}
+seastar::future<> io_buf_string_field::from_proto(serde::pb::wire_format_parser* parser, io_buf_string_field* self) {
+  while (parser->bytes_left() > 0) {
+    auto tag = parser->read_tag();
+    switch (tag.field_number) {
+    case 1: { // large_data
+      self->set_large_data(parser->read_bytes<"example.IOBufStringField.large_data">(tag));
+      break;
+    }
+    default:
+      parser->skip_unknown(tag);
+      break;
+    }
+  }
+  co_return;
+}
+seastar::future<io_buf_string_field> io_buf_string_field::from_proto(iobuf buf) {
+  io_buf_string_field self;
+  serde::pb::wire_format_parser parser{std::move(buf)};
+  co_await from_proto(&parser, &self);
+  parser.check_empty();
+  co_return self;
+}
+seastar::future<iobuf> io_buf_string_field::to_proto() const {
+  iobuf buf;
+  // large_data
+  serde::pb::tag::write({.wire_type = serde::pb::wire_type::length, .field_number = 1}, &buf);
+  serde::pb::write_length(static_cast<int32_t>(get_large_data().size_bytes()), &buf);
+  buf.append(get_large_data().copy());
+  co_return buf;
+}
+seastar::future<iobuf> io_buf_string_field::to_json() const {
+  serde::json::writer w;
+  w.begin_object();
+  w.key("largeData");
+  w.string(get_large_data());
+  w.end_object();
+  co_return std::move(w).finish();
+}
+seastar::future<> io_buf_string_field::from_json(serde::pb::json::peekable_parser* parser, io_buf_string_field* self) {
+  constexpr static auto key_to_field_number = std::to_array<std::pair<std::string_view, int32_t>>({
+    {"largeData", 1},
+    {"large_data", 1},
+  });
+  auto entries = serde::pb::json::object_key_generator(parser);
+  while (auto key = co_await entries()) {
+    auto fields = std::ranges::equal_range(key_to_field_number, *key, std::less<>(), [](const auto& pair) { return pair.first; });
+    if (fields.empty()) {
+      co_await parser->skip_value();
+      continue;
+    }
+    switch (fields.front().second) {
+    case 1: { // large_data
+      co_await parser->next();
+      self->set_large_data(serde::pb::json::read_string_as_bytes(parser));
+      break;
+    }
+    default:
+      vunreachable("codegen error unexpected field number: {}", fields.front().second);
+    }
+  }
+  co_return;
+}
+seastar::future<io_buf_string_field> io_buf_string_field::from_json(iobuf data) {
+  io_buf_string_field self;
+  serde::pb::json::peekable_parser parser(std::move(data));
+  co_await from_json(&parser, &self);
+  co_await serde::pb::json::check_next_eof(&parser);
+  co_return self;
+}
+bool io_buf_string_field::is_valid_field_path(std::span<const ss::sstring> path) {
+  if (path.empty()) { return true; }
+  constexpr auto fields = std::to_array<std::pair<std::string_view, bool(*)(decltype(path))>>({
+    {"large_data", [](auto path) { return path.empty(); }},
+  });
+  for (const auto& [name, is_valid] : fields) {
+    if (path.front() == name) {
+      return is_valid(path.subspan(1));
+    }
+  }
+  return false;
+}
+void io_buf_string_field::apply_field_path_from(std::span<const ss::sstring> path, io_buf_string_field* update) {
+  if (path.empty()) {
+    *this = std::move(*update);
+    return;
+  }
+  constexpr auto fields = std::to_array<std::pair<std::string_view, void(*)(decltype(path), decltype(this), decltype(update))>>({
+    {"large_data", []([[maybe_unused]] auto path, auto* self, auto* update) {
+      self->set_large_data(std::move(update->get_large_data()));
+    }},
+  });
+  for (const auto& [name, apply] : fields) {
+    if (path.front() == name) {
+      return apply(path.subspan(1), this, update);
+    }
+  }
+}
+std::optional<std::vector<int32_t>> io_buf_string_field::convert_field_path_to_numbers(std::span<std::string_view> field_path) const {
+  std::vector<int32_t> numbers;
+  if (convert_field_path_to_numbers(field_path, &numbers)) { return numbers; }
+  return std::nullopt;
+}
+bool io_buf_string_field::convert_field_path_to_numbers(std::span<std::string_view> field_path, std::vector<int32_t>* out) {
+  if (field_path.empty()) {
+    return true;
+  }
+  constexpr static auto key_to_field_number = std::to_array<std::pair<std::string_view, bool(*)(decltype(field_path), decltype(out))>>({
+    {"largeData", [](auto path, auto* out) { out->push_back(1); return path.empty(); }},
+    {"large_data", [](auto path, auto* out) { out->push_back(1); return path.empty(); }},
+  });
+  auto fields = std::ranges::equal_range(key_to_field_number, field_path.front(), std::less<>(), [](const auto& pair) { return pair.first; });
+  if (fields.empty()) {
+    return false;
+  }
+  return fields.front().second(field_path.subspan(1), out);
+}
+std::optional<serde::pb::field> io_buf_string_field::lookup_field(std::span<const int32_t> field_numbers) {
+
+  if (field_numbers.empty()) {
+    return serde::pb::field{.value = static_cast<serde::pb::base_message*>(this)};
+  }
+  serde::pb::field found;
+  switch (field_numbers.front()) {
+  case 1: { // large_data
+    found.value = get_large_data().share();
+    break;
+  }
+  default:
+    return std::nullopt;
+  }
+  if (field_numbers.size() > 1) {
+    if (!std::holds_alternative<serde::pb::base_message*>(found.value)) { return std::nullopt; }
+    return std::get<serde::pb::base_message*>(found.value)->lookup_field(field_numbers.subspan(1));
+  }
+  return found;
+}
+
 say_greeting_request::say_greeting_request() noexcept = default;
 say_greeting_request::say_greeting_request(say_greeting_request&&) noexcept = default;
 say_greeting_request& say_greeting_request::operator=(say_greeting_request&&) noexcept = default;

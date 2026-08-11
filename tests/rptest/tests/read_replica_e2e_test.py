@@ -128,13 +128,19 @@ def create_read_replica_topic(dst_cluster, topic_name, bucket_name) -> None:
     )
 
 
-class TestReadReplicaService(EndToEndTest):
+class ReadReplicaE2EBase(EndToEndTest):
+    """Read-replica setup helpers shared across read-replica test classes.
+
+    Holds no @cluster test methods, so ducktape does not collect it; concrete
+    subclasses (TestReadReplicaService and others) add their own tests while
+    reusing _setup_read_replica()/start_second_cluster()/etc."""
+
     log_segment_size = 1048576  # 5MB
     topic_name = "panda-topic"
 
     def __init__(self, test_context: TestContext):
         extra_rp_conf = dict(cloud_storage_spillover_manifest_size=None)
-        super(TestReadReplicaService, self).__init__(
+        super().__init__(
             test_context=test_context,
             si_settings=SISettings(
                 test_context,
@@ -227,6 +233,7 @@ class TestReadReplicaService(EndToEndTest):
         producer_timeout=None,
         num_source_brokers=3,
         num_rrr_brokers=3,
+        replication_factor=3,
     ) -> None:
         if producer_timeout is None:
             producer_timeout = 30
@@ -239,7 +246,9 @@ class TestReadReplicaService(EndToEndTest):
         # Create original topic
         self.start_redpanda(num_source_brokers, si_settings=self.si_settings)
         spec = TopicSpec(
-            name=self.topic_name, partition_count=partition_count, replication_factor=3
+            name=self.topic_name,
+            partition_count=partition_count,
+            replication_factor=replication_factor,
         )
 
         DefaultClient(self.redpanda).create_topic(spec)
@@ -308,6 +317,8 @@ class TestReadReplicaService(EndToEndTest):
         else:
             return None
 
+
+class TestReadReplicaService(ReadReplicaE2EBase):
     @cluster(num_nodes=7, log_allow_list=READ_REPLICA_LOG_ALLOW_LIST)
     @matrix(
         partition_count=[5],

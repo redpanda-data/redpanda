@@ -1871,11 +1871,20 @@ ss::future<response_ptr> init_producer_id_handler::handle(
               });
         }
 
+        // probe whether the client has write on any topic, as a fall back
+        // to the idempotent_write cluster ACL check below. quiet the authz
+        // log and skip auditing for this broker-internal probe on both
+        // allow and deny. the client asked for an idempotent producer ID,
+        // not to write to any specific topic, so neither outcome is a
+        // user-initiated access decision.
         bool permitted = false;
         auto topics = ctx.metadata_cache().all_topics();
         for (auto& tp_ns : topics) {
             permitted = ctx.authorized(
-              security::acl_operation::write, tp_ns.tp, authz_quiet{true});
+              security::acl_operation::write,
+              tp_ns.tp,
+              authz_quiet{true},
+              audit_authz_check::no);
             if (permitted) {
                 break;
             }

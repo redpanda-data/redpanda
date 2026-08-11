@@ -113,6 +113,10 @@ attrs==22.2.0 \
     # via
     #   aiohttp
     #   jsonschema
+avro==1.12.0 \
+    --hash=sha256:9a255c72e1837341dd4f6ff57b2b6f68c0f0cecdef62dd04962e10fd33bec05b \
+    --hash=sha256:cad9c53b23ceed699c7af6bddced42e2c572fd6b408c257a7d4fc4e8cf2e2d6b
+    # via -r requirements.in
 boto3==1.37.1 \
     --hash=sha256:4320441f904435a1b85e6ecb81793192e522c737cc9ed6566014e29f0a11cb22 \
     --hash=sha256:96d18f7feb0c1fcb95f8837b74b6c8880e1b4e35ce5f8a8f8cb243a090c278ed

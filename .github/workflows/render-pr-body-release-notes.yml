@@ -24,7 +24,7 @@ jobs:
           chmod +x rpchangelog/rpchangelog.py
       - uses: actions/setup-python@v5
         with:
-          python-version: '3.10'
+          python-version: '3.12'
           cache: 'pip'
       - run: pip3 install -r ./rpchangelog/requirements.txt
       - name: Render PR body release notes to job summary

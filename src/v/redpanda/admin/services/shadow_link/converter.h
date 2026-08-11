@@ -32,7 +32,7 @@ convert_create_to_metadata(proto::admin::create_shadow_link_request req);
 
 /// \brief Converts a cluster link metadata object into a shadow link resource
 proto::admin::shadow_link metadata_to_shadow_link(
-  cluster_link::model::metadata md,
+  cluster_link::model::metadata_ptr md,
   cluster_link::model::shadow_link_status_report status_report);
 
 /// \brief Converts an update shadow link request in to the appropriate model
@@ -43,7 +43,7 @@ proto::admin::shadow_link metadata_to_shadow_link(
 cluster_link::model::update_cluster_link_configuration_cmd
 create_update_cluster_link_config_cmd(
   proto::admin::update_shadow_link_request req,
-  cluster_link::model::metadata current_metadata);
+  cluster_link::model::metadata_ptr current_metadata);
 
 /// \brief Converts model data into a ShadowTopic resource
 proto::admin::shadow_topic model_to_shadow_topic(

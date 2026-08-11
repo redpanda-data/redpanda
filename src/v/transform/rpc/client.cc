@@ -134,9 +134,11 @@ std::invoke_result_t<Func> retry_with_backoff(Func func, ss::abort_source* as) {
           ss::futurize_invoke(func));
         backoff.next_backoff();
         if (fut.failed()) {
-            if (attempts < max_client_retries) {
+            if (attempts >= max_client_retries) {
                 co_return co_await std::move(fut);
             }
+            auto ex = fut.get_exception();
+            vlog(log.debug, "Retrying after error: {}", ex);
             continue;
         }
         result_type r = fut.get();

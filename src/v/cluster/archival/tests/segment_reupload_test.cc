@@ -1679,6 +1679,115 @@ TEST(SegmentReuploadUnit, test_segment_concurrent_compaction) {
       == candidate_creation_error::concurrency_error);
 }
 
+// When the last collected segment is unsealed (has appender) and multiple
+// segments have generation changes, the upload should still fail with
+// concurrency_error since we can't trust the sealed segments.
+TEST(
+  SegmentReuploadUnit,
+  test_segment_concurrent_compaction_unsealed_tail_multi_gen_change) {
+    cloud_storage::partition_manifest m;
+    m.update(
+       cloud_storage::manifest_format::json, make_manifest_stream(manifest))
+      .get();
+
+    temporary_dir tmp_dir("concat_segment_read");
+    auto data_path = tmp_dir.get_path();
+    using namespace storage;
+
+    auto b = make_log_builder(data_path.string());
+    b | start(ntp_config{{"test_ns", "test_tpc", 0}, {data_path}});
+    auto defer = ss::defer([&b] { b.stop().get(); });
+
+    // Three segments aligned with manifest boundaries. The last one
+    // (starting at 30) is the active segment with an appender since no
+    // further segment is created after it.
+    populate_log(
+      b,
+      {.segment_starts = {10, 20, 30},
+       .compacted_segment_indices = {},
+       .last_segment_num_records = 10});
+
+    archival::segment_collector collector{
+      segment_collector_mode::non_compacted_reupload,
+      model::offset{10},
+      m,
+      b.get_disk_log_impl(),
+      max_upload_size,
+      model::offset{39}};
+
+    collector.collect_segments();
+    ASSERT_EQ(collector.begin_inclusive(), model::offset{10});
+    ASSERT_EQ(collector.end_inclusive(), model::offset{39});
+
+    auto& segs = b.get_disk_log_impl().segments();
+    ASSERT_TRUE(segs.back()->has_appender());
+
+    // Advance generation on the middle segment AND the last (unsealed)
+    // segment. Two segments have generation changes, so the skip logic
+    // should not apply even though the tail is unsealed.
+    std::next(segs.begin())->get()->advance_generation();
+    segs.back()->advance_generation();
+
+    auto candidate = collector.make_upload_candidate(1s).get();
+    ASSERT_TRUE(std::holds_alternative<candidate_creation_error>(candidate));
+    ASSERT_TRUE(
+      std::get<candidate_creation_error>(candidate)
+      == candidate_creation_error::concurrency_error);
+}
+
+// When the last collected segment is unsealed (has appender) and it is the
+// ONLY segment with a generation change, the upload should proceed. This is
+// expected because the active segment can legitimately change generation as
+// new data is appended.
+TEST(
+  SegmentReuploadUnit,
+  test_segment_concurrent_compaction_unsealed_tail_only_gen_change) {
+    cloud_storage::partition_manifest m;
+    m.update(
+       cloud_storage::manifest_format::json, make_manifest_stream(manifest))
+      .get();
+
+    temporary_dir tmp_dir("concat_segment_read");
+    auto data_path = tmp_dir.get_path();
+    using namespace storage;
+
+    auto b = make_log_builder(data_path.string());
+    b | start(ntp_config{{"test_ns", "test_tpc", 0}, {data_path}});
+    auto defer = ss::defer([&b] { b.stop().get(); });
+
+    // Three segments aligned with manifest boundaries. The last one
+    // (starting at 30) is the active segment with an appender since no
+    // further segment is created after it.
+    populate_log(
+      b,
+      {.segment_starts = {10, 20, 30},
+       .compacted_segment_indices = {},
+       .last_segment_num_records = 10});
+
+    archival::segment_collector collector{
+      segment_collector_mode::non_compacted_reupload,
+      model::offset{10},
+      m,
+      b.get_disk_log_impl(),
+      max_upload_size,
+      model::offset{39}};
+
+    collector.collect_segments();
+    ASSERT_EQ(collector.begin_inclusive(), model::offset{10});
+    ASSERT_EQ(collector.end_inclusive(), model::offset{39});
+
+    auto& segs = b.get_disk_log_impl().segments();
+    ASSERT_TRUE(segs.back()->has_appender());
+
+    // Only advance generation on the last (unsealed) segment. Since it is
+    // the only segment with a generation change and it has an appender, the
+    // generation check should be skipped.
+    segs.back()->advance_generation();
+
+    auto candidate = collector.make_upload_candidate(1s).get();
+    ASSERT_TRUE(std::holds_alternative<upload_candidate_with_locks>(candidate));
+}
+
 static void validate_non_compacted_collector(archival::segment_collector& c) {
     if (!c.segment_ready_for_upload()) {
         return;

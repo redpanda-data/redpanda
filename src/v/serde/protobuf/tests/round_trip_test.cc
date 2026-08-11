@@ -340,3 +340,36 @@ TEST(ProtobufCompat, DebugRedact) {
     secret.set_value("12345");
     EXPECT_EQ("{value: <redacted>}", fmt::format("{}", secret));
 }
+
+// string fields are limited to 128KiB, but iobuf-backed fields should be able
+// to handle larger sizes. This test verifies that the iobuf-backed field can
+// roundtrip larger data without error and without truncation.
+TEST(ProtobufCompat, RoundtripLargeIOBufString) {
+    const size_t large_size = 150 * 1024;
+    std::string large_data(large_size, 'A');
+
+    proto::example::io_buf_string_field original;
+    original.set_large_data(iobuf::from(large_data));
+
+    // Roundtrip through proto serialization
+    {
+        auto serialized = original.to_proto().get();
+        auto deserialized = proto::example::io_buf_string_field::from_proto(
+                              std::move(serialized))
+                              .get();
+
+        // Verify data is preserved
+        EXPECT_EQ(original, deserialized);
+    }
+
+    // Roundtrip through json serialization
+    {
+        auto serialized = original.to_json().get();
+        auto deserialized = proto::example::io_buf_string_field::from_json(
+                              std::move(serialized))
+                              .get();
+
+        // Verify data is preserved
+        EXPECT_EQ(original, deserialized);
+    }
+}

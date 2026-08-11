@@ -77,6 +77,9 @@ public:
     ss::future<get_topic_state_reply>
       get_topic_state(get_topic_state_request, local_only = local_only::no);
 
+    ss::future<reset_topic_state_reply>
+      reset_topic_state(reset_topic_state_request, local_only = local_only::no);
+
     /**
      * Returns the partition of datalake coordinator topic that
      * coordinates datalake tasks for this topic partitions.
@@ -141,6 +144,11 @@ private:
 
     ss::future<get_topic_state_reply> get_topic_state_locally(
       get_topic_state_request,
+      const model::ntp& coordinator_partition,
+      ss::shard_id);
+
+    ss::future<reset_topic_state_reply> reset_topic_state_locally(
+      reset_topic_state_request,
       const model::ntp& coordinator_partition,
       ss::shard_id);
 

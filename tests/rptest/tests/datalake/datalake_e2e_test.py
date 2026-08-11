@@ -12,7 +12,7 @@ import random
 import re
 import time
 from random import randint
-from typing import Callable, Any
+from typing import Any, Callable
 
 from confluent_kafka import Producer, avro
 from confluent_kafka.avro import AvroProducer
@@ -20,10 +20,12 @@ from ducktape.mark import ignore, matrix
 from ducktape.utils.util import wait_until
 from google import protobuf
 from google.protobuf import json_format as pb_json_format
-from google.protobuf import text_format as pb_text_format
 from google.protobuf import message_factory
+from google.protobuf import text_format as pb_text_format
 
+from rptest.clients.admin import v2 as admin_v2
 from rptest.clients.rpk import RpkTool
+from rptest.clients.types import TopicSpec
 from rptest.services.admin import Admin
 from rptest.services.catalog_service import CatalogType
 from rptest.services.cluster import cluster
@@ -490,6 +492,64 @@ class DatalakeE2ETests(RedpandaTest):
                     assert spark_describe_out == spark_expected_out, str(
                         spark_describe_out
                     )
+
+    @cluster(num_nodes=3)
+    @matrix(
+        cloud_storage_type=supported_storage_types(),
+        query_engine=[QueryEngineType.SPARK, QueryEngineType.TRINO],
+        catalog_type=[CatalogType.REST_JDBC],
+    )
+    def test_avro_map_values(self, cloud_storage_type, query_engine, catalog_type):
+        """Verify avro map<string, long> values round-trip end-to-end."""
+        count = 100
+        topic = "avro_map_test_case"
+        table = f"redpanda.{topic}"
+        schema_str = """
+        {
+            "type": "record",
+            "namespace": "com.redpanda.examples.avro",
+            "name": "MapTest",
+            "fields": [
+                {"name": "kv", "type": {"type": "map", "values": "long"}}
+            ]
+        }
+        """
+
+        with DatalakeServices(
+            self.test_ctx,
+            redpanda=self.redpanda,
+            include_query_engines=[query_engine],
+            catalog_type=catalog_type,
+        ) as dl:
+            dl.create_iceberg_enabled_topic(
+                topic, iceberg_mode="value_schema_id_prefix"
+            )
+            producer = AvroProducer(
+                {
+                    "bootstrap.servers": self.redpanda.brokers(),
+                    "schema.registry.url": self.redpanda.schema_reg().split(",")[0],
+                },
+                default_value_schema=avro.loads(schema_str),
+            )
+            for i in range(count):
+                producer.produce(topic=topic, value={"kv": {"k": i}})
+            producer.flush()
+            dl.wait_for_translation(topic, msg_count=count)
+
+            expected = sum(range(count))
+
+            engine = dl.trino() if query_engine == QueryEngineType.TRINO else dl.spark()
+            rows = engine.run_query_fetch_all(
+                f"select sum(element_at(kv, 'k')) from {table}"
+            )
+            assert rows[0][0] == expected, f"engine expected={expected}, got={rows}"
+
+            iceberg_tbl = dl.catalog_client().load_table(("redpanda", topic))
+            kv_col = iceberg_tbl.scan().to_arrow()["kv"].to_pylist()
+            pyiceberg_total = sum(dict(entry)["k"] for entry in kv_col)
+            assert pyiceberg_total == expected, (
+                f"pyiceberg expected={expected}, got={pyiceberg_total}"
+            )
 
     # Note: nothing unique about this test so run it with single catalog/query engine.
     @cluster(num_nodes=3)
@@ -1561,6 +1621,57 @@ class DatalakeMetricsTest(RedpandaTest):
                 backoff_sec=1,
             )
 
+    def _probe_metric_series(self) -> list:
+        # The lag gauge is owned by the per-partition translation_probe, so its
+        # presence tracks the probe's lifetime. Partition/shard labels are
+        # aggregated away, leaving one series per (node, topic).
+        samples = self.redpanda.metrics_sample(
+            DatalakeMetricsTest.translation_lag,
+            self.redpanda.nodes,
+            MetricsEndpoint.PUBLIC_METRICS,
+        )
+        if samples is None:
+            return []
+        return samples.label_filter({"redpanda_topic": self.topic_name}).samples
+
+    @cluster(num_nodes=5)
+    @matrix(cloud_storage_type=supported_storage_types())
+    def test_probe_removed_on_topic_deletion(self, cloud_storage_type):
+        """The per-partition translation_probe must be destroyed whenever the
+        partition no longer requires an active translator (lost leadership,
+        iceberg disabled, replica moved off the shard), otherwise the probe and
+        the metric series it owns leak for the lifetime of the process. This
+        test uses topic deletion as a deterministic way to trigger probe
+        cleanup."""
+        with DatalakeServices(
+            self.test_ctx,
+            redpanda=self.redpanda,
+            include_query_engines=[],
+            catalog_type=supported_catalog_types()[0],
+        ) as dl:
+            dl.create_iceberg_enabled_topic(self.topic_name, partitions=1, replicas=3)
+            dl.produce_to_topic(self.topic_name, 1, msg_count=randint(12, 21))
+
+            # The probe is created lazily when the partition gets an active
+            # translator (leader + iceberg enabled).
+            wait_until(
+                lambda: len(self._probe_metric_series()) > 0,
+                timeout_sec=30,
+                backoff_sec=1,
+                err_msg="Timed out waiting for translation probe metrics to appear",
+            )
+
+            RpkTool(self.redpanda).delete_topic(self.topic_name)
+
+            # Once the partition is unassigned from every shard the probe, and
+            # thus its metric series, must be gone.
+            wait_until(
+                lambda: len(self._probe_metric_series()) == 0,
+                timeout_sec=30,
+                backoff_sec=1,
+                err_msg="translation probe metrics leaked after topic deletion",
+            )
+
 
 class DatalakeDelayedEnablementTest(RedpandaTest):
     def __init__(self, test_ctx, *args, **kwargs):
@@ -1770,3 +1881,126 @@ class DatalakeCustomNamespaceTest(RedpandaTest):
                 msg_count=count,
                 namespace=self.test_namespace,
             )
+
+
+class DatalakeCoordinatorResetTest(RedpandaTest):
+    def __init__(self, test_ctx, *args, **kwargs):
+        super().__init__(
+            test_ctx,
+            num_brokers=1,
+            si_settings=SISettings(test_context=test_ctx),
+            extra_rp_conf={
+                "iceberg_enabled": "true",
+                "iceberg_catalog_commit_interval_ms": 5000,
+            },
+            *args,
+            **kwargs,
+        )
+        self.test_ctx = test_ctx
+        self.topic_name = "test"
+
+    def setUp(self):
+        """Redpanda will be started by DatalakeServices."""
+        pass
+
+    def _get_topic_state(self):
+        dl_pb = admin_v2.datalake_pb
+        admin = admin_v2.Admin(self.redpanda)
+        resp = admin.datalake().get_coordinator_state(
+            dl_pb.GetCoordinatorStateRequest()
+        )
+        return resp.state.topic_states[self.topic_name]
+
+    def _reset_coordinator_state(
+        self, reset_all_partitions: bool, partition_overrides=None
+    ):
+        dl_pb = admin_v2.datalake_pb
+        admin = admin_v2.Admin(self.redpanda)
+        rev = self._get_topic_state().revision
+        admin.datalake().coordinator_reset_topic_state(
+            dl_pb.CoordinatorResetTopicStateRequest(
+                topic_name=self.topic_name,
+                revision=rev,
+                reset_all_partitions=reset_all_partitions,
+                partition_overrides=partition_overrides,
+            )
+        )
+
+    def _count_pending_entries(self):
+        ts = self._get_topic_state()
+        return sum(len(ps.pending_entries) for ps in ts.partition_states.values())
+
+    @cluster(num_nodes=4)
+    @matrix(
+        cloud_storage_type=supported_storage_types(),
+        catalog_type=[CatalogType.REST_JDBC],
+    )
+    def test_coordinator_reset(self, cloud_storage_type, catalog_type):
+        with DatalakeServices(
+            self.test_ctx,
+            redpanda=self.redpanda,
+            include_query_engines=[QueryEngineType.SPARK],
+            catalog_type=catalog_type,
+        ) as dl:
+            dl.create_iceberg_enabled_topic(
+                self.topic_name,
+                partitions=3,
+                config={
+                    TopicSpec.PROPERTY_ICEBERG_PARTITION_SPEC: "()",
+                },
+            )
+            dl.produce_to_topic(self.topic_name, msg_size=1024, msg_count=10)
+            dl.wait_for_translation(self.topic_name, msg_count=10)
+
+            # Increase the commit interval to accumulate pending commits.
+            self.redpanda.set_cluster_config(
+                {"iceberg_catalog_commit_interval_ms": 100000}
+            )
+            # Sleep twice the original commit interval to ensure we will be
+            # waiting on the new interval.
+            time.sleep(10)
+
+            dl.produce_to_topic(self.topic_name, msg_size=1024, msg_count=10)
+
+            wait_until(
+                lambda: self._count_pending_entries() > 0,
+                timeout_sec=30,
+                backoff_sec=1,
+                err_msg="Expected pending entries to be present after producing records",
+            )
+
+            self._reset_coordinator_state(reset_all_partitions=False)
+            assert self._count_pending_entries() > 0, (
+                "Expected pending entries to still be present after no-op reset"
+            )
+
+            self._reset_coordinator_state(reset_all_partitions=True)
+            assert self._count_pending_entries() == 0, (
+                "Expected pending entries to be cleared after coordinator reset"
+            )
+
+            # After a plain reset, no partition should have last_committed.
+            for pid, ps in self._get_topic_state().partition_states.items():
+                assert not ps.HasField("last_committed"), (
+                    f"Partition {pid} has unexpected last_committed"
+                )
+
+            dl_pb = admin_v2.datalake_pb
+
+            # Reset with per-partition last_committed overrides.
+            expected = {0: 5, 2: 7}
+            self._reset_coordinator_state(
+                reset_all_partitions=False,
+                partition_overrides={
+                    pid: dl_pb.PartitionStateOverride(last_committed=off)
+                    for pid, off in expected.items()
+                },
+            )
+
+            ts = self._get_topic_state()
+            for pid, off in expected.items():
+                ps = ts.partition_states[pid]
+                assert ps.last_committed == off, (
+                    f"Partition {pid}: expected {off}, got {ps.last_committed}"
+                )
+            assert not ts.partition_states[1].HasField("last_committed")

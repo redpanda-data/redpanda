@@ -149,12 +149,11 @@ public:
         return _plf->remove_cluster_link(std::move(name), force, timeout);
     }
 
-    std::optional<std::reference_wrapper<const model::metadata>>
-    find_link_by_id(model::id_t id) const override {
+    model::metadata_ptr find_link_by_id(model::id_t id) const override {
         return _plf->find_link_by_id(id);
     }
 
-    std::optional<std::reference_wrapper<const model::metadata>>
+    model::metadata_ptr
     find_link_by_name(const model::name_t& name) const override {
         return _plf->find_link_by_name(name);
     }
@@ -252,10 +251,12 @@ make_remote_consumer_configuration(const model::connection_config& conn_cfg) {
     dc_configuration.partition_max_bytes
       = conn_cfg.get_fetch_partition_max_bytes();
 
+    const size_t partition_max_buffered
+      = 2 * conn_cfg.get_fetch_partition_max_bytes();
     return replication::mux_remote_consumer::configuration{
       .client_id = conn_cfg.client_id,
       .direct_consumer_configuration = dc_configuration,
-      .partition_max_buffered = max_buffered_bytes,
+      .partition_max_buffered = partition_max_buffered,
       .fetch_max_wait = max_wait_time,
     };
 }
@@ -360,13 +361,13 @@ public:
 
     ss::future<> start() final {
         _notification_id = _manager->register_link_config_changes_callback(
-          [this](model::id_t link_id, const model::metadata& md) {
+          [this](model::id_t link_id, model::metadata_ptr md) {
               // Ignore updates for other links
               if (link_id != _link_id) {
                   return;
               }
               _consumer->update_configuration(
-                make_remote_consumer_configuration(md.connection));
+                make_remote_consumer_configuration(md->connection));
           });
         return _consumer->start();
     }
@@ -409,24 +410,9 @@ public:
           "write_at_offset_stm not attached to partition {}",
           _partition->ntp());
     }
-    ss::future<> start() final {
-        auto holder = _gate.hold();
-        auto sync_offset = co_await _stm->get_expected_last_offset(
-          sync_timeout);
-        if (sync_offset.has_error()) {
-            throw std::runtime_error(
-              fmt::format(
-                "Failed to sync write_at_offset_stm for partition {}: {}",
-                _partition->ntp(),
-                sync_offset.error().message()));
-        }
-        vlog(
-          cllog.trace,
-          "[{}] Starting local partition sink at offset {}",
-          _partition->ntp(),
-          sync_offset.value());
-        _last_replicated_offset = sync_offset.value();
-    }
+    ss::future<> start() final { return initialize(); }
+
+    ss::future<> reset() final { return initialize(); }
 
     ss::future<> stop() noexcept final {
         vlog(
@@ -543,10 +529,31 @@ public:
           _partition->log()->from_log_offset(_partition->high_watermark()));
     }
 
+    bool can_prefix_truncate() const final {
+        _gate.check();
+        return _partition->get_ntp_config().is_locally_collectable();
+    }
+
     ss::future<kafka::error_code> prefix_truncate(
       kafka::offset truncation_offset,
       ss::lowres_clock::time_point deadline) final {
         auto h = _gate.hold();
+        auto timeout
+          = std::chrono::duration_cast<::model::timeout_clock::duration>(
+            deadline - ss::lowres_clock::now());
+        auto err = co_await _stm->ensure_truncatable(
+          truncation_offset, timeout);
+        if (err != kafka::write_at_offset_stm::errc::success) {
+            vlog(
+              cllog.warn,
+              "[{}] Failed to ensure truncatable offset {}: {}, will be "
+              "retried later",
+              _partition->ntp(),
+              truncation_offset,
+              err);
+            // a blanket error to trigger a retry later
+            co_return kafka::error_code::offset_out_of_range;
+        }
         co_return co_await kafka::make_partition_proxy(_partition)
           .prefix_truncate(kafka::offset_cast(truncation_offset), deadline);
     }
@@ -595,6 +602,25 @@ public:
     }
 
 private:
+    ss::future<> initialize() {
+        auto holder = _gate.hold();
+        auto sync_offset = co_await _stm->get_expected_last_offset(
+          sync_timeout);
+        if (sync_offset.has_error()) {
+            throw std::runtime_error(
+              fmt::format(
+                "Failed to sync write_at_offset_stm for partition {}: {}",
+                _partition->ntp(),
+                sync_offset.error().message()));
+        }
+        vlog(
+          cllog.trace,
+          "[{}] Reset-ing local partition sink at offset {}",
+          _partition->ntp(),
+          sync_offset.value());
+        _last_replicated_offset = sync_offset.value();
+    }
+
     ss::gate _gate;
     ss::lw_shared_ptr<cluster::partition> _partition;
     const cluster::metadata_cache& _metadata_cache;
@@ -711,7 +737,9 @@ public:
     }
 
 private:
-    ss::future<std::optional<kafka::offset>> fetch_offset_for_timestamp(
+    /// Dispatch a ListOffsets request for the given timestamp and return the
+    /// offset from the response. Returns std::nullopt on transient errors.
+    ss::future<std::optional<kafka::offset>> dispatch_list_offsets(
       retry_chain_node& rcn,
       const ::model::topic_partition& tp,
       ::model::timestamp ts) {
@@ -775,13 +803,43 @@ private:
               partition.error_code);
             co_return std::nullopt;
         }
-        vlog(
-          cllog.debug,
-          "[{}] Fetched offset {} for timestamp {}",
-          tp,
-          partition.offset,
-          ts);
         co_return partition.offset;
+    }
+
+    ss::future<std::optional<kafka::offset>> fetch_offset_for_timestamp(
+      retry_chain_node& rcn,
+      const ::model::topic_partition& tp,
+      ::model::timestamp ts) {
+        auto offset = co_await dispatch_list_offsets(rcn, tp, ts);
+        if (!offset) {
+            co_return std::nullopt;
+        }
+        if (*offset >= kafka::offset{0}) {
+            vlog(
+              cllog.debug,
+              "[{}] Fetched offset {} for timestamp {}",
+              tp,
+              *offset,
+              ts);
+            co_return offset;
+        }
+        // ListOffsets returns offset -1 when the timestamp is past the end
+        // of the log (or the partition is empty). Fall back to the last
+        // stable offset (LSO) so we start replicating only new committed
+        // data. We query with latest_timestamp which, combined with our
+        // read_committed isolation level, returns the LSO.
+        auto lso = co_await dispatch_list_offsets(
+          rcn, tp, kafka::list_offsets_request::latest_timestamp);
+        if (lso) {
+            vlog(
+              cllog.info,
+              "[{}] Timestamp {} is past the end of the source log, "
+              "falling back to last stable offset {}",
+              tp,
+              ts,
+              *lso);
+        }
+        co_return lso;
     }
 
     ss::future<std::optional<kafka::api_version>>
@@ -832,13 +890,12 @@ private:
 
     std::optional<::model::timestamp>
     get_start_offset_timestamp(const ::model::ntp& ntp) {
-        auto link_md_opt = _mgr->registry()->find_link_by_id(_link_id);
-        if (!link_md_opt) {
+        auto link_md = _mgr->registry()->find_link_by_id(_link_id);
+        if (!link_md) {
             return std::nullopt;
         }
-        const auto& link_md = link_md_opt->get();
-        auto mirror_it = link_md.state.mirror_topics.find(ntp.tp.topic);
-        if (mirror_it == link_md.state.mirror_topics.end()) {
+        auto mirror_it = link_md->state.mirror_topics.find(ntp.tp.topic);
+        if (mirror_it == link_md->state.mirror_topics.end()) {
             return std::nullopt;
         }
         return mirror_it->second.get_starting_offset_ts();
@@ -867,13 +924,13 @@ public:
       ::model::node_id self,
       model::id_t link_id,
       manager* manager,
-      model::metadata config,
+      model::metadata_ptr config,
       std::unique_ptr<kafka::client::cluster> cluster_connection) override {
-        auto client_id = config.connection.client_id;
+        auto client_id = config->connection.client_id;
         auto cluster = cluster_connection.get();
         kafka::client::direct_consumer_probe::configuration probe_cfg{
           .group_name = link_probe::shadow_link_group,
-          .labels = {link_probe::shadow_link_name(config.name)}};
+          .labels = {link_probe::shadow_link_name(config->name)}};
         return std::make_unique<link>(
           self,
           link_id,
@@ -889,7 +946,7 @@ public:
             std::make_unique<replication::mux_remote_consumer>(
               *cluster_connection,
               _snc_quota_mgr->local(),
-              make_remote_consumer_configuration(config.connection),
+              make_remote_consumer_configuration(config->connection),
               std::move(probe_cfg))),
           std::make_unique<local_partition_data_sink_factory>(
             *_partition_manager, *_metadata_cache, *_id_allocator_frontend));
@@ -1036,7 +1093,7 @@ ss::future<> service::stop() {
     co_await maybe_stop_manager();
 }
 
-ss::future<cl_result<model::metadata>>
+ss::future<cl_result<model::metadata_ptr>>
 service::upsert_cluster_link(model::metadata md) {
     auto h = _gate.hold();
     return with_manager([md = std::move(md)](manager* mgr) mutable {
@@ -1044,17 +1101,17 @@ service::upsert_cluster_link(model::metadata md) {
     });
 }
 
-cl_result<model::metadata>
+cl_result<model::metadata_ptr>
 service::get_cluster_link(const model::name_t& name) {
     return with_manager(
       [&name](manager* mgr) { return mgr->get_cluster_link(name); });
 }
 
-cl_result<chunked_vector<model::metadata>> service::list_cluster_links() {
+cl_result<chunked_vector<model::metadata_ptr>> service::list_cluster_links() {
     return with_manager([](manager* mgr) { return mgr->list_cluster_links(); });
 }
 
-ss::future<cl_result<model::metadata>> service::update_cluster_link(
+ss::future<cl_result<model::metadata_ptr>> service::update_cluster_link(
   model::name_t name, model::update_cluster_link_configuration_cmd cmd) {
     auto h = _gate.hold();
     return with_manager(
@@ -1063,7 +1120,7 @@ ss::future<cl_result<model::metadata>> service::update_cluster_link(
       });
 }
 
-ss::future<cl_result<model::metadata>> service::update_mirror_topic_status(
+ss::future<cl_result<model::metadata_ptr>> service::update_mirror_topic_status(
   model::name_t link_name,
   ::model::topic topic,
   model::mirror_topic_status status,
@@ -1078,7 +1135,7 @@ ss::future<cl_result<model::metadata>> service::update_mirror_topic_status(
     });
 }
 
-ss::future<cl_result<model::metadata>>
+ss::future<cl_result<model::metadata_ptr>>
 service::failover_link_topics(model::name_t link_name) {
     auto h = _gate.hold();
     return with_manager(
@@ -1096,7 +1153,7 @@ service::delete_cluster_link(model::name_t name, bool force_delete_link) {
       });
 }
 
-ss::future<cl_result<model::metadata>>
+ss::future<cl_result<model::metadata_ptr>>
 service::delete_shadow_topic_from_shadow_link(
   model::name_t link_name, ::model::topic shadow_topic) {
     auto h = _gate.hold();
@@ -1248,11 +1305,11 @@ rpc::shadow_topic_report_response service::shard_local_topic_report(
     }
     auto& registry = _manager->registry();
     const auto& md = registry->find_link_by_id(link_id);
-    if (!md.has_value()) {
+    if (!md) {
         return ::cluster_link::rpc::shadow_topic_report_response{
           .err_code = errc::link_id_not_found};
     }
-    const auto& topics = md->get().state.mirror_topics;
+    const auto& topics = md->state.mirror_topics;
     if (topics.find(topic) == topics.end()) {
         return ::cluster_link::rpc::shadow_topic_report_response{
           .err_code = errc::topic_not_being_mirrored};
