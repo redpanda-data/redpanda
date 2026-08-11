@@ -298,6 +298,25 @@ redpanda_cc_gtest(
 )
 
 redpanda_cc_gtest(
+    name = "consumer_group_test",
+    timeout = "short",
+    srcs = [
+        "consumer_group_test.cc",
+    ],
+    deps = [
+        "//src/v/cluster:tx_protocol_types",
+        "//src/v/config",
+        "//src/v/features",
+        "//src/v/kafka/server",
+        "//src/v/model",
+        "//src/v/raft",
+        "//src/v/test_utils:gtest",
+        "@googletest//:gtest",
+        "@seastar",
+    ],
+)
+
+redpanda_cc_gtest(
     name = "offset_store_test",
     timeout = "short",
     srcs = [
