@@ -1126,3 +1126,19 @@ redpanda_cc_bench(
         "@seastar//:benchmark",
     ],
 )
+
+redpanda_cc_bench(
+    name = "timequery_rpbench",
+    timeout = "moderate",
+    srcs = ["timequery_bench.cc"],
+    deps = [
+        ":disk_log_builder",
+        "//src/v/base",
+        "//src/v/model",
+        "//src/v/model/tests:random",
+        "//src/v/storage",
+        "//src/v/test_utils:test_env",
+        "@seastar",
+        "@seastar//:benchmark",
+    ],
+)
