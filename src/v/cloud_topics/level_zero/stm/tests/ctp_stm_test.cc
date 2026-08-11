@@ -565,11 +565,12 @@ TEST_F_CORO(ctp_stm_fixture, test_snapshot) {
 }
 
 TEST_F_CORO(ctp_stm_fixture, test_fence_epoch_concurrent_new_epoch) {
-    // This test verifies the optimization in fence_epoch() where multiple
-    // concurrent requests for a new epoch only require one write lock.
-    // The first request acquires the epoch_update_lock and write lock, updates
-    // the epoch, then signals waiters. The remaining requests wake up and take
-    // the read-lock path since the epoch has been updated.
+    // This test verifies that multiple concurrent requests for a new epoch
+    // only require one write lock. The first request acquires the
+    // epoch_update_lock and write lock, updates the epoch, then signals
+    // waiters. The remaining requests wake up and take the read-lock path
+    // since the epoch has been updated. The winner's fence keeps the write
+    // lock (no demotion) so the readers stay blocked until it's released.
     co_await start();
     co_await wait_for_leader(raft::default_timeout());
 
@@ -619,12 +620,41 @@ TEST_F_CORO(ctp_stm_fixture, test_fence_epoch_concurrent_new_epoch) {
         // Let `initial_fence` go out of scope.
     }
 
-    // Wait for all fences to be acquired - they should all be able to succeed
-    // without hanging because only one request (the first request) had to
-    // obtain a write lock, which then downgraded to a read lock, and the rest
-    // of the requests could obtain read locks for the current epoch.
+    // Exactly one request wins the epoch update and resolves with a fence
+    // that carries the full write lock. The remaining requests take the
+    // read-lock path and stay blocked until the winner releases the fence.
+    std::optional<size_t> winner;
+    RPTEST_REQUIRE_EVENTUALLY_CORO(10s, [&] {
+        for (size_t i = 0; i < futures.size(); ++i) {
+            if (futures[i].available()) {
+                winner = i;
+                return true;
+            }
+        }
+        return false;
+    });
+
+    auto winner_fence = co_await std::move(futures[*winner]);
+    ASSERT_TRUE_CORO(winner_fence.has_value());
+    ASSERT_GT_CORO(winner_fence->unit.count(), 1);
+    for (size_t i = 0; i < futures.size(); ++i) {
+        if (i != *winner) {
+            ASSERT_FALSE_CORO(futures[i].available());
+        }
+    }
+
+    // Release the write lock, unblocking the readers.
+    winner_fence->unit.return_all();
+
+    std::vector<ss::future<expected_t>> rest;
+    rest.reserve(futures.size() - 1);
+    for (size_t i = 0; i < futures.size(); ++i) {
+        if (i != *winner) {
+            rest.push_back(std::move(futures[i]));
+        }
+    }
     auto fences = co_await ssx::when_all_succeed<std::vector<expected_t>>(
-      std::move(futures));
+      std::move(rest));
     for (auto& fence : fences) {
         ASSERT_TRUE_CORO(fence.has_value())
           << "All fence requests should succeed";
