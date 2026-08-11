@@ -416,4 +416,7 @@ build:io_uring --//bazel:io_uring=True
 test --test_env=REDPANDA_RNG_SEEDING_MODE
 test --test_env=REDPANDA_DEBUG_TEST_HOOKS
 
+# Empty in this branch: CI passes --config=ci-remote-cache unconditionally.
+build:ci-remote-cache --build
+
 try-import %workspace%/user.bazelrc
