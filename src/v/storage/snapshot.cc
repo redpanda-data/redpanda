@@ -253,12 +253,9 @@ ss::future<iobuf> snapshot_reader::read_metadata() {
 ss::future<size_t> snapshot_reader::get_snapshot_size() { return _file.size(); }
 
 ss::future<> snapshot_reader::close() {
-    return _input
-      .close() // finishes read-ahead work
-      .then([this] {
-          _closed = true;
-          return _file.close();
-      });
+    return _input.close()
+      .finally([this] { return _file.close(); })
+      .finally([this] { _closed = true; });
 }
 
 snapshot_writer::~snapshot_writer() noexcept {
@@ -325,10 +322,7 @@ ss::future<> snapshot_writer::write_metadata(iobuf buf) {
 }
 
 ss::future<> snapshot_writer::close() {
-    return _output.flush().then([this] {
-        _closed = true;
-        return _output.close();
-    });
+    return _output.close().finally([this] { _closed = true; });
 }
 
 ss::future<std::optional<size_t>>
