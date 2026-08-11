@@ -2112,6 +2112,8 @@ consensus::do_append_entries(append_entries_request&& r) {
     // follower (§5.2)
     maybe_update_leader(r.source_node());
 
+    auto refresh_hbeat = ss::defer([this] { _hbeat = clock_type::now(); });
+
     // raft.pdf: Reply false if log doesn’t contain an entry at
     // prevLogIndex whose term matches prevLogTerm (§5.3)
     // broken into 3 sections
@@ -2356,11 +2358,6 @@ consensus::do_append_entries(append_entries_request&& r) {
     // success. copy entries for each subsystem
 
     try {
-        auto deferred = ss::defer([this] {
-            // we do not want to include our disk flush latency into
-            // the leader vote timeout
-            _hbeat = clock_type::now();
-        });
         validate_offset_translator_delta(request_metadata, lstats);
 
         // simulate disk error
