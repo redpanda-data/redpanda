@@ -13,6 +13,7 @@
 #include "kafka/protocol/errors.h"
 #include "kafka/protocol/schemata/consumer_group_heartbeat_request.h"
 #include "kafka/protocol/schemata/consumer_group_heartbeat_response.h"
+#include "model/fundamental.h"
 
 #include <seastar/core/future.hh>
 
@@ -22,6 +23,9 @@ struct consumer_group_heartbeat_request final {
     using api_type = consumer_group_heartbeat_api;
 
     consumer_group_heartbeat_request_data data;
+
+    // set during request processing after mapping group to ntp
+    model::ntp ntp;
 
     void encode(protocol::encoder& writer, api_version version) {
         data.encode(writer, version);
@@ -40,6 +44,16 @@ struct consumer_group_heartbeat_response final {
     using api_type = consumer_group_heartbeat_api;
 
     consumer_group_heartbeat_response_data data;
+
+    consumer_group_heartbeat_response() = default;
+
+    consumer_group_heartbeat_response(
+      const consumer_group_heartbeat_request& request, error_code error)
+      : data{
+          .error_code = error,
+          .member_id = request.data.member_id,
+          .member_epoch = request.data.member_epoch,
+        } {}
 
     void encode(protocol::encoder& writer, api_version version) {
         data.encode(writer, version);

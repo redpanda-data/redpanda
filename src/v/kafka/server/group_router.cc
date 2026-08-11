@@ -318,6 +318,12 @@ group_router::txn_offset_commit(txn_offset_commit_request&& request) {
     return route(std::move(request), &group_manager::txn_offset_commit);
 }
 
+ss::future<consumer_group_heartbeat_response>
+group_router::consumer_group_heartbeat(
+  consumer_group_heartbeat_request&& request) {
+    return route(std::move(request), &group_manager::consumer_group_heartbeat);
+}
+
 ss::future<cluster::commit_group_tx_reply>
 group_router::commit_tx(cluster::commit_group_tx_request request) {
     return route_tx(std::move(request), &group_manager::commit_tx);

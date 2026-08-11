@@ -17,6 +17,7 @@
 #include "cluster/offsets_snapshot.h"
 #include "cluster/topic_table.h"
 #include "container/chunked_vector.h"
+#include "kafka/protocol/consumer_group_heartbeat.h"
 #include "kafka/protocol/errors.h"
 #include "kafka/protocol/heartbeat.h"
 #include "kafka/protocol/join_group.h"
@@ -30,6 +31,7 @@
 #include "kafka/protocol/sync_group.h"
 #include "kafka/protocol/txn_offset_commit.h"
 #include "kafka/protocol/types.h"
+#include "kafka/server/consumer_group_stm.h"
 #include "kafka/server/fwd.h"
 #include "kafka/server/group.h"
 #include "kafka/server/group_recovery_consumer.h"
@@ -159,6 +161,12 @@ public:
     ss::future<txn_offset_commit_response>
     txn_offset_commit(txn_offset_commit_request&& request);
 
+    /// Serve a consumer-protocol heartbeat. The group's state belongs to a
+    /// state machine that does not exist yet, so this resolves the coordinator
+    /// and refuses a group-id the classic protocol already owns.
+    ss::future<consumer_group_heartbeat_response>
+    consumer_group_heartbeat(consumer_group_heartbeat_request&& request);
+
     ss::future<cluster::commit_group_tx_reply>
     commit_tx(cluster::commit_group_tx_request&& request);
 
@@ -242,6 +250,16 @@ private:
         }
         return nullptr;
     }
+
+    /// The consumer groups of a partition, whichever replica this is. The
+    /// group-id namespace is shared with the classic protocol, so both
+    /// protocols' entry points consult the other's ownership of an id.
+    static ss::shared_ptr<consumer_group_stm>
+    consumer_groups(const ss::lw_shared_ptr<cluster::partition>&);
+
+    /// Whether the api belongs to the consumer protocol, whose requests are
+    /// the ones a consumer-owned group id is for.
+    static bool is_consumer_group_api(api_key);
 
     cluster::notification_id_type _manage_notify_handle;
     cluster::notification_id_type _unmanage_notify_handle;

@@ -1233,6 +1233,22 @@ ss::future<> group_manager::do_recover_group(
   ss::lw_shared_ptr<attached_partition> p,
   group_id group_id,
   group_stm group_stm) {
+    /*
+     * A group with committed offsets and nothing else is a legal classic
+     * simple group, so recovery would mint one for any id that has offsets --
+     * including a consumer group's, whose commits are ordinary offset records.
+     * The state machine that owns the id says which protocol it belongs to.
+     */
+    if (
+      auto stm = consumer_groups(p->partition);
+      stm && stm->get_group(group_id)) {
+        vlog(
+          cg_klog.debug,
+          "Not recovering {} as a classic group: the id belongs to a consumer "
+          "group",
+          group_id);
+        co_return;
+    }
     if (group_stm.has_data()) {
         auto group = get_group(group_id);
         vlog(
@@ -1974,6 +1990,48 @@ group_manager::describe_partition_producers(const model::ntp& ntp) {
     return response;
 }
 
+ss::future<consumer_group_heartbeat_response>
+group_manager::consumer_group_heartbeat(consumer_group_heartbeat_request&& r) {
+    // Same checks the classic group APIs get: a usable group id, the group not
+    // blocked, this node the leader, its term unchanged, and recovery of the
+    // partition's groups finished.
+    if (
+      auto error = validate_group_status(
+        r.ntp, r.data.group_id, consumer_group_heartbeat_api::key, false);
+      error != error_code::none) {
+        co_return consumer_group_heartbeat_response(r, error);
+    }
+
+    // The group-id namespace is shared, and an id belongs to one protocol or
+    // the other. A classic group is not converted in place, so a heartbeat
+    // naming one is refused rather than creating a second group under its id.
+    // A consumer group of this id wins: recovery mints a classic group for any
+    // id that merely has committed offsets, which a consumer group's own
+    // commits satisfy, and that phantom must not refuse the group its
+    // heartbeats.
+    auto owned_here = [this, &r] {
+        auto it = _partitions.find(r.ntp);
+        return it != _partitions.end() && consumer_groups(it->second->partition)
+               && consumer_groups(it->second->partition)
+                    ->get_group(r.data.group_id);
+    };
+    if (get_group(r.data.group_id) && !owned_here()) {
+        vlog(
+          cg_klog.debug,
+          "consumer heartbeat for {} refused: the id belongs to a classic "
+          "group",
+          r.data.group_id);
+        co_return consumer_group_heartbeat_response(
+          r, error_code::group_id_not_found);
+    }
+
+    // A consumer group's state is owned by a state machine that does not exist
+    // yet, so there is nothing to serve the heartbeat from. The request
+    // validation the protocol needs arrives with the live path.
+    co_return consumer_group_heartbeat_response(
+      r, error_code::unsupported_version);
+}
+
 ss::future<std::error_code> group_manager::empty_and_delete_groups(
   const model::ntp& co_ntp,
   const chunked_vector<group_id>& groups,
@@ -2139,6 +2197,15 @@ bool group_manager::valid_group_id(const group_id& group, api_key api) {
  * TODO
  * - check for group being shutdown
  */
+ss::shared_ptr<consumer_group_stm> group_manager::consumer_groups(
+  const ss::lw_shared_ptr<cluster::partition>& partition) {
+    return partition->raft()->stm_manager()->get<consumer_group_stm>();
+}
+
+bool group_manager::is_consumer_group_api(api_key api) {
+    return api == consumer_group_heartbeat_api::key;
+}
+
 error_code group_manager::validate_group_status(
   const model::ntp& ntp,
   const group_id& group,
@@ -2176,6 +2243,28 @@ error_code group_manager::validate_group_status(
               api,
               ntp);
             return error_code::not_coordinator;
+        }
+
+        /**
+         * The group-id namespace is shared and an id belongs to one protocol
+         * or the other. A classic request naming an id the consumer protocol
+         * owns is refused the way a consumer heartbeat naming a classic id is;
+         * serving it would put two coordinators on one group, each overwriting
+         * the other's records. Kafka refuses the same case with
+         * GROUP_ID_NOT_FOUND while its migration policy forbids a conversion.
+         */
+        if (!is_consumer_group_api(api)) {
+            if (
+              auto stm = consumer_groups(p->partition);
+              stm && stm->get_group(group)) {
+                vlog(
+                  cg_klog.debug,
+                  "Group {} operation {} refused: the id belongs to a consumer "
+                  "group",
+                  group,
+                  api);
+                return error_code::group_id_not_found;
+            }
         }
         /**
          * Check if term changed, this can happen if a node that stepped down
