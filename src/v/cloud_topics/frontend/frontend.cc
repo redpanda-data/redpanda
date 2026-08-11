@@ -46,6 +46,7 @@
 #include <seastar/core/future.hh>
 #include <seastar/core/shared_ptr.hh>
 #include <seastar/coroutine/as_future.hh>
+#include <seastar/coroutine/exception.hh>
 #include <seastar/util/defer.hh>
 
 #include <chrono>
@@ -779,7 +780,9 @@ ss::future<result<raft::replicate_result>> do_upload_and_replicate(
     auto enqueued_fut = co_await ss::coroutine::as_future(
       std::move(replicate_stages.request_enqueued));
 
-    ticket.release(); // always release the ticket
+    const bool moves_seen_window = fence->moves_seen_window();
+    fence->unit.return_all(); // the operation can't be reordered
+    ticket.release();         // always release the ticket
 
     if (enqueued_fut.failed()) {
         auto ex = enqueued_fut.get_exception();
@@ -792,8 +795,56 @@ ss::future<result<raft::replicate_result>> do_upload_and_replicate(
         // and we don't want to abandon the replicate_finished future
     }
 
-    auto res = co_await std::move(replicate_stages.replicate_finished);
+    auto res_fut = co_await ss::coroutine::as_future(
+      std::move(replicate_stages.replicate_finished));
+    if (res_fut.failed()) {
+        // Replication failed with an exception. This is the expected
+        // outcome when the enqueue stage failed above: the seen window
+        // was already advanced but the placeholder never reached the
+        // raft queue, so the divergence has to be resolved by stepping
+        // down, same as the error case below.
+        auto ex = res_fut.get_exception();
+        if (moves_seen_window && !ssx::is_shutdown_exception(ex)) {
+            vlog(
+              cd_log.warn,
+              "{} The epoch advancing replication failed {}, stepping down "
+              "the leadership",
+              ntp,
+              ex);
+            co_await partition->raft()->step_down_in_term(
+              fence->term, "seen-window diverged due to replication failure");
+        }
+        co_await ss::coroutine::return_exception_ptr(std::move(ex));
+    }
+    auto res = res_fut.get();
     if (res.has_error()) {
+        // We can't universally guarantee the correct epoch order if replication
+        // failed.
+        // - The batch that advances the epoch is replicated with exclusive
+        //   lock;
+        // - It waits for all requests that carry smaller epoch values will
+        //   finish first;
+        // - After that the lock is taken. The lock is only held until the batch
+        //   is enqueued into Raft and can't be reordered anymore.
+        // - Now if the replication operation fails the 'seen' window stays
+        //   unchanged but the 'applied' window may or may not be moved
+        //   accordingly.
+        // - The divergence between the 'applied' and 'seen' windows may cause
+        //   ordering violations.
+        //
+        // To avoid this problem we need to step down the leadership.
+        // This is only required if the seen-window was moved. The new term
+        // will invalidate the seen window.
+        if (moves_seen_window && res.error() != raft::errc::shutting_down) {
+            vlog(
+              cd_log.warn,
+              "{} The epoch advancing replication failed {}, stepping down the "
+              "leadership",
+              ntp,
+              res.error());
+            co_await partition->raft()->step_down_in_term(
+              fence->term, "seen-window diverged due to replication failure");
+        }
         co_return res.error();
     }
     if (!cache_batches.empty()) {
@@ -917,10 +968,39 @@ ss::future<std::expected<kafka::offset, std::error_code>> frontend::replicate(
     }
 
     opts = update_replicate_options(opts, fence->term);
-    auto result = co_await _partition->replicate(
-      std::move(placeholder_batches), opts);
-
+    auto result_fut = co_await ss::coroutine::as_future(
+      _partition->replicate(std::move(placeholder_batches), opts));
+    if (result_fut.failed()) {
+        // Same divergence handling as the error path below: the seen
+        // window was already advanced by the fence and can't be rolled
+        // back, so a failed replication requires a step down.
+        auto ex = result_fut.get_exception();
+        if (fence->moves_seen_window() && !ssx::is_shutdown_exception(ex)) {
+            vlog(
+              cd_log.warn,
+              "{} The epoch advancing replication failed {}, stepping down "
+              "the leadership",
+              ntp(),
+              ex);
+            co_await _partition->raft()->step_down_in_term(
+              fence->term, "seen-window diverged due to replication failure");
+        }
+        co_await ss::coroutine::return_exception_ptr(std::move(ex));
+    }
+    auto result = result_fut.get();
     if (!result) {
+        if (
+          fence->moves_seen_window()
+          && result.error() != raft::errc::shutting_down) {
+            vlog(
+              cd_log.warn,
+              "{} The epoch advancing replication failed {}, stepping down the "
+              "leadership",
+              ntp(),
+              result.error());
+            co_await _partition->raft()->step_down_in_term(
+              fence->term, "seen-window diverged due to replication failure");
+        }
         co_return std::unexpected(result.error());
     }
     auto ret_offset = model::offset(result.value().last_offset());
