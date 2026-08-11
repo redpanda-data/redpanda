@@ -48,6 +48,11 @@ var commands = map[string]func() error{
 	// as a parallel driver Antithesis may run several concurrent copies of it,
 	// applying real read pressure while still asserting the invariants.
 	"parallel_driver_consume_foo": checkFoo,
+	// The ctc commands fuzz compaction on a compacted cloud topic: the
+	// sweeper asserts log-shape invariants and holds surviving records
+	// against the trackers' acked-write summaries. See ctc.go.
+	"parallel_driver_produce_ctc": produceCtc,
+	"parallel_driver_sweep_ctc":   sweepCtc,
 	"anytime_check_range_foo":     checkFoo,
 	// check_offsets_foo has no test-composer prefix, so it gets no symlink and
 	// Antithesis never schedules it. It is a manual replay tool for the

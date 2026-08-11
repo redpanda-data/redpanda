@@ -37,6 +37,7 @@ func randN(n int) int {
 	return rng.Intn(n)
 }
 
+const topicPropertyCleanupPolicy = "cleanup.policy"
 const topicPropertyStorageMode = "redpanda.storage.mode"
 
 const storageModeCloud = "cloud"
@@ -63,6 +64,9 @@ func createTestTopics() error {
 		mode := random.RandomChoice(storageModes)
 		fmt.Printf("randomly chosen storage mode: %s=%s\n", t.name, mode)
 		cfg := map[string]*string{topicPropertyStorageMode: &mode}
+		if t.compacted {
+			cfg[topicPropertyCleanupPolicy] = new("compact")
+		}
 		if err := createOneTopic(adm, t.name, t.partitions, t.replicas, cfg); err != nil {
 			return err
 		}
