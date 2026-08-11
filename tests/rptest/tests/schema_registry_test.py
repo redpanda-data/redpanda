@@ -10461,7 +10461,13 @@ class SchemaRegistryAclAuthzTestBase(SchemaRegistryEndpoints):
     Base class providing shared ACL test infrastructure (setup, helpers) without test methods.
     """
 
-    def __init__(self, context, extra_rp_conf: dict | None = None, **kwargs):
+    def __init__(
+        self,
+        context,
+        extra_rp_conf: dict | None = None,
+        num_brokers: int = 1,
+        **kwargs,
+    ):
         security = SecurityConfig()
         security.enable_sasl = True
         security.endpoint_authn_method = "sasl"
@@ -10476,7 +10482,7 @@ class SchemaRegistryAclAuthzTestBase(SchemaRegistryEndpoints):
         super().__init__(
             context,
             security=security,
-            num_brokers=1,
+            num_brokers=num_brokers,
             schema_registry_config=schema_registry_config,
             extra_rp_conf=merged_rp_conf,
             **kwargs,
