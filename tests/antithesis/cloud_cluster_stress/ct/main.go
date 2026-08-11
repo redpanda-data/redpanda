@@ -54,6 +54,13 @@ var commands = map[string]func() error{
 	"parallel_driver_produce_ctc": produceCtc,
 	"parallel_driver_sweep_ctc":   sweepCtc,
 	"anytime_check_range_foo":     checkFoo,
+	// eventually rather than finally: finally commands only run on timelines
+	// where every started command completed and none was killed by a fault,
+	// which excludes the most hostile histories — exactly the ones this data
+	// completeness check exists for. An eventually command runs after any
+	// driver has started; Antithesis kills the stragglers, which the acked
+	// summaries tolerate by design (only observed acks, atomic replace).
+	"eventually_check_complete": checkComplete,
 	// check_offsets_foo has no test-composer prefix, so it gets no symlink and
 	// Antithesis never schedules it. It is a manual replay tool for the
 	// multiverse debugger; see checkFooOffsets.

@@ -40,6 +40,10 @@ func (p readPolicy) exhausted(attempt int) bool {
 
 func anytimeRead() readPolicy { return readPolicy{attempts: 3} }
 
+func eventuallyRead() readPolicy {
+	return readPolicy{deadline: time.Now().Add(2 * time.Minute)}
+}
+
 // partitionBounds returns a partition's current start and high-watermark
 // offsets, retrying failed lookups per pol. Records occupy [lo, hi); the
 // partition is empty when hi <= lo. A successful answer is never retried,
@@ -274,5 +278,116 @@ func checkFooOffsets() error {
 	fmt.Printf("check_offsets_foo: foo/%d [%d,%d) bounds=[%d,%d) -> %d records\n",
 		part, o1, o2, lo, hi, len(recs))
 	validateFooRange(int32(part), lo, hi, o1, o2, recs)
+	return nil
+}
+
+// readPartitionToEnd reads a partition's bounds and then the whole [lo, hi)
+// range under one policy; a deadline in pol is shared by both steps. The
+// completeness target (a record at offset hi-1; on a compacted topic that is
+// fewer than hi-lo records) is fixed once from the bounds: nothing produces
+// while an eventually command runs, so hi cannot move mid-read.
+// Returns the bounds and the records of the final range attempt — the
+// complete slice on success, a prefix if pol ran out, nil for an empty
+// partition — or an error if the bounds never became readable.
+func readPartitionToEnd(t string, part int32, pol readPolicy) (lo, hi int64, recs []*kgo.Record, err error) {
+	lo, hi, err = partitionBounds(t, part, pol)
+	if err != nil || hi <= lo {
+		return lo, hi, nil, err
+	}
+	return lo, hi, readRange(t, part, lo, hi, pol), nil
+}
+
+// eventually_check_complete: after Antithesis stops fault injection for the
+// timeline, wait for the cluster to recover, then read every partition of
+// every test topic from its start offset to its high watermark, assert the
+// read is complete, and run the same shape validation the anytime checkers
+// use: validateFooRange for the delete-policy topic (in-order, contiguous,
+// intact, per-producer order), validateCtcRange for the compacted one (same
+// minus contiguity, since compaction leaves legal gaps).
+//
+// Because this runs on a quiesced, healed cluster with no concurrent produce
+// or faults, completeness is a hard Always here (one property per cleanup
+// policy, since the predicate differs) — contrast the anytime checkers, where
+// a fault can truncate a read so completeness is only Sometimes. Complete
+// means the read reaches the high watermark; on the
+// delete-policy topic it also means every offset in [lo, hi) is present,
+// while compaction legally removes records anywhere, including at lo (the
+// record at hi-1 is the newest and thus the latest for its key, so it always
+// survives).
+func checkComplete() error {
+	// Faults stop when an eventually command starts, but containers need time
+	// to come back. Refuse to validate until the cluster serves metadata
+	// again; a cluster that never recovers is itself a failure.
+	if err := waitClusterReady(expectedBrokers(), 5*time.Minute); err != nil {
+		assert.Unreachable("eventually: cluster did not recover after faults stopped",
+			map[string]any{"err": err.Error()})
+		return err
+	}
+
+	// No producers run in the eventually phase, so the acked summaries are
+	// final. A producer killed mid-round may have observed acks it never
+	// persisted; the summary only ever understates what was acked, which
+	// weakens the check without falsifying it.
+	ackedSnap, err := loadCtcAckedSnapshot()
+	if err != nil {
+		return err
+	}
+
+	for _, t := range testTopics {
+		for part := range t.partitions {
+			fmt.Printf("eventually: checking %s/%d\n", t.name, part)
+
+			lo, hi, recs, err := readPartitionToEnd(t.name, part, eventuallyRead())
+			if err != nil {
+				// The cluster serves metadata (waitClusterReady passed) but
+				// this partition's bounds never became readable; that is a
+				// recovery failure, not an empty partition.
+				assert.Unreachable("eventually: partition bounds unreadable after faults stopped",
+					map[string]any{"topic": t.name, "partition": part, "err": err.Error()})
+				continue
+			}
+			if hi <= lo {
+				// An empty partition is only innocent if nothing was ever
+				// acked on it; acked keys with no log at all are loss.
+				if t.compacted {
+					validateCtcAcked(part, hi, nil, ackedSnap, true)
+				}
+				continue // empty partition; nothing else to verify
+			}
+
+			first, last := int64(-1), int64(-1)
+			if len(recs) > 0 {
+				first, last = recs[0].Offset, recs[len(recs)-1].Offset
+			}
+			complete := last == hi-1
+			if !t.compacted {
+				complete = complete && first == lo && int64(len(recs)) == hi-lo
+			}
+
+			details := map[string]any{
+				"topic": t.name, "partition": part, "lo": lo, "hi": hi,
+				"count": len(recs), "first": first, "last": last,
+			}
+			fmt.Printf("eventually %s/%d [%d,%d) -> %d records (complete=%v)\n",
+				t.name, part, lo, hi, len(recs), complete)
+
+			// Reachability and completeness are per cleanup policy: distinct
+			// names keep each topic's eventually coverage a separate obligation
+			// (foo validating must not mask ctc never getting validated), and
+			// the completeness predicate differs between the policies anyway.
+			if t.compacted {
+				assert.Reachable("eventually: validated a non-empty compacted cloud topic partition", details)
+				assert.Always(complete, "eventually: compacted cloud topic partition is readable to the high watermark", details)
+				latest, rangeComplete := validateCtcRange(part, lo, hi, recs)
+				// The cluster is quiesced, so hi cannot move mid-read; a
+				// complete read alone makes the loss check sound here.
+				validateCtcAcked(part, hi, latest, ackedSnap, rangeComplete)
+			} else {
+				assert.Reachable("eventually: validated a non-empty delete-policy cloud topic partition", details)
+				assert.Always(complete, "eventually: delete-policy cloud topic partition is fully readable to the high watermark", details)
+				validateFooRange(part, lo, hi, lo, hi, recs)
+			}
+		}
+	}
 	return nil
 }
