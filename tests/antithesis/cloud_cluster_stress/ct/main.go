@@ -57,6 +57,7 @@ var commands = map[string]func() error{
 	"parallel_driver_produce_ctc": produceCtc,
 	"parallel_driver_sweep_ctc":   sweepCtc,
 	"anytime_check_range_foo":     checkFoo,
+	"anytime_check_cloud_io":      checkCloudIO,
 	// eventually rather than finally: finally commands only run on timelines
 	// where every started command completed and none was killed by a fault,
 	// which excludes the most hostile histories — exactly the ones this data
