@@ -47,9 +47,10 @@ var commands = map[string]func() error{
 	// consume reads and validates the same way the anytime checker does, but
 	// as a parallel driver Antithesis may run several concurrent copies of it,
 	// applying real read pressure while still asserting the invariants.
-	"parallel_driver_consume_foo":      checkFoo,
-	"parallel_driver_move_metastore":   moveMetastore,
-	"parallel_driver_move_kafka_topic": moveKafkaTopic,
+	"parallel_driver_consume_foo":       checkFoo,
+	"parallel_driver_move_metastore":    moveMetastore,
+	"parallel_driver_move_kafka_topic":  moveKafkaTopic,
+	"parallel_driver_flip_storage_mode": flipStorageMode,
 	// The ctc commands fuzz compaction on a compacted cloud topic: the
 	// sweeper asserts log-shape invariants and holds surviving records
 	// against the trackers' acked-write summaries. See ctc.go.
