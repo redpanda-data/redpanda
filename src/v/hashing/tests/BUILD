@@ -26,6 +26,23 @@ redpanda_cc_btest_no_seastar(
 )
 
 redpanda_cc_gtest(
+    name = "crc32c_test",
+    timeout = "short",
+    srcs = [
+        "crc32c_tests.cc",
+    ],
+    cpu = 1,
+    deps = [
+        "//src/v/base",
+        "//src/v/bytes:iobuf",
+        "//src/v/hashing:crc32c",
+        "//src/v/test_utils:gtest",
+        "@googletest//:gtest",
+        "@seastar",
+    ],
+)
+
+redpanda_cc_gtest(
     name = "murmur_hash_test",
     timeout = "short",
     srcs = [
@@ -38,6 +55,23 @@ redpanda_cc_gtest(
         "//src/v/test_utils:gtest",
         "@googletest//:gtest",
         "@seastar",
+    ],
+)
+
+redpanda_cc_bench(
+    name = "crc_bench_rpbench",
+    srcs = [
+        "crc_bench.cc",
+    ],
+    deps = [
+        "//src/v/base",
+        "//src/v/bytes",
+        "//src/v/bytes:iobuf",
+        "//src/v/hashing:crc32c",
+        "//src/v/test_utils:random_bytes",
+        "@abseil-cpp//absl/crc:crc32c",
+        "@seastar",
+        "@seastar//:benchmark",
     ],
 )
 

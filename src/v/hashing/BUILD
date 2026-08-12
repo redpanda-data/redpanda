@@ -19,6 +19,7 @@ redpanda_cc_library(
     visibility = ["//visibility:public"],
     deps = [
         "//src/v/bytes:iobuf",
+        "@abseil-cpp//absl/crc:crc32c",
         "@crc32c",
     ],
 )
