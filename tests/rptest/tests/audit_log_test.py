@@ -40,6 +40,7 @@ from rptest.services.keycloak import DEFAULT_REALM, KeycloakService
 from rptest.services.ocsf_server import OcsfServer
 from rptest.services.redpanda import (
     AUDIT_LOG_ALLOW_LIST,
+    CHAOS_LOG_ALLOW_LIST,
     RESTART_LOG_ALLOW_LIST,
     LoggingConfig,
     MetricSamples,
@@ -4409,15 +4410,15 @@ class AuditLogUpgradeTest(AuditLogTestBase):
 
 class AuditLogTopicExistsTest(AuditLogTestBase):
     """
-    Covers both sides of the create-skip contract when the audit topic
-    already exists:
+    Covers the create-skip contract when the audit topic already exists:
+    re-enabling audit logging must initialize without re-issuing
+    CreateTopics (removing the controller-availability dependency) and must
+    still deliver events afterwards -- on both sinks.
 
-    - RPC sink: re-enabling audit logging must initialize without re-issuing
-      CreateTopics (removing the controller-availability dependency) and
-      must still deliver events afterwards.
-    - Kafka-client sink: must deliberately KEEP issuing CreateTopics -- that
-      step's SASL failure is what triggers ephemeral-credential propagation
-      (inform) to the brokers, so skipping it there breaks authentication.
+    On the kafka-client sink the skip is safe only because credential
+    propagation no longer rides on the create's SASL failure: do_configure
+    runs a proactive inform-all before any broker contact, and this test
+    additionally pins that (Informed logs) plus the ACL exists-skip.
     """
 
     def __init__(self, test_context):
@@ -4463,17 +4464,288 @@ class AuditLogTopicExistsTest(AuditLogTestBase):
             "expected the post-re-enable management event in the audit log"
         )
 
-        skip_logged = self.redpanda.search_log_any(
+        # The skip log exists only on the new path; without the fix a
+        # re-enable always goes through CreateTopics again.
+        assert self.redpanda.search_log_any(
             "Audit log topic already exists, skipping create"
-        )
-        if audit_transport_mode is AuditLogMode.RPC:
-            # The skip log exists only on the new path; without the fix a
-            # re-enable always goes through CreateTopics again.
-            assert skip_logged, "expected topic creation to be skipped on RPC re-enable"
-        else:
-            # The Kafka-client sink must NOT skip: its create is the first
-            # SASL contact, whose failure triggers ephemeral-credential
-            # propagation (inform). This assertion pins that contract.
-            assert not skip_logged, (
-                "the Kafka-client sink must keep issuing CreateTopics"
+        ), "expected topic creation to be skipped on re-enable"
+
+        if audit_transport_mode is AuditLogMode.KCLIENT:
+            # The skip is safe on this sink only because inform-all now
+            # runs before any broker contact; pin the whole package.
+            assert self.redpanda.search_log_any(
+                "Audit ACLs already exist, skipping create"
+            ), "expected the ACL write to be skipped on re-enable"
+            assert self.redpanda.search_log_any("Informed: broker"), (
+                "expected the proactive inform-all to run on re-enable"
             )
+
+
+class AuditLogLeaderlessControllerTest(AuditLogTestBase):
+    """
+    A leaderless controller must not block auditing, on either sink: a
+    member broker restarting while raft group 0 has no leader must still
+    complete audit initialization through the exists-skips -- the audit
+    topic is read from the locally materialized topic table instead of
+    round-tripping CreateTopics through the controller leader, and the
+    kafka-client sink additionally skips its controller-dependent ACL
+    write (its credential propagation is handled by the proactive
+    inform-all instead of riding on a CreateTopics SASL failure). Without
+    the skips, initialization retries forever and the per-shard queues
+    fill -- the CORE-15822 incident class.
+
+    Verified end-to-end: fibers start during the leaderless window, an
+    admin event audited during the window is consumed back from the audit
+    topic while the controller is still leaderless (the audit partition
+    is pinned so it keeps raft quorum when group 0 does not), and an
+    event produced after quorum returns arrives with no extra broker
+    restart.
+    """
+
+    def __init__(self, test_context):
+        super(AuditLogLeaderlessControllerTest, self).__init__(
+            test_context=test_context,
+            audit_log_config=AuditLogConfig(
+                enabled=True,
+                event_types=["management", "admin"],
+                # A single partition so its replica set can be pinned to
+                # the brokers that stay alive during the leaderless window.
+                num_partitions=1,
+            ),
+            num_brokers=5,
+        )
+
+    def _node_log_count(self, node, pattern: str) -> int:
+        out = node.account.ssh_output(
+            f"grep -c '{pattern}' {RedpandaService.STDOUT_STDERR_CAPTURE} || true"
+        )
+        return int(out.strip())
+
+    def _pin_audit_partition(self):
+        # Pin the single audit partition to the first three brokers, so it
+        # keeps raft quorum (2 of 3 replicas alive) while the controller
+        # group (2 of 5 voters alive) is leaderless.
+        replicas = [
+            {"node_id": self.redpanda.node_id(n), "core": 0}
+            for n in self.redpanda.nodes[:3]
+        ]
+        self.admin.set_partition_replicas(self.audit_log, 0, replicas)
+        wait_until(
+            lambda: self.admin.get_partitions(topic=self.audit_log, partition=0)[
+                "status"
+            ]
+            == "done",
+            timeout_sec=60,
+            backoff_sec=2,
+            err_msg="audit partition replica move did not finish",
+        )
+
+    @skip_fips_mode
+    @cluster(num_nodes=7, log_allow_list=AUDIT_LOG_ALLOW_LIST + CHAOS_LOG_ALLOW_LIST)
+    @matrix(audit_transport_mode=get_audit_modes())
+    def test_restart_under_leaderless_controller(self, audit_transport_mode):
+        fibers_started = "Auditing fibers started"
+        create_attempt = "Creating audit log topic with settings"
+        init_failure = "Audit log client failed to initialize"
+        # The RPC skip string is a prefix of the kclient one, so this
+        # pattern covers both sinks.
+        skip_log = "Audit log topic already exists, skipping create"
+        acl_skip = "Audit ACLs already exist, skipping create"
+
+        assert self.audit_log in self.super_rpk.list_topics()
+        self._pin_audit_partition()
+
+        survivor = self.redpanda.nodes[0]
+        victims = self.redpanda.nodes[2:5]
+
+        fibers_before = self._node_log_count(survivor, fibers_started)
+        creates_before = self._node_log_count(survivor, create_attempt)
+        failures_before = self._node_log_count(survivor, init_failure)
+
+        # Take down 3 of 5 brokers: raft group 0 is left with 2/5 voters,
+        # so the controller is guaranteed leaderless for the whole window,
+        # while the pinned audit partition keeps 2/3 replicas.
+        for n in victims:
+            self.redpanda.stop_node(n)
+
+        # Restart the surviving member. It boots from local state (its
+        # node_id_source classifies as `established`), so startup itself
+        # never blocks on the controller leader; the readiness check is
+        # skipped because it needs cluster membership info from peers.
+        self.redpanda.stop_node(survivor)
+        self.redpanda.start_node(survivor, skip_readiness_check=True)
+
+        # The assertions this test exists for: audit initialization on the
+        # restarted node completes during the leaderless window, by taking
+        # the exists-skip path instead of CreateTopics (and, on the
+        # kafka-client sink, instead of the ACL write too).
+        wait_until(
+            lambda: self.redpanda.search_log_node(survivor, skip_log),
+            timeout_sec=90,
+            backoff_sec=2,
+            err_msg="expected audit init to skip topic creation while the "
+            "controller is leaderless",
+        )
+        if audit_transport_mode is AuditLogMode.KCLIENT:
+            wait_until(
+                lambda: self.redpanda.search_log_node(survivor, acl_skip),
+                timeout_sec=90,
+                backoff_sec=2,
+                err_msg="expected audit init to skip the ACL write while "
+                "the controller is leaderless",
+            )
+        wait_until(
+            lambda: self._node_log_count(survivor, fibers_started) > fibers_before,
+            timeout_sec=90,
+            backoff_sec=2,
+            err_msg="expected auditing fibers to start on the restarted node "
+            "while the controller is leaderless",
+        )
+        assert self._node_log_count(survivor, create_attempt) == creates_before, (
+            "audit init must not have issued CreateTopics after the restart"
+        )
+        assert self._node_log_count(survivor, init_failure) == failures_before, (
+            "audit init must not have entered the failure/retry loop"
+        )
+
+        # The strongest half of the contract: a request audited during the
+        # leaderless window lands in the audit topic during the window.
+        # The license read is served locally, so no controller involved.
+        window_start_ms = time.time() * 1000
+        self.admin.get_license(node=survivor)
+
+        def in_window_license_read(record):
+            return (
+                record["class_uid"] == 6003
+                and record["dst_endpoint"]["svc_name"] == self.admin_audit_svc_name
+                and record["http_request"]["url"]["path"] == "/v1/features/license"
+                and record["http_request"]["url"]["hostname"]
+                == f"{survivor.account.hostname}:9644"
+                and record["time"] >= window_start_ms - 2000
+            )
+
+        records = self.find_matching_record(
+            in_window_license_read,
+            lambda cnt: cnt >= 1,
+            "admin event delivered during the leaderless window",
+        )
+        assert len(records) > 0, (
+            "expected the in-window admin event in the audit log while the "
+            "controller is leaderless"
+        )
+
+        # Recovery: quorum returns, and events flow again with no further
+        # broker restart -- the incident required one to recover.
+        for n in victims:
+            self.redpanda.start_node(n)
+        self.admin.await_stable_leader(
+            topic="controller", partition=0, namespace="redpanda", timeout_s=60
+        )
+
+        marker_topic = "audit-leaderless-marker"
+        self.super_rpk.create_topic(marker_topic)
+        records = self.find_matching_record(
+            partial(
+                self.api_resource_match,
+                "create_topics",
+                {"name": marker_topic, "type": "topic"},
+                self.kafka_rpc_service_name,
+            ),
+            lambda cnt: cnt >= 1,
+            "management event produced after the leaderless window",
+        )
+        assert len(records) > 0, (
+            "expected the post-recovery management event in the audit log"
+        )
+
+
+class AuditLogTopicRecreateTest(AuditLogTestBase):
+    """
+    False-positive guard for the create-skip on both sinks: when the audit
+    topic genuinely does not exist -- deleted while auditing was disabled --
+    the skip must NOT fire on re-enable. Initialization must go through
+    CreateTopics again, recreate the topic, and deliver events afterwards.
+    """
+
+    def __init__(self, test_context):
+        super(AuditLogTopicRecreateTest, self).__init__(
+            test_context=test_context,
+            audit_log_config=AuditLogConfig(
+                enabled=True,
+                event_types=["management", "admin"],
+            ),
+        )
+
+    def _cluster_log_count(self, pattern: str) -> int:
+        total = 0
+        for node in self.redpanda.nodes:
+            out = node.account.ssh_output(
+                f"grep -c '{pattern}' {RedpandaService.STDOUT_STDERR_CAPTURE} || true"
+            )
+            total += int(out.strip())
+        return total
+
+    @skip_fips_mode
+    @cluster(num_nodes=5, log_allow_list=AUDIT_LOG_ALLOW_LIST)
+    @matrix(audit_transport_mode=get_audit_modes())
+    def test_delete_and_reenable_recreates_topic(self, audit_transport_mode):
+        # The RPC skip string is a prefix of the kclient one, so this
+        # pattern covers both sinks.
+        skip_log = "Audit log topic already exists, skipping create"
+        create_attempt = "Creating audit log topic with settings"
+
+        assert self.audit_log in self.super_rpk.list_topics()
+
+        self.modify_audit_enabled(False)
+        wait_until(
+            lambda: self.redpanda.search_log_any("Auditing fibers stopped"),
+            timeout_sec=30,
+            backoff_sec=1,
+            err_msg="expected auditing to stop",
+        )
+
+        # The topic is deletable only while auditing is off, and only after
+        # removing it from kafka_nodelete_topics (it is in the default set).
+        self._modify_cluster_config(
+            {"kafka_nodelete_topics": ["__consumer_offsets", "_schemas"]}
+        )
+        self.super_rpk.delete_topic(self.audit_log)
+        wait_until(
+            lambda: self.audit_log not in self.super_rpk.list_topics(),
+            timeout_sec=30,
+            backoff_sec=2,
+            err_msg="expected the audit topic to be deleted",
+        )
+
+        skips_before = self._cluster_log_count(skip_log)
+        creates_before = self._cluster_log_count(create_attempt)
+
+        self.modify_audit_enabled(True)
+        wait_until(
+            lambda: self.audit_log in self.super_rpk.list_topics(),
+            timeout_sec=30,
+            backoff_sec=2,
+            err_msg="expected re-enabling auditing to recreate the topic",
+        )
+        assert self._cluster_log_count(skip_log) == skips_before, (
+            "the exists-skip must not fire when the topic does not exist"
+        )
+        assert self._cluster_log_count(create_attempt) > creates_before, (
+            "expected initialization to go through CreateTopics again"
+        )
+
+        marker_topic = "audit-recreate-marker"
+        self.super_rpk.create_topic(marker_topic)
+        records = self.find_matching_record(
+            partial(
+                self.api_resource_match,
+                "create_topics",
+                {"name": marker_topic, "type": "topic"},
+                self.kafka_rpc_service_name,
+            ),
+            lambda cnt: cnt >= 1,
+            "management event produced after the recreate",
+        )
+        assert len(records) > 0, (
+            "expected the post-recreate management event in the audit log"
+        )
