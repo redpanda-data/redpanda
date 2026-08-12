@@ -78,7 +78,7 @@ def _test_options():
         "ASAN_OPTIONS": "disable_coredump=0:abort_on_error=1",
         "ASAN_SYMBOLIZER_PATH": "$(rootpath @current_llvm_toolchain//:llvm-symbolizer)",
         "LSAN_OPTIONS": "suppressions=$(rootpath //:lsan_suppressions)",
-        "UBSAN_OPTIONS": "halt_on_error=1:abort_on_error=1:report_error_type=1:suppressions=$(rootpath //:ubsan_suppressions)",
+        "UBSAN_OPTIONS": "symbolize=1:print_stacktrace=1:halt_on_error=1:abort_on_error=1:report_error_type=1:suppressions=$(rootpath //:ubsan_suppressions)",
         # see https://redpandadata.atlassian.net/wiki/x/BwDSUw
         "REDPANDA_RNG_SEEDING_MODE_DEFAULT": "fixed",
     }
@@ -189,6 +189,7 @@ def _redpanda_cc_fuzz_test(
       env: environment variables
       data: data file dependencies
     """
+    test_data, test_env = _test_options()
     cc_test(
         name = name,
         timeout = timeout,
@@ -203,8 +204,8 @@ def _redpanda_cc_fuzz_test(
         tags = [
             "fuzz",
         ],
-        env = env,
-        data = data,
+        env = env | test_env,
+        data = data + test_data,
         linkopts = [
             "-fsanitize=fuzzer",
         ],

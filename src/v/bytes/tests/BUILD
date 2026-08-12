@@ -101,6 +101,8 @@ redpanda_cc_fuzz_test(
     args = [
         "-max_total_time=30",
         "-rss_limit_mb=8192",
+        "-max_len=1048576",
+        "-len_control=15",
     ],
     deps = [
         "//src/v/base",
