@@ -377,12 +377,6 @@ consensus::success_reply consensus::update_follower_index(
         return success_reply::yes;
     }
 
-    if (unlikely(r.value().result == reply_result::follower_busy)) {
-        // ignore this response, timed out on the receiver node
-        vlog(_ctxlog.trace, "Follower busy on node {}", node.id());
-        return success_reply::no;
-    }
-
     const auto& config = _configuration_manager.get_latest();
     if (!config.contains(node)) {
         // We might have sent an append_entries just before removing
@@ -437,6 +431,21 @@ consensus::success_reply consensus::update_follower_index(
     // check preconditions for processing the reply
     if (unlikely(!is_elected_leader())) {
         vlog(_ctxlog.debug, "ignoring append entries reply, not leader");
+        return success_reply::no;
+    }
+
+    if (unlikely(reply.result == reply_result::follower_busy)) {
+        // The reply carries no replication state, but its term is still
+        // valid evidence of a term we may be lagging behind (Raft paper:
+        // §5.1).
+        if (reply.term > _term) {
+            ssx::spawn_with_gate(_bg, [this, term = reply.term] {
+                return step_down(
+                  model::term_id(term), "busy response with greater term");
+            });
+        }
+        // ignore this response, timed out on the receiver node
+        vlog(_ctxlog.trace, "Follower busy on node {}", node.id());
         return success_reply::no;
     }
 

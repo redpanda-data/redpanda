@@ -1460,3 +1460,150 @@ TEST_F_CORO(raft_fixture, test_no_election_storm_with_stalled_appends) {
     ASSERT_EQ_CORO(follower_vote_requests, 0);
     ASSERT_GT_CORO(follower_full_heartbeat_replies, 0);
 }
+
+/**
+ * Wedge reproducer: a follower one term above a live leader rejects all
+ * append entries and full heartbeats without refreshing its election
+ * timer, so it keeps starting elections that peers with a healthy leader
+ * reject without ever reading the higher term (leader stickiness). The
+ * only remaining path for the cluster to learn the follower term is the
+ * heartbeat reply. When the follower is overloaded the service degrades
+ * full heartbeat replies to follower_busy and the leader drops busy
+ * replies before its reply-term check, so the wedge never resolves.
+ *
+ * The follower is seeded one term ahead the same way it happens in
+ * production: a leadership transfer (timeout_now) whose vote round is
+ * lost to the network. The reply interceptor simulates a persistently
+ * overloaded follower, preserving the reply term the service includes
+ * when fabricating busy replies.
+ *
+ * Liveness property asserted: the group must converge to a term at least
+ * as high as the wedged follower's.
+ */
+TEST_F_CORO(raft_fixture, test_leader_learns_higher_term_from_busy_follower) {
+    set_election_timeout(1s);
+    co_await create_simple_group(3);
+    auto leader_id = co_await wait_for_leader(10s);
+    auto& leader_node = node(leader_id);
+
+    auto res = co_await leader_node.raft()->replicate(
+      make_batches(10, 1, 128),
+      replicate_options(consistency_level::quorum_ack, 10s));
+    ASSERT_FALSE_CORO(res.has_error());
+    co_await wait_for_committed_offset(res.value().last_offset, 10s);
+
+    auto follower_id = random_follower_id().value();
+    auto& follower_node = node(follower_id);
+    auto follower = follower_node.raft();
+    const auto term = follower->term();
+
+    auto cleanup = ss::defer([&] {
+        leader_node.reset_reply_interceptor();
+        follower_node.reset_dispatch_handlers();
+    });
+
+    // All full heartbeat replies from the follower degrade to
+    // follower_busy, keeping the rest of the reply intact.
+    leader_node.set_reply_interceptor(
+      [follower_id](reply_variant reply, model::node_id from) {
+          return ss::visit(
+            std::move(reply),
+            [follower_id, from](heartbeat_reply_v2 hb) {
+                if (from != follower_id) {
+                    return ss::make_ready_future<reply_variant>(std::move(hb));
+                }
+                heartbeat_reply_v2 busy(hb.source(), hb.target());
+                hb.for_each_lw_reply([&busy](raft::group_id g, reply_result r) {
+                    busy.add(g, r);
+                });
+                for (const auto& full : hb.full_replies()) {
+                    busy.add(
+                      full.group, reply_result::follower_busy, full.data);
+                }
+                return ss::make_ready_future<reply_variant>(std::move(busy));
+            },
+            [](auto r) {
+                return ss::make_ready_future<reply_variant>(std::move(r));
+            });
+      });
+
+    // Seed the follower one term above the leader: deliver a leadership
+    // transfer request but lose its vote rounds. Peers with a live leader
+    // would reject the follower's (pre-)votes without adopting the higher
+    // term anyway, so the block stays on for the whole test.
+    follower_node.on_dispatch([](model::node_id, msg_type t) {
+        if (t == msg_type::vote) {
+            throw std::runtime_error("vote round lost by test");
+        }
+        return ss::now();
+    });
+    auto tn_reply = co_await follower->timeout_now(
+      timeout_now_request{
+        .target_node_id = follower_node.get_vnode(),
+        .node_id = leader_node.get_vnode(),
+        .group = follower->group(),
+        .term = term,
+      });
+    ASSERT_EQ_CORO(tn_reply.result, timeout_now_reply::status::success);
+    RPTEST_REQUIRE_EVENTUALLY_CORO(5s, [&] { return follower->term() > term; });
+
+    // The group must learn the follower's term from its heartbeat replies
+    // and converge, instead of leaving it electioneering forever.
+    RPTEST_REQUIRE_EVENTUALLY_CORO(8s, [&] {
+        auto leader = get_leader();
+        return leader.has_value() && node(*leader).raft()->term() > term;
+    });
+}
+
+/**
+ * The busy replies fabricated by the raft service when a full heartbeat
+ * dispatch exceeds its deadline must carry the group term. A zero service
+ * deadline degrades every full heartbeat reply to follower_busy, making
+ * those replies the only channel through which the leader can learn about
+ * a follower wedged at a higher term.
+ */
+TEST_F_CORO(raft_fixture, test_fabricated_busy_reply_carries_term) {
+    set_election_timeout(1s);
+    set_service_heartbeat_timeout(0ms);
+    co_await create_simple_group(3);
+    auto leader_id = co_await wait_for_leader(10s);
+    auto& leader_node = node(leader_id);
+
+    auto res = co_await leader_node.raft()->replicate(
+      make_batches(10, 1, 128),
+      replicate_options(consistency_level::quorum_ack, 10s));
+    ASSERT_FALSE_CORO(res.has_error());
+    co_await wait_for_committed_offset(res.value().last_offset, 10s);
+
+    auto follower_id = random_follower_id().value();
+    auto& follower_node = node(follower_id);
+    auto follower = follower_node.raft();
+    const auto term = follower->term();
+
+    auto cleanup = ss::defer([&] { follower_node.reset_dispatch_handlers(); });
+
+    // Seed the follower one term above the leader: deliver a leadership
+    // transfer request but lose its vote rounds.
+    follower_node.on_dispatch([](model::node_id, msg_type t) {
+        if (t == msg_type::vote) {
+            throw std::runtime_error("vote round lost by test");
+        }
+        return ss::now();
+    });
+    auto tn_reply = co_await follower->timeout_now(
+      timeout_now_request{
+        .target_node_id = follower_node.get_vnode(),
+        .node_id = leader_node.get_vnode(),
+        .group = follower->group(),
+        .term = term,
+      });
+    ASSERT_EQ_CORO(tn_reply.result, timeout_now_reply::status::success);
+    RPTEST_REQUIRE_EVENTUALLY_CORO(5s, [&] { return follower->term() > term; });
+
+    // The group must learn the follower's term from the fabricated busy
+    // replies and converge.
+    RPTEST_REQUIRE_EVENTUALLY_CORO(8s, [&] {
+        auto leader = get_leader();
+        return leader.has_value() && node(*leader).raft()->term() > term;
+    });
+}

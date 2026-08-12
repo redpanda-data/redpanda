@@ -444,14 +444,31 @@ private:
         futures.reserve(reqs.full_heartbeats.size());
 
         for (auto& full_hb : reqs.full_heartbeats) {
+            auto c = m.consensus_for(full_hb.group);
             auto f = dispatch_full_heartbeat(
               source_node, target_node, m, full_hb);
             f = ss::with_timeout(timeout, std::move(f))
-                  .handle_exception_type([group = full_hb.group](
-                                           const ss::timed_out_error&) {
-                      return full_heartbeat_reply{
-                        .group = group, .result = reply_result::follower_busy};
-                  });
+                  .handle_exception_type(
+                    [group = full_hb.group,
+                     local_revision = c ? c->self().revision()
+                                        : model::revision_id{},
+                     sender_revision = full_hb.data.source_revision,
+                     term = c ? c->term()
+                              : model::term_id{}](const ss::timed_out_error&) {
+                        // The busy reply carries no replication state, but
+                        // the group term is known without dispatching and
+                        // lets the sender discover a term it is lagging
+                        // behind. Revisions are filled as in a genuine
+                        // reply so it maps back to a vnode the sender's
+                        // membership check accepts.
+                        return full_heartbeat_reply{
+                          .group = group,
+                          .result = reply_result::follower_busy,
+                          .data = heartbeat_reply_data{
+                            .source_revision = local_revision,
+                            .target_revision = sender_revision,
+                            .term = term}};
+                    });
             futures.push_back(std::move(f));
         }
 
