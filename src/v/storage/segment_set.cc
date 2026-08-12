@@ -268,10 +268,12 @@ maybe_create_contiguous_segment_set(segment_set::underlying_t segs) {
 static ss::future<segment_set> unsafe_do_recover(
   segment_set&& segments,
   std::optional<ss::sstring> last_clean_segment,
-  ss::abort_source& as) {
+  ss::abort_source& as,
+  recovery_report* report) {
     return ss::async([segments = std::move(segments),
                       last_clean_segment = std::move(last_clean_segment),
-                      &as]() mutable {
+                      &as,
+                      report]() mutable {
         if (segments.empty() || as.abort_requested()) {
             return std::move(segments);
         }
@@ -383,6 +385,18 @@ static ss::future<segment_set> unsafe_do_recover(
             good.pop_back();
         }
 
+        // A segment's filename carries its base offset, so recovery knows its
+        // position even when replay reads nothing out of the file. Both sets
+        // are sorted by ascending base offset, so the maximum is at the back.
+        auto max_base_offset = model::offset::min();
+        if (!good.empty()) {
+            max_base_offset = good.back()->offsets().get_base_offset();
+        }
+        if (!to_recover.empty()) {
+            max_base_offset = std::max(
+              max_base_offset, to_recover.back()->offsets().get_base_offset());
+        }
+
         for (auto& s : to_recover) {
             // check for abort
             if (unlikely(as.abort_requested())) {
@@ -402,6 +416,13 @@ static ss::future<segment_set> unsafe_do_recover(
             auto replayer = log_replayer(*s);
             auto recovered = replayer.recover_in_thread();
             if (!recovered) {
+                const auto position = s->offsets().get_base_offset()
+                                          == max_base_offset
+                                        ? segment_position::tail
+                                        : segment_position::mid_log;
+                if (report != nullptr) {
+                    ++report->count_at(position);
+                }
                 vlog(stlog.info, "Unable to recover segment: {}", s);
                 s->close().get();
                 ss::rename_file(
@@ -442,7 +463,8 @@ static ss::future<segment_set> unsafe_do_recover(
 static ss::future<segment_set> do_recover(
   segment_set&& segments,
   std::optional<ss::sstring> last_clean_segment,
-  ss::abort_source& as) {
+  ss::abort_source& as,
+  recovery_report* report) {
     // light-weight copy used for clean-up if recovery fails
     segment_set::underlying_t copy;
     std::copy(segments.cbegin(), segments.cend(), std::back_inserter(copy));
@@ -453,7 +475,8 @@ static ss::future<segment_set> do_recover(
     // are any pending io operations on a file associated with the segment
     // at the time of destruction seastar will complain about the file handle
     // being destroyed with pending ops.
-    return unsafe_do_recover(std::move(segments), last_clean_segment, as)
+    return unsafe_do_recover(
+             std::move(segments), last_clean_segment, as, report)
       .handle_exception(
         [copy = std::move(copy)](const std::exception_ptr& ex) mutable {
             return ss::do_with(
@@ -562,7 +585,8 @@ ss::future<segment_set> recover_segments(
   std::optional<ss::sstring> last_clean_segment,
   storage_resources& resources,
   ss::sharded<features::feature_table>& feature_table,
-  std::optional<ntp_sanitizer_config> ntp_sanitizer_config) {
+  std::optional<ntp_sanitizer_config> ntp_sanitizer_config,
+  recovery_report* report) {
     return ss::recursive_touch_directory(ss::sstring(path))
       .then([&as,
              path,
@@ -583,6 +607,7 @@ ss::future<segment_set> recover_segments(
             ntp_sanitizer_config);
       })
       .then([&as,
+             report,
              is_compaction_enabled,
              last_clean_segment = std::move(last_clean_segment)](
               segment_set::underlying_t segs) {
@@ -594,7 +619,8 @@ ss::future<segment_set> recover_segments(
                   s->mark_as_compacted_segment();
               }
           }
-          return do_recover(std::move(segments), last_clean_segment, as);
+          return do_recover(
+            std::move(segments), last_clean_segment, as, report);
       });
 }
 

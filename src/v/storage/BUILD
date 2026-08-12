@@ -333,6 +333,7 @@ redpanda_cc_library(
         ":parser_utils",
         ":record_batch_builder",
         ":record_batch_utils",
+        ":recovery_report",
         ":resources",
         ":scoped_file_tracker",
         ":segment_appender",
@@ -447,6 +448,14 @@ redpanda_cc_library(
     deps = [
         "@abseil-cpp//absl/container:btree",
     ],
+)
+
+redpanda_cc_library(
+    name = "recovery_report",
+    hdrs = [
+        "recovery_report.h",
+    ],
+    visibility = ["//visibility:public"],
 )
 
 redpanda_cc_library(

@@ -169,3 +169,67 @@ TEST_F(LogManagerTest, test_can_load_logs) {
     EXPECT_TRUE(
       file_exists(seg4->reader().filename() + ".cannotrecover").get());
 }
+
+TEST_F(
+  LogManagerTest, test_recovery_counts_a_mid_log_drop_apart_from_the_last) {
+    auto& m = log_mgr();
+
+    // Builds a two-segment log with garbage in one of them and recovers it.
+    // manage() keeps the recovery_report to itself, so this calls
+    // recover_segments directly.
+    auto recover = [&](const ss::sstring& ns, model::offset garbage_at) {
+        auto ntp = config_from_ntp(model::ntp(ns, "topic-1", 0));
+        directories::initialize(ntp.work_directory()).get();
+        for (auto base : {model::offset(0), model::offset(100)}) {
+            auto seg = m.make_log_segment(
+                          ntp,
+                          base,
+                          model::term_id(1),
+                          default_segment_readahead_size,
+                          default_segment_readahead_count,
+                          1_MiB)
+                         .get();
+            if (base == garbage_at) {
+                write_garbage(seg->appender());
+            } else {
+                write_batches(seg);
+            }
+            seg->close().get();
+        }
+        ss::abort_source as;
+        recovery_report report;
+        auto segments = recover_segments(
+                          partition_path(ntp),
+                          /*is_compaction_enabled=*/false,
+                          [] { return std::nullopt; },
+                          as,
+                          default_segment_readahead_size,
+                          default_segment_readahead_count,
+                          std::nullopt,
+                          m.resources(),
+                          feature_table(),
+                          std::nullopt,
+                          &report)
+                          .get();
+        for (auto& s : segments) {
+            s->close().get();
+        }
+        return report;
+    };
+
+    {
+        // Garbage in the older segment. The newer segment has a higher base
+        // offset, so the offsets the dropped segment claimed sit inside the
+        // log.
+        auto report = recover("ns-mid-log", model::offset(0));
+        EXPECT_EQ(report.dropped_mid_log, 1);
+        EXPECT_EQ(report.dropped_at_tail, 0);
+    }
+    {
+        // Garbage in the newer segment, which is the shape an unclean stop
+        // leaves on the segment that was open at the time.
+        auto report = recover("ns-last", model::offset(100));
+        EXPECT_EQ(report.dropped_mid_log, 0);
+        EXPECT_EQ(report.dropped_at_tail, 1);
+    }
+}

@@ -17,6 +17,7 @@
 #include "storage/file_sanitizer_types.h"
 #include "storage/fs_utils.h"
 #include "storage/fwd.h"
+#include "storage/recovery_report.h"
 #include "storage/segment.h"
 
 #include <seastar/core/sharded.hh>
@@ -112,7 +113,8 @@ ss::future<segment_set> recover_segments(
   std::optional<ss::sstring> last_clean_segment,
   storage_resources&,
   ss::sharded<features::feature_table>& feature_table,
-  std::optional<ntp_sanitizer_config> ntp_sanitizer_config);
+  std::optional<ntp_sanitizer_config> ntp_sanitizer_config,
+  recovery_report* report = nullptr);
 
 // Attempts to create a contiguous & non-overlapping `segment_set` from those
 // provided after recovery is performed. `segs` are first sorted in ascending
