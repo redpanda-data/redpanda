@@ -103,10 +103,10 @@ func TestInstallK8s_SHAMismatch(t *testing.T) {
 }
 
 func TestValidateVersion(t *testing.T) {
-	for _, ok := range []string{"latest", "25.3.5", "v25.3.5", "25.3.5-rc1"} {
+	for _, ok := range []string{"latest", "25.3.5", "v25.3.5", "25.3.5-rc1", "25.100.0"} {
 		require.NoError(t, validateVersion(ok), ok)
 	}
-	for _, bad := range []string{"", "abc", "25", "garbage"} {
+	for _, bad := range []string{"", "abc", "25", "garbage", "25.3.5garbage"} {
 		require.Error(t, validateVersion(bad), bad)
 	}
 }

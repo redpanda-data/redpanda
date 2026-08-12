@@ -23,7 +23,9 @@ func TestValidateVersion(t *testing.T) {
 		{"latest", false},
 		{"0.1.2", false},
 		{"v0.1.2", false},
-		{"1.2.3-rc1", false}, // suffix after patch is allowed by the regex
+		{"1.2.3-rc1", false},   // suffix after patch is allowed by the regex
+		{"4.100.0", false},     // segments are not capped at two digits
+		{"0.1.2garbage", true}, // trailing garbage is rejected
 		{"0.1", true},
 		{"foo", true},
 		{"", true},

@@ -7,7 +7,7 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
-package connect
+package check
 
 import (
 	"testing"
@@ -16,13 +16,10 @@ import (
 )
 
 func TestValidateVersion(t *testing.T) {
-	// Slim regression test for the 'latest' special case and the wiring to
-	// redpanda.ValidVersion; exhaustive pattern coverage lives in
-	// pkg/redpanda/version_test.go.
-	for _, ok := range []string{"latest", "4.99.0", "4.102.0", "v4.102.0", "4.102.0-rc1", "4.102.0-beta1", "4.102.100"} {
+	for _, ok := range []string{"latest", "0.1.0", "v0.1.0", "0.1.0-rc1", "0.100.0"} {
 		require.NoError(t, validateVersion(ok), ok)
 	}
-	for _, bad := range []string{"", "abc", "4", "4.102", "garbage", "4.102.0garbage", "4.102.0 "} {
+	for _, bad := range []string{"", "abc", "0", "garbage", "0.1.0garbage"} {
 		require.Error(t, validateVersion(bad), bad)
 	}
 }
