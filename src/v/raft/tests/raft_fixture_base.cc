@@ -372,6 +372,7 @@ raft_node_instance::raft_node_instance(
   bool enable_longest_log_detection,
   config::binding<std::chrono::milliseconds> election_timeout,
   config::binding<std::chrono::milliseconds> heartbeat_interval,
+  std::chrono::milliseconds service_heartbeat_timeout,
   bool with_offset_translation)
   : _id(id)
   , _revision(revision)
@@ -401,7 +402,7 @@ raft_node_instance::raft_node_instance(
       ss::default_scheduling_group(),
       std::ref(_group_manager),
       _shard_manager,
-      _heartbeat_interval(),
+      service_heartbeat_timeout,
       _id) {
     config::shard_local_cfg().disable_metrics.set_value(true);
 }
@@ -633,6 +634,7 @@ raft_node_instance& raft_fixture_base::add_node(
       _enable_longest_log_detection,
       _election_timeout.bind(),
       _heartbeat_interval.bind(),
+      _service_heartbeat_timeout.value_or(_heartbeat_interval()),
       _with_offset_translation);
 
     auto [it, success] = _nodes.emplace(id, std::move(instance));

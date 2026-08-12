@@ -204,6 +204,7 @@ public:
       bool enable_longest_log_detection,
       config::binding<std::chrono::milliseconds> election_timeout,
       config::binding<std::chrono::milliseconds> heartbeat_interval,
+      std::chrono::milliseconds service_heartbeat_timeout,
       bool with_offset_translation = false);
 
     raft_node_instance(const raft_node_instance&) = delete;
@@ -589,6 +590,15 @@ public:
         _heartbeat_interval.update(std::move(timeout));
     }
 
+    /**
+     * Deadline after which a node's raft service degrades a full heartbeat
+     * reply to follower_busy. Defaults to the heartbeat interval, as in
+     * production. Only affects nodes added after the call.
+     */
+    void set_service_heartbeat_timeout(std::chrono::milliseconds timeout) {
+        _service_heartbeat_timeout = timeout;
+    }
+
     void enable_offset_translation() { _with_offset_translation = true; }
 
     std::chrono::milliseconds get_election_timeout() const {
@@ -626,6 +636,7 @@ private:
     std::optional<leader_update_clb_t> _leader_clb;
     config::mock_property<std::chrono::milliseconds> _election_timeout{500ms};
     config::mock_property<std::chrono::milliseconds> _heartbeat_interval{50ms};
+    std::optional<std::chrono::milliseconds> _service_heartbeat_timeout;
     bool _with_offset_translation = false;
     std::filesystem::path _test_dir;
 };
