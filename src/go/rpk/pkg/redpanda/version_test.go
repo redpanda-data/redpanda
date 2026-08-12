@@ -25,10 +25,14 @@ func TestVersionFromString(t *testing.T) {
 		{name: "without v, with rc and text", in: "22.3.13-rc1 - 29e2b111d1d94d6d1f6cc591457ed03119edf0e6-dirty", exp: Version{22, 3, 13}},
 		{name: "incomplete", in: "22.3", expErr: true},
 		{name: "random string", in: "random", expErr: true},
-		{name: "3 digits year", in: "v222.11.1", expErr: true},
-		{name: "3 digits feature", in: "v11.222.1", expErr: true},
-		{name: "3 digits patch", in: "v11.11.223", expErr: true},
+		{name: "3 digits year", in: "v222.11.1", exp: Version{222, 11, 1}},
+		{name: "3 digits feature", in: "v11.222.1", exp: Version{11, 222, 1}},
+		{name: "3 digits patch", in: "v11.11.223", exp: Version{11, 11, 223}},
+		{name: "3 digit feature, real Connect version", in: "4.103.1", exp: Version{4, 103, 1}},
+		{name: "3 digit feature with rc", in: "4.100.0-rc1", exp: Version{4, 100, 0}},
+		{name: "3 digit feature with text", in: "4.103.1 - 9eefb907c43bf1cfeb0783808c224385c857c0d4-dirty", exp: Version{4, 103, 1}},
 		{name: "non-digit version", in: "AB.C.D", expErr: true},
+		{name: "segment overflows int", in: "4.99999999999999999999.0", expErr: true},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			got, err := VersionFromString(test.in)
