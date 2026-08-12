@@ -18,6 +18,7 @@
 #include "storage/logger.h"
 #include "storage/segment.h"
 #include "utils/directory_walker.h"
+#include "utils/human.h"
 
 #include <seastar/core/future.hh>
 #include <seastar/core/loop.hh>
@@ -436,7 +437,16 @@ static ss::future<segment_set> unsafe_do_recover(
                     : std::string_view{"unset"},
                   to_string_view(position),
                   cannotrecover_suffix);
-                vlog(stlog.info, "Unable to recover segment: {}", s);
+                // A drop away from the tail may leave a hole in the log.
+                vlogl(
+                  stlog,
+                  position == segment_position::tail ? ss::log_level::info
+                                                     : ss::log_level::warn,
+                  "Unable to recover {} [{}]. checkpoint: {}. position: {}",
+                  s->reader().filename(),
+                  human::bytes(s->reader().file_size()),
+                  recovered,
+                  to_string_view(position));
                 s->close().get();
                 ss::rename_file(s->reader().filename(), cannotrecover_name)
                   .get();

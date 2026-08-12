@@ -320,6 +320,7 @@ redpanda_cc_library(
         ":log_manager_probe",
         "//src/v/ssx:abort_source",
         "//src/v/syschecks",
+        "//src/v/utils:human",
     ],
     visibility = ["//visibility:public"],
     deps = [
