@@ -228,6 +228,7 @@ redpanda_cc_gtest(
         "//src/v/storage:record_batch_utils",
         "//src/v/storage:segment_appender",
         "//src/v/test_utils:gtest",
+        "//src/v/test_utils:metrics",
         "//src/v/test_utils:random_bytes",
         "//src/v/test_utils:test_env",
         "@googletest//:gtest",

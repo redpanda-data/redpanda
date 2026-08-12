@@ -15,12 +15,59 @@
 
 namespace storage {
 
+void log_manager_probe::record_recovery(
+  const model::ntp& ntp, const recovery_report& r) {
+    if (r.empty()) {
+        forget_recovery(ntp);
+        return;
+    }
+    auto it = _recovery.find(ntp);
+    if (it == _recovery.end()) {
+        _recovery.emplace(ntp, r);
+    } else {
+        subtract_from_recovery_totals(it->second);
+        it->second = r;
+    }
+    add_to_recovery_totals(r);
+}
+
+void log_manager_probe::forget_recovery(const model::ntp& ntp) {
+    auto it = _recovery.find(ntp);
+    if (it == _recovery.end()) {
+        return;
+    }
+    subtract_from_recovery_totals(it->second);
+    _recovery.erase(it);
+}
+
+void log_manager_probe::add_to_recovery_totals(const recovery_report& r) {
+    _recovery_totals.dropped_at_tail += r.dropped_at_tail;
+    _recovery_totals.dropped_mid_log += r.dropped_mid_log;
+    _recovery_totals.dropped_position_unknown += r.dropped_position_unknown;
+}
+
+void log_manager_probe::subtract_from_recovery_totals(
+  const recovery_report& r) {
+    _recovery_totals.dropped_at_tail -= r.dropped_at_tail;
+    _recovery_totals.dropped_mid_log -= r.dropped_mid_log;
+    _recovery_totals.dropped_position_unknown -= r.dropped_position_unknown;
+}
+
 void log_manager_probe::setup_metrics() {
     if (config::shard_local_cfg().disable_metrics()) {
         return;
     }
 
     namespace sm = ss::metrics;
+
+    const auto position_label = sm::label("position");
+    auto at = [&position_label](segment_position p) {
+        return position_label(ss::sstring(to_string_view(p)));
+    };
+    const auto quarantined = sm::description(
+      "Number of segment files on disk that recovery renamed to "
+      ".cannotrecover and dropped from their logs, by where the segment sat "
+      "in its log.");
 
     _metrics.add_group(
       "storage_manager",
@@ -37,6 +84,21 @@ void log_manager_probe::setup_metrics() {
           "housekeeping_log_processed",
           [this] { return _housekeeping_log_processed; },
           sm::description("Number of logs processed by housekeeping")),
+        sm::make_gauge(
+          "recovery_segments_quarantined",
+          [this] { return _recovery_totals.dropped_at_tail; },
+          quarantined,
+          {at(segment_position::tail)}),
+        sm::make_gauge(
+          "recovery_segments_quarantined",
+          [this] { return _recovery_totals.dropped_mid_log; },
+          quarantined,
+          {at(segment_position::mid_log)}),
+        sm::make_gauge(
+          "recovery_segments_quarantined",
+          [this] { return _recovery_totals.dropped_position_unknown; },
+          quarantined,
+          {at(segment_position::unknown)}),
       },
       {},
       {});

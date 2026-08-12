@@ -472,8 +472,11 @@ redpanda_cc_library(
         "@seastar",
     ],
     deps = [
+        ":recovery_report",
         ":segment_appender",
+        "//src/v/container:chunked_hash_map",
         "//src/v/metrics",
+        "//src/v/model",
     ],
 )
 

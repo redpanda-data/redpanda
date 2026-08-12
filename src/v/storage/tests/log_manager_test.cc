@@ -17,6 +17,7 @@
 #include "storage/segment_appender.h"
 #include "storage/segment_reader.h"
 #include "storage/segment_set.h"
+#include "test_utils/metrics.h"
 #include "test_utils/random_bytes.h"
 
 #include <seastar/core/abort_source.hh>
@@ -45,6 +46,18 @@ void write_batches(ss::lw_shared_ptr<segment> seg) {
         (void)seg->append(std::move(b)).get();
     }
     seg->flush().get();
+}
+
+/// Writes an empty file with the name a previous recovery would have given a
+/// segment it dropped.
+ss::sstring
+stage_quarantined_file(const ntp_config& ntp, const ss::sstring& name) {
+    auto path = ssx::sformat("{}/{}", ntp.work_directory(), name);
+    ss::open_file_dma(path, ss::open_flags::create | ss::open_flags::rw)
+      .get()
+      .close()
+      .get();
+    return path;
 }
 
 inline ss::sstring test_directory() {
@@ -97,6 +110,15 @@ public:
     log_manager& log_mgr() { return _store->log_mgr(); }
     ss::sharded<features::feature_table>& feature_table() {
         return _feature_table;
+    }
+
+    /// Reads the gauge back out, so the assertions cover the label as well as
+    /// the count.
+    static std::optional<uint64_t> quarantined(segment_position p) {
+        return test_utils::find_metric_value<uint64_t>(
+          "storage_manager_recovery_segments_quarantined",
+          ss::metrics::default_handle(),
+          {{"position", ss::sstring(to_string_view(p))}});
     }
 
 private:
@@ -274,4 +296,92 @@ TEST_F(
         EXPECT_EQ(report.dropped_mid_log, 0);
         EXPECT_EQ(report.dropped_at_tail, 1);
     }
+}
+
+TEST_F(LogManagerTest, test_recovery_counts_the_files_an_earlier_run_dropped) {
+    auto& m = log_mgr();
+
+    auto ntp = config_from_ntp(model::ntp("ns-quarantined", "topic-1", 0));
+    directories::initialize(ntp.work_directory()).get();
+
+    // Three names that recovery writes, and one from a version that recorded
+    // no position.
+    for (const auto* name :
+         {"0-1-v1.log.zeroed_batch_header.tail.cannotrecover",
+          "100-1-v1.log.header_crc_mismatch.mid_log.cannotrecover",
+          "200-1-v1.log.record_crc_mismatch.mid_log.cannotrecover",
+          "300-1-v1.log.cannotrecover"}) {
+        stage_quarantined_file(ntp, name);
+    }
+
+    ss::abort_source as;
+    recovery_report report;
+    auto segments = recover_segments(
+                      partition_path(ntp),
+                      /*is_compaction_enabled=*/false,
+                      [] { return std::nullopt; },
+                      as,
+                      default_segment_readahead_size,
+                      default_segment_readahead_count,
+                      std::nullopt,
+                      m.resources(),
+                      feature_table(),
+                      std::nullopt,
+                      &report)
+                      .get();
+
+    // None of them is a segment of the log any more, and the position comes
+    // back out of the name.
+    EXPECT_EQ(segments.size(), 0);
+    EXPECT_EQ(report.dropped_at_tail, 1);
+    EXPECT_EQ(report.dropped_mid_log, 2);
+    EXPECT_EQ(report.dropped_position_unknown, 1);
+}
+
+TEST_F(LogManagerTest, test_removing_a_log_stops_reporting_its_files) {
+    auto& m = log_mgr();
+
+    auto ntp = config_from_ntp(model::ntp("ns-forget-remove", "topic-1", 0));
+    directories::initialize(ntp.work_directory()).get();
+    const auto path = stage_quarantined_file(
+      ntp, "0-1-v1.log.header_crc_mismatch.mid_log.cannotrecover");
+
+    // Other tests in this binary leave files of their own behind, so read the
+    // gauge as a delta.
+    const auto before = quarantined(segment_position::mid_log);
+    ASSERT_TRUE(before.has_value());
+
+    auto log = m.manage(config_from_ntp(ntp.ntp())).get();
+    log->stm_hookset()->start();
+    log->stm_hookset()->stop();
+    ASSERT_EQ(quarantined(segment_position::mid_log), *before + 1);
+
+    // remove() deletes the directory, so the file goes with it.
+    m.remove(ntp.ntp()).get();
+    EXPECT_EQ(quarantined(segment_position::mid_log), before);
+    EXPECT_FALSE(ss::file_exists(path).get());
+}
+
+TEST_F(LogManagerTest, test_shutting_down_a_log_stops_reporting_its_files) {
+    auto& m = log_mgr();
+
+    auto ntp = config_from_ntp(model::ntp("ns-forget-shutdown", "topic-1", 0));
+    directories::initialize(ntp.work_directory()).get();
+    const auto path = stage_quarantined_file(
+      ntp, "0-1-v1.log.header_crc_mismatch.mid_log.cannotrecover");
+
+    const auto before = quarantined(segment_position::mid_log);
+    ASSERT_TRUE(before.has_value());
+
+    auto log = m.manage(config_from_ntp(ntp.ntp())).get();
+    log->stm_hookset()->start();
+    log->stm_hookset()->stop();
+    ASSERT_EQ(quarantined(segment_position::mid_log), *before + 1);
+
+    // shutdown() hands the log off to another shard and leaves the file where
+    // it is, so this shard stops reporting a file that is still on disk. The
+    // shard that takes the log walks the directory and reports it instead.
+    m.shutdown(ntp.ntp()).get();
+    EXPECT_EQ(quarantined(segment_position::mid_log), before);
+    EXPECT_TRUE(ss::file_exists(path).get());
 }

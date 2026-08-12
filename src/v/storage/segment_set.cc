@@ -518,6 +518,27 @@ static ss::future<segment_set> do_recover(
         });
 }
 
+/// Reads the position back out of a name that recovery wrote. Names that an
+/// earlier version of redpanda wrote carry no position.
+static segment_position position_from_name(std::string_view name) {
+    if (!name.ends_with(cannotrecover_suffix)) {
+        return segment_position::unknown;
+    }
+    name.remove_suffix(cannotrecover_suffix.size());
+    const auto dot = name.rfind('.');
+    if (dot == std::string_view::npos) {
+        return segment_position::unknown;
+    }
+    const auto token = name.substr(dot + 1);
+    if (token == to_string_view(segment_position::tail)) {
+        return segment_position::tail;
+    }
+    if (token == to_string_view(segment_position::mid_log)) {
+        return segment_position::mid_log;
+    }
+    return segment_position::unknown;
+}
+
 /**
  * \brief Open all segments in a directory.
  *
@@ -532,7 +553,8 @@ static ss::future<segment_set::underlying_t> open_segments(
   unsigned read_ahead,
   storage_resources& resources,
   ss::sharded<features::feature_table>& feature_table,
-  const std::optional<ntp_sanitizer_config>& ntp_sanitizer_config) {
+  const std::optional<ntp_sanitizer_config>& ntp_sanitizer_config,
+  recovery_report* report) {
     using segs_type = segment_set::underlying_t;
     return ss::do_with(
       segs_type{},
@@ -542,6 +564,7 @@ static ss::future<segment_set::underlying_t> open_segments(
        ntp_sanitizer_config,
        buf_size,
        read_ahead,
+       report,
        &resources,
        &feature_table](segs_type& segs) {
           auto f = directory_walker::walk(
@@ -553,6 +576,7 @@ static ss::future<segment_set::underlying_t> open_segments(
              &segs,
              buf_size,
              read_ahead,
+             report,
              &resources,
              &feature_table](ss::directory_entry seg) {
                 // abort if requested
@@ -570,6 +594,13 @@ static ss::future<segment_set::underlying_t> open_segments(
                 auto path = segment_full_path::parse(ppath, seg.name);
                 if (!path) {
                     // This is normal, we skip non-log files like indices
+                    if (
+                      report != nullptr
+                      && seg.name.ends_with(cannotrecover_suffix)) {
+                        // A segment that an earlier recovery dropped. It stays
+                        // on disk until the partition goes away.
+                        ++report->count_at(position_from_name(seg.name));
+                    }
                     return ss::make_ready_future<>();
                 }
 
@@ -615,6 +646,7 @@ ss::future<segment_set> recover_segments(
              ntp_sanitizer_config,
              read_buf_size,
              read_readahead_count,
+             report,
              &resources,
              &feature_table] {
           return open_segments(
@@ -625,7 +657,8 @@ ss::future<segment_set> recover_segments(
             read_readahead_count,
             resources,
             feature_table,
-            ntp_sanitizer_config);
+            ntp_sanitizer_config,
+            report);
       })
       .then([&as,
              report,

@@ -9,7 +9,10 @@
 
 #pragma once
 
+#include "container/chunked_hash_map.h"
 #include "metrics/metrics.h"
+#include "model/fundamental.h"
+#include "storage/recovery_report.h"
 #include "storage/segment_appender.h"
 
 #include <cstdint>
@@ -35,14 +38,31 @@ public:
     void housekeeping_log_processed() { ++_housekeeping_log_processed; }
     void urgent_gc_run() { ++_urgent_gc_runs; }
 
+    /// Keeps what recovery found for one log, and replaces an earlier report
+    /// for the same log.
+    void record_recovery(const model::ntp&, const recovery_report&);
+
+    /// Drops the report for a log that the shard no longer holds. A log that
+    /// moves to another shard keeps its files on disk, so the shard that
+    /// receives it counts them.
+    void forget_recovery(const model::ntp&);
+
     // Returns shared pointer to segment appender stats for this shard.
     // Segment appenders increment these stats directly.
     segment_appender::stats_ptr get_appender_stats() { return _appender_stats; }
 
 private:
+    void add_to_recovery_totals(const recovery_report&);
+    void subtract_from_recovery_totals(const recovery_report&);
+
     uint32_t _log_count = 0;
     uint64_t _urgent_gc_runs = 0;
     uint64_t _housekeeping_log_processed = 0;
+
+    /// Only the logs that hold at least one `.cannotrecover` file, which is
+    /// usually none of them.
+    chunked_hash_map<model::ntp, recovery_report> _recovery;
+    recovery_report _recovery_totals;
 
     // Segment appender stats (accumulated across all segment appenders on this
     // shard)

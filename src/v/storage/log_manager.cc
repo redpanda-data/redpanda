@@ -52,6 +52,7 @@
 #include <seastar/core/with_scheduling_group.hh>
 #include <seastar/coroutine/exception.hh>
 #include <seastar/coroutine/maybe_yield.hh>
+#include <seastar/util/defer.hh>
 #include <seastar/util/file.hh>
 #include <seastar/util/later.hh>
 
@@ -935,6 +936,15 @@ ss::future<ss::shared_ptr<log>> log_manager::do_manage(
     with_cache cache_enabled = cfg.cache_enabled();
     auto ntp_sanitizer_cfg = _config.maybe_get_ntp_sanitizer_config(cfg.ntp());
 
+    recovery_report recovery;
+    // Recovery can throw after it counts a dropped segment, so the counts
+    // reach the probe on the failure path too. A log that fails to open never
+    // enters _logs, so its report stays until a later manage() replaces it.
+    // The files it counted stay on disk as well, since remove() also returns
+    // early without a handle, so the gauge keeps reporting what is there.
+    auto record_recovery = ss::defer([this, ntp = cfg.ntp(), &recovery] {
+        _probe->record_recovery(ntp, recovery);
+    });
     auto segments = co_await recover_segments(
       partition_path(cfg),
       cfg.is_locally_compacted(),
@@ -945,7 +955,8 @@ ss::future<ss::shared_ptr<log>> log_manager::do_manage(
       last_clean_segment,
       _resources,
       _feature_table,
-      std::move(ntp_sanitizer_cfg));
+      std::move(ntp_sanitizer_cfg),
+      &recovery);
 
     auto l = storage::make_disk_backed_log(
       std::move(cfg),
@@ -981,6 +992,8 @@ ss::future<> log_manager::shutdown(model::ntp ntp) {
     if (!handle) {
         co_return;
     }
+    // clean_close() can throw and nothing retries once the log leaves _logs
+    auto forget = ss::defer([this, &ntp] { _probe->forget_recovery(ntp); });
 
     auto close_fut = handle->second->housekeeping_gate.close();
 
@@ -998,6 +1011,9 @@ ss::future<> log_manager::remove(model::ntp ntp) {
     if (!handle) {
         co_return;
     }
+    // the removals below can throw and nothing retries once the log leaves
+    // _logs
+    auto forget = ss::defer([this, &ntp] { _probe->forget_recovery(ntp); });
 
     auto close_fut = handle->second->housekeeping_gate.close();
 
