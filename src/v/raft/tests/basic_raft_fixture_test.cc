@@ -1321,3 +1321,142 @@ TEST_F_CORO(raft_fixture, test_rejected_append_entries_refresh_hbeat) {
     ASSERT_EQ_CORO(follower_vote_requests, 0);
     ASSERT_EQ_CORO(follower->term(), term);
 }
+
+/**
+ * Livelock reproducer: a follower in active recovery only refreshes its
+ * election timer on full append entries requests, lightweight heartbeats
+ * are rejected without a refresh to make the leader fall back to a full
+ * heartbeat. That fallback is suppressed while any append request to the
+ * follower is in flight. With replication or recovery requests stalled in
+ * flight (slow network or overloaded follower), every heartbeat round
+ * observes an in-flight append and picks a lightweight heartbeat again,
+ * starving the follower of election timer refreshes while it stays in
+ * continuous contact with a live leader.
+ *
+ * Liveness property asserted: such a follower must not start elections.
+ */
+TEST_F_CORO(raft_fixture, test_no_election_storm_with_stalled_appends) {
+    set_election_timeout(1s);
+    co_await create_simple_group(3);
+    auto leader_id = co_await wait_for_leader(10s);
+    auto& leader_node = node(leader_id);
+
+    auto res = co_await leader_node.raft()->replicate(
+      make_batches(10, 1, 128),
+      replicate_options(consistency_level::quorum_ack, 10s));
+    ASSERT_FALSE_CORO(res.has_error());
+    co_await wait_for_committed_offset(res.value().last_offset, 10s);
+
+    auto follower_id = random_follower_id().value();
+    auto& follower_node = node(follower_id);
+    auto follower = follower_node.raft();
+    const auto term = follower->term();
+
+    ss::abort_source stall_as;
+    auto cleanup = ss::defer([&] {
+        stall_as.request_abort();
+        leader_node.reset_reply_interceptor();
+        leader_node.reset_dispatch_handlers();
+        follower_node.reset_dispatch_handlers();
+    });
+
+    // Stall replication and recovery traffic to the follower: requests
+    // stay in flight for the whole observation window, keeping an
+    // in-flight append guard alive at every heartbeat round.
+    leader_node.on_dispatch(
+      [follower_id, &stall_as](model::node_id target, msg_type t) {
+          if (target == follower_id && t == msg_type::append_entries) {
+              return ss::sleep_abortable(8s, stall_as);
+          }
+          return ss::now();
+      });
+
+    res = co_await leader_node.raft()->replicate(
+      make_batches(10, 1, 128),
+      replicate_options(consistency_level::leader_ack, 10s));
+    ASSERT_FALSE_CORO(res.has_error());
+
+    // Put the follower into an active recovery state with a crafted
+    // recovery-shaped request (dirty offset ahead of the previous offset
+    // means the leader considers this follower already recovering).
+    auto gap_prev = model::offset(follower->dirty_offset()() + 1000);
+    auto reply = co_await follower->append_entries(append_entries_request(
+      leader_node.get_vnode(),
+      follower_node.get_vnode(),
+      protocol_metadata{
+        .group = follower->group(),
+        .commit_index = follower->committed_offset(),
+        .term = term,
+        .prev_log_index = gap_prev,
+        .prev_log_term = term,
+        .last_visible_index = follower->last_visible_index(),
+        .dirty_offset = model::offset(gap_prev() + 100),
+      },
+      chunked_vector<model::record_batch>{},
+      0,
+      flush_after_append::no));
+    ASSERT_EQ_CORO(reply.result, reply_result::failure);
+    ASSERT_TRUE_CORO(reply.may_recover);
+
+    // A lightweight heartbeat rejected because recovery is active must
+    // still count as leader contact. Pause heartbeats so the last contact
+    // timestamp ages, then deliver one directly. Dispatch handlers
+    // accumulate, the append stall above stays active.
+    leader_node.on_dispatch([follower_id](model::node_id target, msg_type t) {
+        if (target == follower_id && t == msg_type::heartbeat_v2) {
+            throw std::runtime_error("paused by test");
+        }
+        return ss::now();
+    });
+    co_await ss::sleep(200ms);
+    auto hbeat_before = follower->last_heartbeat();
+    ASSERT_EQ_CORO(
+      follower->lightweight_heartbeat(leader_id, follower_id),
+      reply_result::failure);
+    ASSERT_GT_CORO(follower->last_heartbeat(), hbeat_before);
+
+    leader_node.reset_dispatch_handlers();
+    leader_node.on_dispatch(
+      [follower_id, &stall_as](model::node_id target, msg_type t) {
+          if (target == follower_id && t == msg_type::append_entries) {
+              return ss::sleep_abortable(8s, stall_as);
+          }
+          return ss::now();
+      });
+
+    size_t follower_vote_requests = 0;
+    follower_node.on_dispatch(
+      [&follower_vote_requests](model::node_id, msg_type type) {
+          if (type == msg_type::vote) {
+              ++follower_vote_requests;
+          }
+          return ss::now();
+      });
+
+    // The full heartbeat fallback after a lightweight heartbeat failure
+    // must not be suppressed by the stalled in-flight appends.
+    size_t follower_full_heartbeat_replies = 0;
+    leader_node.set_reply_interceptor(
+      [&follower_full_heartbeat_replies,
+       follower_id](reply_variant reply, model::node_id from) {
+          return ss::visit(
+            std::move(reply),
+            [&follower_full_heartbeat_replies, follower_id, from](
+              heartbeat_reply_v2 hb) {
+                if (from == follower_id && !hb.full_replies().empty()) {
+                    ++follower_full_heartbeat_replies;
+                }
+                return ss::make_ready_future<reply_variant>(std::move(hb));
+            },
+            [](auto r) {
+                return ss::make_ready_future<reply_variant>(std::move(r));
+            });
+      });
+
+    co_await ss::sleep(6s);
+
+    ASSERT_TRUE_CORO(node(leader_id).raft()->is_leader());
+    ASSERT_EQ_CORO(follower->term(), term);
+    ASSERT_EQ_CORO(follower_vote_requests, 0);
+    ASSERT_GT_CORO(follower_full_heartbeat_replies, 0);
+}

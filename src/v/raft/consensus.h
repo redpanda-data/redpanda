@@ -563,6 +563,12 @@ public:
 
     void reset_last_sent_protocol_meta(const vnode&);
 
+    /// Records a lightweight heartbeat the node rejected: clears the last
+    /// sent protocol metadata and requests a full heartbeat. Not used for
+    /// transport failures, escalating those would send full heartbeats to
+    /// unreachable nodes.
+    void on_lw_heartbeat_failure(const vnode&);
+
     const std::optional<follower_recovery_state>&
     get_follower_recovery_state() const {
         return _follower_recovery_state;

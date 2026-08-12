@@ -115,6 +115,13 @@ struct follower_index_metadata {
     follower_req_seq last_successful_received_seq{0};
     bool is_learner = true;
     bool is_recovering = false;
+    /**
+     * Set when this follower rejected a lightweight heartbeat. Forces the
+     * next heartbeat to be a full one even when append requests are in
+     * flight, as those may be stalled for longer than an election timeout.
+     * Cleared when a full heartbeat request is built.
+     */
+    bool lw_heartbeat_failed = false;
 
     /*
      * When is_recovering is true a fiber may wait for recovery to be signaled

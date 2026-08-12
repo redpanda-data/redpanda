@@ -121,6 +121,7 @@ void heartbeat_manager::fetch_heartbeats_for_raft_group(
         const auto seq_id = follower_metadata.next_follower_sequence();
 
         follower_metadata.last_sent_protocol_meta = raft_metadata;
+        follower_metadata.lw_heartbeat_failed = false;
         group_beat.data = heartbeat_request_data{
           .source_revision = raft_group->_self.revision(),
           .target_revision = id.revision(),
@@ -201,6 +202,16 @@ bool heartbeat_manager::needs_full_heartbeat(
   const follower_index_metadata& f_meta,
   const protocol_metadata& p_meta,
   model::offset leader_flushed_offset) const {
+    if (f_meta.lw_heartbeat_failed) {
+        // The follower rejected a lightweight heartbeat so it requires a
+        // full heartbeat, ahead of the in flight append suppression below.
+        // A full heartbeat refreshes the follower election timer and is
+        // the only request that lets a caught up follower leave recovery
+        // state. The remaining full heartbeat triggers stay behind the
+        // suppression, in flight append replies already carry the flushed
+        // offset.
+        return true;
+    }
     if (f_meta.has_inflight_appends()) {
         // in flight append will result in a full blown response
         // until then a full heartbeat is not needed.
@@ -446,8 +457,7 @@ void heartbeat_manager::process_reply(
          * Failed lightweight heartbeat, fallback to full heartbeat
          */
         if (unlikely(result == reply_result::failure)) {
-            consensus->reset_last_sent_protocol_meta(
-              meta_it->second.follower_vnode);
+            consensus->on_lw_heartbeat_failure(meta_it->second.follower_vnode);
             return;
         }
 

@@ -4188,6 +4188,10 @@ reply_result consensus::lightweight_heartbeat(
         return reply_result::failure;
     }
 
+    // Any lightweight heartbeat from the current leader is leader contact
+    // and resets the election timer, even when rejected below.
+    _hbeat = clock_type::now();
+
     if (
       unlikely(
         _follower_recovery_state && _follower_recovery_state->is_active())) {
@@ -4196,7 +4200,6 @@ reply_result consensus::lightweight_heartbeat(
         return reply_result::failure;
     }
 
-    _hbeat = clock_type::now();
     return reply_result::success;
 }
 ss::future<full_heartbeat_reply> consensus::full_heartbeat(
@@ -4253,6 +4256,13 @@ ss::future<full_heartbeat_reply> consensus::full_heartbeat(
 void consensus::reset_last_sent_protocol_meta(const vnode& node) {
     if (auto it = _fstates.find(node); it != _fstates.end()) {
         it->second.last_sent_protocol_meta.reset();
+    }
+}
+
+void consensus::on_lw_heartbeat_failure(const vnode& node) {
+    if (auto it = _fstates.find(node); it != _fstates.end()) {
+        it->second.last_sent_protocol_meta.reset();
+        it->second.lw_heartbeat_failed = true;
     }
 }
 
