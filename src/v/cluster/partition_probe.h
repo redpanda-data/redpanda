@@ -32,6 +32,7 @@ public:
         virtual void add_batches_produced(uint64_t) = 0;
         virtual void add_bytes_fetched(uint64_t) = 0;
         virtual void add_bytes_fetched_from_follower(uint64_t) = 0;
+        virtual void add_follower_fetch_wait(bool timed_out) = 0;
         virtual void add_schema_id_validation_failed() = 0;
         virtual void setup_metrics(const model::ntp&) = 0;
         virtual void clear_metrics() = 0;
@@ -68,6 +69,10 @@ public:
         return _impl->add_bytes_fetched_from_follower(bytes);
     }
 
+    void add_follower_fetch_wait(bool timed_out) {
+        return _impl->add_follower_fetch_wait(timed_out);
+    }
+
     void add_schema_id_validation_failed() {
         _impl->add_schema_id_validation_failed();
     }
@@ -88,6 +93,12 @@ public:
     void add_bytes_fetched(uint64_t cnt) final { _bytes_fetched += cnt; }
     void add_bytes_fetched_from_follower(uint64_t cnt) final {
         _bytes_fetched_from_follower += cnt;
+    }
+    void add_follower_fetch_wait(bool timed_out) final {
+        ++_follower_fetch_waits;
+        if (timed_out) {
+            ++_follower_fetch_wait_timeouts;
+        }
     }
     void add_bytes_produced(uint64_t cnt) final { _bytes_produced += cnt; }
     void add_batches_produced(uint64_t cnt) final { _batches_produced += cnt; }
@@ -114,6 +125,8 @@ private:
     uint64_t _batches_produced{0};
     uint64_t _bytes_fetched{0};
     uint64_t _bytes_fetched_from_follower{0};
+    uint64_t _follower_fetch_waits{0};
+    uint64_t _follower_fetch_wait_timeouts{0};
     uint64_t _schema_id_validation_records_failed{0};
     config::binding<bool> _enable_scrubbing_bind;
     metrics::internal_metric_groups _metrics;
