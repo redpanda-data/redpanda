@@ -352,7 +352,7 @@ put_config(server::request_t rq, server::reply_t rp) {
 ss::future<server::reply_t> get_config_subject(
   server::request_t rq,
   server::reply_t rp,
-  std::optional<request_auth_result> auth_result,
+  ss::lw_shared_ptr<request_auth_result> auth_result,
   std::string_view operation_name) {
     parse_accept_header(rq, rp);
     auto ctx_sub = context_subject::from_string(
@@ -420,7 +420,7 @@ std::invoke_result_t<F> get_or_load(server::request_t& rq, F f) {
 ss::future<server::reply_t> put_config_subject(
   server::request_t rq,
   server::reply_t rp,
-  std::optional<request_auth_result> auth_result,
+  ss::lw_shared_ptr<request_auth_result> auth_result,
   std::string_view operation_name) {
     parse_content_type_header(rq);
     parse_accept_header(rq, rp);
@@ -450,7 +450,7 @@ ss::future<server::reply_t> put_config_subject(
 ss::future<server::reply_t> delete_config_subject(
   server::request_t rq,
   server::reply_t rp,
-  std::optional<request_auth_result> auth_result,
+  ss::lw_shared_ptr<request_auth_result> auth_result,
   std::string_view operation_name) {
     parse_accept_header(rq, rp);
     auto ctx_sub = context_subject::from_string(
@@ -536,7 +536,7 @@ ss::future<server::reply_t> put_mode(server::request_t rq, server::reply_t rp) {
 ss::future<server::reply_t> get_mode_subject(
   server::request_t rq,
   server::reply_t rp,
-  std::optional<request_auth_result> auth_result,
+  ss::lw_shared_ptr<request_auth_result> auth_result,
   std::string_view operation_name) {
     parse_accept_header(rq, rp);
     auto ctx_sub = context_subject::from_string(
@@ -572,7 +572,7 @@ ss::future<server::reply_t> get_mode_subject(
 ss::future<server::reply_t> put_mode_subject(
   server::request_t rq,
   server::reply_t rp,
-  std::optional<request_auth_result> auth_result,
+  ss::lw_shared_ptr<request_auth_result> auth_result,
   std::string_view operation_name) {
     parse_content_type_header(rq);
     parse_accept_header(rq, rp);
@@ -604,7 +604,7 @@ ss::future<server::reply_t> put_mode_subject(
 ss::future<server::reply_t> delete_mode_subject(
   server::request_t rq,
   server::reply_t rp,
-  std::optional<request_auth_result> auth_result,
+  ss::lw_shared_ptr<request_auth_result> auth_result,
   std::string_view operation_name) {
     parse_accept_header(rq, rp);
     auto ctx_sub = context_subject::from_string(
@@ -662,7 +662,7 @@ get_schemas_types(server::request_t rq, server::reply_t rp) {
 ss::future<server::reply_t> get_schemas_ids_id(
   server::request_t rq,
   server::reply_t rp,
-  std::optional<request_auth_result> auth_result,
+  ss::lw_shared_ptr<request_auth_result> auth_result,
   std::string_view operation_name) {
     parse_accept_header(rq, rp);
     auto id = parse::request_param<schema_id>(*rq.req, "id");
@@ -700,7 +700,7 @@ ss::future<server::reply_t> get_schemas_ids_id(
 ss::future<server::reply_t> get_schemas_ids_id_schema(
   server::request_t rq,
   server::reply_t rp,
-  std::optional<request_auth_result> auth_result,
+  ss::lw_shared_ptr<request_auth_result> auth_result,
   std::string_view operation_name) {
     parse_accept_header(rq, rp);
     auto id = parse::request_param<schema_id>(*rq.req, "id");
@@ -813,7 +813,7 @@ ss::future<ctx_server<service>::reply_t> get_schemas_ids_id_subjects(
 ss::future<server::reply_t> get_subjects(
   server::request_t rq,
   server::reply_t rp,
-  std::optional<request_auth_result> auth_result,
+  ss::lw_shared_ptr<request_auth_result> auth_result,
   std::string_view operation_name) {
     parse_accept_header(rq, rp);
     auto inc_del{
@@ -1498,7 +1498,7 @@ delete_security_acls(server::request_t rq, server::reply_t rp) {
 ss::future<server::reply_t> get_contexts(
   server::request_t rq,
   server::reply_t rp,
-  std::optional<request_auth_result> auth_result,
+  ss::lw_shared_ptr<request_auth_result> auth_result,
   std::string_view operation_name) {
     parse_accept_header(rq, rp);
 
