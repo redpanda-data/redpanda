@@ -12,13 +12,18 @@
 #include "model/tests/random_batch.h"
 #include "storage/api.h"
 #include "storage/directories.h"
+#include "storage/fs_utils.h"
 #include "storage/segment.h"
 #include "storage/segment_appender.h"
 #include "storage/segment_reader.h"
+#include "storage/segment_set.h"
 #include "test_utils/random_bytes.h"
 
+#include <seastar/core/abort_source.hh>
+#include <seastar/core/seastar.hh>
 #include <seastar/util/defer.hh>
 
+#include <gmock/gmock.h>
 #include <gtest/gtest.h>
 
 using namespace std::chrono_literals; // NOLINT
@@ -62,33 +67,45 @@ ntp_config config_from_ntp(const model::ntp& ntp) {
 constexpr size_t default_segment_readahead_size = 128 * 1024;
 constexpr unsigned default_segment_readahead_count = 10;
 
-TEST(LogManagerTest, test_can_load_logs) {
-    auto conf = make_config();
+class LogManagerTest : public ::testing::Test {
+public:
+    LogManagerTest() {
+        _feature_table.start().get();
+        _feature_table
+          .invoke_on_all(
+            [](features::feature_table& f) { f.testing_activate_all(); })
+          .get();
+        auto conf = make_config();
+        _store = std::make_unique<storage::api>(
+          [conf]() {
+              return storage::kvstore_config(
+                1_MiB,
+                config::mock_binding(10ms),
+                conf.base_dir,
+                storage::make_sanitized_file_config());
+          },
+          [conf]() { return conf; },
+          _feature_table);
+        _store->start().get();
+    }
 
-    ss::logger test_logger("test-logger");
-    ss::sharded<features::feature_table> feature_table;
-    feature_table.start().get();
-    feature_table
-      .invoke_on_all(
-        [](features::feature_table& f) { f.testing_activate_all(); })
-      .get();
+    ~LogManagerTest() override {
+        _store->stop().get();
+        _feature_table.stop().get();
+    }
 
-    storage::api store(
-      [conf]() {
-          return storage::kvstore_config(
-            1_MiB,
-            config::mock_binding(10ms),
-            conf.base_dir,
-            storage::make_sanitized_file_config());
-      },
-      [conf]() { return conf; },
-      feature_table);
-    store.start().get();
-    auto stop_kvstore = ss::defer([&store, &feature_table] {
-        store.stop().get();
-        feature_table.stop().get();
-    });
-    auto& m = store.log_mgr();
+    log_manager& log_mgr() { return _store->log_mgr(); }
+    ss::sharded<features::feature_table>& feature_table() {
+        return _feature_table;
+    }
+
+private:
+    ss::sharded<features::feature_table> _feature_table;
+    std::unique_ptr<storage::api> _store;
+};
+
+TEST_F(LogManagerTest, test_can_load_logs) {
+    auto& m = log_mgr();
     std::vector<storage::ntp_config> ntps;
     ntps.reserve(4);
     for (size_t i = 0; i < 4; ++i) {
