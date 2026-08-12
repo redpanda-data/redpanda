@@ -422,6 +422,16 @@ configuration::configuration(ctor_key)
       "0.",
       {.visibility = visibility::tunable},
       3)
+  , raft_follower_nudge_debounce_ms(
+      *this,
+      "raft_follower_nudge_debounce_ms",
+      "Minimum time between out of band metadata pushes to a single follower "
+      "that expedite its view of the leader's committed and visible offsets, "
+      "e.g. when the leader refers a fetch-from-follower consumer to it. Set "
+      "to null to disable the pushes altogether.",
+      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
+      10ms,
+      {.min = 1ms})
 
   , raft_max_recovery_memory(
       *this,
