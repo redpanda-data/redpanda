@@ -97,7 +97,7 @@ public:
       , _checked(rhs._checked) {}
 
     request_auth_result(request_auth_result&&) noexcept;
-    ~request_auth_result() noexcept(false);
+    ~request_auth_result();
 
     /**
      * Raise 403 if not a superuser
