@@ -125,6 +125,10 @@ public:
     bool is_superuser() const { return _superuser; }
     bool is_auth_required() const { return _auth_required; }
 
+    /// Whether one of the authorization helpers (require_superuser,
+    /// require_authenticated, pass) has been called.
+    bool is_checked() const { return _checked; }
+
 private:
     security::credential_user _username;
     security::credential_password _password;
