@@ -92,16 +92,18 @@ public:
               _h,
               [&](const auth::regular_function_handler& h) {
                   vassert(
-                    !auth_result.has_value(),
+                    !auth_result,
                     "Authorization must not be deferred for non-deferred "
                     "endpoints");
                   return h(std::move(rq), std::move(rp));
               },
               [&](const auth::deferred_function_handler& h) {
-                  return h(
-                    std::move(rq),
-                    std::move(rp),
-                    std::move(auth_result),
+                  return enforce_deferred_authz(
+                    h(std::move(rq),
+                      std::move(rp),
+                      auth_result,
+                      _operation_name),
+                    auth_result,
                     _operation_name);
               });
         } catch (const kafka::client::partition_error& ex) {
@@ -390,7 +392,7 @@ server::routes_t get_schema_registry_routes(ss::gate& gate, one_shot& es) {
           [=](
             server::request_t rq,
             server::reply_t rp,
-            std::optional<request_auth_result> auth_result,
+            ss::lw_shared_ptr<request_auth_result> auth_result,
             std::string_view operation_name) -> ss::future<server::reply_t> {
               auto ctx = parse_normalized_context(*rq.req);
               scope_fn(*rq.req, ctx);

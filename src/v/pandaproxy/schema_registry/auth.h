@@ -63,7 +63,7 @@ public:
       = ss::noncopyable_function<ss::future<server::reply_t>(
         server::request_t,
         server::reply_t,
-        std::optional<request_auth_result>,
+        ss::lw_shared_ptr<request_auth_result>,
         std::string_view operation_name)>;
     using function_handler
       = std::variant<regular_function_handler, deferred_function_handler>;
@@ -83,8 +83,9 @@ public:
     // Handle authentication and authorization.
     // The presence of a returned authentication result indicates that the
     // authorization check was deferred and has to be done inside the method
-    // handler
-    std::optional<request_auth_result>
+    // handler. The result is shared with the handler so the caller can
+    // verify, once the handler completes, that the check was performed.
+    ss::lw_shared_ptr<request_auth_result>
     handle_auth(server::request_t& rq, std::string_view operation_name) const;
 
 private:
@@ -92,5 +93,21 @@ private:
     std::optional<op> _op;
     route_resource _res;
 };
+
+/// Await a deferred-authorization handler's reply and enforce that the
+/// handler performed its check.
+///
+/// A handler that fails before reaching its check is acceptable: the client
+/// receives the original error, and no data is returned. A handler that
+/// produces a reply without having checked indicates a handler bug that may
+/// be allowing unchecked access, so the reply is discarded and replaced with
+/// a 500.
+///
+/// A null auth_result means authorization was not deferred for this request
+/// (e.g. it is disabled) and there is nothing to enforce.
+ss::future<server::reply_t> enforce_deferred_authz(
+  ss::future<server::reply_t> handler_result,
+  ss::lw_shared_ptr<request_auth_result> auth_result,
+  std::string_view operation_name);
 
 } // namespace pandaproxy::schema_registry
