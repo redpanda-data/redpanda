@@ -439,19 +439,20 @@ class IncrementalFollowerFetchingTest(PreallocNodesTest):
             },
         )
 
-    @skip_debug_mode
-    @cluster(num_nodes=5)
-    @matrix(follower_offline=[True, False])
-    def test_incremental_fetch_from_follower(self, follower_offline):
-        rack_layout_str = "ABC"
-        rack_layout = [str(i) for i in rack_layout_str]
-
+    def _configure_rack_layout(self, rack_layout):
         for ix, node in enumerate(self.redpanda.nodes):
             extra_node_conf = {
                 "rack": rack_layout[ix],
                 "enable_rack_awareness": True,
             }
             self.redpanda.set_extra_node_conf(node, extra_node_conf)
+
+    @skip_debug_mode
+    @cluster(num_nodes=5)
+    @matrix(follower_offline=[True, False])
+    def test_incremental_fetch_from_follower(self, follower_offline):
+        rack_layout_str = "ABC"
+        self._configure_rack_layout([str(i) for i in rack_layout_str])
 
         self.redpanda.start()
         topic = TopicSpec(partition_count=12, replication_factor=3)
@@ -509,3 +510,105 @@ class IncrementalFollowerFetchingTest(PreallocNodesTest):
         )
 
         cli_consumer.stop()
+
+    @skip_debug_mode
+    @cluster(num_nodes=5)
+    @matrix(mode=["catchup_wait_only", "nudge_only", "default"])
+    def test_follower_fetch_at_leader_hwm(self, mode):
+        """
+        A consumer pinned to a follower rack chases the leader high watermark
+        of a steadily produced topic. Its fetches routinely target offsets the
+        follower does not yet know are available; the broker absorbs the race
+        with the follower-side catch-up wait and the leader-side nudge of the
+        preferred replica, and the consumer makes continuous progress with
+        either mechanism (or both) active.
+        """
+        self._configure_rack_layout([str(i) for i in "ABC"])
+
+        self.redpanda.start()
+        if mode == "catchup_wait_only":
+            self.redpanda.set_cluster_config_to_null("raft_follower_nudge_debounce_ms")
+        elif mode == "nudge_only":
+            self.redpanda.set_cluster_config({"kafka_fetch_follower_catchup_wait_ms": 0})
+
+        topic = TopicSpec(partition_count=12, replication_factor=3)
+        self.client().create_topic(topic)
+
+        producer = KgoVerifierProducer(
+            self.test_context,
+            self.redpanda,
+            topic,
+            msg_size=512,
+            # some large number to keep produce load until the end of the test
+            msg_count=1000000,
+            custom_node=self.preallocated_nodes,
+            rate_limit_bps=256 * 1024,
+        )
+        producer.start()
+
+        consumer_group = "follower-hwm-group"
+        # A short metadata max age keeps the consumer re-resolving its
+        # preferred replica, so fetches repeatedly race the follower's view
+        # of the leader high watermark.
+        cli_consumer = KafkaCliConsumer(
+            self.test_context,
+            self.redpanda,
+            topic.name,
+            group=consumer_group,
+            consumer_properties={"client.rack": "A", "metadata.max.age.ms": 10000},
+        )
+        cli_consumer.start()
+        cli_consumer.wait_for_messages(100)
+
+        def sum_nudges():
+            return self.redpanda.metric_sum(
+                "vectorized_raft_follower_nudge_requests_total"
+            )
+
+        def sum_waits():
+            return self.redpanda.metric_sum(
+                "vectorized_cluster_partition_follower_fetch_waits_total",
+                namespace="kafka",
+                topic=topic.name,
+            )
+
+        # chase the head of the log until the mechanism under test has
+        # demonstrably fired
+        fired = sum_waits if mode == "catchup_wait_only" else sum_nudges
+        wait_until(
+            lambda: fired() > 0,
+            timeout_sec=60,
+            backoff_sec=2,
+            err_msg=f"mechanism under test did not fire in mode {mode}",
+        )
+        producer.stop()
+
+        rpk = RpkTool(self.redpanda)
+
+        def no_lag():
+            gr = rpk.group_describe(consumer_group)
+            if gr.state != "Stable":
+                return False
+
+            return all([p.lag == 0 for p in gr.partitions])
+
+        wait_until(
+            no_lag,
+            60,
+            backoff_sec=3,
+            err_msg="Consumer did not catch up with the produced data",
+        )
+        cli_consumer.stop()
+
+        nudges = sum_nudges()
+        waits = sum_waits()
+        self.logger.info(f"follower nudges: {nudges}, catch-up waits: {waits}")
+
+        if mode == "catchup_wait_only":
+            assert nudges == 0, f"nudges are disabled, saw {nudges}"
+            assert waits > 0, "expected follower fetches to hit the catch-up wait"
+        elif mode == "nudge_only":
+            assert nudges > 0, "expected referrals to nudge the preferred replica"
+            assert waits == 0, f"the catch-up wait is disabled, saw {waits}"
+        else:
+            assert nudges > 0, "expected referrals to nudge the preferred replica"
