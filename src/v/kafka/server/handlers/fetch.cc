@@ -412,6 +412,15 @@ static ss::future<read_result> do_read_from_ntp(
               "Consumer in rack: {}, preferred replica id: {}",
               *ntp_config.cfg.consumer_rack_id,
               preferred_replica.value());
+            /**
+             * The HWM follower we are referring the consumer to may be lagging.
+             * Nudge the follower so it can advance its HWM as soon as possible.
+             */
+            if (
+              auto partition = cluster_pm.get(ntp_config.ktp_with_hash());
+              partition) {
+                partition->raft()->nudge_follower(preferred_replica.value());
+            }
             co_return read_result(
               kafka_partition->start_offset(),
               kafka_partition->high_watermark(),
