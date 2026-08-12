@@ -711,6 +711,16 @@ configuration::configuration(ctor_key)
       "minimum bytes was not reached.",
       {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
       1ms)
+  , kafka_fetch_follower_catchup_wait_ms(
+      *this,
+      "kafka_fetch_follower_catchup_wait_ms",
+      "Maximum time a follower fetch waits for the follower to catch up to "
+      "the requested offset before returning offset_not_available. Also "
+      "capped by the raft heartbeat interval and the fetch's max wait time. "
+      "Set to 0 to disable the wait.",
+      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
+      300ms,
+      {.min = std::chrono::milliseconds(0)})
   , kafka_fetch_request_timeout_ms(
       *this,
       "kafka_fetch_request_timeout_ms",

@@ -201,6 +201,8 @@ struct configuration final : public config_store {
     property<int16_t> metadata_dissemination_retries;
     property<std::chrono::milliseconds> tx_timeout_delay_ms;
     property<std::chrono::milliseconds> fetch_reads_debounce_timeout;
+    bounded_property<std::chrono::milliseconds>
+      kafka_fetch_follower_catchup_wait_ms;
     property<std::chrono::milliseconds> kafka_fetch_request_timeout_ms;
     development_feature_property<bool>
       enable_listoffsets_historical_leader_epoch;
