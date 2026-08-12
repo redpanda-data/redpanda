@@ -13,19 +13,6 @@ def _patched_file(ctx, original, suffix):
     name = "patched/{}/{}_{}".format(ctx.label.name, original.basename, suffix)
     return ctx.actions.declare_file(name)
 
-def _override_binary_rpath(ctx, path_override, original_binary):
-    patched_binary = _patched_file(ctx, original_binary, "patched")
-
-    ctx.actions.run(
-        inputs = [original_binary],
-        outputs = [patched_binary],
-        executable = ctx.executable._patchelf,
-        arguments = ["--set-rpath", path_override, original_binary.path, "--output", patched_binary.path],
-        tools = [],
-        mnemonic = "OverrideBinaryRPath",
-    )
-    return patched_binary
-
 def _set_dynamic_loader(ctx, binary, loader, interpreter_path):
     """Uses provided dynamic loader as the interpreter for the binary"""
     patched_binary = _patched_file(ctx, binary, "ld")
@@ -72,12 +59,6 @@ def _prepare_package_binaries(ctx, binaries, dynamic_loader_path):
                 continue
             shared_libraries.append(solib)
         file = binary.file
-        if ctx.attr.rpath_override != "" and binary.patch_rpath:
-            file = _override_binary_rpath(
-                ctx,
-                ctx.attr.rpath_override,
-                file,
-            )
         if ctx.attr.include_sysroot_libs:
             file = _set_dynamic_loader(
                 ctx,
@@ -93,17 +74,16 @@ def _prepare_redpanda_package_content(ctx, dynamic_loader_path):
     # Collect all the shared libraries that we built as part of each binary.
     # NOTE: We don't need to do this for `rpk` because it's a static binary,
     # this is only needed for binaries with shared libraries.
-    # Bazel-built binaries (redpanda, rp_util, iotune) link with
-    # -Wl,-rpath,$ORIGIN/../lib (see their BUILD files), so their rpath is
-    # never patched here; only the foreign_cc binaries (hwloc, openssl),
-    # whose link flags we do not control, get the rpath_override patch.
+    # All packaged binaries link with an $ORIGIN/../lib rpath baked in at
+    # link time (see their BUILD files; the foreign_cc ones get it via
+    # LDFLAGS/Configure flags), so packaging never patches rpaths.
     binaries = [
-        struct(attr = ctx.attr.redpanda_binary, file = ctx.file.redpanda_binary, patch_rpath = False),
-        struct(attr = ctx.attr.rp_util, file = ctx.file.rp_util, patch_rpath = False),
-        struct(attr = ctx.attr.iotune, file = ctx.file.iotune, patch_rpath = False),
-        struct(attr = ctx.attr.hwloc_calc, file = ctx.file.hwloc_calc, patch_rpath = True),
-        struct(attr = ctx.attr.hwloc_distrib, file = ctx.file.hwloc_distrib, patch_rpath = True),
-        struct(attr = ctx.attr.openssl, file = ctx.file.openssl, patch_rpath = True),
+        struct(attr = ctx.attr.redpanda_binary, file = ctx.file.redpanda_binary),
+        struct(attr = ctx.attr.rp_util, file = ctx.file.rp_util),
+        struct(attr = ctx.attr.iotune, file = ctx.file.iotune),
+        struct(attr = ctx.attr.hwloc_calc, file = ctx.file.hwloc_calc),
+        struct(attr = ctx.attr.hwloc_distrib, file = ctx.file.hwloc_distrib),
+        struct(attr = ctx.attr.openssl, file = ctx.file.openssl),
     ]
 
     package_binaries = _prepare_package_binaries(
@@ -329,10 +309,6 @@ redpanda_package = rule(
             allow_files = True,
             doc = "Sysroot shared libraries plus the glibc dynamic loader. Shipped to install_path/lib; the loader (basename ld-linux-*) is also set as the binaries' interpreter.",
         ),
-        "rpath_override": attr.string(
-            mandatory = False,
-            doc = "rpath to patch into foreign_cc binaries (hwloc, openssl). Bazel-built binaries bake $ORIGIN/../lib at link time and are never patched.",
-        ),
         "install_path": attr.string(
             default = "/opt/redpanda",
             doc = "The path where the package will be installed, used to set the interpreter path.",
@@ -356,7 +332,7 @@ def _prepapare_package_conent(ctx):
     cc_binaries = [
     ]
     for b in ctx.attr.cc_binaries:
-        cc_binaries += [struct(attr = b, file = file, patch_rpath = True) for file in b.files.to_list()]
+        cc_binaries += [struct(attr = b, file = file) for file in b.files.to_list()]
 
     package_cc_binaries = _prepare_package_binaries(
         ctx,
@@ -437,9 +413,6 @@ native_package = rule(
             allow_files = True,
             doc = "Sysroot shared libraries plus the glibc dynamic loader. Shipped to install_path/lib; the loader (basename ld-linux-*) is also set as the binaries' interpreter.",
         ),
-        "rpath_override": attr.string(
-            default = "$ORIGIN/../lib",
-        ),
         "owner": attr.int(),
         "install_path": attr.string(
             mandatory = True,
@@ -513,26 +486,26 @@ def _prepare_deb_package_content(ctx, dynamic_loader_path):
     binaries = []
     binary_map = {}
 
-    # See _prepare_redpanda_package_content for the patch_rpath split between
-    # bazel-built binaries (rpath baked at link time) and foreign_cc ones.
+    # See _prepare_redpanda_package_content: all packaged binaries bake their
+    # rpath at link time, so packaging never patches rpaths.
     if ctx.file.redpanda_binary != None:
         binary_map["redpanda_binary"] = len(binaries)
-        binaries.append(struct(attr = ctx.attr.redpanda_binary, file = ctx.file.redpanda_binary, patch_rpath = False))
+        binaries.append(struct(attr = ctx.attr.redpanda_binary, file = ctx.file.redpanda_binary))
     if ctx.file.rp_util != None:
         binary_map["rp_util"] = len(binaries)
-        binaries.append(struct(attr = ctx.attr.rp_util, file = ctx.file.rp_util, patch_rpath = False))
+        binaries.append(struct(attr = ctx.attr.rp_util, file = ctx.file.rp_util))
     if ctx.file.iotune != None:
         binary_map["iotune"] = len(binaries)
-        binaries.append(struct(attr = ctx.attr.iotune, file = ctx.file.iotune, patch_rpath = False))
+        binaries.append(struct(attr = ctx.attr.iotune, file = ctx.file.iotune))
     if ctx.file.hwloc_calc != None:
         binary_map["hwloc_calc"] = len(binaries)
-        binaries.append(struct(attr = ctx.attr.hwloc_calc, file = ctx.file.hwloc_calc, patch_rpath = True))
+        binaries.append(struct(attr = ctx.attr.hwloc_calc, file = ctx.file.hwloc_calc))
     if ctx.file.hwloc_distrib != None:
         binary_map["hwloc_distrib"] = len(binaries)
-        binaries.append(struct(attr = ctx.attr.hwloc_distrib, file = ctx.file.hwloc_distrib, patch_rpath = True))
+        binaries.append(struct(attr = ctx.attr.hwloc_distrib, file = ctx.file.hwloc_distrib))
     if ctx.file.openssl != None:
         binary_map["openssl"] = len(binaries)
-        binaries.append(struct(attr = ctx.attr.openssl, file = ctx.file.openssl, patch_rpath = True))
+        binaries.append(struct(attr = ctx.attr.openssl, file = ctx.file.openssl))
 
     package_binaries = _prepare_package_binaries(
         ctx,
@@ -727,9 +700,6 @@ redpanda_deb_package = rule(
         "sysroot_runtime": attr.label(
             allow_files = True,
             doc = "Sysroot shared libraries plus the glibc dynamic loader. Shipped to install_path/lib; the loader (basename ld-linux-*) is also set as the binaries' interpreter.",
-        ),
-        "rpath_override": attr.string(
-            default = "$ORIGIN/../lib",
         ),
         "owner": attr.int(
             default = 0,

@@ -39,7 +39,6 @@ redpanda_package(
     iotune = "@seastar//:iotune",
     openssl = "@openssl//:openssl_binary",
     redpanda_binary = "//:redpanda",
-    rpath_override = "$ORIGIN/../lib",
     rpk_binary = ":rpk",
     sysroot_runtime = ":sysroot_runtime",
 )

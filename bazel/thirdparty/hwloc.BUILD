@@ -44,6 +44,12 @@ configure_make(
         # headers (helper.h, plugins.h) produce deterministic assert strings.
         "CFLAGS": "-ffile-prefix-map=$$EXT_BUILD_ROOT=.",
         "CXXFLAGS": "-ffile-prefix-map=$$EXT_BUILD_ROOT=.",
+        # Bake an $ORIGIN-relative rpath so packaging does not need to patch
+        # it (see //bazel/packaging). The escaping survives four evaluations:
+        # the foreign_cc bash export, configure's conftest links, Makefile
+        # variable expansion, and the recipe shell, so the linker sees a
+        # literal $ORIGIN.
+        "LDFLAGS": "-Wl,-rpath,\\\\$$\\$$ORIGIN/../lib",
     },
     lib_source = ":srcs",
     out_binaries = [

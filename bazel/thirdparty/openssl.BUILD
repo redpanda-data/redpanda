@@ -60,6 +60,12 @@ configure_make(
         "--libdir=lib",
         "no-tests",
         "no-docs",
+        # Bake an $ORIGIN-relative rpath so packaging does not need to patch
+        # it (see //bazel/packaging). The escaping survives four evaluations:
+        # the unquoted foreign_cc script word, the generated Makefile,
+        # Makefile variable expansion, and the recipe shell, so the linker
+        # sees a literal $ORIGIN.
+        "-Wl,-rpath,\\\\\\$$\\$$ORIGIN/../lib",
     ] + select({
         ":debug_mode": ["--debug"],
         ":release_mode": ["--release"],
