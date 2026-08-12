@@ -318,6 +318,8 @@ static ss::future<error_code> wait_for_follower_catchup(
             break;
         }
     }
+    kafka_partition.probe().add_follower_fetch_wait(
+      ec == error_code::offset_not_available);
     co_return ec;
 }
 
