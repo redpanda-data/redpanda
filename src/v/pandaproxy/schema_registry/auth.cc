@@ -19,6 +19,9 @@
 #include "security/audit/types.h"
 #include "security/request_auth.h"
 
+#include <seastar/coroutine/as_future.hh>
+#include <seastar/coroutine/exception.hh>
+
 #include <boost/algorithm/string/predicate.hpp>
 
 namespace pandaproxy::schema_registry {
@@ -183,7 +186,7 @@ void handle_authz(
 
 } // namespace
 
-std::optional<request_auth_result> auth::handle_auth(
+ss::lw_shared_ptr<request_auth_result> auth::handle_auth(
   server::request_t& rq, std::string_view operation_name) const {
     rq.authn_method = config::get_authn_method(
       rq.service().config().schema_registry_api.value(),
@@ -214,7 +217,8 @@ std::optional<request_auth_result> auth::handle_auth(
         if (config::shard_local_cfg().schema_registry_enable_authorization) {
             if (is_deferred()) {
                 // Defer the authorization handling to the method handler
-                return auth_result;
+                return ss::make_lw_shared<request_auth_result>(
+                  std::move(auth_result));
             } else {
                 enterprise::handle_authz(
                   rq, operation_name, *this, auth_result);
@@ -227,7 +231,34 @@ std::optional<request_auth_result> auth::handle_auth(
         audit_authn_success(rq);
         audit_authz_success(rq);
     }
-    return std::nullopt;
+    return nullptr;
+}
+
+ss::future<server::reply_t> enforce_deferred_authz(
+  ss::future<server::reply_t> handler_result,
+  ss::lw_shared_ptr<request_auth_result> auth_result,
+  std::string_view operation_name) {
+    auto rp = co_await ss::coroutine::as_future(std::move(handler_result));
+    if (auth_result) {
+        if (rp.failed()) {
+            // The request failed before returning any data, so it is
+            // acceptable that its authorization check may not have run.
+            auth_result->pass();
+        } else if (!auth_result->is_checked()) {
+            vlog(
+              srlog.error,
+              "'{}' handler replied without performing its deferred "
+              "authorization check",
+              operation_name);
+            auth_result->pass();
+            // It is essential that the reply is not sent: the client gets a
+            // 500 instead. Since this is security code, do not tell them why.
+            co_await ss::coroutine::return_exception(
+              ss::httpd::server_error_exception("Internal Error"));
+        }
+    }
+    // Yields the handler's reply, or rethrows its original exception.
+    co_return co_await std::move(rp);
 }
 
 } // namespace pandaproxy::schema_registry
