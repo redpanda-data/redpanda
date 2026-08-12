@@ -88,14 +88,16 @@ public:
               _h,
               [&](const auth::regular_function_handler& h) {
                   vassert(
-                    !auth_result.has_value(),
+                    !auth_result,
                     "Authorization must not be deferred for non-deferred "
                     "endpoints");
                   return h(std::move(rq), std::move(rp));
               },
               [&](const auth::deferred_function_handler& h) {
-                  return h(
-                    std::move(rq), std::move(rp), std::move(auth_result));
+                  return enforce_deferred_authz(
+                    h(std::move(rq), std::move(rp), auth_result),
+                    auth_result,
+                    _operation_name);
               });
         } catch (const kafka::client::partition_error& ex) {
             if (

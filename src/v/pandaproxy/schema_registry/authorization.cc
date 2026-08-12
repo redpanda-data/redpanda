@@ -150,12 +150,12 @@ void handle_authz(
 
 void handle_get_schemas_ids_id_authz(
   const server::request_t& rq,
-  std::optional<request_auth_result>& auth_result,
+  const ss::lw_shared_ptr<request_auth_result>& auth_result,
   const chunked_vector<subject>& subjects) {
     const auto& operation_name
       = ss::httpd::schema_registry_json::get_schemas_ids_id.operations.nickname;
     constexpr auto op = security::acl_operation::read;
-    if (!auth_result.has_value()) {
+    if (!auth_result) {
         // ACLs or authentication is disabled
         return;
     }
@@ -170,12 +170,7 @@ void handle_get_schemas_ids_id_authz(
         // Throw unauthorized here to avoid leaking information about whether a
         // schema id exists or not.
         audit_authz(
-          rq,
-          operation_name,
-          auth_result.value(),
-          false,
-          op,
-          audit_resources{});
+          rq, operation_name, *auth_result, false, op, audit_resources{});
         throw_unauthorized();
     }
 
@@ -201,25 +196,20 @@ void handle_get_schemas_ids_id_authz(
         audit_authz(rq, operation_name, std::move(*authorizing_result));
     } else {
         audit_authz(
-          rq,
-          operation_name,
-          auth_result.value(),
-          false,
-          op,
-          std::move(all_results));
+          rq, operation_name, *auth_result, false, op, std::move(all_results));
         throw_unauthorized();
     }
 }
 
 void handle_get_subjects_authz(
   const server::request_t& rq,
-  std::optional<request_auth_result>& auth_result,
+  const ss::lw_shared_ptr<request_auth_result>& auth_result,
   chunked_vector<subject>& subjects) {
     const auto& operation_name
       = ss::httpd::schema_registry_json::get_subjects.operations.nickname;
     constexpr auto op = security::acl_operation::describe;
 
-    if (!auth_result.has_value()) {
+    if (!auth_result) {
         // ACLs or authentication is disabled
         return;
     }
@@ -254,18 +244,13 @@ void handle_get_subjects_authz(
     // If there are any unauthorized subjects, generate failed audit event with
     // them.
     audit_authz(
-      rq,
-      operation_name,
-      auth_result.value(),
-      true,
-      op,
-      std::move(passing_results));
+      rq, operation_name, *auth_result, true, op, std::move(passing_results));
 
     if (!failing_results.empty()) {
         audit_authz(
           rq,
           operation_name,
-          auth_result.value(),
+          *auth_result,
           false,
           op,
           std::move(failing_results));

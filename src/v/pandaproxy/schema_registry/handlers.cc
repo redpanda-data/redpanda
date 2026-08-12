@@ -349,7 +349,7 @@ get_schemas_types(server::request_t rq, server::reply_t rp) {
 ss::future<server::reply_t> get_schemas_ids_id(
   server::request_t rq,
   server::reply_t rp,
-  std::optional<request_auth_result> auth_result) {
+  ss::lw_shared_ptr<request_auth_result> auth_result) {
     parse_accept_header(rq, rp);
     auto id = parse::request_param<schema_id>(*rq.req, "id");
     const auto format = parse_output_format(*rq.req);
@@ -421,7 +421,7 @@ ss::future<ctx_server<service>::reply_t> get_schemas_ids_id_subjects(
 ss::future<server::reply_t> get_subjects(
   server::request_t rq,
   server::reply_t rp,
-  std::optional<request_auth_result> auth_result) {
+  ss::lw_shared_ptr<request_auth_result> auth_result) {
     parse_accept_header(rq, rp);
     auto inc_del{
       parse::query_param<std::optional<include_deleted>>(*rq.req, "deleted")
