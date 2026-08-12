@@ -24,7 +24,6 @@ redpanda_package(
     default_yaml_config = "//conf:redpanda.yaml",
     include_sysroot_libs = True,
     redpanda_binary = "//:redpanda",
-    rpath_override = "$ORIGIN/../lib",
     rpk_binary = ":rpk",
     sysroot_runtime = ":sysroot_runtime",
 )
@@ -54,7 +53,6 @@ redpanda_package(
     include_sysroot_libs = True,
     install_path = "/opt/redpanda_installs/redpanda",
     redpanda_binary = "//:redpanda",
-    rpath_override = "$ORIGIN/../lib",
     rpk_binary = ":rpk",
     sysroot_runtime = ":sysroot_runtime",
 )
@@ -68,7 +66,6 @@ redpanda_package(
     default_yaml_config = "//conf:redpanda.yaml",
     owner = NONROOT_USER,
     redpanda_binary = "//:redpanda",
-    rpath_override = "$ORIGIN/../lib",
     rpk_binary = ":rpk",
 )
 

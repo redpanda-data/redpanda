@@ -12,6 +12,11 @@ redpanda_cc_binary(
     copts = [
         "-Wno-backend-plugin",
     ],
+    # Resolve bundled shared libraries from lib/ next to the install's bin/,
+    # so packaging does not need to patch the rpath (see //bazel/packaging).
+    linkopts = [
+        "-Wl,-rpath,$$ORIGIN/../lib",
+    ],
     visibility = ["//visibility:public"],
     deps = [
         "//src/v/base",

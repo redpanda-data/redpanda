@@ -775,6 +775,11 @@ cc_binary(
     srcs = [
         "apps/iotune/iotune.cc",
     ],
+    # Resolve bundled shared libraries from lib/ next to the install's bin/,
+    # so packaging does not need to patch the rpath (see //bazel/packaging).
+    linkopts = [
+        "-Wl,-rpath,$$ORIGIN/../lib",
+    ],
     visibility = ["//visibility:public"],
     deps = [
         ":seastar",

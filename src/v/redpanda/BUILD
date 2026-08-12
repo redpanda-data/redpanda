@@ -187,6 +187,10 @@ redpanda_cc_binary(
         # than packing segments into a single mapping.
         "-Wl,-z,max-page-size=2097152",
         "-Wl,-z,separate-loadable-segments",
+        # Resolve bundled shared libraries from lib/ next to the install's
+        # bin/, so packaging does not need to patch the rpath. Inert in the
+        # build tree, where $ORIGIN/../lib does not exist.
+        "-Wl,-rpath,$$ORIGIN/../lib",
     ] + select({
         ":use_emit_relocs": [
             "-Wl,--emit-relocs",
