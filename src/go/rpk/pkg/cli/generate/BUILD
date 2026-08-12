@@ -15,6 +15,7 @@ go_library(
         "grafana-dashboards/Kafka-Consumer-Metrics.json.gz",
         "grafana-dashboards/Kafka-Consumer-Offsets.json.gz",
         "grafana-dashboards/Kafka-Topic-Metrics.json.gz",
+        "grafana-dashboards/Redpanda-Load-Factor-Dashboard.json.gz",
         "grafana-dashboards/Redpanda-Ops-Dashboard.json.gz",
         "grafana-dashboards/Redpanda-Serverless-Dashboard.json.gz",
     ],
