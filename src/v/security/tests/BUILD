@@ -66,6 +66,22 @@ redpanda_cc_btest(
     ],
 )
 
+redpanda_cc_btest(
+    name = "request_auth_test",
+    timeout = "short",
+    srcs = [
+        "request_auth_test.cc",
+    ],
+    deps = [
+        "//src/v/security",
+        "//src/v/security:request_auth",
+        "//src/v/test_utils:seastar_boost",
+        "@boost//:test",
+        "@seastar",
+        "@seastar//:testing",
+    ],
+)
+
 redpanda_cc_gtest(
     name = "authorizer_test",
     timeout = "short",
