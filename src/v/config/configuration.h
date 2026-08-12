@@ -163,6 +163,8 @@ struct configuration final : public config_store {
     bounded_property<std::chrono::milliseconds> raft_heartbeat_interval_ms;
     bounded_property<std::chrono::milliseconds> raft_heartbeat_timeout_ms;
     property<size_t> raft_heartbeat_disconnect_failures;
+    bounded_property<std::optional<std::chrono::milliseconds>>
+      raft_follower_nudge_debounce_ms;
     bounded_property<std::optional<size_t>> raft_max_recovery_memory;
     property<bool> raft_enable_lw_heartbeat;
     bounded_property<size_t> raft_recovery_concurrency_per_shard;
