@@ -22,10 +22,12 @@ namespace kafka {
 fetch_memory_units_manager::fetch_memory_units_manager(
   ssx::semaphore& kafka_units,
   ssx::semaphore& fetch_units,
-  local_instance_fn&& local_fn)
+  local_instance_fn&& local_fn,
+  config::binding<std::optional<int32_t>>&& max_message_size)
   : _kafka_units(kafka_units)
   , _fetch_units(fetch_units)
   , _max_fetch_units(fetch_units.current())
+  , _max_message_size(std::move(max_message_size))
   , _release_units_timer([this] { release_all_units_to_semaphore(); })
   , _local_instance_fn(std::move(local_fn)) {
     _release_units_timer.arm_periodic(max_release_period);
@@ -90,18 +92,23 @@ fetch_memory_units fetch_memory_units_manager::allocate_memory_units(
         max_bytes = _max_fetch_units;
     }
 
-    if (max_batch_size > _max_fetch_units) {
+    const auto& configured_max = _max_message_size();
+    const size_t max_message_size = configured_max.has_value()
+                                      ? static_cast<size_t>(*configured_max)
+                                      : _max_fetch_units;
+
+    if (max_batch_size > max_message_size) {
         thread_local static ss::logger::rate_limit rate_limit(rate);
         klog.log(
           ss::log_level::error,
           rate_limit,
-          "{}: max_batch_size({}) exceeds available fetch memory ({}). "
+          "{}: max_batch_size({}) exceeds max message size ({}). "
           "Consider reducing `message.max.bytes` for the topic. Setting "
-          "max_batch_size to available fetch memory.",
+          "max_batch_size to max message size.",
           ktp,
           max_batch_size,
-          _max_fetch_units);
-        max_batch_size = _max_fetch_units;
+          max_message_size);
+        max_batch_size = max_message_size;
     }
 
     const size_t available_units = std::min(

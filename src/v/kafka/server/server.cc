@@ -215,7 +215,8 @@ server::server(
       memory_fetch_sem(),
       [this] -> fetch_memory_units_manager& {
           return container().local().fetch_units_manager();
-      })
+      },
+      config::shard_local_cfg().kafka_max_message_size_upper_limit_bytes.bind())
   , _probe(std::make_unique<class kafka_probe>())
   , _sasl_probe(std::make_unique<class sasl_probe>())
   , _read_dist_probe(std::make_unique<read_distribution_probe>())
