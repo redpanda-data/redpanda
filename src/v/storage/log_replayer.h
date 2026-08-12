@@ -45,6 +45,8 @@ enum class replay_stop_reason {
     threw,
 };
 
+/// The name recovery gives an unrecoverable segment file carries this, so a
+/// change here changes a name on disk.
 std::string_view to_string_view(replay_stop_reason);
 
 class log_replayer {

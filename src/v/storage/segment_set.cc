@@ -31,6 +31,11 @@
 #include <exception>
 
 namespace storage {
+
+/// Recovery appends this to the name of a segment it drops, and the name keeps
+/// it last so that a match on it still finds the file.
+static constexpr std::string_view cannotrecover_suffix = ".cannotrecover";
+
 struct segment_ordering {
     using type = ss::lw_shared_ptr<segment>;
     bool operator()(const type& seg1, const type& seg2) const {
@@ -423,11 +428,17 @@ static ss::future<segment_set> unsafe_do_recover(
                 if (report != nullptr) {
                     ++report->count_at(position);
                 }
+                const auto cannotrecover_name = fmt::format(
+                  "{}.{}.{}{}",
+                  s->reader().filename(),
+                  recovered.stop_reason.has_value()
+                    ? to_string_view(*recovered.stop_reason)
+                    : std::string_view{"unset"},
+                  to_string_view(position),
+                  cannotrecover_suffix);
                 vlog(stlog.info, "Unable to recover segment: {}", s);
                 s->close().get();
-                ss::rename_file(
-                  s->reader().filename(),
-                  s->reader().filename() + ".cannotrecover")
+                ss::rename_file(s->reader().filename(), cannotrecover_name)
                   .get();
                 continue;
             }

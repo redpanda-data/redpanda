@@ -167,7 +167,49 @@ TEST_F(LogManagerTest, test_can_load_logs) {
     EXPECT_TRUE(file_exists(seg3->reader().filename()).get());
     EXPECT_FALSE(file_exists(seg4->reader().filename()).get());
     EXPECT_TRUE(
-      file_exists(seg4->reader().filename() + ".cannotrecover").get());
+      file_exists(
+        seg4->reader().filename() + ".header_crc_mismatch.tail.cannotrecover")
+        .get());
+}
+
+TEST_F(
+  LogManagerTest, test_unrecoverable_segment_name_carries_reason_and_position) {
+    auto& m = log_mgr();
+
+    auto ntp = config_from_ntp(model::ntp("ns-zeroed", "topic-1", 0));
+    directories::initialize(ntp.work_directory()).get();
+
+    auto seg = m.make_log_segment(
+                  ntp,
+                  model::offset(2),
+                  model::term_id(1),
+                  default_segment_readahead_size,
+                  default_segment_readahead_count,
+                  0)
+                 .get();
+    const ss::sstring log_path = seg->reader().filename();
+    seg->close().get();
+
+    // Simulate a situation where a segment was fallocated but never written
+    // to before a crash. That is, a segment with non-zero file size that is
+    // all zeros. A clean segment close would have trimmed the preallocated
+    // tail.
+    {
+        auto f = ss::open_file_dma(log_path, ss::open_flags::rw).get();
+        f.truncate(4096).get();
+        f.close().get();
+    }
+
+    auto log = m.manage(config_from_ntp(ntp.ntp())).get();
+    log->stm_hookset()->start();
+    auto stop_stm = ss::defer([&log] { log->stm_hookset()->stop(); });
+
+    // Replay stops at the first batch header, and the only segment in the log
+    // is also the highest, so the name reports both.
+    EXPECT_EQ(log->segment_count(), 0);
+    EXPECT_FALSE(file_exists(log_path).get());
+    EXPECT_TRUE(
+      file_exists(log_path + ".zeroed_batch_header.tail.cannotrecover").get());
 }
 
 TEST_F(

@@ -28,6 +28,8 @@ enum class segment_position {
     unknown,
 };
 
+/// The name recovery gives an unrecoverable segment file carries this, so a
+/// change here changes a name on disk.
 constexpr std::string_view to_string_view(segment_position p) {
     switch (p) {
     case segment_position::tail:
