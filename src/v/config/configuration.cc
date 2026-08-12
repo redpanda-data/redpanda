@@ -4165,12 +4165,10 @@ configuration::configuration()
       *this,
       true,
       "iceberg_enabled",
-      "Enables the translation of topic data into Iceberg tables. Setting "
-      "iceberg_enabled to true activates the feature at the cluster level, but "
-      "each topic must also set the redpanda.iceberg.enabled topic-level "
-      "property to true to use it. If iceberg_enabled is set to false, the "
-      "feature is disabled for all topics in the cluster, overriding any "
-      "topic-level settings.",
+      "Enables Apache Iceberg integration for storing topic data in the "
+      "Iceberg open table format. Setting iceberg_enabled to true activates "
+      "the feature at the cluster level, but each topic must also configure "
+      "the redpanda.iceberg.mode topic-level property to use it.",
       meta{
         .needs_restart = needs_restart::yes,
         .visibility = visibility::user,
