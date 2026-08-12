@@ -18,6 +18,7 @@
 #include "test_utils/test.h"
 
 #include <seastar/core/circular_buffer.hh>
+#include <seastar/util/defer.hh>
 
 #include <algorithm>
 #include <chrono>
@@ -1210,4 +1211,113 @@ TEST_F_CORO(raft_fixture, test_leadership_blocked_replicas_can_elect_leader) {
 
     auto leader = co_await wait_for_leader(60s);
     ASSERT_NE_CORO(leader, blocked_follower);
+}
+
+/**
+ * An append entries request from the current term leader must refresh the
+ * follower election timer even when the request is rejected because the
+ * follower log is behind (gap) or the previous log entry term does not
+ * match. Without the refresh a follower that stays in contact with a live
+ * leader, but can not append because it is still being recovered, keeps
+ * starting elections that deterministically fail the longest log check.
+ * The resulting (pre-)vote storm starves recovery, a livelock.
+ *
+ * Note that during active follower recovery lightweight heartbeats are
+ * rejected to force full heartbeats, so rejected full append entries
+ * requests can be the dominant form of leader contact.
+ */
+TEST_F_CORO(raft_fixture, test_rejected_append_entries_refresh_hbeat) {
+    set_election_timeout(1s);
+    co_await create_simple_group(3);
+    auto leader_id = co_await wait_for_leader(10s);
+    auto& leader_node = node(leader_id);
+
+    auto res = co_await leader_node.raft()->replicate(
+      make_batches(10, 1, 128),
+      replicate_options(consistency_level::quorum_ack, 10s));
+    ASSERT_FALSE_CORO(res.has_error());
+    co_await wait_for_committed_offset(res.value().last_offset, 10s);
+
+    auto follower_id = random_follower_id().value();
+    auto& follower_node = node(follower_id);
+    auto follower = follower_node.raft();
+    const auto term = follower->term();
+
+    auto cleanup = ss::defer([&] {
+        leader_node.reset_dispatch_handlers();
+        follower_node.reset_dispatch_handlers();
+    });
+
+    // Cut the follower off from real leader traffic. The requests crafted
+    // below are its only contact with the leader.
+    leader_node.on_dispatch([follower_id](model::node_id target, msg_type) {
+        if (target == follower_id) {
+            throw std::runtime_error("blocked by test");
+        }
+        return ss::now();
+    });
+
+    size_t follower_vote_requests = 0;
+    follower_node.on_dispatch(
+      [&follower_vote_requests](model::node_id, msg_type type) {
+          if (type == msg_type::vote) {
+              ++follower_vote_requests;
+          }
+          return ss::now();
+      });
+
+    auto make_request =
+      [&](model::offset prev_log_index, model::term_id prev_log_term) {
+          return append_entries_request(
+            leader_node.get_vnode(),
+            follower_node.get_vnode(),
+            protocol_metadata{
+              .group = follower->group(),
+              .commit_index = follower->committed_offset(),
+              .term = term,
+              .prev_log_index = prev_log_index,
+              .prev_log_term = prev_log_term,
+              .last_visible_index = follower->last_visible_index(),
+              .dirty_offset = prev_log_index,
+            },
+            chunked_vector<model::record_batch>{},
+            0,
+            flush_after_append::no);
+      };
+
+    // let the timestamp of the last real leader contact age
+    co_await ss::sleep(200ms);
+
+    // rejected because it would leave a gap in the follower log
+    auto hbeat_before = follower->last_heartbeat();
+    auto reply = co_await follower->append_entries(
+      make_request(model::offset(follower->dirty_offset()() + 1000), term));
+    ASSERT_EQ_CORO(reply.result, reply_result::failure);
+    ASSERT_GT_CORO(follower->last_heartbeat(), hbeat_before);
+
+    co_await ss::sleep(200ms);
+
+    // rejected because the previous log entry term does not match
+    hbeat_before = follower->last_heartbeat();
+    auto lstats = follower->log()->offsets();
+    reply = co_await follower->append_entries(make_request(
+      lstats.dirty_offset, model::term_id(lstats.dirty_offset_term() - 1)));
+    ASSERT_EQ_CORO(reply.result, reply_result::failure);
+    ASSERT_GT_CORO(follower->last_heartbeat(), hbeat_before);
+
+    /**
+     * Keep the follower in contact with the leader through rejected append
+     * entries only, for several election timeouts (with margin for the
+     * voter priority decay rounds preceding the first vote dispatch). The
+     * follower must not attempt an election.
+     */
+    auto deadline = model::timeout_clock::now() + 8s;
+    while (model::timeout_clock::now() < deadline) {
+        reply = co_await follower->append_entries(
+          make_request(model::offset(follower->dirty_offset()() + 1000), term));
+        ASSERT_EQ_CORO(reply.result, reply_result::failure);
+        co_await ss::sleep(100ms);
+    }
+    ASSERT_EQ_CORO(follower_vote_requests, 0);
+    ASSERT_EQ_CORO(follower->term(), term);
 }
