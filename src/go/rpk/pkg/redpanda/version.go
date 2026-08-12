@@ -26,11 +26,21 @@ func VersionFromString(s string) (Version, error) {
 		return Version{}, fmt.Errorf("unable to get the redpanda version from %q", s)
 	}
 
-	// We can safely ignore the errors since we are making sure in the regexp
-	// that we match digits only.
-	y, _ := strconv.Atoi(vMatch[1])
-	f, _ := strconv.Atoi(vMatch[2])
-	p, _ := strconv.Atoi(vMatch[3])
+	// The regexp guarantees each group is digits-only, but no longer bounds
+	// how many: an implausibly long segment can still overflow int, so check
+	// the conversion instead of ignoring its error.
+	y, err := strconv.Atoi(vMatch[1])
+	if err != nil {
+		return Version{}, fmt.Errorf("unable to parse major version from %q: %v", s, err)
+	}
+	f, err := strconv.Atoi(vMatch[2])
+	if err != nil {
+		return Version{}, fmt.Errorf("unable to parse feature version from %q: %v", s, err)
+	}
+	p, err := strconv.Atoi(vMatch[3])
+	if err != nil {
+		return Version{}, fmt.Errorf("unable to parse patch version from %q: %v", s, err)
+	}
 	return Version{y, f, p}, nil
 }
 

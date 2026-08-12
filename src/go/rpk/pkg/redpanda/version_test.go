@@ -32,6 +32,7 @@ func TestVersionFromString(t *testing.T) {
 		{name: "3 digit feature with rc", in: "4.100.0-rc1", exp: Version{4, 100, 0}},
 		{name: "3 digit feature with text", in: "4.103.1 - 9eefb907c43bf1cfeb0783808c224385c857c0d4-dirty", exp: Version{4, 103, 1}},
 		{name: "non-digit version", in: "AB.C.D", expErr: true},
+		{name: "segment overflows int", in: "4.99999999999999999999.0", expErr: true},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			got, err := VersionFromString(test.in)
