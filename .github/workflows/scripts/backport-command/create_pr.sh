@@ -8,7 +8,7 @@ set -e
 # shellcheck disable=SC1091
 source "$SCRIPT_DIR/gh_wrapper.sh"
 
-cd "$GITHUB_WORKSPACE/fork" || exit 1
+cd "$GITHUB_WORKSPACE/target-repo" || exit 1
 
 backport_issue_urls=""
 # shellcheck disable=SC2153
@@ -68,7 +68,7 @@ fi
 gh pr create --title "[$BACKPORT_BRANCH] $ORIG_TITLE" \
   --base "$BACKPORT_BRANCH" \
   --label "kind/backport" \
-  --head "$GIT_USER:$HEAD_BRANCH" \
+  --head "$HEAD_BRANCH" \
   --repo "$TARGET_ORG/$TARGET_REPO" \
   --reviewer "$AUTHOR" \
   --milestone "$TARGET_MILESTONE" \
