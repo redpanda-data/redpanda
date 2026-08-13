@@ -33,25 +33,66 @@ func TestPrometheusURLFlagDeprecation(t *testing.T) {
 	require.Contains(t, cmd.Flag("prometheus-url").Deprecated, "Use --metrics-endpoint instead")
 }
 
-// TestClusterTypeStretch tests that --cluster-type stretch routes to the
-// embedded stretch cluster dashboard and leaves the --dashboard flow alone.
+// TestClusterTypeStretch tests that --cluster-type stretch swaps in the
+// stretch variant of the operations dashboard while leaving dashboards
+// without a stretch variant untouched.
 func TestClusterTypeStretch(t *testing.T) {
-	p := new(config.Params)
-	cmd := newGrafanaDashboardCmd(p)
-	require.Equal(t, "default", cmd.Flag("cluster-type").DefValue)
+	stretch := stretchDashboardMap["operations"]
 
-	var buf bytes.Buffer
-	cmd.SetOut(&buf)
-	cmd.SetArgs([]string{"--cluster-type", "stretch"})
-	require.NoError(t, cmd.Execute())
+	serve := func(t *testing.T, handler http.HandlerFunc) {
+		ts := httptest.NewServer(handler)
+		t.Cleanup(ts.Close)
+		old := dashboardHost
+		dashboardHost = ts.URL + "/"
+		t.Cleanup(func() { dashboardHost = old })
+	}
+	execute := func(t *testing.T, args ...string) []byte {
+		p := new(config.Params)
+		cmd := newGrafanaDashboardCmd(p)
+		var buf bytes.Buffer
+		cmd.SetOut(&buf)
+		cmd.SetArgs(args)
+		require.NoError(t, cmd.Execute())
+		return buf.Bytes()
+	}
 
-	b := buf.Bytes()
-	sum := sha256.Sum256(b)
-	require.Equal(t, stretchClusterDashboard.Hash, fmt.Sprintf("%x", sum))
+	t.Run("flag defaults to the default cluster type", func(t *testing.T) {
+		p := new(config.Params)
+		cmd := newGrafanaDashboardCmd(p)
+		require.Equal(t, "default", cmd.Flag("cluster-type").DefValue)
+	})
 
-	var dash map[string]any
-	require.NoError(t, json.Unmarshal(b, &dash))
-	require.Equal(t, "Redpanda Stretch Cluster — Operator Observability", dash["title"])
+	t.Run("downloads the stretch variant of operations", func(t *testing.T) {
+		serve(t, func(w http.ResponseWriter, r *http.Request) {
+			require.Equal(t, "/"+stretch.Location, r.URL.Path)
+			fmt.Fprint(w, `{"title":"stretch from github"}`)
+		})
+		b := execute(t, "--cluster-type", "stretch")
+		require.JSONEq(t, `{"title":"stretch from github"}`, string(b))
+	})
+
+	t.Run("falls back to the embedded stretch dashboard", func(t *testing.T) {
+		serve(t, func(w http.ResponseWriter, _ *http.Request) {
+			w.WriteHeader(http.StatusNotFound)
+		})
+		b := execute(t, "--cluster-type", "stretch", "--dashboard", "operations")
+		sum := sha256.Sum256(b)
+		require.Equal(t, stretch.Hash, fmt.Sprintf("%x", sum))
+
+		var dash map[string]any
+		require.NoError(t, json.Unmarshal(b, &dash))
+		require.Equal(t, "Redpanda Stretch Cluster — Operator Observability", dash["title"])
+	})
+
+	t.Run("dashboards without a stretch variant fall back to the default set", func(t *testing.T) {
+		serve(t, func(w http.ResponseWriter, r *http.Request) {
+			require.Equal(t, "/"+dashboardMap["consumer-offsets"].Location, r.URL.Path)
+			w.WriteHeader(http.StatusNotFound)
+		})
+		b := execute(t, "--cluster-type", "stretch", "--dashboard", "consumer-offsets")
+		sum := sha256.Sum256(b)
+		require.Equal(t, dashboardMap["consumer-offsets"].Hash, fmt.Sprintf("%x", sum))
+	})
 }
 
 func TestGrafanaParseResponse(t *testing.T) {
@@ -122,13 +163,15 @@ func Test_embeddedDecompressAndPrint(t *testing.T) {
 			expHash: v.Hash,
 		})
 	}
-	// The stretch cluster dashboard is not part of dashboardMap; it is
-	// selected with --cluster-type stretch instead of --dashboard.
-	tests = append(tests, tt{
-		name:    "parse stretch correctly",
-		path:    filepath.Join("grafana-dashboards", stretchClusterDashboard.Location+".gz"),
-		expHash: stretchClusterDashboard.Hash,
-	})
+	// Stretch cluster dashboard variants are selected with --cluster-type
+	// stretch; they overlay dashboardMap and are embedded like the others.
+	for k, v := range stretchDashboardMap {
+		tests = append(tests, tt{
+			name:    fmt.Sprintf("parse stretch %v correctly", k),
+			path:    filepath.Join("grafana-dashboards", v.Location+".gz"),
+			expHash: v.Hash,
+		})
+	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			writer := &bytes.Buffer{}

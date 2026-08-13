@@ -87,15 +87,42 @@ var (
 			"",
 		},
 	}
-	// stretchClusterDashboard is only embedded, it is not downloadable from the
-	// observability GitHub repository. It is selected with --cluster-type
-	// stretch rather than --dashboard.
-	stretchClusterDashboard = &fileSpec{
-		"Redpanda-Stretch-Cluster-Dashboard.json",
-		"Observability dashboard for Redpanda stretch clusters managed by the Redpanda operator: cross-cluster raft health, StretchCluster member status, and operator reconcile health.",
-		"8f3491dcf4f1e9b52e5aaebdf5dfa37a46fa3787d274ae3482c354cfba25dced",
+	// stretchDashboardMap contains dashboard variants for stretch clusters,
+	// selected with --cluster-type stretch. It overlays dashboardMap: any
+	// dashboard without a stretch variant falls back to the default one.
+	stretchDashboardMap = map[string]*fileSpec{
+		"operations": {
+			"Redpanda-Stretch-Cluster-Dashboard.json",
+			"Observability dashboard for Redpanda stretch clusters managed by the Redpanda operator: cross-cluster raft health, StretchCluster member status, and operator reconcile health.",
+			"8f3491dcf4f1e9b52e5aaebdf5dfa37a46fa3787d274ae3482c354cfba25dced",
+		},
 	}
+	// dashboardHost is where non-legacy dashboards are downloaded from; a
+	// variable so tests can point it at a local server.
+	dashboardHost = "https://raw.githubusercontent.com/redpanda-data/observability/main/grafana-dashboards/"
 )
+
+// dashboardsFor returns the dashboards selectable with --dashboard for the
+// given --cluster-type. Cluster type specific dashboards overlay the default
+// set: any dashboard without a variant for the cluster type falls back to the
+// default one.
+func dashboardsFor(clusterType string) (map[string]*fileSpec, error) {
+	switch clusterType {
+	case "default":
+		return dashboardMap, nil
+	case "stretch":
+		merged := make(map[string]*fileSpec, len(dashboardMap))
+		for k, v := range dashboardMap {
+			merged[k] = v
+		}
+		for k, v := range stretchDashboardMap {
+			merged[k] = v
+		}
+		return merged, nil
+	default:
+		return nil, fmt.Errorf("unrecognized cluster type %q; supported values: default, stretch", clusterType)
+	}
+}
 
 const panelHeight = 6
 
@@ -144,26 +171,18 @@ To see a list of all available dashboards, use the '--dashboard help' flag.
 For Redpanda clusters stretched across multiple Kubernetes clusters and managed
 by the Redpanda Operator, use the '--cluster-type stretch' flag to generate a
 dashboard focused on stretch cluster observability: cross-cluster raft health,
-StretchCluster member status, and operator reconcile health. This dashboard is
-embedded in rpk and cannot be combined with the '--dashboard' flag:
+StretchCluster member status, and operator reconcile health:
 
     rpk generate grafana-dashboard --cluster-type stretch
+
+The cluster type composes with '--dashboard': dashboards with a variant
+specific to the selected cluster type (currently only 'operations') are
+replaced by that variant, while any other dashboard is generated as usual.
 `,
 		Args: cobra.NoArgs,
 		Run: func(cmd *cobra.Command, _ []string) {
-			switch clusterType {
-			case "default": // Fall through to the --dashboard handling below.
-			case "stretch":
-				if cmd.Flags().Changed("dashboard") {
-					out.Die("cannot use --dashboard together with --cluster-type stretch; the stretch cluster dashboard is selected by the cluster type alone")
-				}
-				path := filepath.Join("grafana-dashboards", stretchClusterDashboard.Location+".gz")
-				err := decompressAndPrint(dashFS, path, cmd.OutOrStdout())
-				out.MaybeDie(err, "unable to print the stretch cluster dashboard: %v", err)
-				return
-			default:
-				out.Die("unrecognized cluster type %q; supported values: default, stretch", clusterType)
-			}
+			dashboards, err := dashboardsFor(clusterType)
+			out.MaybeDie(err, "%v", err)
 			switch {
 			case dashboard == "legacy":
 				if datasource == "" {
@@ -173,23 +192,24 @@ embedded in rpk and cannot be combined with the '--dashboard' flag:
 				out.MaybeDie(err, "unable to generate the grafana dashboard: %v", err)
 
 				fmt.Println(jsonOut)
-			case dashboardMap[dashboard] != nil:
-				jsonOut, err := tryFromGithub(cmd.Context(), dashboard)
+			case dashboards[dashboard] != nil:
+				spec := dashboards[dashboard]
+				jsonOut, err := tryFromGithub(cmd.Context(), spec)
 				if err == nil {
-					fmt.Println(jsonOut)
+					fmt.Fprintln(cmd.OutOrStdout(), jsonOut)
 					return
 				}
 				fmt.Fprintf(os.Stderr, "unable to retrieve dashboard from github: %v; using static file...\n", err)
 
 				// The embedded dashboard file is compressed, and located
 				// under grafana-dashboard dir:
-				path := filepath.Join("grafana-dashboards", dashboardMap[dashboard].Location+".gz")
-				err = decompressAndPrint(dashFS, path, os.Stdout)
+				path := filepath.Join("grafana-dashboards", spec.Location+".gz")
+				err = decompressAndPrint(dashFS, path, cmd.OutOrStdout())
 
 				// This is unlikely and if we ever hit this must be investigated.
 				out.MaybeDie(err, "unable to print the static file: %v; as an alternative you still may use the legacy dashboard via '--dashboard legacy' flag", err)
 			case dashboard == "help":
-				printDashboardHelp(dashboardMap)
+				printDashboardHelp(dashboards)
 				return
 			default:
 				out.Die("unrecognized dashboard type name: %q; use --dashboard help for more info", dashboard)
@@ -220,7 +240,7 @@ embedded in rpk and cannot be combined with the '--dashboard' flag:
 	cmd.RegisterFlagCompletionFunc(clusterTypeFlag, func(_ *cobra.Command, _ []string, _ string) ([]string, cobra.ShellCompDirective) {
 		return []string{
 			"default\tGenerate the dashboard selected with --dashboard",
-			"stretch\t" + stretchClusterDashboard.Description,
+			"stretch\t" + stretchDashboardMap["operations"].Description,
 		}, cobra.ShellCompDirectiveDefault
 	})
 
@@ -236,14 +256,13 @@ embedded in rpk and cannot be combined with the '--dashboard' flag:
 	return cmd
 }
 
-func tryFromGithub(ctx context.Context, dashboard string) (string, error) {
-	const host = "https://raw.githubusercontent.com/redpanda-data/observability/main/grafana-dashboards/"
+func tryFromGithub(ctx context.Context, spec *fileSpec) (string, error) {
 	cl := httpapi.NewClient(
-		httpapi.Host(host),
+		httpapi.Host(dashboardHost),
 	)
 
 	var jsonOut string
-	return jsonOut, cl.Get(ctx, dashboardMap[dashboard].Location, nil, &jsonOut)
+	return jsonOut, cl.Get(ctx, spec.Location, nil, &jsonOut)
 }
 
 func decompressAndPrint(fs fs.FS, path string, writer io.Writer) error {
