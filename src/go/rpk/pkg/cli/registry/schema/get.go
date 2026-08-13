@@ -49,6 +49,8 @@ potential (mutually exclusive) ways:
 To print the schema, use the '--print-schema' flag.
 
 To print schema metadata properties, use the '--print-metadata' flag.
+
+The '--print-schema' and '--print-metadata' flags are mutually exclusive.
 `,
 		Args: cobra.MaximumNArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
@@ -162,8 +164,8 @@ To print schema metadata properties, use the '--print-metadata' flag.
 	cmd.Flags().StringVar(&schemaFile, "schema", "", "Schema file to check existence of, must be .avro, .json or .proto; subject required")
 	cmd.Flags().StringVar(&schemaType, "type", "", fmt.Sprintf("Schema type of the file used to lookup (%v); overrides schema file extension", strings.Join(supportedTypes, ",")))
 	cmd.Flags().BoolVar(&deleted, "deleted", false, "If true, also return deleted schemas")
-	cmd.Flags().BoolVar(&printSchema, "print-schema", false, "Prints the schema in JSON format")
-	cmd.Flags().BoolVar(&printMetadata, "print-metadata", false, "Print the schema metadata properties")
+	cmd.Flags().BoolVar(&printSchema, "print-schema", false, "Prints the schema in JSON format; cannot be combined with --print-metadata")
+	cmd.Flags().BoolVar(&printMetadata, "print-metadata", false, "Print the schema metadata properties; cannot be combined with --print-schema")
 
 	cmd.MarkFlagsMutuallyExclusive("print-schema", "print-metadata")
 	cmd.RegisterFlagCompletionFunc("type", validTypes())
