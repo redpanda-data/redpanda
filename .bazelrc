@@ -139,6 +139,11 @@ build --host_per_file_copt=external/ragel.*@-Wno-return-type
 build --per_file_copt=external/.*@-Wno-attribute-alias
 build --host_per_file_copt=external/.*@-Wno-attribute-alias
 
+# Abseil marks every runtime-selected CRC variant hot, but a profile only
+# exercises the variant selected for the training CPU.
+build --per_file_copt=external/abseil-cpp.*/absl/crc/internal/crc_x86_arm_combined.cc@-Wno-backend-plugin
+build --host_per_file_copt=external/abseil-cpp.*/absl/crc/internal/crc_x86_arm_combined.cc@-Wno-backend-plugin
+
 # All C/C++ compiles build with -Werror, including external modules: the
 # suppressions above keep them warning-free, and this stops new warnings
 # (e.g. from toolchain bumps) from scrolling by unnoticed. per_file_copt
