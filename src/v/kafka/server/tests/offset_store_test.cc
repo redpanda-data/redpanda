@@ -687,6 +687,7 @@ TEST_F(offset_store_test, a_transaction_expires_at_its_deadline) {
 TEST_F_CORO(offset_store_test, the_producer_lock_serializes_by_producer) {
     int running = 0;
     int most_concurrent = 0;
+    ss::promise<> first_running;
     ss::promise<> release_first;
 
     const auto operation = [&running, &most_concurrent](auto f) {
@@ -701,8 +702,15 @@ TEST_F_CORO(offset_store_test, the_producer_lock_serializes_by_producer) {
     };
 
     auto held = store.with_pid_lock(
-      model::producer_id(7),
-      operation([&release_first] { return release_first.get_future(); }));
+      model::producer_id(7), operation([&first_running, &release_first] {
+          first_running.set_value();
+          return release_first.get_future();
+      }));
+
+    // the reactor gives no ordering guarantee between this operation and the
+    // ones started below, so wait for it to hold the lock rather than assume
+    // it ran first
+    co_await first_running.get_future();
 
     // a second operation for the same producer waits for the first
     auto queued = store.with_pid_lock(
@@ -712,10 +720,12 @@ TEST_F_CORO(offset_store_test, the_producer_lock_serializes_by_producer) {
     co_await store.with_pid_lock(
       model::producer_id(8), operation([] { return ss::now(); }));
 
-    ASSERT_EQ_CORO(most_concurrent, 2);
+    // non-fatal: the operations above hold references into this coroutine's
+    // frame, so it must reach the awaits below even when a check fails
+    EXPECT_EQ(most_concurrent, 2);
 
     // producer 7 still holds the lock, so the operation behind it has not run
-    ASSERT_FALSE_CORO(queued.available());
+    EXPECT_FALSE(queued.available());
 
     release_first.set_value();
     co_await std::move(held);
