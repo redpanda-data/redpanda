@@ -188,7 +188,7 @@ You can retry profile creation by running:
 	}
 
 	command.Flags().UintVarP(&nodes, "nodes", "n", 1, "The number of brokers (nodes) to start")
-	command.Flags().UintVar(&retries, "retries", 10, "The amount of times to check for the cluster before considering it unstable and exiting")
+	command.Flags().UintVar(&retries, "retries", 10, "The number of times to check for the cluster before considering it unstable and exiting")
 	command.Flags().StringVar(&image, "image", containerutil.DefaultRedpandaImage(), "An arbitrary Redpanda container image to use")
 	command.Flags().StringVar(&consoleImage, "console-image", containerutil.DefaultConsoleImage(), "An arbitrary Redpanda Console container image to use")
 	command.Flags().BoolVar(&pull, "pull", false, "Force pull the container image used")

@@ -27,7 +27,7 @@ func getCommand(fs afero.Fs, p *config.Params, schemaCtx *string) *cobra.Command
 		Short: "Get schema registry mode",
 		Long: `Get schema registry mode
 
-Running this command with no subject returns the global mode, alternatively
+Running this command with no subject returns the global mode. Alternatively,
 you can use the --global flag to get the global mode at the same time as
 per-subject modes.
 `,

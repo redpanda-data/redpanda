@@ -122,8 +122,8 @@ func (a *acls) addListFlags(cmd *cobra.Command) {
 	cmd.Flags().StringSliceVar(&a.groups, groupFlag, nil, "Group to match ACLs for (repeatable)")
 	cmd.Flags().BoolVar(&a.cluster, clusterFlag, false, "Whether to match ACLs to the cluster")
 	cmd.Flags().StringSliceVar(&a.txnIDs, txnIDFlag, nil, "Transactional IDs to match ACLs for (repeatable)")
-	cmd.Flags().BoolVar(&a.registry, registryFlag, false, "Whether to grant ACLs for the schema registry")
-	cmd.Flags().StringSliceVar(&a.subjects, subjectFlag, nil, "Schema Registry subjects to grant ACLs for (repeatable)")
+	cmd.Flags().BoolVar(&a.registry, registryFlag, false, "Whether to match ACLs for the schema registry")
+	cmd.Flags().StringSliceVar(&a.subjects, subjectFlag, nil, "Schema Registry subjects to match ACLs for (repeatable)")
 
 	cmd.Flags().StringVar(&a.resourcePatternType, patternFlag, "any", "Pattern to use when matching resource names (any, match, literal, or prefixed)")
 	cmd.Flags().StringSliceVar(&a.operations, operationFlag, nil, "Operation to match (repeatable)")

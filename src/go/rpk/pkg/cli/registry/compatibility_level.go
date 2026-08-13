@@ -48,7 +48,7 @@ func compatGetCommand(fs afero.Fs, p *config.Params, schemaCtx *string) *cobra.C
 		Short: "Get the global or per-subject compatibility levels",
 		Long: `Get the global or per-subject compatibility levels.
 
-Running this command with no subject returns the global level, alternatively
+Running this command with no subject returns the global level. Alternatively,
 you can use the --global flag to get the global level at the same time as
 per-subject levels.
 `,

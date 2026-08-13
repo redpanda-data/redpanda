@@ -190,9 +190,9 @@ func newConsumeCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 	cmd.Flags().StringVarP(&c.group, "group", "g", "", "Group to use for consuming (incompatible with -p)")
 	cmd.Flags().StringVarP(&c.balancer, "balancer", "b", "cooperative-sticky", "Group balancer to use if group consuming (range, roundrobin, sticky, cooperative-sticky)")
 
-	cmd.Flags().Int32Var(&c.fetchMaxBytes, "fetch-max-bytes", 1<<20, "Maximum amount of bytes per fetch request per broker")
+	cmd.Flags().Int32Var(&c.fetchMaxBytes, "fetch-max-bytes", 1<<20, "Maximum number of bytes per fetch request per broker")
 	cmd.Flags().DurationVar(&c.fetchMaxWait, "fetch-max-wait", 5*time.Second, "Maximum amount of time to wait when fetching from a broker before the broker replies")
-	cmd.Flags().Int32Var(&c.fetchMaxPartitionBytes, "fetch-max-partition-bytes", 1<<20, "Maximum amount of bytes that will be consumed for a single partition per fetch request")
+	cmd.Flags().Int32Var(&c.fetchMaxPartitionBytes, "fetch-max-partition-bytes", 1<<20, "Maximum number of bytes that will be consumed for a single partition per fetch request")
 	cmd.Flags().BoolVar(&c.readCommitted, "read-committed", false, "Opt in to reading only committed offsets")
 	cmd.Flags().BoolVar(&c.printControl, "print-control-records", false, "Opt in to printing control records")
 

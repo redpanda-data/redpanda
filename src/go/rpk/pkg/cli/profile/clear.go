@@ -22,8 +22,8 @@ func newClearCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 		Short: "Clear the current profile",
 		Long: `Clear the current profile
 
-This small command clears the current profile, which can be useful to unset an
-prod cluster profile.
+This small command clears the current profile, which can be useful to unset a
+production cluster profile.
 `,
 		Args: cobra.ExactArgs(0),
 		Run: func(_ *cobra.Command, _ []string) {
