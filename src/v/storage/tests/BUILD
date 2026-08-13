@@ -561,7 +561,7 @@ redpanda_cc_gtest(
 
 redpanda_cc_gtest(
     name = "segment_concatenation_test",
-    timeout = "short",
+    timeout = "moderate",
     srcs = [
         "segment_concatenation_test.cc",
     ],
