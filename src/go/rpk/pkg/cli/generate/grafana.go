@@ -87,6 +87,14 @@ var (
 			"",
 		},
 	}
+	// stretchClusterDashboard is only embedded, it is not downloadable from the
+	// observability GitHub repository. It is selected with --cluster-type
+	// stretch rather than --dashboard.
+	stretchClusterDashboard = &fileSpec{
+		"Redpanda-Stretch-Cluster-Dashboard.json",
+		"Observability dashboard for Redpanda stretch clusters managed by the Redpanda operator: cross-cluster raft health, StretchCluster member status, and operator reconcile health.",
+		"8f3491dcf4f1e9b52e5aaebdf5dfa37a46fa3787d274ae3482c354cfba25dced",
+	}
 )
 
 const panelHeight = 6
@@ -105,6 +113,7 @@ func newRowSet() *RowSet {
 
 func newGrafanaDashboardCmd(p *config.Params) *cobra.Command {
 	var (
+		clusterType     string
 		dashboard       string
 		datasource      string
 		metricsEndpoint string
@@ -126,14 +135,35 @@ The selected dashboard will be downloaded from our GitHub repository:
 
   https://github.com/redpanda-data/observability
 
-Note that the legacy dashboard is still available as an option, and will not be 
-downloaded from github. Instead, the dashboard will be generated based on the 
+Note that the legacy dashboard is still available as an option, and will not be
+downloaded from github. Instead, the dashboard will be generated based on the
 metrics endpoint used.
 
 To see a list of all available dashboards, use the '--dashboard help' flag.
+
+For Redpanda clusters stretched across multiple Kubernetes clusters and managed
+by the Redpanda Operator, use the '--cluster-type stretch' flag to generate a
+dashboard focused on stretch cluster observability: cross-cluster raft health,
+StretchCluster member status, and operator reconcile health. This dashboard is
+embedded in rpk and cannot be combined with the '--dashboard' flag:
+
+    rpk generate grafana-dashboard --cluster-type stretch
 `,
 		Args: cobra.NoArgs,
 		Run: func(cmd *cobra.Command, _ []string) {
+			switch clusterType {
+			case "default": // Fall through to the --dashboard handling below.
+			case "stretch":
+				if cmd.Flags().Changed("dashboard") {
+					out.Die("cannot use --dashboard together with --cluster-type stretch; the stretch cluster dashboard is selected by the cluster type alone")
+				}
+				path := filepath.Join("grafana-dashboards", stretchClusterDashboard.Location+".gz")
+				err := decompressAndPrint(dashFS, path, cmd.OutOrStdout())
+				out.MaybeDie(err, "unable to print the stretch cluster dashboard: %v", err)
+				return
+			default:
+				out.Die("unrecognized cluster type %q; supported values: default, stretch", clusterType)
+			}
 			switch {
 			case dashboard == "legacy":
 				if datasource == "" {
@@ -184,6 +214,15 @@ To see a list of all available dashboards, use the '--dashboard help' flag.
 	dashboardFlag := "dashboard"
 	cmd.Flags().StringVar(&dashboard, dashboardFlag, "operations", "The name of the dashboard you wish to download; use --dashboard help for more info")
 	cmd.RegisterFlagCompletionFunc(dashboardFlag, validFiles(dashboardMap))
+
+	clusterTypeFlag := "cluster-type"
+	cmd.Flags().StringVar(&clusterType, clusterTypeFlag, "default", "The type of cluster the dashboard targets; use 'stretch' for the stretch cluster observability dashboard")
+	cmd.RegisterFlagCompletionFunc(clusterTypeFlag, func(_ *cobra.Command, _ []string, _ string) ([]string, cobra.ShellCompDirective) {
+		return []string{
+			"default\tGenerate the dashboard selected with --dashboard",
+			"stretch\t" + stretchClusterDashboard.Description,
+		}, cobra.ShellCompDirectiveDefault
+	})
 
 	// We install the Admin Flags in case TLS is enabled in the metric endpoint.
 	p.InstallAdminFlags(cmd)

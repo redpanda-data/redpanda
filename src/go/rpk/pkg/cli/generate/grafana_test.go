@@ -33,6 +33,27 @@ func TestPrometheusURLFlagDeprecation(t *testing.T) {
 	require.Contains(t, cmd.Flag("prometheus-url").Deprecated, "Use --metrics-endpoint instead")
 }
 
+// TestClusterTypeStretch tests that --cluster-type stretch routes to the
+// embedded stretch cluster dashboard and leaves the --dashboard flow alone.
+func TestClusterTypeStretch(t *testing.T) {
+	p := new(config.Params)
+	cmd := newGrafanaDashboardCmd(p)
+	require.Equal(t, "default", cmd.Flag("cluster-type").DefValue)
+
+	var buf bytes.Buffer
+	cmd.SetOut(&buf)
+	cmd.SetArgs([]string{"--cluster-type", "stretch"})
+	require.NoError(t, cmd.Execute())
+
+	b := buf.Bytes()
+	sum := sha256.Sum256(b)
+	require.Equal(t, stretchClusterDashboard.Hash, fmt.Sprintf("%x", sum))
+
+	var dash map[string]any
+	require.NoError(t, json.Unmarshal(b, &dash))
+	require.Equal(t, "Redpanda Stretch Cluster — Operator Observability", dash["title"])
+}
+
 func TestGrafanaParseResponse(t *testing.T) {
 	res := `# HELP vectorized_vectorized_internal_rpc_consumed_mem Amount of memory consumed for requests processing
 # TYPE vectorized_vectorized_internal_rpc_consumed_mem gauge
@@ -101,6 +122,13 @@ func Test_embeddedDecompressAndPrint(t *testing.T) {
 			expHash: v.Hash,
 		})
 	}
+	// The stretch cluster dashboard is not part of dashboardMap; it is
+	// selected with --cluster-type stretch instead of --dashboard.
+	tests = append(tests, tt{
+		name:    "parse stretch correctly",
+		path:    filepath.Join("grafana-dashboards", stretchClusterDashboard.Location+".gz"),
+		expHash: stretchClusterDashboard.Hash,
+	})
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			writer := &bytes.Buffer{}
