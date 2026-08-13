@@ -63,6 +63,10 @@ public:
 
     void full_heartbeat() { ++_full_heartbeat_requests; }
     void lw_heartbeat() { ++_lw_heartbeat_requests; }
+    void follower_nudge() { ++_follower_nudge_requests; }
+    uint64_t follower_nudge_requests() const {
+        return _follower_nudge_requests;
+    }
     void offset_translator_inconsistency_error() {
         ++_offset_translator_inconsistency_error;
     }
@@ -92,6 +96,7 @@ private:
     uint64_t _recovery_request_error = 0;
     uint64_t _full_heartbeat_requests = 0;
     uint64_t _lw_heartbeat_requests = 0;
+    uint64_t _follower_nudge_requests = 0;
     uint64_t _offset_translator_inconsistency_error = 0;
     uint64_t _append_entries_buffer_flush = 0;
     metrics::internal_metric_groups _metrics;
