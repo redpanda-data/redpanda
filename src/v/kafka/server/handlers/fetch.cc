@@ -47,6 +47,7 @@
 #include <seastar/core/scheduling.hh>
 #include <seastar/core/sleep.hh>
 #include <seastar/core/timer.hh>
+#include <seastar/coroutine/as_future.hh>
 #include <seastar/util/log.hh>
 
 #include <boost/range/irange.hpp>
@@ -262,6 +263,65 @@ static ss::future<read_result> read_with_units(
 }
 
 /**
+ * A follower fetch (KIP-392) at the leader high watermark routinely races
+ * the follower's view of that watermark, which the next heartbeat or append
+ * from the leader refreshes. Instead of failing with offset_not_available
+ * right away, which makes clients retry in a tight loop, wait for the
+ * follower's available-to-read offset to catch up and re-validate.
+ */
+static ss::future<error_code> wait_for_follower_catchup(
+  cluster::partition_manager& cluster_pm,
+  ntp_fetch_config& ntp_config,
+  kafka::partition_proxy& kafka_partition,
+  std::optional<model::timeout_clock::time_point> max_wait_deadline) {
+    const auto catchup_wait = std::min(
+      config::shard_local_cfg().kafka_fetch_follower_catchup_wait_ms(),
+      config::shard_local_cfg().raft_heartbeat_interval_ms());
+    if (
+      catchup_wait <= std::chrono::milliseconds::zero()
+      || !max_wait_deadline.has_value()) {
+        co_return error_code::offset_not_available;
+    }
+    auto partition = cluster_pm.get(ntp_config.ktp_with_hash());
+    if (!partition || partition->is_read_replica_mode_enabled()) {
+        co_return error_code::offset_not_available;
+    }
+    auto raft = partition->raft();
+
+    const auto wait_deadline = std::min(
+      *max_wait_deadline, model::timeout_clock::now() + catchup_wait);
+    const auto as = ntp_config.cfg.abort_source.has_value()
+                      ? model::opt_abort_source_t(
+                          ntp_config.cfg.abort_source.value().get().local())
+                      : model::opt_abort_source_t{};
+
+    auto ec = error_code::offset_not_available;
+    while (ec == error_code::offset_not_available
+           && model::timeout_clock::now() < wait_deadline) {
+        const auto wait_for = model::next_offset(
+          std::max(
+            raft->last_visible_index(),
+            raft->visible_offset_monitor().last_applied()));
+        auto f = co_await ss::coroutine::as_future(
+          raft->visible_offset_monitor().wait(wait_for, wait_deadline, as));
+        // timed out, fetch aborted or raft is stopping; one final
+        // re-validation picks up a last-instant catch-up
+        const auto interrupted = f.failed();
+        if (interrupted) {
+            f.ignore_ready_future();
+        }
+        ec = co_await kafka_partition.validate_fetch_offset(
+          ntp_config.cfg.start_offset,
+          ntp_config.cfg.read_from_follower,
+          default_fetch_timeout + model::timeout_clock::now());
+        if (interrupted) {
+            break;
+        }
+    }
+    co_return ec;
+}
+
+/**
  * Entry point for reading from an ntp. This is executed on NTP home core and
  * build error responses if anything goes wrong.
  */
@@ -271,6 +331,7 @@ static ss::future<read_result> do_read_from_ntp(
   const replica_selector& replica_selector,
   ntp_fetch_config& ntp_config,
   std::optional<model::timeout_clock::time_point> deadline,
+  std::optional<model::timeout_clock::time_point> max_wait_deadline,
   const bool obligatory_batch_read,
   fetch_memory_units_manager& units_mgr,
   fetch_read_coalescer& coalescer) {
@@ -300,6 +361,12 @@ static ss::future<read_result> do_read_from_ntp(
       ntp_config.cfg.start_offset,
       ntp_config.cfg.read_from_follower,
       default_fetch_timeout + model::timeout_clock::now());
+    if (
+      offset_ec == error_code::offset_not_available
+      && ntp_config.cfg.read_from_follower && !kafka_partition->is_leader()) {
+        offset_ec = co_await wait_for_follower_catchup(
+          cluster_pm, ntp_config, *kafka_partition, max_wait_deadline);
+    }
 
     auto maybe_lso = kafka_partition->last_stable_offset();
     if (unlikely(!maybe_lso)) {
@@ -414,6 +481,7 @@ ss::future<read_result> read_from_ntp(
       md_cache,
       replica_selector,
       ntp_config,
+      deadline,
       deadline,
       obligatory_batch_read,
       units_mgr,
@@ -602,6 +670,7 @@ static ss::future<chunked_vector<read_result>> fetch_ntps(
                    replica_selector,
                    ntp_cfg,
                    fetch_deadline,
+                   deadline,
                    obligatory_batch_read,
                    units_mgr,
                    coalescer)
