@@ -60,7 +60,7 @@ require (
 	github.com/tidwall/sjson v1.2.5
 	github.com/tklauser/go-sysconf v0.3.16
 	github.com/twmb/avro v1.7.2
-	github.com/twmb/franz-go v1.21.5
+	github.com/twmb/franz-go v1.21.6
 	github.com/twmb/franz-go/pkg/kadm v1.18.0
 	github.com/twmb/franz-go/pkg/kfake v0.0.0-20260804154521-adb3a18abe14
 	github.com/twmb/franz-go/pkg/kmsg v1.13.1
