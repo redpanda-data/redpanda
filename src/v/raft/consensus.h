@@ -221,6 +221,12 @@ public:
     ss::future<result<model::offset>> linearizable_barrier(
       model::timeout_clock::time_point deadline = model::no_timeout);
 
+    /// Best-effort, debounced push of the current protocol metadata (commit
+    /// index and last visible index) to a single follower via an empty
+    /// append entries request, so its view of the leader's offsets catches
+    /// up without waiting for the next heartbeat.
+    void nudge_follower(model::node_id target);
+
     vnode self() const { return _self; }
     protocol_metadata meta() const;
     raft::group_id group() const { return _group; }

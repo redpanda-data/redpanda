@@ -67,6 +67,7 @@ void follower_index_metadata::reset() {
     last_successful_received_seq = follower_req_seq{0};
     inflight_append_request_count = 0;
     last_sent_protocol_meta.reset();
+    next_follower_nudge = clock_type::time_point{};
     follower_state_change.broadcast();
     max_cleanly_compacted_offset = {};
     coordinated_compaction_offsets_getter = std::make_unique<void_executor>();
