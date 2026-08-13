@@ -10,8 +10,10 @@
 
 #include "pandaproxy/schema_registry/authorization.h"
 
+#include "base/vlog.h"
 #include "container/chunked_hash_map.h"
 #include "pandaproxy/api/api-doc/schema_registry.json.hh"
+#include "pandaproxy/logger.h"
 #include "pandaproxy/parsing/httpd.h"
 #include "pandaproxy/schema_registry/context_router.h"
 #include "pandaproxy/schema_registry/service.h"
@@ -184,6 +186,13 @@ void handle_get_schemas_ids_id_authz(
         // schema id exists or not.
         audit_authz(
           rq, operation_name, *auth_result, false, op, audit_resources{});
+        vlog(
+          srlog.info,
+          "{}: schema id {} not found; returning 403 rather than 404 to avoid "
+          "revealing whether schema ids exist (principal: {})",
+          operation_name,
+          parse::request_param<schema_id>(*rq.req, "id"),
+          params.principal);
         throw_unauthorized();
     }
 
@@ -212,6 +221,14 @@ void handle_get_schemas_ids_id_authz(
     } else {
         audit_authz(
           rq, operation_name, *auth_result, false, op, std::move(all_results));
+        vlog(
+          srlog.info,
+          "{}: principal {} has no read permission on any of the {} subjects "
+          "associated with schema id {}",
+          operation_name,
+          params.principal,
+          subjects.size(),
+          parse::request_param<schema_id>(*rq.req, "id"));
         throw_unauthorized();
     }
 }
@@ -235,6 +252,7 @@ void handle_get_subjects_authz(
     auto passing_results = audit_resources{};
     auto failing_results = audit_resources{};
 
+    const auto total_subjects = subjects.size();
     auto new_end = std::ranges::remove_if(subjects, [&](const auto& ctx_sub) {
         auto res = rq.service().authorizor().authorized(
           ctx_sub,
@@ -254,6 +272,17 @@ void handle_get_subjects_authz(
         }
     });
     subjects.erase_to_end(new_end.begin());
+
+    if (!failing_results.empty()) {
+        vlog(
+          srlog.debug,
+          "{}: filtered out {} of {} subjects for principal {} (no describe "
+          "permission)",
+          operation_name,
+          failing_results.size(),
+          total_subjects,
+          params.principal);
+    }
 
     // This endpoint always returns a successful response.
     // Generate a successful audit event with the (possibly empty) list of
