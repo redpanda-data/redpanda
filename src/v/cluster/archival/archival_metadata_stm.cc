@@ -1729,10 +1729,13 @@ archival_metadata_stm_factory::archival_metadata_stm_factory(
 
 bool archival_metadata_stm_factory::is_applicable_for(
   const storage::ntp_config& ntp_cfg) const {
+    // Retain archival_metadata_stm if _cloud_storage_enabled for user topics
+    // unless the topic was created originally as cloud or tsv2.
+    // Topics migrated from local/tsv1 to cloud/tsv2 keep the stm.
     return _cloud_storage_enabled && _cloud_storage_api.local_is_initialized()
            && ntp_cfg.ntp().tp.topic != model::kafka_consumer_offsets_topic
            && ntp_cfg.ntp().ns == model::kafka_namespace
-           && ntp_cfg.cloud_topic_enabled() == false;
+           && (ntp_cfg.cloud_topic_enabled() == false || ntp_cfg.migrated_to_cloud());
 }
 
 void archival_metadata_stm_factory::create(

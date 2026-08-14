@@ -66,6 +66,7 @@ redpanda_cc_btest(
         "//src/v/cloud_storage_clients",
         "//src/v/cluster",
         "//src/v/cluster:errc",
+        "//src/v/cluster:log_eviction_stm",
         "//src/v/cluster:state_machine_registry",
         "//src/v/cluster:topic_table",
         "//src/v/config",

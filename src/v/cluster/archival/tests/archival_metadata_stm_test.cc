@@ -12,6 +12,7 @@
 #include "cloud_storage/types.h"
 #include "cloud_storage_clients/upstream_registry.h"
 #include "cluster/archival/archival_metadata_stm.h"
+#include "cluster/log_eviction_stm.h"
 #include "http/tests/http_imposter.h"
 #include "model/record.h"
 #include "model/timestamp.h"
@@ -1108,4 +1109,69 @@ FIXTURE_TEST(
       archival_stm->manifest().get_archive_clean_offset());
     BOOST_REQUIRE_EQUAL(
       archival_stm->manifest().full_log_start_kafka_offset(), kafka::offset(0));
+}
+
+namespace {
+storage::ntp_config make_predicate_cfg(
+  model::ntp ntp,
+  model::redpanda_storage_mode mode,
+  model::redpanda_storage_mode migrated) {
+    storage::ntp_config::default_overrides o;
+    o.storage_mode = mode;
+    o.migrated_from = migrated;
+    return {
+      std::move(ntp),
+      "",
+      std::make_unique<storage::ntp_config::default_overrides>(o)};
+}
+} // namespace
+
+// Test is_applicable_for dependencies on mode and migrated_from:
+// - local and tsv1 topics have archival_metadata_stm and log_eviction_stm
+// - migrated topics retain archival_metadata_stm and log_eviction_stm
+// - natively created cloud topics never carry them
+FIXTURE_TEST(
+  test_migrated_membership_predicates, archival_metadata_stm_fixture) {
+    using mode = model::redpanda_storage_mode;
+    cluster::archival_metadata_stm_factory archival_factory(
+      true, cloud_api, _feature_table);
+    cluster::log_eviction_stm_factory eviction_factory(_storage.local().kvs());
+
+    auto user_ntp = model::ntp(
+      model::kafka_namespace, model::topic("t"), model::partition_id(0));
+
+    struct row {
+        mode storage_mode;
+        mode migrated_from;
+        bool expected;
+    };
+    for (const auto& r : {
+           row{mode::tiered, mode::unset, true},
+           row{mode::local, mode::unset, true},
+           row{mode::cloud, mode::unset, false},
+           row{mode::tiered_cloud, mode::unset, false},
+           row{mode::cloud, mode::tiered, true},
+           row{mode::cloud, mode::local, true},
+           row{mode::tiered_cloud, mode::tiered, true},
+         }) {
+        auto cfg = make_predicate_cfg(
+          user_ntp, r.storage_mode, r.migrated_from);
+        BOOST_CHECK_EQUAL(archival_factory.is_applicable_for(cfg), r.expected);
+        BOOST_CHECK_EQUAL(eviction_factory.is_applicable_for(cfg), r.expected);
+    }
+
+    // Identity exclusions hold regardless of migration state.
+    auto offsets_ntp = model::ntp(
+      model::kafka_namespace,
+      model::kafka_consumer_offsets_topic,
+      model::partition_id(0));
+    auto offsets_cfg = make_predicate_cfg(
+      offsets_ntp, mode::cloud, mode::tiered);
+    BOOST_CHECK(!archival_factory.is_applicable_for(offsets_cfg));
+    BOOST_CHECK(!eviction_factory.is_applicable_for(offsets_cfg));
+
+    auto internal_cfg = make_predicate_cfg(
+      model::controller_ntp, mode::cloud, mode::tiered);
+    BOOST_CHECK(!archival_factory.is_applicable_for(internal_cfg));
+    BOOST_CHECK(!eviction_factory.is_applicable_for(internal_cfg));
 }
