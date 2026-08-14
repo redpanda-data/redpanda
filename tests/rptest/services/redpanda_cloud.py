@@ -11,6 +11,7 @@ from functools import cache
 from typing import Any, Dict
 from urllib.parse import urlparse
 
+from ducktape.errors import TimeoutError
 from ducktape.utils.util import wait_until
 from prometheus_client.parser import text_string_to_metric_families
 
@@ -221,6 +222,11 @@ class CloudCluster:
 
     CHECK_TIMEOUT_SEC = 3600
     CHECK_BACKOFF_SEC = 60.0
+    # redpanda_cluster_brokers is served from the Console's scraped
+    # Prometheus, which can lag behind actual cluster readiness
+    # (scrape/propagation delay, ~5 min staleness after a scrape gap),
+    # so give it a few minutes to appear instead of a single shot.
+    BROKER_METRICS_TIMEOUT_SEC = 600
 
     def __init__(
         self,
@@ -926,24 +932,46 @@ class CloudCluster:
 
         # Check brokers metric
         self._logger.info("Checking cluster public_metrics")
-        _metrics = self.get_public_metrics()
-        _metrics = text_string_to_metric_families(_metrics)
         _brokers_metric = None
-        for _metric in _metrics:
-            if _metric.name == "redpanda_cluster_brokers":
+
+        def _broker_metrics_available():
+            nonlocal _brokers_metric
+            _metrics = self.get_public_metrics()
+            if not _metrics:
+                self._logger.info("Empty public_metrics response")
+                return False
+            for _metric in text_string_to_metric_families(_metrics):
+                if _metric.name != "redpanda_cluster_brokers":
+                    continue
+                if not _metric.samples:
+                    self._logger.info(
+                        "Public metric 'redpanda_cluster_brokers' has no samples yet"
+                    )
+                    return False
                 _brokers_metric = _metric
-        if _brokers_metric is None:
+                return True
+            return False
+
+        try:
+            wait_until(
+                _broker_metrics_available,
+                timeout_sec=self.BROKER_METRICS_TIMEOUT_SEC,
+                backoff_sec=self.CHECK_BACKOFF_SEC,
+                retry_on_exc=True,
+                err_msg="redpanda_cluster_brokers metric did not appear "
+                "in public_metrics",
+            )
+        except TimeoutError as e:
             if self.config.require_broker_metrics_in_health_check:
                 raise MissingBrokersMetricsError(
                     "Failed to get redpanda_cluster_brokers metric"
-                )
+                ) from e
             else:
                 self._logger.info(
                     "Public metric 'redpanda_cluster_brokers' is unavailable, but it is not required."
                 )
                 return
-        else:
-            self._logger.info("Public metric 'redpanda_cluster_brokers' is available")
+        self._logger.info("Public metric 'redpanda_cluster_brokers' is available")
 
         # Get Samples
         _instances = [s.value for s in _brokers_metric.samples]
