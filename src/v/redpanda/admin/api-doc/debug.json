@@ -833,7 +833,8 @@
                                 "abort",
                                 "assert",
                                 "asan_crash",
-                                "ubsan_crash"
+                                "ubsan_crash",
+                                "oom"
                             ]
                         }
                     ]

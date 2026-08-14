@@ -14,6 +14,8 @@ from subprocess import CalledProcessError
 from typing import Any, Callable, Iterator, cast
 import time
 
+from requests.exceptions import HTTPError
+
 from ducktape.cluster.cluster import ClusterNode
 from ducktape.cluster.remoteaccount import RemoteCommandError
 from ducktape.mark import matrix, ignore
@@ -60,6 +62,7 @@ from rptest.utils.mode_checks import (
     ignore_if_not_asan,
     ignore_if_not_debug,
     ignore_if_not_ubsan,
+    is_debug_mode,
     skip_debug_mode,
 )
 from rptest.utils.si_utils import BucketView
@@ -992,3 +995,50 @@ class RedpandaServiceSelfRawTest(Test):
                 raise RuntimeError("inner test passed when it shouldn't")
             except NodeCrash as e:
                 assert "SIGSEGV" in str(e)
+
+    @dt_cluster(num_nodes=1)
+    @ignore_if_not_debug
+    def test_raise_on_oom(self) -> None:
+        """Check the harness behavior when redpanda runs out of memory via
+        the oom type of the trigger_crash API.
+
+        With the seastar allocator, the failing allocation dumps the seastar
+        memory diagnostics and aborts the process, and we check that the test
+        fails with NodeCrash (the crash diagnostic) rather than something
+        less useful like BadLogLines triggered by the diagnostics dump, which
+        is emitted at ERROR level on the way down (that dump is on the
+        default allow list).
+
+        Debug builds use the system allocator, where allocating without
+        bound would exhaust host memory instead of hitting the seastar
+        memory limit, so there we check that the API refuses the request
+        and the node survives. Since this test currently runs only in debug
+        mode, the seastar-allocator branch below is exercised only if that
+        ever changes."""
+
+        def func(rptest: RedpandaTest) -> None:
+            node = rptest.redpanda.nodes[0]
+            rptest.redpanda._admin.trigger_crash(node, CrashType.OOM)
+            raise RuntimeError("test is failing")  # to trigger raise_on_crash
+
+        with self._with_inner(func) as test:
+            node = test.redpanda.nodes[0]
+
+            if is_debug_mode():
+                with expect_exception(
+                    HTTPError, lambda e: e.response.status_code == 400
+                ):
+                    test.redpanda._admin.trigger_crash(node, CrashType.OOM)
+                assert test.redpanda.redpanda_pid(node), (
+                    "node should survive a refused oom request"
+                )
+                return
+
+            try:
+                test.run(func=func)  # type: ignore
+                raise RuntimeError("inner test passed when it shouldn't")
+            except NodeCrash as e:
+                assert "Aborting on shard" in str(e)
+            # verify that the crash really was an out-of-memory abort: the
+            # allocator dumps its memory diagnostics before aborting
+            _assert_log_content(test, node, "Dumping seastar memory diagnostics")

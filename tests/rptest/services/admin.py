@@ -482,6 +482,7 @@ class CrashType(Enum):
     ASSERT = "assert"
     ASAN_CRASH = "asan_crash"
     UBSAN_CRASH = "ubsan_crash"
+    OOM = "oom"
 
 
 class Admin:
