@@ -21,6 +21,7 @@
 #include <absl/container/btree_map.h>
 #include <fmt/format.h>
 
+#include <algorithm>
 #include <cstdint>
 #include <optional>
 #include <utility>
@@ -40,12 +41,20 @@ namespace {
 /// since the constructor reads only the subscriptions. The spec_and_assign_*
 /// cases measure both steps together.
 ///
-/// Case names read <scenario>_<members>m_<topics>t_<partitions per topic>p:
+/// Case names read <scenario>[_<pattern>]_<members>m_<topics>t_<partitions
+/// per topic>p:
 ///   - fresh: no member holds an assignment, the group's first rebalance
 ///   - stable: every member holds the assignment a previous run produced
 ///   - join: one member with no assignment joins a stable group
 ///   - leave: one member left a stable group, so its partitions have no
 ///     owner
+///
+/// Cases without a pattern tag subscribe every member to every topic, the
+/// homogeneous shape. The patterns are heterogeneous:
+///   - windows: member m subscribes to half the topics starting at topic
+///     m, wrapping around, so every subscription overlaps its neighbors
+///   - split: even members subscribe to every topic and odd members to
+///     the first half
 
 /// Topic metadata for the topics the bench registered.
 class bench_describer final : public topic_describer {
@@ -102,6 +111,36 @@ subscribed_topic_ids subscribe_all(size_t, const shape& s) {
     subscribed_topic_ids ids;
     ids.reserve(s.topics);
     for (uint16_t t = 0; t < s.topics; ++t) {
+        ids.push_back(make_topic_id(t));
+    }
+    return ids;
+}
+
+/// Member `m` subscribes to half the topics starting at topic `m % topics`,
+/// wrapping around.
+subscribed_topic_ids subscribe_window(size_t m, const shape& s) {
+    auto window = std::max<uint16_t>(1, s.topics / 2);
+    std::vector<uint16_t> picks;
+    picks.reserve(window);
+    for (uint16_t k = 0; k < window; ++k) {
+        picks.push_back(static_cast<uint16_t>((m + k) % s.topics));
+    }
+    std::ranges::sort(picks);
+    subscribed_topic_ids ids;
+    ids.reserve(picks.size());
+    for (auto t : picks) {
+        ids.push_back(make_topic_id(t));
+    }
+    return ids;
+}
+
+/// Even members subscribe to every topic and odd members to the first half:
+/// two subscription classes with uneven load.
+subscribed_topic_ids subscribe_split(size_t m, const shape& s) {
+    auto count = m % 2 == 0 ? s.topics : std::max<uint16_t>(1, s.topics / 2);
+    subscribed_topic_ids ids;
+    ids.reserve(count);
+    for (uint16_t t = 0; t < count; ++t) {
         ids.push_back(make_topic_id(t));
     }
     return ids;
@@ -295,6 +334,33 @@ PERF_TEST_F(assignor_bench, spec_and_assign_stable_100m_10t_100p) {
 }
 PERF_TEST_F(assignor_bench, spec_and_assign_stable_1000m_100t_100p) {
     return run_spec_and_assign(large_group, scenario::stable, subscribe_all);
+}
+
+PERF_TEST_F(assignor_bench, assign_fresh_windows_100m_10t_100p) {
+    return run_assign(medium_group, scenario::fresh, subscribe_window);
+}
+PERF_TEST_F(assignor_bench, assign_fresh_windows_1000m_100t_100p) {
+    return run_assign(large_group, scenario::fresh, subscribe_window);
+}
+PERF_TEST_F(assignor_bench, assign_stable_windows_1000m_100t_100p) {
+    return run_assign(large_group, scenario::stable, subscribe_window);
+}
+PERF_TEST_F(assignor_bench, assign_join_windows_1000m_100t_100p) {
+    return run_assign(large_group, scenario::join, subscribe_window);
+}
+PERF_TEST_F(assignor_bench, assign_leave_windows_1000m_100t_100p) {
+    return run_assign(large_group, scenario::leave, subscribe_window);
+}
+
+PERF_TEST_F(assignor_bench, assign_fresh_split_1000m_100t_100p) {
+    return run_assign(large_group, scenario::fresh, subscribe_split);
+}
+PERF_TEST_F(assignor_bench, assign_stable_split_1000m_100t_100p) {
+    return run_assign(large_group, scenario::stable, subscribe_split);
+}
+
+PERF_TEST_F(assignor_bench, spec_and_assign_stable_windows_1000m_100t_100p) {
+    return run_spec_and_assign(large_group, scenario::stable, subscribe_window);
 }
 
 } // namespace kafka
