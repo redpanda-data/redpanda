@@ -440,7 +440,13 @@ class ScalingUpTest(PreallocNodesTest):
 
     @skip_debug_mode
     @cluster(num_nodes=7)
-    def test_fast_node_addition(self):
+    @matrix(
+        storage_mode=[
+            TopicSpec.STORAGE_MODE_TIERED,
+            TopicSpec.STORAGE_MODE_IMPL_TIERED_V2,
+        ]
+    )
+    def test_fast_node_addition(self, storage_mode: str):
         log_segment_size = 2 * 1024 * 1024
         total_segments_per_partition = 20
         partition_cnt = 40
@@ -455,6 +461,11 @@ class ScalingUpTest(PreallocNodesTest):
             # setup initial retention target to 1 segment
             "initial_retention_local_target_bytes_default": log_segment_size,
         }
+        if storage_mode == TopicSpec.STORAGE_MODE_IMPL_TIERED_V2:
+            # speed up L0 -> L1 reconciliation: the learner start offset is
+            # capped by the last reconciled offset, so reconciliation has to
+            # keep up with the producer for the move to be fast
+            extra_rp_conf["cloud_topics_reconciliation_interval"] = 2000
         # shadow indexing is required when we want to leverage fast partition movements
         si_settings = SISettings(
             test_context=self.test_context,
@@ -468,13 +479,24 @@ class ScalingUpTest(PreallocNodesTest):
         topic = TopicSpec(
             replication_factor=3,
             partition_count=partition_cnt,
-            redpanda_remote_write=True,
-            redpanda_remote_read=True,
+            redpanda_remote_write=(storage_mode == TopicSpec.STORAGE_MODE_TIERED),
+            redpanda_remote_read=(storage_mode == TopicSpec.STORAGE_MODE_TIERED),
         )
 
         total_replicas = 3 * partition_cnt
 
-        self.client().create_topic(topic)
+        if storage_mode == TopicSpec.STORAGE_MODE_IMPL_TIERED_V2:
+            self.redpanda.set_feature_active(
+                "tiered_cloud_topics", True, timeout_sec=30
+            )
+            RpkTool(self.redpanda).create_topic(
+                topic=topic.name,
+                partitions=topic.partition_count,
+                replicas=topic.replication_factor,
+                config=TopicSpec.storage_mode_config(storage_mode),
+            )
+        else:
+            self.client().create_topic(topic)
         self.logger.info(
             f"Producing {data_size} bytes of data in {msg_cnt} total messages"
         )
