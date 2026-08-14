@@ -309,6 +309,26 @@ redpanda_cc_gtest(
     ],
 )
 
+redpanda_cc_bench(
+    name = "consumer_group_assignor_rpbench",
+    srcs = [
+        "consumer_group_assignor_bench.cc",
+    ],
+    memory = "2GiB",
+    deps = [
+        "//src/v/base",
+        "//src/v/container:chunked_vector",
+        "//src/v/kafka/protocol",
+        "//src/v/kafka/server:consumer_group_assignor",
+        "//src/v/model",
+        "//src/v/utils:uuid",
+        "@abseil-cpp//absl/container:btree",
+        "@fmt",
+        "@seastar",
+        "@seastar//:benchmark",
+    ],
+)
+
 redpanda_cc_gtest(
     name = "consumer_group_recovery_test",
     timeout = "short",
