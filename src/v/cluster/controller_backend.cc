@@ -518,31 +518,26 @@ controller_backend::calculate_learner_initial_offset(
         return std::nullopt;
     }
 
-    if (!p->cloud_data_available()) {
-        vlog(clusterlog.trace, "no cloud data available for: {}", p->ntp());
+    const auto& ntp_cfg = p->log()->config();
+    if (ntp_cfg.is_tiered_cloud()) {
+        // filled in by the cloud-topics learner offset implementation
         return std::nullopt;
     }
-
-    if (p->get_cloud_storage_mode() != cluster::cloud_storage_mode::full) {
+    if (ntp_cfg.cloud_topic_enabled()) {
+        // storage.mode=cloud partitions keep only aggressively truncated
+        // placeholders locally, moves are metadata-sized already
         vlog(
           clusterlog.trace,
-          "cloud storage not fully enabled for: {}",
+          "no learner start offset for cloud-mode topic: {}",
           p->ntp());
         return std::nullopt;
     }
+    return calculate_learner_initial_offset_archival(policy, p);
+}
 
-    if (
-      config::shard_local_cfg().cloud_storage_enable_segment_uploads()
-      == false) {
-        vlog(clusterlog.trace, "segment uploads are paused");
-        return std::nullopt;
-    }
-
-    if (p->archival_meta_stm() == nullptr) {
-        vlog(clusterlog.trace, "no archival_meta_stm for {}", p->ntp());
-        return std::nullopt;
-    }
-
+std::optional<model::offset>
+controller_backend::calculate_move_retention_offset(
+  reconfiguration_policy policy, const ss::lw_shared_ptr<partition>& p) const {
     auto log = p->log();
 
     /**
@@ -617,9 +612,40 @@ controller_backend::calculate_learner_initial_offset(
           model::timestamp::now().value() - initial_retention_ms->count());
     }
 
-    auto retention_offset = log->retention_offset(
+    return log->retention_offset(
       storage::gc_config(
         retention_timestamp_threshold, initial_retention_bytes));
+}
+
+std::optional<model::offset>
+controller_backend::calculate_learner_initial_offset_archival(
+  reconfiguration_policy policy, const ss::lw_shared_ptr<partition>& p) const {
+    if (!p->cloud_data_available()) {
+        vlog(clusterlog.trace, "no cloud data available for: {}", p->ntp());
+        return std::nullopt;
+    }
+
+    if (p->get_cloud_storage_mode() != cluster::cloud_storage_mode::full) {
+        vlog(
+          clusterlog.trace,
+          "cloud storage not fully enabled for: {}",
+          p->ntp());
+        return std::nullopt;
+    }
+
+    if (
+      config::shard_local_cfg().cloud_storage_enable_segment_uploads()
+      == false) {
+        vlog(clusterlog.trace, "segment uploads are paused");
+        return std::nullopt;
+    }
+
+    if (p->archival_meta_stm() == nullptr) {
+        vlog(clusterlog.trace, "no archival_meta_stm for {}", p->ntp());
+        return std::nullopt;
+    }
+
+    auto retention_offset = calculate_move_retention_offset(policy, p);
 
     if (!retention_offset) {
         return std::nullopt;
