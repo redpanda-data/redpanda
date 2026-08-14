@@ -465,7 +465,8 @@ class ScalingUpTest(PreallocNodesTest):
             # speed up L0 -> L1 reconciliation: the learner start offset is
             # capped by the last reconciled offset, so reconciliation has to
             # keep up with the producer for the move to be fast
-            extra_rp_conf["cloud_topics_reconciliation_interval"] = 2000
+            extra_rp_conf["cloud_topics_reconciliation_min_interval"] = 250
+            extra_rp_conf["cloud_topics_reconciliation_max_interval"] = 2000
         # shadow indexing is required when we want to leverage fast partition movements
         si_settings = SISettings(
             test_context=self.test_context,
