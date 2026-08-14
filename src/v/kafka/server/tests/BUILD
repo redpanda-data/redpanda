@@ -1403,6 +1403,21 @@ redpanda_cc_btest(
 )
 
 redpanda_cc_bench(
+    name = "subscription_metadata_hash_rpbench",
+    srcs = [
+        "subscription_metadata_hash_bench.cc",
+    ],
+    memory = "2GiB",
+    deps = [
+        "//src/v/container:chunked_vector",
+        "//src/v/kafka/server:subscription_metadata_hash",
+        "//src/v/model",
+        "@seastar",
+        "@seastar//:benchmark",
+    ],
+)
+
+redpanda_cc_bench(
     name = "group_offset_commit_rpbench",
     srcs = [
         "group_offset_commit_bench.cc",
