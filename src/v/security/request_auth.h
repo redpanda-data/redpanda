@@ -97,7 +97,7 @@ public:
       , _checked(rhs._checked) {}
 
     request_auth_result(request_auth_result&&) noexcept;
-    ~request_auth_result() noexcept(false);
+    ~request_auth_result();
 
     /**
      * Raise 403 if not a superuser
@@ -124,6 +124,10 @@ public:
     bool is_authenticated() const { return _authenticated; };
     bool is_superuser() const { return _superuser; }
     bool is_auth_required() const { return _auth_required; }
+
+    /// Whether one of the authorization helpers (require_superuser,
+    /// require_authenticated, pass) has been called.
+    bool is_checked() const { return _checked; }
 
 private:
     security::credential_user _username;
