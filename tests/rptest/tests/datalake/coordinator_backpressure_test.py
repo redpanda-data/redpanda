@@ -133,7 +133,7 @@ class CoordinatorBackpressureTest(RedpandaTest):
                 err_msg="coordinator never applied backpressure",
             )
 
-            # Translators respect the signal by backing off rather than spinning.
+            # Translators respect the signal by backing off.
             wait_until(
                 lambda: self.metric_sum(TRANSLATION_BACKOFF_METRIC) > 0,
                 timeout_sec=30,
@@ -184,6 +184,18 @@ class CoordinatorBackpressureTest(RedpandaTest):
                 timeout_sec=60,
                 backoff_sec=1,
                 err_msg="pending/translated file counts never stabilized under backpressure",
+            )
+
+            # Regression check for a case where translation would spin and
+            # churn despite backpressure: backing off means each translator
+            # sleeps its loop jitter between coordinator polls, so the
+            # cumulative backoff count stays on the order of hundreds, with so
+            # few partitions.
+            backoffs = self.metric_sum(TRANSLATION_BACKOFF_METRIC)
+            self.logger.info(f"translator backoffs while backpressured: {backoffs}")
+            assert backoffs < 10000, (
+                f"translators spun on the backpressured coordinator: "
+                f"{backoffs} backoff loop iterations"
             )
 
             # Relieve the pressure so the backlog drains promptly.
