@@ -1045,10 +1045,9 @@ void incremental_update(
     }
 }
 
-void incremental_update(
+void incremental_update_no_remove(
   model::redpanda_storage_mode& property,
-  property_update<std::optional<model::redpanda_storage_mode>> override,
-  model::redpanda_storage_mode /*default_value*/) {
+  property_update<std::optional<model::redpanda_storage_mode>> override) {
     // Validation of storage mode transitions is done at the kafka layer.
     // This function only applies the update.
     switch (override.op) {
@@ -1228,9 +1227,11 @@ topic_properties topic_table::update_topic_properties(
       updated_properties.message_timestamp_after_max_ms,
       overrides.message_timestamp_after_max_ms);
     incremental_update(updated_properties.remote_label, overrides.remote_label);
+    incremental_update_no_remove(
+      updated_properties.storage_mode, overrides.storage_mode);
     incremental_update(
-      updated_properties.storage_mode,
-      overrides.storage_mode,
+      updated_properties.migrated_from,
+      overrides.migrated_from,
       storage::ntp_config::default_storage_mode);
     incremental_update(
       updated_properties.schema_registry_context,

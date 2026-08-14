@@ -35,7 +35,7 @@ namespace cluster {
  */
 struct topic_properties
   : serde::
-      envelope<topic_properties, serde::version<14>, serde::compat_version<0>> {
+      envelope<topic_properties, serde::version<15>, serde::compat_version<0>> {
     topic_properties() noexcept = default;
     topic_properties(
       std::optional<model::compression> compression,
@@ -247,6 +247,11 @@ struct topic_properties
     model::redpanda_storage_mode storage_mode{
       storage::ntp_config::default_storage_mode};
 
+    // Storage mode this topic was migrated from. Set as part of
+    // storage.mode alter config from local/tsv1 -> cloud/tsv2
+    model::redpanda_storage_mode migrated_from{
+      model::redpanda_storage_mode::unset};
+
     bool is_local_topic() const;
 
     bool is_cloud_topic() const {
@@ -329,7 +334,8 @@ struct topic_properties
           message_timestamp_before_max_ms,
           message_timestamp_after_max_ms,
           storage_mode,
-          schema_registry_context);
+          schema_registry_context,
+          migrated_from);
     }
 
     friend bool

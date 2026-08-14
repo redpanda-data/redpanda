@@ -544,6 +544,47 @@ FIXTURE_TEST(test_tracking_broker_and_command_revisions, topic_table_fixture) {
       model::revision_id{19});
 }
 
+FIXTURE_TEST(test_migrated_from_update_applies, topic_table_fixture) {
+    auto& topics = table.local();
+    using mode = model::redpanda_storage_mode;
+
+    auto create = make_create_topic_cmd("test_migrated_from", 1, 1);
+    create.value.cfg.properties.storage_mode = mode::tiered;
+    auto tp_ns = create.value.cfg.tp_ns;
+    auto ec = topics.apply(create, model::offset{10}).get();
+    BOOST_REQUIRE_EQUAL(ec, cluster::errc::success);
+
+    // The migration trigger sends storage_mode and migrated_from in a single
+    // update (see kafka record_migrated_from_on_migration).
+    cluster::incremental_topic_updates update;
+    update.storage_mode.op = cluster::incremental_update_operation::set;
+    update.storage_mode.value.emplace(mode::cloud);
+    update.migrated_from.op = cluster::incremental_update_operation::set;
+    update.migrated_from.value = mode::tiered;
+    ec = topics
+           .apply(
+             cluster::update_topic_properties_cmd{tp_ns, update},
+             model::offset{11})
+           .get();
+    BOOST_REQUIRE_EQUAL(ec, cluster::errc::success);
+    auto cfg = topics.get_topic_cfg(tp_ns);
+    BOOST_REQUIRE(cfg.has_value());
+    BOOST_REQUIRE(cfg->properties.storage_mode == mode::cloud);
+    BOOST_REQUIRE(cfg->properties.migrated_from == mode::tiered);
+
+    // remove clears migrated_from back to unset, like any other property.
+    cluster::incremental_topic_updates rm;
+    rm.migrated_from.op = cluster::incremental_update_operation::remove;
+    ec = topics
+           .apply(
+             cluster::update_topic_properties_cmd{tp_ns, rm}, model::offset{12})
+           .get();
+    BOOST_REQUIRE_EQUAL(ec, cluster::errc::success);
+    cfg = topics.get_topic_cfg(tp_ns);
+    BOOST_REQUIRE(cfg.has_value());
+    BOOST_REQUIRE(cfg->properties.migrated_from == mode::unset);
+}
+
 FIXTURE_TEST(test_topic_with_schema_id_validation_ops, topic_table_fixture) {
     auto& topics = table.local();
 

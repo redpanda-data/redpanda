@@ -664,7 +664,7 @@ struct property_update<tristate<T>>
 struct incremental_topic_updates
   : serde::envelope<
       incremental_topic_updates,
-      serde::version<11>,
+      serde::version<12>,
       serde::compat_version<0>> {
     static constexpr int8_t version_with_data_policy = -1;
     static constexpr int8_t version_with_shadow_indexing = -3;
@@ -756,6 +756,12 @@ struct incremental_topic_updates
       message_timestamp_after_max_ms;
     property_update<std::optional<model::redpanda_storage_mode>> storage_mode;
 
+    // Set alongside a storage_mode update that migrates the topic to
+    // cloud/tiered_cloud: the pre-migration mode. See
+    // topic_properties::migrated_from.
+    property_update<model::redpanda_storage_mode> migrated_from{
+      model::redpanda_storage_mode::unset, incremental_update_operation::none};
+
     property_update<std::optional<pandaproxy::schema_registry::context>>
       schema_registry_context;
 
@@ -822,7 +828,8 @@ struct incremental_topic_updates
           message_timestamp_after_max_ms,
           remote_label,
           storage_mode,
-          schema_registry_context);
+          schema_registry_context,
+          migrated_from);
     }
 
     fmt::iterator format_to(fmt::iterator it) const;

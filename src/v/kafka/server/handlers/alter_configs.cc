@@ -99,7 +99,7 @@ create_topic_properties_update(
     std::apply(apply_op(op_t::none), update.custom_properties.serde_fields());
 
     static_assert(
-      std::tuple_size_v<decltype(update.properties.serde_fields())> == 45,
+      std::tuple_size_v<decltype(update.properties.serde_fields())> == 46,
       "If you add a property, decide on its default alter config "
       "policy, and handle the update in the loop below");
     static_assert(
@@ -143,6 +143,9 @@ create_topic_properties_update(
     update.properties.delete_retention_ms.op = op_t::none;
 
     update.properties.storage_mode.op = op_t::none;
+    // Internal: set alongside a storage.mode migration, never reset by a full
+    // AlterConfigs.
+    update.properties.migrated_from.op = op_t::none;
     update.properties.schema_registry_context.op = op_t::none;
 
     // Now that the defaults are set, continue to set properties from the

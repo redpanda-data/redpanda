@@ -1246,6 +1246,8 @@ redpanda_cc_gtest(
     cpu = 1,
     deps = [
         "//src/v/cluster:topic_configuration",
+        "//src/v/model",
+        "//src/v/storage",
         "//src/v/test_utils:gtest",
         "@googletest//:gtest",
     ],

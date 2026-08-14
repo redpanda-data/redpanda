@@ -97,6 +97,11 @@ public:
         // Storage mode for the topic (local, tiered, or cloud)
         model::redpanda_storage_mode storage_mode{default_storage_mode};
 
+        // Storage mode this topic was migrated from, see
+        // topic_properties::migrated_from
+        model::redpanda_storage_mode migrated_from{
+          model::redpanda_storage_mode::unset};
+
         fmt::iterator format_to(fmt::iterator it) const;
     };
 
@@ -492,6 +497,12 @@ public:
     bool is_tiered_cloud() const {
         return partition_storage_mode()
                == model::redpanda_storage_mode::tiered_cloud;
+    }
+
+    bool migrated_to_cloud() const {
+        return _overrides
+               && _overrides->migrated_from
+                    != model::redpanda_storage_mode::unset;
     }
 
     std::optional<double> min_cleanable_dirty_ratio() const {
