@@ -61,6 +61,7 @@ redpanda_cc_library(
         "//src/v/pandaproxy:parsing",
         "//src/v/pandaproxy:rest_requests",
         "//src/v/pandaproxy:rest_swagger_definitions",
+        "//src/v/resource_mgmt:cpu_scheduling",
         "//src/v/security",
         "//src/v/security:request_auth",
         "//src/v/ssx:sformat",
