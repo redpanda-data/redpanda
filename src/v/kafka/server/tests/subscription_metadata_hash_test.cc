@@ -140,3 +140,18 @@ TEST(subscription_metadata_hash, group_hash_follows_its_topics) {
       kafka::subscription_metadata_hash(one_topic),
       kafka::subscription_metadata_hash(changed_topic));
 }
+
+/// Catches a change to the hash that the cases above still accept, such as a
+/// different hash function, byte order or length unit.
+TEST(subscription_metadata_hash, algorithm_is_frozen) {
+    EXPECT_EQ(hash_of(a_topic()), 3141736076706975280);
+
+    EXPECT_EQ(
+      hash_of({racks_of({"rack-a"})}, topic_id_of(3), "topic-\xc3\xa9"),
+      -7662982349425315869);
+
+    kafka::topic_metadata_hashes group;
+    group.emplace(topic_id_of(1), -2);
+    group.emplace(topic_id_of(2), 3);
+    EXPECT_EQ(kafka::subscription_metadata_hash(group), -2579233394402444332);
+}
