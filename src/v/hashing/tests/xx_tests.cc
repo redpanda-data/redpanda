@@ -19,48 +19,78 @@
 
 #include <array>
 
-BOOST_AUTO_TEST_CASE(incremental_same_as_array) {
-    incremental_xxhash64 inc;
+namespace {
+
+template<typename Hash>
+void check_incremental_matches(uint64_t expected) {
+    Hash inc;
     inc.update(1);
     inc.update(2);
     inc.update(42);
-    std::array<int, 3> arr = {1, 2, 42};
-    BOOST_CHECK_EQUAL(inc.digest(), xxhash_64(arr));
+    BOOST_CHECK_EQUAL(inc.digest(), expected);
 }
 
-BOOST_AUTO_TEST_CASE(digest_idempotency) {
-    incremental_xxhash64 inc;
+template<typename Hash>
+void check_digest_idempotency(uint64_t expected) {
+    Hash inc;
     inc.update(1);
     inc.digest();
     inc.update(2);
     inc.digest();
     inc.update(42);
     inc.digest();
-    std::array<int, 3> arr = {1, 2, 42};
 
-    const auto arr_hash = xxhash_64(arr);
-    BOOST_CHECK_EQUAL(inc.digest(), arr_hash);
+    BOOST_CHECK_EQUAL(inc.digest(), expected);
     for (auto i = 0; i < 10; ++i) {
-        BOOST_CHECK_EQUAL(inc.digest(), arr_hash);
+        BOOST_CHECK_EQUAL(inc.digest(), expected);
     }
 }
 
-template<typename T, typename V>
+template<typename Hash, typename T, typename V>
 void test_incremental_hash(T test, V expected) {
-    incremental_xxhash64 hash;
+    Hash hash;
     hash.update(test);
 
-    incremental_xxhash64 expected_hash;
+    Hash expected_hash;
     expected_hash.update(expected);
     BOOST_REQUIRE_EQUAL(hash.digest(), expected_hash.digest());
 }
 
-BOOST_AUTO_TEST_CASE(overload_resolution) {
+template<typename Hash>
+void check_overload_resolution() {
     using named_str = named_type<std::string, struct str_type>;
     using named_integral = named_type<size_t, struct int_type>;
 
-    test_incremental_hash(named_str{"named_str"}, "named_str");
-    test_incremental_hash(named_integral{10}, (size_t)10);
+    test_incremental_hash<Hash>(named_str{"named_str"}, "named_str");
+    test_incremental_hash<Hash>(named_integral{10}, (size_t)10);
     named_str s("test_str");
-    test_incremental_hash(s, s());
+    test_incremental_hash<Hash>(s, s());
+}
+
+constexpr std::array<int, 3> updates = {1, 2, 42};
+
+} // namespace
+
+BOOST_AUTO_TEST_CASE(incremental_same_as_array) {
+    check_incremental_matches<incremental_xxhash64>(xxhash_64(updates));
+    check_incremental_matches<incremental_xxh3_64>(xxh3_64(updates));
+}
+
+BOOST_AUTO_TEST_CASE(digest_idempotency) {
+    check_digest_idempotency<incremental_xxhash64>(xxhash_64(updates));
+    check_digest_idempotency<incremental_xxh3_64>(xxh3_64(updates));
+}
+
+BOOST_AUTO_TEST_CASE(overload_resolution) {
+    check_overload_resolution<incremental_xxhash64>();
+    check_overload_resolution<incremental_xxh3_64>();
+}
+
+/// The two hashes are distinct functions, so the same input gives two values.
+BOOST_AUTO_TEST_CASE(hashes_differ) {
+    incremental_xxhash64 xxhash64;
+    incremental_xxh3_64 xxh3;
+    xxhash64.update("the same input");
+    xxh3.update("the same input");
+    BOOST_CHECK_NE(xxhash64.digest(), xxh3.digest());
 }
