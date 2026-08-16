@@ -244,6 +244,24 @@ redpanda_cc_gtest(
 )
 
 redpanda_cc_gtest(
+    name = "subscription_metadata_hash_cache_test",
+    timeout = "short",
+    srcs = [
+        "subscription_metadata_hash_cache_test.cc",
+    ],
+    deps = [
+        "//src/v/container:chunked_vector",
+        "//src/v/kafka/server:subscription_metadata_hash",
+        "//src/v/kafka/server:subscription_metadata_hash_cache",
+        "//src/v/model",
+        "//src/v/test_utils:gtest",
+        "//src/v/utils:uuid",
+        "@googletest//:gtest",
+        "@seastar",
+    ],
+)
+
+redpanda_cc_gtest(
     name = "fetch_memory_units_test",
     timeout = "short",
     srcs = [
