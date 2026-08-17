@@ -33,6 +33,7 @@ public:
 
     ss::future<produce_result> produce(model::record_batch batch) override;
     ss::future<model::offset> get_high_watermark() override;
+    ss::future<model::offset> get_log_start() override;
     ss::future<> consume_range(
       model::offset start,
       model::offset end,

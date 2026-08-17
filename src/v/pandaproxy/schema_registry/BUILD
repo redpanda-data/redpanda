@@ -105,6 +105,7 @@ redpanda_cc_library(
         "//src/v/kafka/client:exceptions",
         "//src/v/kafka/data/rpc",
         "//src/v/kafka/protocol:create_topics",
+        "//src/v/kafka/protocol:list_offset",
         "//src/v/kafka/server:topic_config_utils",
         "//src/v/model",
         "//src/v/pandaproxy:logger",
@@ -299,6 +300,7 @@ redpanda_cc_library(
     ],
     implementation_deps = [
         "//src/v/base",
+        "//src/v/kafka/protocol",
         "//src/v/pandaproxy:logger",
         "//src/v/storage:record_batch_builder",
     ],

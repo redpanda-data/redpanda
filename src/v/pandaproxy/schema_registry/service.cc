@@ -743,12 +743,39 @@ ss::future<> service::fetch_internal_topic() {
     auto max_offset = co_await _transport->get_high_watermark();
     vlog(srlog.debug, "Schema registry: _schemas max_offset: {}", max_offset);
 
+    // The topic is created with compaction and no retention, so the log
+    // normally starts at offset 0 even after compaction. A later start offset
+    // means records were deleted outright (retention or DeleteRecords), and
+    // whatever they held is unrecoverable.
+    auto log_start = co_await _transport->get_log_start();
+    auto start_offset = std::max(model::offset{0}, log_start);
+    if (start_offset > model::offset{0}) {
+        vlog(
+          srlog.error,
+          "The {} topic has been truncated to offset {}: records [0, {}) have "
+          "been deleted and the schemas, subject configs and modes they held "
+          "are lost. Recovering from offset {} with whatever survives. The "
+          "registry may be missing schemas that produced data still refers to, "
+          "and may reissue a schema id that was assigned in the deleted range. "
+          "Restore {} from a backup, and do not enable deletion (a cleanup "
+          "policy including 'delete', or any retention limit) on it.",
+          model::schema_registry_internal_tp.topic,
+          start_offset,
+          start_offset,
+          start_offset,
+          model::schema_registry_internal_tp.topic);
+        // Nothing below the start offset can ever be read, so record it as
+        // replayed. Otherwise an empty surviving range would leave the
+        // sequencer asking for offset 0 on the next incremental read.
+        co_await writer().advance_offset(model::prev_offset(start_offset));
+    }
+
     using namespace std::chrono_literals;
     const auto defer = defer_processing{
       config::shard_local_cfg().schema_registry_deferred_recovery()};
     auto replay_start = ss::lowres_clock::now();
     co_await _transport->consume_range(
-      model::offset{0}, max_offset, consume_to_store{_store, writer(), defer});
+      start_offset, max_offset, consume_to_store{_store, writer(), defer});
     auto replay_done = ss::lowres_clock::now();
 
     co_await _store.process_marked_schemas();

@@ -251,6 +251,7 @@ private:
 
     /// Block until this offset is available, fetching if necessary
     ss::future<> wait_for(model::offset offset);
+    ss::future<> do_wait_for(model::offset offset);
 
     std::unique_ptr<sequence_state_checker> _state_checker;
 

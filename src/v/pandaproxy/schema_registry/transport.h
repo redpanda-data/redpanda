@@ -49,6 +49,11 @@ public:
     /// Get the high watermark (next offset) for the _schemas topic.
     virtual ss::future<model::offset> get_high_watermark() = 0;
 
+    /// Get the earliest available offset on the _schemas topic. Anything
+    /// other than 0 means the topic has been prefix truncated and part of
+    /// the schema history is gone.
+    virtual ss::future<model::offset> get_log_start() = 0;
+
     /// Consume batches from [start, end) on the _schemas topic.
     /// Calls consumer(batch) for each batch. Handles pagination internally.
     /// Returning stop_iteration::yes halts consumption early.

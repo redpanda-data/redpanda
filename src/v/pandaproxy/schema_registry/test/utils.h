@@ -51,6 +51,10 @@ public:
         throw std::runtime_error(
           "noop_transport::get_high_watermark not implemented");
     }
+    ss::future<model::offset> get_log_start() override {
+        throw std::runtime_error(
+          "noop_transport::get_log_start not implemented");
+    }
     ss::future<> consume_range(
       model::offset,
       model::offset,
@@ -82,6 +86,10 @@ public:
     }
 
     ss::future<model::offset> get_high_watermark() override {
+        return ss::make_ready_future<model::offset>(model::offset{0});
+    }
+
+    ss::future<model::offset> get_log_start() override {
         return ss::make_ready_future<model::offset>(model::offset{0});
     }
 

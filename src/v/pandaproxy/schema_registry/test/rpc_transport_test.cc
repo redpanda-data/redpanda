@@ -112,6 +112,16 @@ public:
         _kd->remote_partition_manager()->set_errors(n);
     }
 
+    /// Simulate prefix truncation of the internal topic.
+    void set_start_offset(model::offset o) {
+        auto ntp = model::ntp(
+          model::kafka_namespace,
+          model::schema_registry_internal_tp.topic,
+          model::schema_registry_internal_tp.partition);
+        _kd->local_partition_manager()->set_start_offset(ntp, o);
+        _kd->remote_partition_manager()->set_start_offset(ntp, o);
+    }
+
     model::record_batch make_batch(std::string_view key, std::string_view val) {
         storage::record_batch_builder rb{
           model::record_batch_type::raft_data, model::offset{0}};
@@ -262,6 +272,53 @@ TEST_P(SchemaRegistryRpcTransportTest, ConsumeRangePastHwmThrows) {
           })
         .get(),
       kafka::exception);
+}
+
+TEST_P(SchemaRegistryRpcTransportTest, GetLogStart) {
+    // An untruncated log starts at 0.
+    EXPECT_EQ(transport().get_log_start().get(), model::offset(0));
+    transport().produce(make_batch("k1", "v1")).get();
+    transport().produce(make_batch("k2", "v2")).get();
+    EXPECT_EQ(transport().get_log_start().get(), model::offset(0));
+
+    set_start_offset(model::offset(1));
+    EXPECT_EQ(transport().get_log_start().get(), model::offset(1));
+}
+
+TEST_P(SchemaRegistryRpcTransportTest, ConsumeRangeBelowLogStart) {
+    transport().produce(make_batch("k1", "v1")).get();
+    transport().produce(make_batch("k2", "v2")).get();
+    set_start_offset(model::offset(1));
+
+    // Reading from before the start offset must report offset_out_of_range,
+    // rather than letting the offset translator throw through the RPC layer.
+    try {
+        transport()
+          .consume_range(
+            model::offset(0),
+            hwm(),
+            [](model::record_batch) -> ss::future<ss::stop_iteration> {
+                co_return ss::stop_iteration::no;
+            })
+          .get();
+        FAIL() << "consume_range below the log start unexpectedly succeeded";
+    } catch (const kafka::exception_base& e) {
+        EXPECT_EQ(e.error, kafka::error_code::offset_out_of_range);
+    }
+
+    // Reading from the start offset works.
+    int consumed_count = 0;
+    transport()
+      .consume_range(
+        model::offset(1),
+        hwm(),
+        [&consumed_count](
+          this auto, model::record_batch) -> ss::future<ss::stop_iteration> {
+            ++consumed_count;
+            co_return ss::stop_iteration::no;
+        })
+      .get();
+    EXPECT_EQ(consumed_count, 1);
 }
 
 INSTANTIATE_TEST_SUITE_P(

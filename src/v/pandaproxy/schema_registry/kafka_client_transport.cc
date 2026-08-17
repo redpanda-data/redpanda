@@ -25,6 +25,7 @@
 #include "kafka/client/exceptions.h"
 #include "kafka/data/rpc/deps.h"
 #include "kafka/protocol/create_topics.h"
+#include "kafka/protocol/list_offset.h"
 #include "kafka/server/handlers/topics/types.h"
 #include "model/namespace.h"
 #include "pandaproxy/logger.h"
@@ -132,8 +133,26 @@ kafka_client_transport::produce(model::record_batch batch) {
 }
 
 ss::future<model::offset> kafka_client_transport::get_high_watermark() {
+    return list_offset(kafka::list_offsets_request::latest_timestamp);
+}
+
+ss::future<model::offset> kafka_client_transport::get_log_start() {
+    return list_offset(kafka::list_offsets_request::earliest_timestamp);
+}
+
+ss::future<model::offset>
+kafka_client_transport::list_offset(model::timestamp timestamp) {
+    kafka::list_offsets_request req;
+    req.data.topics.emplace_back(
+      kafka::list_offset_topic{
+        .name = model::schema_registry_internal_tp.topic,
+        .partitions = {kafka::list_offset_partition{
+          .partition_index = model::schema_registry_internal_tp.partition,
+          .timestamp = timestamp,
+          .max_num_offsets = 1,
+        }}});
     auto offsets_f = co_await ss::coroutine::as_future(
-      _client->list_offsets(model::schema_registry_internal_tp));
+      _client->list_offsets(std::move(req)));
     if (offsets_f.failed()) {
         rethrow_partition_error(offsets_f.get_exception());
     }

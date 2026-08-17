@@ -11,6 +11,7 @@
 
 #include "base/vassert.h"
 #include "base/vlog.h"
+#include "kafka/protocol/exceptions.h"
 #include "model/namespace.h"
 #include "pandaproxy/logger.h"
 #include "pandaproxy/schema_registry/error.h"
@@ -102,6 +103,16 @@ struct batch_builder : public storage::record_batch_builder {
     }
 };
 
+bool is_offset_out_of_range(const std::exception_ptr& eptr) {
+    try {
+        std::rethrow_exception(eptr);
+    } catch (const kafka::exception_base& e) {
+        return e.error == kafka::error_code::offset_out_of_range;
+    } catch (...) {
+        return false;
+    }
+}
+
 } // namespace
 
 /// Call this before reading from the store, if servicing
@@ -134,22 +145,57 @@ ss::future<> seq_writer::wait_for(model::offset offset) {
               vlog(srlog.trace, "wait_for waiting for {} waiters", waiters);
           }
           return ss::with_semaphore(seq._wait_for_sem, 1, [&seq, offset]() {
-              if (offset > seq._loaded_offset) {
-                  vlog(
-                    srlog.debug,
-                    "wait_for dirty!  Reading {}..{}",
-                    seq._loaded_offset,
-                    offset);
-                  return seq._transport->consume_range(
-                    seq._loaded_offset + model::offset{1},
-                    offset + model::offset{1},
-                    consume_to_store{seq._store, seq});
-              } else {
-                  vlog(srlog.trace, "wait_for clean (offset  {})", offset);
-                  return ss::make_ready_future<>();
-              }
+              return seq.do_wait_for(offset);
           });
       });
+}
+
+ss::future<> seq_writer::do_wait_for(model::offset offset) {
+    if (offset <= _loaded_offset) {
+        vlog(srlog.trace, "wait_for clean (offset  {})", offset);
+        co_return;
+    }
+    vlog(
+      srlog.debug, "wait_for dirty!  Reading {}..{}", _loaded_offset, offset);
+
+    auto read_from = model::next_offset(_loaded_offset);
+    auto read_to = model::next_offset(offset);
+    auto fut = co_await ss::coroutine::as_future(_transport->consume_range(
+      read_from, read_to, consume_to_store{_store, *this}));
+    if (!fut.failed()) {
+        co_return;
+    }
+
+    // The topic may have been prefix truncated past what we've already read,
+    // in which case the records between are gone for good. Resume from
+    // whatever survives rather than failing every subsequent request.
+    auto eptr = fut.get_exception();
+    if (!is_offset_out_of_range(eptr)) {
+        std::rethrow_exception(eptr);
+    }
+    auto log_start = co_await _transport->get_log_start();
+    if (log_start <= read_from) {
+        std::rethrow_exception(eptr);
+    }
+    vlog(
+      srlog.error,
+      "The {} topic has been truncated to offset {}, past the last offset we "
+      "read ({}): the records between are lost, along with the schemas, "
+      "subject configs and modes they held. Resuming from offset {} with "
+      "whatever survives. Restore {} from a backup, and do not enable "
+      "deletion (a cleanup policy including 'delete', or any retention limit) "
+      "on it.",
+      model::schema_registry_internal_tp.topic,
+      log_start,
+      _loaded_offset,
+      log_start,
+      model::schema_registry_internal_tp.topic);
+    advance_offset_inner(model::prev_offset(log_start));
+    if (read_to <= log_start) {
+        co_return;
+    }
+    co_await _transport->consume_range(
+      log_start, read_to, consume_to_store{_store, *this});
 }
 
 /// Helper for write methods that need to check + retry if their

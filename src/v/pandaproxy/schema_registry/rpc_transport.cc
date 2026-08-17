@@ -47,6 +47,10 @@ throw_as_kafka_error(std::string_view context, cluster::errc ec) {
         throw kafka::exception(
           kafka::error_code::request_timed_out,
           fmt::format("{}: {}", context, ec));
+    case cluster::errc::offset_out_of_range:
+        throw kafka::exception(
+          kafka::error_code::offset_out_of_range,
+          fmt::format("{}: {}", context, ec));
     default:
         throw kafka::exception(
           kafka::error_code::unknown_server_error,
@@ -79,6 +83,19 @@ ss::future<model::offset> rpc_transport::get_high_watermark() {
           "RPC get_partition_offsets failed", result.error());
     }
     co_return kafka::offset_cast(result.value().high_watermark);
+}
+
+ss::future<model::offset> rpc_transport::get_log_start() {
+    auto result = co_await _client.get_single_partition_offsets(
+      model::schema_registry_internal_tp);
+    if (result.has_error()) {
+        throw_as_kafka_error(
+          "RPC get_partition_offsets failed", result.error());
+    }
+    // A broker that predates the start_offset field can't tell us where the
+    // log begins. Assume the whole log is available.
+    co_return kafka::offset_cast(
+      result.value().start_offset.value_or(kafka::offset{0}));
 }
 
 ss::future<> rpc_transport::consume_range(
