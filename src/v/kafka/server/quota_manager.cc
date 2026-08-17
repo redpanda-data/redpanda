@@ -717,16 +717,13 @@ void quota_manager::gc() {
       "gc should only be performed on the owner shard");
     auto full_window = _default_num_windows() * _default_window_width();
     auto expire_threshold = clock::now() - 10 * full_window;
-    ssx::background
-      = ssx::spawn_with_gate_then(
-          _gate,
-          [this, expire_threshold]() {
-              return container()
-                .invoke_on_all([expire_threshold](quota_manager& qm) {
-                    return qm.do_local_gc(expire_threshold);
-                })
-                .then([this]() { return do_global_gc(); });
-          })
+    ssx::spawn_with_gate(_gate, [this, expire_threshold]() {
+        return ssx::ignore_shutdown_exceptions(
+                 container()
+                   .invoke_on_all([expire_threshold](quota_manager& qm) {
+                       return qm.do_local_gc(expire_threshold);
+                   })
+                   .then([this]() { return do_global_gc(); }))
           .handle_exception([](const std::exception_ptr& e) {
               vlog(klog.warn, "Error garbage collecting quotas - {}", e);
           })
@@ -735,6 +732,7 @@ void quota_manager::gc() {
                   _gc_timer.arm(_gc_freq());
               }
           });
+    });
 }
 
 ss::future<> quota_manager::do_global_gc() {
