@@ -122,7 +122,7 @@ template<typename Key, typename Value, typename Hash, typename EqualTo>
 struct chunked_kv_cache<Key, Value, Hash, EqualTo>::evict {
     chunked_kv_cache& kv_c;
 
-    bool operator()(cached_value& e) noexcept {
+    bool operator()(cached_value& e, s3_fifo::evict_source) noexcept {
         e.value = nullptr;
         kv_c._ghost_fifo.push_back(e);
         return true;
