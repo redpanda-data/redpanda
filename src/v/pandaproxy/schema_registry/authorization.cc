@@ -10,8 +10,10 @@
 
 #include "pandaproxy/schema_registry/authorization.h"
 
+#include "base/vlog.h"
 #include "container/chunked_hash_map.h"
 #include "pandaproxy/api/api-doc/schema_registry.json.hh"
+#include "pandaproxy/logger.h"
 #include "pandaproxy/parsing/httpd.h"
 #include "pandaproxy/schema_registry/context_router.h"
 #include "pandaproxy/schema_registry/service.h"
@@ -165,10 +167,10 @@ void handle_authz(
 void handle_get_schemas_ids_id_authz(
   const server::request_t& rq,
   std::string_view operation_name,
-  std::optional<request_auth_result>& auth_result,
+  const ss::lw_shared_ptr<request_auth_result>& auth_result,
   const chunked_vector<context_subject>& subjects) {
     constexpr auto op = security::acl_operation::read;
-    if (!auth_result.has_value()) {
+    if (!auth_result) {
         // ACLs or authentication is disabled
         return;
     }
@@ -183,12 +185,14 @@ void handle_get_schemas_ids_id_authz(
         // Throw unauthorized here to avoid leaking information about whether a
         // schema id exists or not.
         audit_authz(
-          rq,
+          rq, operation_name, *auth_result, false, op, audit_resources{});
+        vlog(
+          srlog.info,
+          "{}: schema id {} not found; returning 403 rather than 404 to avoid "
+          "revealing whether schema ids exist (principal: {})",
           operation_name,
-          auth_result.value(),
-          false,
-          op,
-          audit_resources{});
+          parse::request_param<schema_id>(*rq.req, "id"),
+          params.principal);
         throw_unauthorized();
     }
 
@@ -201,7 +205,7 @@ void handle_get_schemas_ids_id_authz(
           params.principal,
           params.host,
           security::superuser_required::no,
-          auth_result.value().get_groups());
+          auth_result->get_groups());
 
         if (res.is_authorized()) {
             authorizing_result = std::move(res);
@@ -216,12 +220,15 @@ void handle_get_schemas_ids_id_authz(
         audit_authz(rq, operation_name, std::move(*authorizing_result));
     } else {
         audit_authz(
-          rq,
+          rq, operation_name, *auth_result, false, op, std::move(all_results));
+        vlog(
+          srlog.info,
+          "{}: principal {} has no read permission on any of the {} subjects "
+          "associated with schema id {}",
           operation_name,
-          auth_result.value(),
-          false,
-          op,
-          std::move(all_results));
+          params.principal,
+          subjects.size(),
+          parse::request_param<schema_id>(*rq.req, "id"));
         throw_unauthorized();
     }
 }
@@ -229,11 +236,11 @@ void handle_get_schemas_ids_id_authz(
 void handle_get_subjects_authz(
   const server::request_t& rq,
   std::string_view operation_name,
-  std::optional<request_auth_result>& auth_result,
+  const ss::lw_shared_ptr<request_auth_result>& auth_result,
   chunked_vector<context_subject>& subjects) {
     constexpr auto op = security::acl_operation::describe;
 
-    if (!auth_result.has_value()) {
+    if (!auth_result) {
         // ACLs or authentication is disabled
         return;
     }
@@ -245,6 +252,7 @@ void handle_get_subjects_authz(
     auto passing_results = audit_resources{};
     auto failing_results = audit_resources{};
 
+    const auto total_subjects = subjects.size();
     auto new_end = std::ranges::remove_if(subjects, [&](const auto& ctx_sub) {
         auto res = rq.service().authorizor().authorized(
           ctx_sub,
@@ -252,7 +260,7 @@ void handle_get_subjects_authz(
           params.principal,
           params.host,
           security::superuser_required::no,
-          auth_result.value().get_groups());
+          auth_result->get_groups());
         if (res.is_authorized()) {
             passing_results.emplace_back(
               ctx_sub.to_string(), subject_resource_type);
@@ -265,24 +273,30 @@ void handle_get_subjects_authz(
     });
     subjects.erase_to_end(new_end.begin());
 
+    if (!failing_results.empty()) {
+        vlog(
+          srlog.debug,
+          "{}: filtered out {} of {} subjects for principal {} (no describe "
+          "permission)",
+          operation_name,
+          failing_results.size(),
+          total_subjects,
+          params.principal);
+    }
+
     // This endpoint always returns a successful response.
     // Generate a successful audit event with the (possibly empty) list of
     // authorized subjects.
     // If there are any unauthorized subjects, generate failed audit event with
     // them.
     audit_authz(
-      rq,
-      operation_name,
-      auth_result.value(),
-      true,
-      op,
-      std::move(passing_results));
+      rq, operation_name, *auth_result, true, op, std::move(passing_results));
 
     if (!failing_results.empty()) {
         audit_authz(
           rq,
           operation_name,
-          auth_result.value(),
+          *auth_result,
           false,
           op,
           std::move(failing_results));
@@ -293,11 +307,11 @@ ss::future<> handle_get_contexts_authz(
   const server::request_t& rq,
   std::string_view operation_name,
   sharded_store& store,
-  std::optional<request_auth_result>& auth_result,
+  const ss::lw_shared_ptr<request_auth_result>& auth_result,
   chunked_vector<context>& contexts) {
     constexpr auto op = security::acl_operation::describe;
 
-    if (!auth_result.has_value()) {
+    if (!auth_result) {
         co_return;
     }
 
@@ -311,7 +325,7 @@ ss::future<> handle_get_contexts_authz(
       params.principal,
       params.host,
       security::superuser_required::no,
-      auth_result.value().get_groups());
+      auth_result->get_groups());
 
     auto all_subjects = co_await store.get_subjects(include_deleted::yes);
 
@@ -340,7 +354,7 @@ ss::future<> handle_get_contexts_authz(
           params.principal,
           params.host,
           security::superuser_required::no,
-          auth_result.value().get_groups());
+          auth_result->get_groups());
 
         if (res.is_authorized()) {
             passing_results.emplace_back(
@@ -384,18 +398,13 @@ ss::future<> handle_get_contexts_authz(
     contexts = std::move(result_contexts);
 
     audit_authz(
-      rq,
-      operation_name,
-      auth_result.value(),
-      true,
-      op,
-      std::move(passing_results));
+      rq, operation_name, *auth_result, true, op, std::move(passing_results));
 
     if (!failing_results.empty()) {
         audit_authz(
           rq,
           operation_name,
-          auth_result.value(),
+          *auth_result,
           false,
           op,
           std::move(failing_results));
@@ -405,10 +414,10 @@ ss::future<> handle_get_contexts_authz(
 void handle_config_mode_authz(
   const server::request_t& rq,
   std::string_view operation_name,
-  std::optional<request_auth_result>& auth_result,
+  const ss::lw_shared_ptr<request_auth_result>& auth_result,
   const context_subject& ctx_sub,
   security::acl_operation op) {
-    if (!auth_result.has_value()) {
+    if (!auth_result) {
         // ACLs or authentication is disabled
         return;
     }
@@ -426,14 +435,14 @@ void handle_config_mode_authz(
                               params.principal,
                               params.host,
                               security::superuser_required::no,
-                              auth_result.value().get_groups())
+                              auth_result->get_groups())
                           : rq.service().authorizor().authorized(
                               ctx_sub,
                               op,
                               params.principal,
                               params.host,
                               security::superuser_required::no,
-                              auth_result.value().get_groups());
+                              auth_result->get_groups());
 
     const bool is_authorized = authz_result.is_authorized();
 
