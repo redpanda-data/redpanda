@@ -148,11 +148,6 @@ SEASTAR_THREAD_TEST_CASE(quota_manager_fetch_throttling) {
 SEASTAR_THREAD_TEST_CASE(quota_manager_fetch_stress_test) {
     fixture f;
 
-    set_config([](config::configuration& conf) {
-        conf.max_kafka_throttle_delay_ms.set_value(
-          std::chrono::milliseconds::max());
-    }).get();
-
     auto default_values = entity_value{
       .consumer_byte_rate = 100,
     };
