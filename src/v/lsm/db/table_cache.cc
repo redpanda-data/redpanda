@@ -245,7 +245,8 @@ private:
 
     struct eviction {
         table_cache::impl* impl;
-        bool operator()(cached_value& e) noexcept {
+        bool operator()(
+          cached_value& e, utils::s3_fifo::evict_source) noexcept {
             impl->_ghost_fifo.push_back(e);
             return true;
         }
