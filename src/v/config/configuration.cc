@@ -4712,6 +4712,16 @@ configuration::configuration()
       {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
       100000,
       {.min = 1})
+  , datalake_coordinator_max_pending_bytes(
+      *this,
+      "datalake_coordinator_max_pending_bytes",
+      "Soft limit on the in-memory metadata a coordinator holds for pending "
+      "data files on disk, across all of its topics, before it sheds load, "
+      "rejecting new files and offset requests until it commits enough of the "
+      "backlog. Complements datalake_coordinator_max_pending_files.",
+      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
+      32ULL * 1024 * 1024,
+      {.min = 1})
   , iceberg_disable_automatic_snapshot_expiry(
       *this,
       "iceberg_disable_automatic_snapshot_expiry",

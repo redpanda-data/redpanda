@@ -87,8 +87,9 @@ class CoordinatorBackpressureTest(RedpandaTest):
         """
         Returns the number of pending data files (including DLQ files) the
         coordinator is tracking for the topic, read from the coordinator state
-        admin endpoint. This mirrors what the coordinator counts when deciding
-        to shed load.
+        admin endpoint. This is the file count the coordinator compares against
+        datalake_coordinator_max_pending_files; it sheds load on the estimated
+        memory of those files as well, which is not visible here.
         """
         admin = admin_v2.Admin(self.redpanda)
         request = admin_v2.datalake_pb.GetCoordinatorStateRequest(
@@ -198,12 +199,14 @@ class CoordinatorBackpressureTest(RedpandaTest):
                 f"{backoffs} backoff loop iterations"
             )
 
-            # Relieve the pressure so the backlog drains promptly.
+            # Relieve the pressure so the backlog drains promptly. Both limits
+            # have to be lifted: either one on its own keeps shedding load.
             self.redpanda.set_cluster_config(
                 {
                     "iceberg_catalog_commit_interval_ms": 1000,
                     "datalake_coordinator_max_files_per_commit": 10000,
                     "datalake_coordinator_max_pending_files": 1000000,
+                    "datalake_coordinator_max_pending_bytes": 1024 * 1024 * 1024,
                 }
             )
             wait_until(

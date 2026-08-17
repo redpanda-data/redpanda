@@ -151,7 +151,8 @@ void coordinator_manager::start_managing(cluster::partition& p) {
       config::shard_local_cfg().iceberg_default_partition_spec.bind(),
       config::shard_local_cfg()
         .iceberg_disable_automatic_snapshot_expiry.bind(),
-      config::shard_local_cfg().datalake_coordinator_max_pending_files.bind());
+      config::shard_local_cfg().datalake_coordinator_max_pending_files.bind(),
+      config::shard_local_cfg().datalake_coordinator_max_pending_bytes.bind());
     if (p.is_leader()) {
         crd->notify_leadership(self_);
     }
