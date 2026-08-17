@@ -63,7 +63,6 @@ struct field_summary_val {
 // manifests. This is left to the caller, if desired.
 //
 // TODO: doesn't clean up any wasted (e.g. on error) manifest files.
-// TODO: shouldn't be too difficult to parallelize IO.
 class merge_append_action : public action {
 public:
     static constexpr size_t default_min_to_merge_new_files = 100;
