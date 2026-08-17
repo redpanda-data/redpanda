@@ -249,7 +249,8 @@ transport::do_send(sequence_t seq, netbuf b, rpc::client_opts opts) {
             .then_unpack(
               [this, f = std::move(f), seq, corr](
                 ssx::semaphore_units units, scattered_buffer bufs) mutable {
-                  auto e = std::make_unique<entry>(std::move(bufs), corr);
+                  auto e = std::make_unique<entry>(
+                    std::move(bufs), corr, std::move(units));
                   _requests_queue.emplace(seq, std::move(e));
 
                   // By this point the request may already have timed out but
@@ -259,7 +260,7 @@ transport::do_send(sequence_t seq, netbuf b, rpc::client_opts opts) {
                   // - Draining of the request_queue which could otherwise be
                   //   stalled by missing sequence number.
                   dispatch_send();
-                  return std::move(f).finally([u = std::move(units)] {});
+                  return std::move(f);
               })
             .handle_exception([this, seq, corr](std::exception_ptr eptr) {
                 // This is unlikely but may potentially mean dispatch_send()
@@ -318,6 +319,7 @@ ss::future<> transport::do_dispatch_send() {
           _last_seq = it->first;
           auto v = std::move(it->second->bufs);
           auto corr = it->second->correlation_id;
+          auto mem_units = std::move(it->second->memory_units);
           _requests_queue.erase(it);
 
           auto resp_it = _correlations.find(corr);
@@ -356,7 +358,9 @@ ss::future<> transport::do_dispatch_send() {
                     maybe_timing->flushed = flushed;
                 }
             })
-            .finally([this, msg_size] { _probe->add_bytes_sent(msg_size); });
+            .finally([this, msg_size, u = std::move(mem_units)] {
+                _probe->add_bytes_sent(msg_size);
+            });
       });
 }
 
