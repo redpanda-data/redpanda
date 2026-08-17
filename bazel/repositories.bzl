@@ -26,6 +26,10 @@ def data_dependency():
         sha256 = "d605e8c139f50ca9892e4e682591a977916b222770aab710d014dd7bf1975324",
         strip_prefix = "avro-3f2a1426d443df12ea45daf049dfb6eeef99ec39",
         url = "https://github.com/redpanda-data/avro/archive/3f2a1426d443df12ea45daf049dfb6eeef99ec39.tar.gz",
+        patches = [
+            "//bazel/thirdparty:avro-uuid-fixed.patch",
+        ],
+        patch_args = ["-p1"],
     )
 
     http_archive(

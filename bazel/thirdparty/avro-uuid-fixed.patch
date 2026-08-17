@@ -1,0 +1,16 @@
+diff --git a/lang/c++/impl/Node.cc b/lang/c++/impl/Node.cc
+index b310ca26e..f8a1c2d3e 100644
+--- a/lang/c++/impl/Node.cc
++++ b/lang/c++/impl/Node.cc
+@@ -200,9 +200,9 @@ void Node::setLogicalType(LogicalType logicalType) {
+             }
+             break;
+         case LogicalType::UUID:
+-            if (type_ != AVRO_STRING) {
++            if (type_ != AVRO_STRING && (type_ != AVRO_FIXED || fixedSize() != 16)) {
+                 throw Exception("UUID logical type can only annotate "
+-                                "STRING type");
++                                "STRING type or FIXED type of length 16");
+             }
+             break;
+         case LogicalType::MAP:
