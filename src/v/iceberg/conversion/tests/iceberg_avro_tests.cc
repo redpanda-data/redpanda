@@ -386,6 +386,15 @@ constexpr auto logical_types = R"J(
             }
         },
         {
+            "name": "uuid_fixed",
+            "type": {
+                "name": "fixed_uuid_16",
+                "type": "fixed",
+                "size": 16,
+                "logicalType": "uuid"
+            }
+        },
+        {
             "name": "date_int",
             "type": {
                 "type": "int",
@@ -459,30 +468,32 @@ TEST(AvroSchema, TestLogicalTypes) {
 
     ASSERT_FALSE(iceberg_struct_res.has_error());
     auto struct_t = std::move(iceberg_struct_res.value());
-    ASSERT_EQ(struct_t.fields.size(), 9);
+    ASSERT_EQ(struct_t.fields.size(), 10);
     EXPECT_TRUE(
       field_matches(struct_t.fields[0], "uuid_string", iceberg::uuid_type{}));
     EXPECT_TRUE(
-      field_matches(struct_t.fields[1], "date_int", iceberg::date_type{}));
+      field_matches(struct_t.fields[1], "uuid_fixed", iceberg::uuid_type{}));
+    EXPECT_TRUE(
+      field_matches(struct_t.fields[2], "date_int", iceberg::date_type{}));
     EXPECT_TRUE(field_matches(
-      struct_t.fields[2],
+      struct_t.fields[3],
       "bytes_decimal",
       iceberg::decimal_type{.precision = 38, .scale = 9}));
     EXPECT_TRUE(field_matches(
-      struct_t.fields[3],
+      struct_t.fields[4],
       "fixed_decimal",
       iceberg::decimal_type{.precision = 20, .scale = 9}));
     EXPECT_TRUE(
-      field_matches(struct_t.fields[4], "int_time_ms", iceberg::time_type{}));
+      field_matches(struct_t.fields[5], "int_time_ms", iceberg::time_type{}));
     EXPECT_TRUE(field_matches(
-      struct_t.fields[5], "long_time_micro", iceberg::time_type{}));
+      struct_t.fields[6], "long_time_micro", iceberg::time_type{}));
     EXPECT_TRUE(field_matches(
-      struct_t.fields[6], "long_ts_ms", iceberg::timestamptz_type{}));
+      struct_t.fields[7], "long_ts_ms", iceberg::timestamptz_type{}));
     EXPECT_TRUE(field_matches(
-      struct_t.fields[7], "long_ts_micro", iceberg::timestamptz_type{}));
+      struct_t.fields[8], "long_ts_micro", iceberg::timestamptz_type{}));
     // Duration logical type is not intrepreted in as a separate iceberg type
     EXPECT_TRUE(field_matches(
-      struct_t.fields[8], "duration_fixed", iceberg::fixed_type{12}));
+      struct_t.fields[9], "duration_fixed", iceberg::fixed_type{12}));
 }
 
 iobuf serialize_with_avro(
@@ -1132,6 +1143,18 @@ AssertionResult value_matches(
                   ASSERT_VALUES_EQUAL(
                     decimal_bytes,
                     expected.value<::avro::GenericFixed>().value())
+              });
+        }
+        if (datum.logicalType().type() == avro::LogicalType::UUID) {
+            return primitive_equal<iceberg::uuid_value>(
+              datum,
+              value,
+              [](
+                const iceberg::uuid_value& current,
+                const avro::GenericDatum& expected) {
+                  auto uuid_bytes = current.val.to_vector();
+                  ASSERT_VALUES_EQUAL(
+                    uuid_bytes, expected.value<::avro::GenericFixed>().value())
               });
         }
         return primitive_equal<iceberg::fixed_value>(

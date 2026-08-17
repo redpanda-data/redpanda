@@ -237,6 +237,9 @@ inner_field_type_from_avro(const avro::NodePtr& node, state& state) {
         if (node->logicalType().type() == avro::LogicalType::DECIMAL) {
             return create_decimal(node);
         }
+        if (node->logicalType().type() == avro::LogicalType::UUID) {
+            return iceberg::uuid_type{};
+        }
         return iceberg::fixed_type{node->fixedSize()};
     case avro::AVRO_SYMBOLIC:
         /**

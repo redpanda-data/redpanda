@@ -167,6 +167,13 @@ avro_generator::generate_datum_impl(int level, const avro::NodePtr& node) {
             datum.value<::avro::GenericFixed>() = fixed;
             return datum;
         }
+        if (node->logicalType().type() == avro::LogicalType::UUID) {
+            auto uuid = uuid_t::create();
+            auto v = uuid.to_vector();
+            fixed.value().assign(v.begin(), v.end());
+            datum.value<::avro::GenericFixed>() = fixed;
+            return datum;
+        }
         fixed.value().reserve(node->fixedSize());
         for (size_t i = 0; i < node->fixedSize(); ++i) {
             fixed.value()[i] = random_generators::get_int<uint8_t>();

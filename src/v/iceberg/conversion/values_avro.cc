@@ -102,6 +102,13 @@ struct primitive_visitor {
         }
 
         if (node->type() == avro::AVRO_FIXED) {
+            if (node->logicalType().type() == avro::LogicalType::UUID) {
+                iobuf_parser p(std::move(buffer));
+                std::vector<uint8_t> v(uuid_t::length);
+                p.consume_to(uuid_t::length, v.data());
+                return convert_primitive<uuid_t, iceberg::uuid_value>(
+                  uuid_t(v), avro::AVRO_FIXED, node);
+            }
             return convert_primitive<iobuf, iceberg::fixed_value>(
               std::move(buffer), avro::AVRO_FIXED, node);
         }
