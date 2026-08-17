@@ -117,6 +117,7 @@ redpanda_cc_library(
     ],
     implementation_deps = [
         "//src/v/container:chunked_hash_map",
+        "//src/v/container:intrusive",
         "//src/v/lsm/core:exceptions",
         "//src/v/lsm/core/internal:logger",
         "//src/v/lsm/sst:reader",

@@ -11,6 +11,7 @@
 #include "base/vassert.h"
 #include "base/vlog.h"
 #include "container/chunked_hash_map.h"
+#include "container/intrusive_list_helpers.h"
 #include "lsm/core/exceptions.h"
 #include "lsm/core/internal/files.h"
 #include "lsm/core/internal/iterator.h"
@@ -157,22 +158,20 @@ public:
         co_await table->internal_get(key, fn);
         // It's possible (although unlikely), that while `internal_get` was
         // going on the table was evicted from the cache, if that's the case
-        // we need to enqueue the cleanup, as the ghost fifo gc would have not
-        // done it.
+        // we need to enqueue the cleanup, as the evicted-entry gc would have
+        // not done it.
         maybe_enqueue_cleanup(std::move(table));
     }
 
     ss::future<> evict(internal::file_handle h) {
-        gc_ghost_fifo();
+        gc_evicted_entries();
         auto guard = co_await reader_lock_guard::acquire(&_mu_map, h);
         auto it = _map.find(h);
         if (it == _map.end()) {
             co_return;
         }
         _cache.remove(*it->second);
-        if (it->second->ghost_hook.is_linked()) {
-            _ghost_fifo.erase(_ghost_fifo.iterator_to(*it->second));
-        }
+        it->second->fifo_hook.unlink();
         auto reader = std::exchange(it->second->value, {});
         _map.erase(it);
         vassert(
@@ -194,7 +193,7 @@ public:
               reader.use_count());
             co_await reader->close();
         }
-        _ghost_fifo.clear();
+        // _map.clear() destroys the entries, which auto-unlink from the fifos.
         _map.clear();
         ss::promise<void> p;
         _cleanup_queue.submit([&p] {
@@ -227,27 +226,28 @@ public:
     }
 
 private:
-    using ghost_hook_t = boost::intrusive::list_member_hook<
-      boost::intrusive::link_mode<boost::intrusive::safe_link>>;
-
     struct cached_value {
         internal::file_handle handle;
         ss::lw_shared_ptr<sst::reader> value;
         utils::s3_fifo::cache_hook hook;
-        ghost_hook_t ghost_hook;
+        intrusive_list_hook fifo_hook;
     };
 
     using entry_t = std::unique_ptr<cached_value>;
-    using ghost_fifo_t = boost::intrusive::list<
-      cached_value,
-      boost::intrusive::
-        member_hook<cached_value, ghost_hook_t, &cached_value::ghost_hook>>;
+    using fifo_t = intrusive_list<cached_value, &cached_value::fifo_hook>;
 
     struct eviction {
         table_cache::impl* impl;
         bool operator()(
-          cached_value& e, utils::s3_fifo::evict_source) noexcept {
-            impl->_ghost_fifo.push_back(e);
+          cached_value& e, utils::s3_fifo::evict_source source) noexcept {
+            switch (source) {
+            case utils::s3_fifo::evict_source::small_queue:
+                impl->_ghost_fifo.push_back(e);
+                break;
+            case utils::s3_fifo::evict_source::main_queue:
+                impl->_retired_fifo.push_back(e);
+                break;
+            }
             return true;
         }
     };
@@ -275,7 +275,7 @@ private:
 
     ss::future<ss::lw_shared_ptr<sst::reader>>
     find_reader(internal::file_handle handle, uint64_t file_size) {
-        gc_ghost_fifo();
+        gc_evicted_entries();
         auto it = _map.find(handle);
         if (it == _map.end()) {
             // Use fine grained locking to prevent opening unrelated tables from
@@ -300,9 +300,9 @@ private:
         _probe->table_cache_hit += 1;
         auto& entry = *it->second;
         if (entry.hook.evicted()) {
-            // If this was evicted, but on the ghost queue, then we can reinsert
+            // If this was evicted, but not yet reclaimed, then we can reinsert
             // it into the cache and keep the existing entry alive.
-            _ghost_fifo.erase(_ghost_fifo.iterator_to(entry));
+            entry.fifo_hook.unlink();
             _cache.insert(entry);
         }
         entry.hook.touch();
@@ -321,19 +321,33 @@ private:
         co_return ss::make_lw_shared(std::move(reader));
     }
 
-    void gc_ghost_fifo() {
+    // Free the evicted entry's reader and remove it from the index. The index
+    // erase happens before the cleanup submission so that a throwing
+    // submission can't leave a reclaimed entry behind in the index.
+    void reclaim(cached_value& entry) {
+        auto reader = std::exchange(entry.value, {});
+        ++_handles_pending_cleanup;
+        _map.erase(entry.handle);
+        maybe_enqueue_cleanup(std::move(reader));
+    }
+
+    void gc_evicted_entries() {
+        while (!_retired_fifo.empty()) {
+            auto& entry = _retired_fifo.front();
+            _retired_fifo.pop_front();
+            reclaim(entry);
+        }
+
         for (auto it = _ghost_fifo.begin(); it != _ghost_fifo.end();) {
             auto& entry = *it;
             if (_cache.ghost_queue_contains(entry)) {
                 // The ghost queue is in fifo-order so any entry that comes
-                // after an entry that hasn't been evicted will also not be
-                // evicted.
+                // after an entry that hasn't been removed will also be in
+                // the queue still.
                 return;
             }
-            ++_handles_pending_cleanup;
-            maybe_enqueue_cleanup(std::exchange(entry.value, {}));
             it = _ghost_fifo.erase(it);
-            _map.erase(entry.handle);
+            reclaim(entry);
         }
     }
 
@@ -343,9 +357,15 @@ private:
       _mu_map;
     chunked_hash_map<internal::file_handle, entry_t> _map;
     cache_t _cache;
-    // Entries that have been "soft evicted" from the cache. We keep them around
-    // just in case and GC them after some period of time.
-    ghost_fifo_t _ghost_fifo;
+    // Entries that have been "soft evicted" from the cache onto the ghost
+    // queue. We keep them around just in case and GC them after some period of
+    // time.
+    fifo_t _ghost_fifo;
+    // Entries evicted from the main queue. They have left the cache entirely
+    // and could be reclaimed during eviction, but enqueuing the reader cleanup
+    // allocates, which the noexcept evictor must not do, so they are parked
+    // here and reclaimed on the next gc.
+    fifo_t _retired_fifo;
     ss::lw_shared_ptr<sst::block_cache> _block_cache;
     // Once an item is evicted, we need to also check that outstanding iterators
     // are closed. If they are not, then we wait until they are, then we insert
