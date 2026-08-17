@@ -114,26 +114,57 @@ class IcebergTranslationStateTest(RedpandaTest):
             dl.create_iceberg_enabled_topic(topic_name, partitions=3)
             rpk.create_topic(non_iceberg_topic)
 
-            for i in range(10):
-                rpk.produce(topic_name, f"key-{i}", f"value-{i}")
-
-            # Wait for translation state to become available
-            def translation_state_ready():
+            # Before any data is produced, the Iceberg-enabled topic should
+            # already appear with its table identity (namespace, table, dlq)
+            # and status=ENABLED, but with no partition offsets or snapshot.
+            def pre_translation_state_ready():
                 result = self._try_get_translation_state(topics_filter=[topic_name])
                 return result is not None and topic_name in result.topic_states
 
             wait_until(
-                translation_state_ready,
+                pre_translation_state_ready,
                 timeout_sec=30,
                 backoff_sec=2,
-                err_msg="Translation state not available for topic",
+                err_msg="Pre-translation state not available for topic",
             )
 
             result = self._get_translation_state(topics_filter=[topic_name])
-            assert topic_name in result.topic_states, (
-                f"Topic {topic_name} not in response"
+            pre_state = result.topic_states[topic_name]
+            assert (
+                pre_state.translation_status == iceberg_pb2.TRANSLATION_STATUS_ENABLED
+            ), (
+                f"Expected ENABLED before translation, got {pre_state.translation_status}"
+            )
+            assert list(pre_state.namespace_name) == ["redpanda"], (
+                f"Expected namespace ['redpanda'], got {list(pre_state.namespace_name)}"
+            )
+            assert pre_state.table_name == topic_name, (
+                f"Expected table name '{topic_name}', got '{pre_state.table_name}'"
+            )
+            assert pre_state.dlq_table_name == f"{topic_name}~dlq", (
+                f"Expected DLQ table name '{topic_name}~dlq', got '{pre_state.dlq_table_name}'"
             )
 
+            for i in range(10):
+                rpk.produce(topic_name, f"key-{i}", f"value-{i}")
+
+            # After data is produced and translated, partition states appear.
+            def translation_complete():
+                result = self._try_get_translation_state(topics_filter=[topic_name])
+                return (
+                    result is not None
+                    and topic_name in result.topic_states
+                    and len(result.topic_states[topic_name].partition_states) == 3
+                )
+
+            wait_until(
+                translation_complete,
+                timeout_sec=30,
+                backoff_sec=2,
+                err_msg="Translation state partitions not populated",
+            )
+
+            result = self._get_translation_state(topics_filter=[topic_name])
             state = result.topic_states[topic_name]
             assert state.translation_status == iceberg_pb2.TRANSLATION_STATUS_ENABLED, (
                 f"Unexpected status: {state.translation_status}"
