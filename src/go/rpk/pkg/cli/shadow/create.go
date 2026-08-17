@@ -231,11 +231,6 @@ func validateParsedShadowLinkConfig(slCfg *ShadowLinkConfig) error {
 		return nil
 	}
 	// Cloud only validations.
-	// Role sync is not yet available in the cloud control-plane API, so reject
-	// it up front rather than silently dropping it.
-	if slCfg.RoleSyncOptions != nil {
-		return errors.New("role sync options are not yet supported for Redpanda Cloud shadow links")
-	}
 	if slc.ShadowRedpandaID == "" {
 		return errors.New("shadow_redpanda_id is required in cloud options")
 	}

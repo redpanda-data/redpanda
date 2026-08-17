@@ -42,6 +42,7 @@ var cloudUpdateReplacePaths = []string{
 	"consumer_offset_sync_options",
 	"security_sync_options",
 	"schema_registry_sync_options",
+	"role_sync_options",
 }
 
 func newUpdateCommand(fs afero.Fs, p *config.Params) *cobra.Command {

@@ -5,9 +5,9 @@ go 1.26.5
 require (
 	buf.build/gen/go/redpandadata/ai-gateway/connectrpc/go v1.20.0-20260313141452-dbbaece03f76.1
 	buf.build/gen/go/redpandadata/cloud/connectrpc/go v1.19.1-20260409133226-cd0bdc42a0f9.2
-	buf.build/gen/go/redpandadata/cloud/protocolbuffers/go v1.36.11-20260513151602-b1c922dc2447.1
-	buf.build/gen/go/redpandadata/common/protocolbuffers/go v1.36.11-20260323171043-6e06f84ad823.1
-	buf.build/gen/go/redpandadata/core/protocolbuffers/go v1.36.11-20260706172830-ee867ae38d23.1
+	buf.build/gen/go/redpandadata/cloud/protocolbuffers/go v1.36.12-20260817162420-6033b8c28212.1
+	buf.build/gen/go/redpandadata/common/protocolbuffers/go v1.36.12-20260323171043-6e06f84ad823.1
+	buf.build/gen/go/redpandadata/core/protocolbuffers/go v1.36.12-20260714112317-973b760dcc8a.1
 	buf.build/gen/go/redpandadata/dataplane/connectrpc/go v1.19.1-20260409091301-5e03d1b04513.2
 	buf.build/gen/go/redpandadata/dataplane/protocolbuffers/go v1.36.11-20260515102404-69b6826fde5c.1
 	buf.build/gen/go/redpandadata/gatekeeper/connectrpc/go v1.19.1-20251022210437-a5dd600d04b6.2
@@ -75,7 +75,7 @@ require (
 	golang.org/x/term v0.43.0
 	google.golang.org/genproto/googleapis/api v0.0.0-20260526163538-3dc84a4a5aaa
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20260526163538-3dc84a4a5aaa
-	google.golang.org/protobuf v1.36.11
+	google.golang.org/protobuf v1.36.12
 	gopkg.in/yaml.v2 v2.4.0
 	gopkg.in/yaml.v3 v3.0.1
 	k8s.io/api v0.35.3
@@ -84,8 +84,8 @@ require (
 )
 
 require (
-	buf.build/gen/go/bufbuild/protovalidate/protocolbuffers/go v1.36.11-20260709200747-435963d16310.1 // indirect
-	buf.build/gen/go/grpc-ecosystem/grpc-gateway/protocolbuffers/go v1.36.11-20260416204259-4836b6d55230.1 // indirect
+	buf.build/gen/go/bufbuild/protovalidate/protocolbuffers/go v1.36.12-20260709200747-435963d16310.1 // indirect
+	buf.build/gen/go/grpc-ecosystem/grpc-gateway/protocolbuffers/go v1.36.12-20260416204259-4836b6d55230.1 // indirect
 	buf.build/gen/go/redpandadata/ai-gateway/protocolbuffers/go v1.36.11-20260313141452-dbbaece03f76.1 // indirect
 	buf.build/gen/go/redpandadata/core/connectrpc/go v1.19.2-20260608080241-5b0ab84ea082.1 // indirect
 	buf.build/gen/go/redpandadata/otel/protocolbuffers/go v1.36.11-20260323171043-3635d3966b23.1 // indirect
