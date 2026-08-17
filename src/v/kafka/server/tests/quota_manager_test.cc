@@ -550,30 +550,47 @@ SEASTAR_THREAD_TEST_CASE(test_increasing_specificity) {
             BOOST_REQUIRE(pm_rate.has_value());
             BOOST_REQUIRE_EQUAL(pm_rate->rate(), max_rate.n_mutations);
 
-            // Requesting double the quota should end up with 1s throttling time
-            delays throttle = make_records(
-                                now,
-                                {2 * max_rate.produce_bytes,
-                                 2 * max_rate.consume_bytes,
-                                 2 * max_rate.n_mutations})
-                                .get();
+            // Requesting double the quota should end up with 1s throttling
+            // time. A quota update replaces a bucket whose rate changed and
+            // discards what was recorded into it, so each measurement records
+            // 2x the quota again on every attempt.
+            auto& qm = f.sqm.local();
 
-            // Spin until the correct throttling is returned.
-            {
-                auto wait_until_throttle = [now, &make_records, &throttle] {
-                    return tests::cooperative_spin_wait_with_timeout(
-                      5s,
-                      [now, &make_records, &throttle](
-                        this auto) -> ss::future<bool> {
-                          throttle = co_await make_records(now, zero_bytes);
-                          co_return throttle.produce_delay > 0s
-                            && throttle.consume_delay > 0s
-                            && throttle.pm_delay > 0s;
-                      });
-                };
-                wait_until_throttle().get();
-            }
+            quota_manager::clock::duration produce_delay{};
+            RPTEST_REQUIRE_EVENTUALLY(
+              5s,
+              [&qm, &produce_delay, now, max_rate](
+                this auto) -> ss::future<bool> {
+                  produce_delay = co_await qm.record_produce_tp_and_throttle(
+                    user, cid, 2 * max_rate.produce_bytes, now);
+                  co_return produce_delay > 0s;
+              });
 
+            quota_manager::clock::duration consume_delay{};
+            RPTEST_REQUIRE_EVENTUALLY(
+              5s,
+              [&qm, &consume_delay, now, max_rate](
+                this auto) -> ss::future<bool> {
+                  co_await qm.record_fetch_tp(
+                    user, cid, 2 * max_rate.consume_bytes, now);
+                  consume_delay = co_await qm.throttle_fetch_tp(user, cid, now);
+                  co_return consume_delay > 0s;
+              });
+
+            // partition mutations report the deficit of the preceding call, so
+            // a second call is needed to read back what the first recorded
+            std::chrono::milliseconds pm_delay{};
+            RPTEST_REQUIRE_EVENTUALLY(
+              5s,
+              [&qm, &pm_delay, now, max_rate](this auto) -> ss::future<bool> {
+                  co_await qm.record_partition_mutations(
+                    user, cid, 2 * max_rate.n_mutations, now);
+                  pm_delay = co_await qm.record_partition_mutations(
+                    user, cid, 0, now);
+                  co_return pm_delay > 0ms;
+              });
+
+            const delays throttle{produce_delay, consume_delay, pm_delay};
             BOOST_REQUIRE_EQUAL(throttle, one_sec);
         }
     }
