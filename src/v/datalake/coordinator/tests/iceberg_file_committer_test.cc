@@ -824,6 +824,7 @@ TEST_F(FileCommitterTest, TestColumnStatsInManifest) {
     cs.lower_bound = bytes::from_string("aardvark");
     cs.upper_bound = bytes::from_string("zebra");
     cs.null_value_count = 5;
+    cs.nan_value_count = 3;
     cs.value_count = 100;
     cs.column_size_bytes = 4096;
 
@@ -898,6 +899,10 @@ TEST_F(FileCommitterTest, TestColumnStatsInManifest) {
 
     ASSERT_NE(ifile.column_sizes->find(fid), ifile.column_sizes->end());
     EXPECT_EQ(4096, ifile.column_sizes->at(fid));
+
+    ASSERT_TRUE(ifile.nan_value_counts.has_value());
+    ASSERT_NE(ifile.nan_value_counts->find(fid), ifile.nan_value_counts->end());
+    EXPECT_EQ(3, ifile.nan_value_counts->at(fid));
 }
 
 // With a byte-based commit limit, files carrying large column stats are split

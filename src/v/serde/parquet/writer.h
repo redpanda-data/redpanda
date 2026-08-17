@@ -127,6 +127,8 @@ public:
         int64_t value_count = 0;
         /// Total compressed size in bytes across all row groups.
         int64_t column_size_bytes = 0;
+        /// Total number of NaN values across all row groups.
+        int64_t nan_value_count = 0;
     };
     chunked_vector<file_column_stats> column_file_stats();
 

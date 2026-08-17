@@ -104,6 +104,10 @@ public:
     // to this column. Must be called after the final flush_pages().
     statistics file_column_stats();
 
+    // Total NaN count across all row groups. Must be called after the final
+    // flush_pages(). Non-zero only for float/double columns.
+    int64_t file_nan_count();
+
 private:
     std::unique_ptr<impl> _impl;
 };
