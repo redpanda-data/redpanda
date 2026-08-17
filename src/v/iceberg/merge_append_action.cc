@@ -688,21 +688,44 @@ merge_append_action::pack_mlist_and_new_data(
           merged_bins.end(),
           std::back_inserter(new_mfiles));
 
-        // Merge the rest of the bins.
-        for (size_t i = 1; i < binned_mfiles.size(); i++) {
-            auto& bin = binned_mfiles[i];
-            if (bin.size() == 1) {
-                // The bin has only a single manifest so there's nothing to do,
-                // just add it as is.
-                new_mfiles.emplace_back(std::move(bin[0]));
-                continue;
-            }
-            auto merged_bin_res = co_await merge_mfiles(
-              std::move(bin), {}, std::nullopt, *pspec, ctx);
-            if (merged_bin_res.has_error()) {
-                co_return merged_bin_res.error();
-            }
-            new_mfiles.emplace_back(std::move(merged_bin_res.value()));
+        // Merge the rest of the bins in parallel. Each bin is an
+        // independent set of manifests that can be merged concurrently.
+        // Results are collected in a parallel vector to preserve bin order.
+        static constexpr size_t max_concurrent_bin_merges = 8;
+        auto remaining_bins = binned_mfiles.size() - 1;
+        chunked_vector<std::optional<manifest_file>> merged_results;
+        merged_results.reserve(remaining_bins);
+        for (size_t i = 0; i < remaining_bins; ++i) {
+            merged_results.emplace_back(std::nullopt);
+        }
+        std::optional<action::errc> bin_error;
+        auto indices = std::views::iota(size_t{0}, remaining_bins);
+        co_await ss::max_concurrent_for_each(
+          indices.begin(),
+          indices.end(),
+          max_concurrent_bin_merges,
+          [&](this auto, size_t i) -> ss::future<> {
+              auto& bin = binned_mfiles[i + 1];
+              if (bin.size() == 1) {
+                  merged_results[i] = std::move(bin[0]);
+                  co_return;
+              }
+              if (bin_error) {
+                  co_return;
+              }
+              auto merged_bin_res = co_await merge_mfiles(
+                std::move(bin), {}, std::nullopt, *pspec, ctx);
+              if (merged_bin_res.has_error()) {
+                  bin_error = merged_bin_res.error();
+                  co_return;
+              }
+              merged_results[i] = std::move(merged_bin_res.value());
+          });
+        if (bin_error) {
+            co_return *bin_error;
+        }
+        for (auto& mf : merged_results) {
+            new_mfiles.emplace_back(std::move(*mf));
         }
     }
     co_return new_mfiles;
