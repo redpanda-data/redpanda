@@ -266,14 +266,17 @@ SEASTAR_THREAD_TEST_CASE(update_test) {
         f.quota_store.local().set_quota(franz_go_key, *franz_go_values);
         f.quota_store.local().set_quota(not_franz_go_key, *not_franz_go_values);
 
-        // Wait for the quota update to propagate
-        ss::sleep(std::chrono::milliseconds(1)).get();
+        // update_client_quotas() applies store changes to the token buckets
+        // from a background fiber
+        RPTEST_REQUIRE_EVENTUALLY(5s, [&buckets_map, &client_id] {
+            auto it = buckets_map->find(k_group_name{client_id});
+            return it != buckets_map->end()
+                   && it->second->tp_fetch_rate.has_value()
+                   && it->second->tp_fetch_rate->rate() == 4098;
+        });
 
-        // Check the rate has been updated
         auto it = buckets_map->find(k_group_name{client_id});
         BOOST_REQUIRE(it != buckets_map->end());
-        BOOST_REQUIRE(it->second->tp_fetch_rate.has_value());
-        BOOST_CHECK_EQUAL(it->second->tp_fetch_rate->rate(), 4098);
 
         // Check produce is the same bucket
         BOOST_REQUIRE(it->second->tp_produce_rate.has_value());
@@ -312,13 +315,14 @@ SEASTAR_THREAD_TEST_CASE(update_test) {
         franz_go_values->producer_byte_rate = std::nullopt;
         f.quota_store.local().set_quota(franz_go_key, *franz_go_values);
 
-        // Wait for the quota update to propagate
-        ss::sleep(std::chrono::milliseconds(1)).get();
+        RPTEST_REQUIRE_EVENTUALLY(5s, [&buckets_map, &client_id] {
+            auto it = buckets_map->find(k_group_name{client_id});
+            return it != buckets_map->end()
+                   && !it->second->tp_produce_rate.has_value();
+        });
 
-        // Check the produce rate has been updated on the group
         auto it = buckets_map->find(k_group_name{client_id});
         BOOST_REQUIRE(it != buckets_map->end());
-        BOOST_CHECK(!it->second->tp_produce_rate.has_value());
 
         // Check fetch is the same bucket
         BOOST_REQUIRE(it->second->tp_fetch_rate.has_value());
@@ -356,14 +360,12 @@ SEASTAR_THREAD_TEST_CASE(update_test) {
         auto value = entity_value{.consumer_byte_rate = 16384};
         f.quota_store.local().set_quota(key, value);
 
-        // Wait for the quota update to propagate
-        ss::sleep(std::chrono::milliseconds(1)).get();
-
-        // Check the rate has been updated
-        auto it = buckets_map->find(k_client_id{client_id});
-        BOOST_REQUIRE(it != buckets_map->end());
-        BOOST_REQUIRE(it->second->tp_fetch_rate.has_value());
-        BOOST_CHECK_EQUAL(it->second->tp_fetch_rate->rate(), 16384);
+        RPTEST_REQUIRE_EVENTUALLY(5s, [&buckets_map, &client_id] {
+            auto it = buckets_map->find(k_client_id{client_id});
+            return it != buckets_map->end()
+                   && it->second->tp_fetch_rate.has_value()
+                   && it->second->tp_fetch_rate->rate() == 16384;
+        });
     }
 }
 
