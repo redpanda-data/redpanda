@@ -213,6 +213,8 @@ fmt::iterator format_to(errc err, fmt::iterator out) {
         return fmt::format_to(out, "cluster::errc::topic_id_already_exists");
     case errc::feature_sanctioned:
         return fmt::format_to(out, "cluster::errc::feature_sanctioned");
+    case errc::offset_out_of_range:
+        return fmt::format_to(out, "cluster::errc::offset_out_of_range");
         REDPANDA_BEGIN_IGNORE_DEPRECATIONS
     case errc::inconsistent_stm_update:
         return fmt::format_to(

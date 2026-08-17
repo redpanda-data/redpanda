@@ -52,6 +52,8 @@ constexpr error_code map_topic_error_code(cluster::errc code) {
         return error_code::not_coordinator;
     case cluster::errc::invalid_request:
         return error_code::invalid_request;
+    case cluster::errc::offset_out_of_range:
+        return error_code::offset_out_of_range;
     case cluster::errc::throttling_quota_exceeded:
         return error_code::throttling_quota_exceeded;
     case cluster::errc::update_in_progress:

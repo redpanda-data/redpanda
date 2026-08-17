@@ -78,13 +78,19 @@ struct produced_batch {
 class in_memory_proxy : public kafka::partition_proxy::impl {
 public:
     in_memory_proxy(
-      const model::ktp& ktp, ss::chunked_fifo<produced_batch>* produced_batches)
+      const model::ktp& ktp,
+      ss::chunked_fifo<produced_batch>* produced_batches,
+      model::offset start_offset = model::offset{0})
       : _ntp(ktp.to_ntp())
-      , _produced_batches(produced_batches) {}
+      , _produced_batches(produced_batches)
+      , _start_offset(start_offset) {}
     in_memory_proxy(
-      model::ntp ntp, ss::chunked_fifo<produced_batch>* produced_batches)
+      model::ntp ntp,
+      ss::chunked_fifo<produced_batch>* produced_batches,
+      model::offset start_offset = model::offset{0})
       : _ntp(std::move(ntp))
-      , _produced_batches(produced_batches) {}
+      , _produced_batches(produced_batches)
+      , _start_offset(start_offset) {}
 
     const model::ntp& ntp() const final { return _ntp; }
     ss::future<result<model::offset, kafka::error_code>>
@@ -94,9 +100,7 @@ public:
     model::offset local_start_offset() const final {
         throw std::runtime_error("unimplemented");
     }
-    model::offset start_offset() const final {
-        throw std::runtime_error("unimplemented");
-    }
+    model::offset start_offset() const final { return _start_offset; }
     model::offset high_watermark() const final {
         return model::next_offset(latest_offset());
     }
@@ -151,8 +155,12 @@ public:
         throw std::runtime_error("unimplemented");
     }
     ss::future<kafka::error_code> validate_fetch_offset(
-      model::offset, bool, model::timeout_clock::time_point) final {
-        throw std::runtime_error("unimplemented");
+      model::offset fetch_offset,
+      bool,
+      model::timeout_clock::time_point) final {
+        co_return fetch_offset < _start_offset
+          ? kafka::error_code::offset_out_of_range
+          : kafka::error_code::none;
     }
 
     ss::future<result<model::offset>> replicate(
@@ -215,6 +223,7 @@ private:
 
     model::ntp _ntp;
     ss::chunked_fifo<produced_batch>* _produced_batches;
+    model::offset _start_offset;
 };
 
 class fake_partition_leader_cache : public partition_leader_cache {
@@ -428,6 +437,10 @@ public:
 
     void set_errors(int n) { _errors_to_inject = n; }
 
+    void set_start_offset(const model::ntp& ntp, model::offset o) {
+        _start_offsets.insert_or_assign(ntp, o);
+    }
+
     void set_shard_owner(const model::ntp& ntp, ss::shard_id shard_id) {
         _shard_locations.insert_or_assign(ntp, shard_id);
     }
@@ -464,7 +477,8 @@ public:
             co_await _stall_cv.wait([this] { return !_stalled; });
         }
         auto pp = kafka::partition_proxy(
-          std::make_unique<in_memory_proxy>(ntp, &_produced_batches));
+          std::make_unique<in_memory_proxy>(
+            ntp, &_produced_batches, start_offset(ntp)));
         co_return co_await fn(&pp);
     }
 
@@ -473,11 +487,18 @@ public:
     }
 
 private:
+    template<typename N>
+    model::offset start_offset(const N& ntp) const {
+        auto it = _start_offsets.find(ntp);
+        return it == _start_offsets.end() ? model::offset{0} : it->second;
+    }
+
     int _errors_to_inject = 0;
     bool _stalled{false};
     ss::condition_variable _stall_cv;
     ss::chunked_fifo<produced_batch> _produced_batches;
     model::ntp_map_type<ss::shard_id> _shard_locations;
+    model::ntp_map_type<model::offset> _start_offsets;
 };
 
 class fake_partition_manager : public partition_manager {
@@ -492,6 +513,10 @@ public:
     }
 
     void set_errors(int n) { _fake_proxy->set_errors(n); }
+
+    void set_start_offset(const model::ntp& ntp, model::offset o) {
+        _fake_proxy->set_start_offset(ntp, o);
+    }
 
     void set_shard_owner(const model::ntp& ntp, ss::shard_id shard_id) {
         _fake_proxy->set_shard_owner(ntp, shard_id);

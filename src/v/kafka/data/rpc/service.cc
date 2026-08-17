@@ -20,6 +20,7 @@
 #include "model/record_batch_reader.h"
 #include "model/timeout_clock.h"
 #include "raft/errc.h"
+#include "storage/exceptions.h"
 
 #include <seastar/core/chunked_fifo.hh>
 #include <seastar/core/future.hh>
@@ -159,6 +160,7 @@ local_service::get_partition_offsets(
           return ssx::now<ret_t>(partition_offsets{
             .high_watermark = model::offset_cast(partition->high_watermark()),
             .last_stable_offset = model::offset_cast(lso_r.value()),
+            .start_offset = model::offset_cast(partition->start_offset()),
           });
       });
 }
@@ -212,6 +214,25 @@ local_service::consume(
               co_return cluster::errc::not_leader;
           }
 
+          auto deadline = model::timeout_clock::now() + timeout;
+
+          auto offset_ec = co_await partition->validate_fetch_offset(
+            kafka::offset_cast(start_offset),
+            /*is_follower=*/false,
+            deadline);
+          if (offset_ec == kafka::error_code::offset_out_of_range) {
+              co_return cluster::errc::offset_out_of_range;
+          }
+          if (offset_ec != kafka::error_code::none) {
+              vlog(
+                log.warn,
+                "Error validating fetch offset {} on partition {}: {}",
+                start_offset,
+                partition->ntp(),
+                offset_ec);
+              co_return cluster::errc::partition_operation_failed;
+          }
+
           // Create log reader config
           kafka::log_reader_config reader_cfg(
             start_offset,
@@ -223,23 +244,30 @@ local_service::consume(
             std::nullopt,  // client_address
             false);        // strict_max_bytes
 
-          auto deadline = model::timeout_clock::now() + timeout;
-
-          // Create reader
-          auto translating_reader = co_await partition->make_reader(reader_cfg);
-
-          // Consume batches from reader
+          // Create reader and consume batches from it
           try {
+              auto translating_reader = co_await partition->make_reader(
+                reader_cfg);
               co_return co_await model::consume_reader_to_chunked_vector(
                 std::move(translating_reader.reader), deadline);
           } catch (const ss::timed_out_error&) {
               co_return cluster::errc::timeout;
+          } catch (const translation_offset_out_of_range& e) {
+              vlog(
+                log.warn,
+                "Offset {} is outside the translation range of partition {}: "
+                "{}",
+                start_offset,
+                partition->ntp(),
+                e.what());
+              co_return cluster::errc::offset_out_of_range;
           } catch (...) {
+              auto eptr = std::current_exception();
               vlog(
                 log.warn,
                 "Error consuming from partition {}: {}",
                 partition->ntp(),
-                std::current_exception());
+                eptr);
               co_return cluster::errc::partition_operation_failed;
           }
       });

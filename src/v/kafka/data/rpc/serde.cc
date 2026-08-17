@@ -81,9 +81,10 @@ fmt::iterator topic_partitions::format_to(fmt::iterator it) const {
 fmt::iterator partition_offsets::format_to(fmt::iterator it) const {
     return fmt::format_to(
       it,
-      "{{ high_watermark: {}, last_stable_offset: {} }}",
+      "{{ high_watermark: {}, last_stable_offset: {}, start_offset: {} }}",
       high_watermark,
-      last_stable_offset);
+      last_stable_offset,
+      start_offset);
 }
 
 fmt::iterator partition_offset_result::format_to(fmt::iterator it) const {

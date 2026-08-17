@@ -104,6 +104,7 @@ enum class errc : int16_t {
     invalid_target_node_id,
     topic_id_already_exists,
     feature_sanctioned,
+    offset_out_of_range,
 };
 
 fmt::iterator format_to(errc err, fmt::iterator);
@@ -298,6 +299,9 @@ struct errc_category final : public std::error_category {
             return "A topic with the given id already exists";
         case errc::feature_sanctioned:
             return "Unable to use requested feature - license is invalid";
+        case errc::offset_out_of_range:
+            return "Requested offset is outside of the available range of the "
+                   "partition";
             REDPANDA_BEGIN_IGNORE_DEPRECATIONS
             // unused in the codebase but still in the enum, include it here
             // since clang wants switches to be exhaustive
