@@ -12,6 +12,21 @@ type Version struct {
 	Patch   int
 }
 
+// versionPattern matches an optionally v-prefixed MAJOR.FEATURE.PATCH semver
+// core with an optional prerelease/build suffix (e.g. -rc1, -dev, -nightly,
+// -beta.1, +build5, -rc.1+build.5). Segments are unbounded in width. Capture
+// groups are Major, Feature, and Patch.
+const versionPattern = `v?(\d+)\.(\d+)\.(\d+)(?:[-+][0-9A-Za-z.+-]+)?`
+
+var (
+	// versionRe matches a version (including any optional prerelease/build
+	// suffix, e.g. "22.3.4-dirty") at the start of a string, tolerating
+	// trailing text after whitespace, e.g. "v22.3.4 - 9eefb90... - dirty".
+	versionRe = regexp.MustCompile(`^` + versionPattern + `(?:\s|$)`)
+	// strictVersionRe requires the entire string to be a version.
+	strictVersionRe = regexp.MustCompile(`^` + versionPattern + `$`)
+)
+
 // VersionFromString creates a Version struct based on a passed string that
 // contains the semver version string.
 func VersionFromString(s string) (Version, error) {
@@ -20,7 +35,7 @@ func VersionFromString(s string) (Version, error) {
 	//   - index 1: the Major
 	//   - index 2: the Feature
 	//   - index 3: the Patch
-	vMatch := regexp.MustCompile(`^v?(\d+)\.(\d+)\.(\d+)(?:\s|-rc\d+|-dev|-nightly|$)`).FindStringSubmatch(s)
+	vMatch := versionRe.FindStringSubmatch(s)
 
 	if len(vMatch) == 0 {
 		return Version{}, fmt.Errorf("unable to get the redpanda version from %q", s)
@@ -42,6 +57,13 @@ func VersionFromString(s string) (Version, error) {
 		return Version{}, fmt.Errorf("unable to parse patch version from %q: %v", s, err)
 	}
 	return Version{y, f, p}, nil
+}
+
+// ValidVersion reports whether s is exactly a semantic version, optionally
+// v-prefixed, with an optional prerelease/build suffix (e.g. 4.102.0,
+// v25.3.5, 4.102.0-rc1) and no surrounding text.
+func ValidVersion(s string) bool {
+	return strictVersionRe.MatchString(s)
 }
 
 // Less returns true if the version is lower than the passed 'b' version.

@@ -34,6 +34,12 @@ func TestVersionFromString(t *testing.T) {
 		{name: "3 digit feature with text", in: "4.103.1 - 9eefb907c43bf1cfeb0783808c224385c857c0d4-dirty", exp: Version{4, 103, 1}},
 		{name: "non-digit version", in: "AB.C.D", expErr: true},
 		{name: "segment overflows int", in: "4.99999999999999999999.0", expErr: true},
+		{name: "beta prerelease", in: "4.102.0-beta1", exp: Version{4, 102, 0}},
+		{name: "build metadata", in: "4.102.0+build5", exp: Version{4, 102, 0}},
+		{name: "dirty suffix without space", in: "22.3.4-dirty", exp: Version{22, 3, 4}},
+		{name: "suffix then text", in: "4.102.0-beta.1 - 9eefb907c43bf1cfeb0783808c224385c857c0d4", exp: Version{4, 102, 0}},
+		{name: "trailing dash", in: "22.3.4-", expErr: true},
+		{name: "four segments", in: "1.2.3.4", expErr: true},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			got, err := VersionFromString(test.in)
@@ -44,6 +50,23 @@ func TestVersionFromString(t *testing.T) {
 			require.NoError(t, err)
 			require.Equal(t, test.exp, got)
 		})
+	}
+}
+
+func TestValidVersion(t *testing.T) {
+	for _, ok := range []string{
+		"4.99.0", "4.102.0", "v4.102.0", "4.102.0-rc1", "4.102.100",
+		"0.1.2", "v0.1.2", "1.2.3-rc1", "25.3.5", "v25.3.5",
+		"4.102.0-beta1", "4.102.0+build5", "1.2.3-rc.1+build.5", "26.1.0-nightly",
+	} {
+		require.True(t, ValidVersion(ok), ok)
+	}
+	for _, bad := range []string{
+		"", "latest", "abc", "4", "4.102", "garbage",
+		"4.102.0garbage", "4.102.0 ", " 4.102.0", "4.102.0-", "1.2.3.4",
+		"v22.3.4 - 9eefb907-dirty",
+	} {
+		require.False(t, ValidVersion(bad), bad)
 	}
 }
 

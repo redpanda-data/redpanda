@@ -12,13 +12,13 @@ package k8s
 import (
 	"context"
 	"fmt"
-	"regexp"
 	"strings"
 
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/fips"
 	rpkos "github.com/redpanda-data/redpanda/src/go/rpk/pkg/osutil"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/out"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/plugin"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/redpanda"
 	"github.com/spf13/afero"
 	"github.com/spf13/cobra"
 	"go.uber.org/zap"
@@ -125,16 +125,14 @@ func downloadAndInstallK8sPlugin(ctx context.Context, fs afero.Fs, installPath, 
 	return path, nil
 }
 
-// validateVersion accepts 'latest' or a MAJOR.MINOR.PATCH prefix (optionally
-// v-prefixed); the manifest is the source of truth for what is published.
+// validateVersion accepts 'latest' or a full semantic version (optionally
+// v-prefixed, optionally with a prerelease/build suffix such as -rc1);
+// the manifest is the source of truth for what is published.
 func validateVersion(version string) error {
-	if version == "latest" {
+	if version == "latest" || redpanda.ValidVersion(version) {
 		return nil
 	}
-	if !regexp.MustCompile(`^v?\d{1,2}\.\d{1,2}\.\d{1,2}`).MatchString(version) {
-		return fmt.Errorf("provided version %q is not valid. Ensure it is either 'latest' or it follows the format MAJOR.MINOR.PATCH (e.g., 25.3.5)", version)
-	}
-	return nil
+	return fmt.Errorf("provided version %q is not valid. Ensure it is either 'latest' or it follows the format MAJOR.MINOR.PATCH (e.g., 25.3.5)", version)
 }
 
 // shadowingSelfManaged reports the path of a self-managed k8s plugin that

@@ -12,13 +12,13 @@ package ai
 import (
 	"context"
 	"fmt"
-	"regexp"
 	"strings"
 
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/fips"
 	rpkos "github.com/redpanda-data/redpanda/src/go/rpk/pkg/osutil"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/out"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/plugin"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/redpanda"
 	"github.com/spf13/afero"
 	"github.com/spf13/cobra"
 	"go.uber.org/zap"
@@ -122,19 +122,14 @@ func downloadAndInstallAIPlugin(ctx context.Context, fs afero.Fs, installPath, d
 }
 
 // validateVersion validates that the provided version flag is either
-// 'latest' or starts with a MAJOR.MINOR.PATCH prefix (optionally v-prefixed).
-// The regex is intentionally loose on the suffix so prereleases like
-// "0.1.2-rc1" are accepted and forwarded to the manifest for lookup; the
-// manifest is then the source of truth for what's actually published.
+// 'latest' or a full semantic version (optionally v-prefixed, optionally with
+// a prerelease/build suffix such as -rc1, which is forwarded to the manifest
+// for lookup; the manifest is the source of truth for what is published).
 func validateVersion(version string) error {
-	if version == "latest" {
+	if version == "latest" || redpanda.ValidVersion(version) {
 		return nil
 	}
-	vMatch := regexp.MustCompile(`^v?\d{1,2}\.\d{1,2}\.\d{1,2}`).MatchString(version)
-	if !vMatch {
-		return fmt.Errorf("provided version %q is not valid. Ensure it is either 'latest' or it follows the format MAJOR.MINOR.PATCH (e.g., 0.1.2)", version)
-	}
-	return nil
+	return fmt.Errorf("provided version %q is not valid. Ensure it is either 'latest' or it follows the format MAJOR.MINOR.PATCH (e.g., 0.1.2)", version)
 }
 
 // maybeExitFIPS exits with a clear error if fips is enabled. The rpk ai

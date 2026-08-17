@@ -12,12 +12,12 @@ package check
 import (
 	"context"
 	"fmt"
-	"regexp"
 	"strings"
 
 	rpkos "github.com/redpanda-data/redpanda/src/go/rpk/pkg/osutil"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/out"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/plugin"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/redpanda"
 	"github.com/spf13/afero"
 	"github.com/spf13/cobra"
 	"go.uber.org/zap"
@@ -117,13 +117,13 @@ func downloadAndInstallCheck(ctx context.Context, fs afero.Fs, installPath, down
 	return path, nil
 }
 
+// validateVersion validates that the provided version flag is either
+// 'latest' or a full semantic version (optionally v-prefixed, optionally with
+// a prerelease/build suffix such as -rc1, which is forwarded to the manifest
+// for lookup; the manifest is the source of truth for what is published).
 func validateVersion(version string) error {
-	if version == "latest" {
+	if version == "latest" || redpanda.ValidVersion(version) {
 		return nil
 	}
-	vMatch := regexp.MustCompile(`^v?\d{1,2}\.\d{1,2}\.\d{1,2}`).MatchString(version)
-	if !vMatch {
-		return fmt.Errorf("provided version %q is not valid. Ensure it is either 'latest' or follows the format MAJOR.MINOR.PATCH (e.g., 0.1.0)", version)
-	}
-	return nil
+	return fmt.Errorf("provided version %q is not valid. Ensure it is either 'latest' or follows the format MAJOR.MINOR.PATCH (e.g., 0.1.0)", version)
 }
