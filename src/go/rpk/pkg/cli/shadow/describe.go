@@ -300,6 +300,7 @@ func printCloudShadowLinkDescription(f config.OutFormatter, link *controlplanev1
 			secConsumerOffset: opts.co,
 			secSecurity:       opts.sec,
 			secSchemaRegistry: opts.sr,
+			secRole:           opts.role,
 		})...,
 	)
 
@@ -325,6 +326,10 @@ func printCloudShadowLinkDescription(f config.OutFormatter, link *controlplanev1
 
 	sections.Add(secSchemaRegistry, func() {
 		printSchemaRegistrySync(link.GetSchemaRegistrySyncOptions())
+	})
+
+	sections.Add(secRole, func() {
+		printRoleSync(link.GetRoleSyncOptions())
 	})
 }
 
@@ -758,6 +763,7 @@ func fromCloudShadowLinkDescription(link *controlplanev1.ShadowLink) shadowLinkD
 		ConsumerOffsetSyncOptions: buildDescribeConsumerOffsetOptions(link.GetConsumerOffsetSyncOptions()),
 		SecuritySyncOptions:       buildDescribeSecurityOptions(link.GetSecuritySyncOptions()),
 		SchemaRegistrySyncOptions: buildDescribeSchemaRegistryOptions(link.GetSchemaRegistrySyncOptions()),
+		RoleSyncOptions:           buildDescribeRoleOptions(link.GetRoleSyncOptions()),
 	}
 }
 
