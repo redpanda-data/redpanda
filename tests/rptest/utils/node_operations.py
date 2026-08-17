@@ -139,6 +139,9 @@ class NodeDecommissionWaiter:
         logger: Any,
         progress_timeout: int = 30,
         decommissioned_node_ids: list[int] | None = None,
+        failure_injector: "FailureInjectorBackgroundThread | None" = None,
+        chaos_settle_sec: int = 120,
+        chaos_max_wait_sec: int | None = None,
     ) -> None:
         self.redpanda: RedpandaService = redpanda
         self.node_id: int = node_id
@@ -151,6 +154,22 @@ class NodeDecommissionWaiter:
         self.decommissioned_node_ids: list[int] = (
             [node_id] if decommissioned_node_ids is None else decommissioned_node_ids
         )
+        # while chaos testing is actively injecting failures, a stalled
+        # balancer is expected (see redpanda-node-decommission-progress-tracking
+        # note): don't count it as "stopped making progress" until it has been
+        # quiet for chaos_settle_sec. chaos_max_wait_sec bounds how long a
+        # *genuine* stall (e.g. permanent quorum loss) can hide behind
+        # chaos_settle_sec by measuring inactivity since the last real
+        # progress, not wall-clock time since wait_for_removal() started, so
+        # it never fires on a decommission that keeps making progress -- only
+        # opt in when a failure_injector is actually driving chaos; other
+        # callers get no wall-clock cap at all, same as before chaos_settle_sec
+        # existed.
+        self.failure_injector: "FailureInjectorBackgroundThread | None" = (
+            failure_injector
+        )
+        self.chaos_settle_sec: int = chaos_settle_sec
+        self.chaos_max_wait_sec: int | None = chaos_max_wait_sec
 
     def _dump_partition_move_available_bandwidth(self) -> None:
         def get_metric(self: "NodeDecommissionWaiter", node: Any) -> Any:
@@ -185,7 +204,29 @@ class NodeDecommissionWaiter:
 
     def _made_progress(self) -> bool:
         assert self.last_update is not None
-        return (time.time() - self.last_update) < self.progress_timeout
+        since_last_progress = time.time() - self.last_update
+        if since_last_progress < self.progress_timeout:
+            return True
+
+        last_failure_at = (
+            self.failure_injector.last_failure_at if self.failure_injector else None
+        )
+        if (
+            last_failure_at is None
+            or (time.time() - last_failure_at) >= self.chaos_settle_sec
+        ):
+            return False
+
+        # chaos is recent enough to explain the inactivity, but only up to
+        # chaos_max_wait_sec of it -- past that a genuine stall shouldn't
+        # be masked forever just because the injector keeps firing elsewhere.
+        if (
+            self.chaos_max_wait_sec is not None
+            and since_last_progress >= self.chaos_max_wait_sec
+        ):
+            return False
+
+        return True
 
     def _node_removed(self) -> bool:
         brokers = []
@@ -288,6 +329,9 @@ class NodeOpsExecutor:
         logger: Logger,
         lock: threading.Lock,
         progress_timeout: int = 60,
+        failure_injector: "FailureInjectorBackgroundThread | None" = None,
+        chaos_settle_sec: int = 120,
+        chaos_max_wait_sec: int | None = None,
     ) -> None:
         self.redpanda = redpanda
         self.logger = logger
@@ -295,6 +339,9 @@ class NodeOpsExecutor:
         self.lock = lock
         self.progress_timeout = progress_timeout
         self.override_config_params: dict[str, Any] | None = None
+        self.failure_injector = failure_injector
+        self.chaos_settle_sec = chaos_settle_sec
+        self.chaos_max_wait_sec = chaos_max_wait_sec
 
     def node_id(self, idx: int) -> int:
         return self.redpanda.node_id(self.redpanda.get_node(idx), force_refresh=True)
@@ -385,6 +432,9 @@ class NodeOpsExecutor:
             node_id=node_id,
             logger=self.logger,
             progress_timeout=self.progress_timeout,
+            failure_injector=self.failure_injector,
+            chaos_settle_sec=self.chaos_settle_sec,
+            chaos_max_wait_sec=self.chaos_max_wait_sec,
         )
 
         waiter.wait_for_removal()
@@ -533,6 +583,9 @@ class FailureInjectorBackgroundThread:
         self.allowed_failures = failure_specs
         self.lock = lock
         self.error: Exception | None = None
+        # timestamp of the last injected failure, read by NodeDecommissionWaiter
+        # to avoid treating an in-progress chaos run as a stalled decommission
+        self.last_failure_at: float | None = None
 
     def start(self) -> None:
         assert self.thread is None, "failure injector thread already started"
@@ -578,6 +631,7 @@ class FailureInjectorBackgroundThread:
                         f_injector.inject_failure(
                             FailureSpec(node=node, type=f_type, length=length)
                         )
+                        self.last_failure_at = time.time()
                     except Exception as e:
                         self.logger.warn(f"error injecting failure - {e}")
                         self.error = e
