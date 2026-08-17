@@ -103,6 +103,39 @@ TEST(ChunkedKVTest, EvictionTest) {
     }
 }
 
+TEST(ChunkedKVTest, IndexBoundedUnderChurnTest) {
+    using cache_type = utils::chunked_kv_cache<int, std::string>;
+
+    constexpr size_t cache_size = 8;
+    constexpr size_t small_size = 2;
+    cache_type cache(
+      cache_type::config{.cache_size = cache_size, .small_size = small_size});
+    auto str = "avaluestr";
+
+    // An untouched key that gets evicted from the small queue onto the ghost
+    // queue.
+    EXPECT_TRUE(cache.try_insert(0, ss::make_shared<std::string>(str)));
+
+    // Churn distinct keys that are always touched, so they are promoted to the
+    // main queue and evicted from there, never entering the ghost queue.
+    constexpr int churn = 100 * cache_size;
+    for (int i = 1; i <= churn; i++) {
+        EXPECT_TRUE(cache.try_insert(i, ss::make_shared<std::string>(str)));
+        // Touch twice so small-queue eviction promotes instead of ghosting.
+        EXPECT_TRUE(cache.get_value(i));
+        EXPECT_TRUE(cache.get_value(i));
+    }
+
+    auto stat = cache.stat();
+    // The queue accounting stays bounded regardless of the index size.
+    EXPECT_LE(stat.small_queue_size + stat.main_queue_size, cache_size + 1);
+    // At most the resident entries (capacity may be exceeded by one) plus a
+    // main queue's worth of ghost entries.
+    constexpr size_t max_index_size = (cache_size + 1)
+                                      + (cache_size - small_size);
+    EXPECT_LE(stat.index_size, max_index_size);
+}
+
 TEST(ChunkedKVTest, GhostToMainTest) {
     using cache_type = utils::chunked_kv_cache<int, std::string>;
 
