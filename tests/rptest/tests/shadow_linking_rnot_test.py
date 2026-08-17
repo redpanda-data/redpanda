@@ -546,6 +546,12 @@ class ShadowLinkingRandomOpsTest(ShadowLinkTestBase):
             self.logger,
             lock,
             progress_timeout=120,
+            failure_injector=self.fi,
+            # bounds how long a genuine decommission stall can hide behind
+            # ongoing chaos (see NodeDecommissionWaiter); this only measures
+            # inactivity since the last real progress, so it doesn't affect a
+            # decommission that keeps moving partitions
+            chaos_max_wait_sec=240,
         )
 
         for i, op in enumerate(
