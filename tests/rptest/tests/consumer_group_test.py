@@ -599,6 +599,10 @@ class ConsumerGroupTest(RedpandaTest):
                         bootstrap_servers=self.redpanda.brokers(),
                         enable_auto_commit=True,
                         client_id=f"python-consumer-client-{i}",
+                        # kafka-python default 2s api-version probe budget is too tight under
+                        # concurrent connection setup on a loaded CI VM, producing spurious
+                        # NoBrokersAvailable during check_version() even though brokers are up.
+                        api_version_auto_timeout_ms=30000,
                     )
                     try:
                         consumer.subscribe([self.topic_spec.name])
