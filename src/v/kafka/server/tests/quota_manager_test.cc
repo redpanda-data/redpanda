@@ -776,14 +776,15 @@ SEASTAR_THREAD_TEST_CASE(record_fetch_tp_alone_does_not_register_probe) {
 }
 
 // After GC expires the local map entry the per-entity probe is destroyed
-// and the metric series is deregistered. A stale timestamp is passed so
-// last_seen_ms is already past the expire threshold (now - 10 * full_window)
-// the first time GC fires.
+// and the metric series is deregistered. GC expires an entry once last_seen_ms
+// is older than now - 10 * full_window, so the probe is first registered under
+// a 1s window (10s of slack, GC cannot remove it while we assert it exists) and
+// the window is then shrunk to make that same entry immediately eligible.
 SEASTAR_THREAD_TEST_CASE(per_entity_probe_deregistered_on_gc) {
     set_config([](config::configuration& conf) {
         conf.kafka_per_entity_quota_metrics.set_value(true);
         conf.quota_manager_gc_sec.set_value(std::chrono::milliseconds{10});
-        conf.default_window_sec.set_value(std::chrono::milliseconds{1});
+        conf.default_window_sec.set_value(std::chrono::milliseconds{1000});
         conf.default_num_windows.set_value(static_cast<int16_t>(1));
     }).get();
 
@@ -793,16 +794,13 @@ SEASTAR_THREAD_TEST_CASE(per_entity_probe_deregistered_on_gc) {
     f.quota_store.local().set_quota(default_key, default_values);
 
     auto& qm = f.sqm.local();
-    // 1 s in the past puts last_seen_ms well beyond expire_threshold
-    // (clock::now() - 10 * 1ms = clock::now() - 10ms).
-    const auto stale_now = quota_manager::clock::now() - 1s;
 
     quota_manager::clock::duration delay;
     tests::cooperative_spin_wait_with_timeout(
       5s,
-      [stale_now, &qm, &delay](this auto) -> ss::future<bool> {
+      [&qm, &delay](this auto) -> ss::future<bool> {
           delay = co_await qm.record_produce_tp_and_throttle(
-            user, cid, 10000, stale_now);
+            user, cid, 10000, quota_manager::clock::now());
           co_return delay > quota_manager::clock::duration::zero();
       })
       .get();
@@ -810,8 +808,12 @@ SEASTAR_THREAD_TEST_CASE(per_entity_probe_deregistered_on_gc) {
     BOOST_REQUIRE(
       has_entity_throttle_metric("client_id", "franz-go", "produce_quota"));
 
-    // No more quota calls - last_seen_ms stays stale. GC fires at ~10ms
-    // intervals; the entry is immediately eligible and the probe is destroyed.
+    // full_window drops to 1ms, putting last_seen_ms past the expire threshold.
+    // Nothing refreshes it, so the next GC tick destroys the probe.
+    set_config([](config::configuration& conf) {
+        conf.default_window_sec.set_value(std::chrono::milliseconds{1});
+    }).get();
+
     tests::cooperative_spin_wait_with_timeout(
       2s,
       [](this auto) -> ss::future<bool> {
