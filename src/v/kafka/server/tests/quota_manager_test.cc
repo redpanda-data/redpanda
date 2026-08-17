@@ -824,7 +824,10 @@ SEASTAR_THREAD_TEST_CASE(per_entity_probe_deregistered_on_gc) {
       !has_entity_throttle_metric("client_id", "franz-go", "produce_quota"));
 
     set_config([](config::configuration& conf) {
-        conf.kafka_per_entity_quota_metrics.set_value(false);
+        conf.kafka_per_entity_quota_metrics.reset();
+        conf.quota_manager_gc_sec.reset();
+        conf.default_window_sec.reset();
+        conf.default_num_windows.reset();
     }).get();
 }
 
