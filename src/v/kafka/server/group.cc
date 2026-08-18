@@ -1831,6 +1831,96 @@ void offset_store::insert_ongoing_tx(
       std::move(tx));
 }
 
+void offset_store::apply_tx_fence(
+  model::producer_identity pid,
+  model::tx_seq tx_seq,
+  model::timeout_clock::duration timeout,
+  model::partition_id coordinator_partition,
+  model::offset begin_offset) {
+    // The producer's state lives as long as its transaction: commit and abort
+    // drop it, the way the transaction tracker drops its own. An applied store
+    // has no term change to reset on, so a fenced epoch kept forever would
+    // grow without bound, and the coordinator that writes a fence is what
+    // refuses a fenced producer in the first place.
+    auto [it, inserted] = _producers.try_emplace(pid.get_id(), pid.get_epoch());
+    if (it->second.epoch > pid.get_epoch()) {
+        vlog(
+          _ctx_txlog.debug,
+          "dropping fence with stale epoch for producer: {}, stored epoch: {}",
+          pid,
+          it->second.epoch);
+        return;
+    }
+    it->second.epoch = pid.get_epoch();
+    it->second.transaction = std::make_unique<ongoing_transaction>(
+      ongoing_transaction(
+        tx_seq, coordinator_partition, timeout, begin_offset));
+}
+
+void offset_store::stage_tx_offsets(
+  model::producer_identity pid,
+  const group_tx::offsets_metadata& md,
+  model::offset log_offset) {
+    auto it = _producers.find(pid.get_id());
+    if (
+      it == _producers.end() || it->second.transaction == nullptr
+      || it->second.epoch != pid.get_epoch()) {
+        vlog(
+          _ctx_txlog.debug,
+          "no open transaction for producer: {}, skipping offsets update",
+          pid);
+        return;
+    }
+    for (const auto& tx_offset : md.offsets) {
+        it->second.transaction->offsets[tx_offset.tp] = pending_tx_offset{
+          .offset_metadata = tx_offset, .log_offset = log_offset};
+    }
+    it->second.transaction->update_last_update_time();
+}
+
+void offset_store::apply_tx_commit(
+  model::producer_identity pid, model::timestamp commit_ts) {
+    auto it = _producers.find(pid.get_id());
+    if (
+      it == _producers.end() || it->second.transaction == nullptr
+      || it->second.epoch != pid.get_epoch()) {
+        // a missing transaction is not an error: its offsets may already be
+        // committed and the fence compacted away
+        vlog(
+          _ctx_txlog.debug,
+          "no open transaction for producer: {}, skipping commit",
+          pid);
+        return;
+    }
+    for (const auto& [tp, md] : it->second.transaction->offsets) {
+        try_upsert_offset(
+          tp,
+          offset_metadata{
+            .log_offset = md.log_offset,
+            .offset = md.offset_metadata.offset,
+            .metadata = md.offset_metadata.metadata.value_or(""),
+            .committed_leader_epoch = kafka::leader_epoch(
+              md.offset_metadata.leader_epoch),
+            .commit_timestamp = commit_ts,
+          });
+    }
+    _producers.erase(it);
+}
+
+void offset_store::apply_tx_abort(model::producer_identity pid) {
+    auto it = _producers.find(pid.get_id());
+    if (
+      it == _producers.end() || it->second.transaction == nullptr
+      || it->second.epoch != pid.get_epoch()) {
+        vlog(
+          _ctx_txlog.debug,
+          "no open transaction for producer: {}, skipping abort",
+          pid);
+        return;
+    }
+    _producers.erase(it);
+}
+
 ss::future<cluster::commit_group_tx_reply>
 offset_store::commit_tx(cluster::commit_group_tx_request r) {
     vlog(_ctx_txlog.trace, "processing commit_tx request: {}", r);
@@ -3613,6 +3703,19 @@ bool offset_store::has_transactions_in_progress() const {
       [](const producers_map::value_type& p) {
           return p.second.transaction != nullptr;
       });
+}
+
+std::optional<model::offset> offset_store::earliest_tx_begin_offset() const {
+    std::optional<model::offset> earliest;
+    for (const auto& [_, producer] : _producers) {
+        if (producer.transaction == nullptr) {
+            continue;
+        }
+        earliest = std::min(
+          producer.transaction->begin_offset,
+          earliest.value_or(model::offset::max()));
+    }
+    return earliest;
 }
 
 ss::lw_shared_ptr<ssx::mutex>

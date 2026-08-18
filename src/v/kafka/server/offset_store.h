@@ -270,6 +270,43 @@ public:
     void
     insert_ongoing_tx(model::producer_identity pid, ongoing_transaction tx);
 
+    /// The mutators below are what applying a committed transaction control
+    /// batch does, so a state machine replaying the log builds the same state
+    /// the live path built. Each is guarded the way recovery is: a record that
+    /// does not match the producer state in hand is dropped.
+
+    /// Apply a fence: open the producer's transaction at the fence's offset.
+    /// A fence carrying an older epoch than the stored one is dropped.
+    void apply_tx_fence(
+      model::producer_identity pid,
+      model::tx_seq tx_seq,
+      model::timeout_clock::duration timeout,
+      model::partition_id coordinator_partition,
+      model::offset begin_offset);
+
+    /// Stage a prepared batch's offsets in the producer's open transaction.
+    /// Dropped when the transaction is not open at the batch's epoch.
+    void stage_tx_offsets(
+      model::producer_identity pid,
+      const group_tx::offsets_metadata& md,
+      model::offset log_offset);
+
+    /// Apply a commit: the staged offsets become committed offsets and the
+    /// transaction closes, dropping the producer's state. The commit record's
+    /// timestamp is what the offsets are committed at, so that every replica
+    /// commits them at the same time and a replay does not restamp them.
+    void
+    apply_tx_commit(model::producer_identity pid, model::timestamp commit_ts);
+
+    /// Apply an abort: the staged offsets are discarded and the transaction
+    /// closes, dropping the producer's state.
+    void apply_tx_abort(model::producer_identity pid);
+
+    /// The begin offset of the earliest open transaction, if one is open.
+    /// Compaction must not remove anything at or past it, so that replay can
+    /// re-establish the transaction.
+    std::optional<model::offset> earliest_tx_begin_offset() const;
+
     /// Fence the producer and replicate the fence record that opens a
     /// transaction.
     ss::future<cluster::begin_group_tx_reply>
