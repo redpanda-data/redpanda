@@ -33,11 +33,11 @@ func TestPrometheusURLFlagDeprecation(t *testing.T) {
 	require.Contains(t, cmd.Flag("prometheus-url").Deprecated, "Use --metrics-endpoint instead")
 }
 
-// TestClusterTypeStretch tests that --cluster-type stretch swaps in the
-// stretch variant of the operations dashboard while leaving dashboards
-// without a stretch variant untouched.
-func TestClusterTypeStretch(t *testing.T) {
-	stretch := stretchDashboardMap["operations"]
+// TestOperationsStretchDashboard tests that --dashboard operations-stretch
+// downloads the stretch cluster dashboard and falls back to the embedded copy
+// when the download fails.
+func TestOperationsStretchDashboard(t *testing.T) {
+	stretch := dashboardMap["operations-stretch"]
 
 	serve := func(t *testing.T, handler http.HandlerFunc) {
 		ts := httptest.NewServer(handler)
@@ -56,42 +56,26 @@ func TestClusterTypeStretch(t *testing.T) {
 		return buf.Bytes()
 	}
 
-	t.Run("flag defaults to the default cluster type", func(t *testing.T) {
-		p := new(config.Params)
-		cmd := newGrafanaDashboardCmd(p)
-		require.Equal(t, "default", cmd.Flag("cluster-type").DefValue)
-	})
-
-	t.Run("downloads the stretch variant of operations", func(t *testing.T) {
+	t.Run("downloads from github", func(t *testing.T) {
 		serve(t, func(w http.ResponseWriter, r *http.Request) {
 			require.Equal(t, "/"+stretch.Location, r.URL.Path)
 			fmt.Fprint(w, `{"title":"stretch from github"}`)
 		})
-		b := execute(t, "--cluster-type", "stretch")
+		b := execute(t, "--dashboard", "operations-stretch")
 		require.JSONEq(t, `{"title":"stretch from github"}`, string(b))
 	})
 
-	t.Run("falls back to the embedded stretch dashboard", func(t *testing.T) {
+	t.Run("falls back to the embedded copy", func(t *testing.T) {
 		serve(t, func(w http.ResponseWriter, _ *http.Request) {
 			w.WriteHeader(http.StatusNotFound)
 		})
-		b := execute(t, "--cluster-type", "stretch", "--dashboard", "operations")
+		b := execute(t, "--dashboard", "operations-stretch")
 		sum := sha256.Sum256(b)
 		require.Equal(t, stretch.Hash, fmt.Sprintf("%x", sum))
 
 		var dash map[string]any
 		require.NoError(t, json.Unmarshal(b, &dash))
 		require.Equal(t, "Redpanda Stretch Cluster — Operator Observability", dash["title"])
-	})
-
-	t.Run("dashboards without a stretch variant fall back to the default set", func(t *testing.T) {
-		serve(t, func(w http.ResponseWriter, r *http.Request) {
-			require.Equal(t, "/"+dashboardMap["consumer-offsets"].Location, r.URL.Path)
-			w.WriteHeader(http.StatusNotFound)
-		})
-		b := execute(t, "--cluster-type", "stretch", "--dashboard", "consumer-offsets")
-		sum := sha256.Sum256(b)
-		require.Equal(t, dashboardMap["consumer-offsets"].Hash, fmt.Sprintf("%x", sum))
 	})
 }
 
@@ -159,15 +143,6 @@ func Test_embeddedDecompressAndPrint(t *testing.T) {
 		}
 		tests = append(tests, tt{
 			name:    fmt.Sprintf("parse %v correctly", k),
-			path:    filepath.Join("grafana-dashboards", v.Location+".gz"),
-			expHash: v.Hash,
-		})
-	}
-	// Stretch cluster dashboard variants are selected with --cluster-type
-	// stretch; they overlay dashboardMap and are embedded like the others.
-	for k, v := range stretchDashboardMap {
-		tests = append(tests, tt{
-			name:    fmt.Sprintf("parse stretch %v correctly", k),
 			path:    filepath.Join("grafana-dashboards", v.Location+".gz"),
 			expHash: v.Hash,
 		})
