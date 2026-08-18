@@ -1,0 +1,98 @@
+diff --git a/include/seastar/core/coroutine.hh b/include/seastar/core/coroutine.hh
+index 092f78b5..e08bb121 100644
+--- a/include/seastar/core/coroutine.hh
++++ b/include/seastar/core/coroutine.hh
+@@ -108,13 +108,13 @@ class coroutine_traits_base {
+ #else
+         // this non-templated version only exists to support co_returning a braced-init-list
+         void return_value(T&& value) noexcept {
+-            _promise.set_value(std::forward<T>(value));
++            _promise.set_value_urgent(std::forward<T>(value));
+         }
+ 
+         template<typename U>
+         requires std::is_convertible_v<U&&, T>
+         void return_value(U&& value) noexcept {
+-            _promise.set_value(std::forward<U>(value));
++            _promise.set_value_urgent(std::forward<U>(value));
+         }
+ #endif
+ 
+@@ -160,8 +160,12 @@ class coroutine_traits_base<> {
+         promise_type(promise_type&&) = delete;
+         promise_type(const promise_type&) = delete;
+ 
++        // Urgent: the awaiting task is resumed from the completing coroutine's
++        // own task, so it should keep its place in the queue rather than go
++        // behind work enqueued while this coroutine ran. Without this, a
++        // suspension N coroutines deep costs N trips through the task queue.
+         void return_void() noexcept {
+-            _promise.set_value();
++            _promise.set_value_urgent();
+         }
+ 
+         void set_exception(std::exception_ptr&& eptr) noexcept {
+diff --git a/include/seastar/core/future.hh b/include/seastar/core/future.hh
+index 7931f112..73b76ad8 100644
+--- a/include/seastar/core/future.hh
++++ b/include/seastar/core/future.hh
+@@ -1001,6 +1001,22 @@ class promise_base_with_type : protected internal::promise_base {
+         }
+     }
+ 
++    /// Like set_value(), but schedules the waiting task urgently.
++    ///
++    /// Use when the value is being handed to the promise from within a task
++    /// that is already running as part of the same chain, so that the waiter
++    /// does not go to the back of the task queue behind work that arrived
++    /// while the chain was running. This is the same reasoning that made
++    /// set_urgent_state() urgent for a ready future being forwarded.
++    template<typename U>
++    requires std::is_convertible_v<U&&, stored_type>
++    void set_value_urgent(U&& v) noexcept {
++        if (auto *s = get_state()) {
++            s->set(std::forward<U>(v));
++            make_ready<urgent::yes>();
++        }
++    }
++
+     template <typename... A>
+     void emplace_value(A&&... a) noexcept {
+         if (auto *s = get_state()) {
+@@ -1113,6 +1129,15 @@ class promise : private internal::promise_base_with_type<T> {
+         set_value(internal::monostate{});
+     }
+ 
++    /// \brief Sets the promises value, scheduling the waiter urgently
++    ///
++    /// \see internal::promise_base_with_type::set_value_urgent()
++    using internal::promise_base_with_type<T>::set_value_urgent;
++
++    void set_value_urgent() noexcept requires std::is_void_v<T> {
++        set_value_urgent(internal::monostate{});
++    }
++
+ #if SEASTAR_API_LEVEL < 10
+     /// \brief Sets the promises value
+     ///
+@@ -2266,13 +2291,18 @@ template<typename T>
+ template<std::invocable Func>
+ void futurize<T>::satisfy_with_result_of(promise_base_with_type&& pr, Func&& func) {
+     using ret_t = decltype(func());
++    // All three cases hand an already-available result to the promise from
++    // within the continuation task, so all three schedule the waiter
++    // urgently. Before satisfy_with_result_of() existed, the value and void
++    // cases were wrapped in a ready future and forwarded, which took the
++    // urgent path too; skipping the future must not change scheduling.
+     if constexpr (std::is_void_v<ret_t>) {
+         func();
+-        pr.set_value(internal::monostate{});
++        pr.set_value_urgent(internal::monostate{});
+     } else if constexpr (is_future<ret_t>::value) {
+         func().forward_to(std::move(pr));
+     } else {
+-        pr.set_value(func());
++        pr.set_value_urgent(func());
+     }
+ }
+ 
