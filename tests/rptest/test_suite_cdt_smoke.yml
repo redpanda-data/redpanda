@@ -1,0 +1,46 @@
+# CDT smoke suite.
+#
+# One cheap test per dependency installed into the ducktape test image, so a
+# CDT job can prove the image and rig still work without running a full
+# nightly. The comment on each entry names the ducktape-deps script (see
+# tests/docker/ducktape-deps/, installed by vtools qa/image/packer/install-deps.sh)
+# that the entry exercises.
+#
+# Tests were picked by cost, defined as runtime times nodes allocated, taken
+# from a full GCP nightly run and then confirmed on CDT. Prefer a purpose
+# built self test where one exists: it fails legibly when the dependency
+# breaks, which is the entire point of this suite.
+#
+# Keep this list minimal. Every entry should be the cheapest test that still
+# fails when its dependency is broken.
+cdt_smoke:
+  included:
+    - tests/quota_management_test.py::QuotaManagementTest.test_multiple_quotas_same_key@{"strict":false}   # kafka-tools, kcl
+    - tests/compatibility/sarama_produce_test.py::SaramaLegacyProduceTest.test_produce@{"compression_type":"lz4","validation_mode":"strict"}   # golang-test-clients, kcat
+    - tests/rpk_plugin_test.py::RpkPluginTest.test_non_managed_plugin   # plugin-mock
+    - tests/rpk_plugin_test.py::RpkPluginTest.test_managed_byoc   # byoc-mock
+    - tests/canary_benchmark_service_test.py::CanaryBenchmarkServiceSelfTest.test_stress_ng_smoke   # tool-pkgs (stress-ng)
+    - tests/canary_benchmark_service_test.py::CanaryBenchmarkServiceSelfTest.test_fio_smoke   # tool-pkgs (fio)
+    - transactions/idempotency_test.py::IdempotentProducerRecoveryTest.test_librdkafka_recovery_on_producer_eviction   # librdkafka, python-deps (confluent-kafka)
+    - tests/services_self_test.py::RedpandaServiceSelfTest.test_backtrace@{"simple_backtrace":true}   # addr2line, tool-pkgs (llvm-addr2line)
+    - tests/broker_side_compression_test.py::BrokerSideCompressionTest.test_java_producer_recompression@{"producer_codec":"zstd","topic_codec":"snappy"}   # java-verifiers, java-dev-tools
+    - tests/redpanda_kerberos_test.py::RedpandaKerberosRulesTesting.test_invalid_kerberos_mapping_rules@{"expected_error":"RUL","rules":["RULE:[1:$1]","RUL"]}   # tool-pkgs (krb5)
+    - tests/datalake/iceberg_rest_catalog_smoke_test.py::IcebergRESTCatalogSmokeTest.test_redpanda_schema@{"cloud_storage_type":1,"filesystem_catalog_mode":false}   # iceberg-rest-catalog, polaris, nessie
+    - tests/services_self_test.py::KubectlSelfTest.test_kubectl_tool   # k8s
+    - tests/compatibility/sarama_test.py::SaramaScramTest.test_sarama_sasl_scram@{"version":"2.6.0"}   # sarama-examples, golang
+    - tests/services_self_test.py::KgoVerifierSelfTest.test_kgo_verifier   # kgo-verifier-build
+    - tests/data_transforms_test.py::DataTransformsTest.test_consume_junk_off@{"offset":"__current_time__"}   # tinygo, tinygo-wasi-transforms
+    - tests/audit_log_test.py::AuditLogTestAdminApi.test_audit_log_metrics@{"audit_transport_mode":"rpc"}   # ocsf-server
+    - tests/tls_metrics_test.py::TLSMetricsTest.test_metrics   # tool-pkgs (faketime)
+    - tests/schema_registry_test.py::SchemaRegistryTest.test_nodejs_serde_client   # nodejs, nodejs-test-clients
+    - tests/services_self_test.py::ProducerSwarmSelfTest.test_wait_start_stop   # rust, client-swarm
+    - tests/datalake/spark_sql_server_smoke_test.py::SparkSmokeTest.test_spark_smoke@{"cloud_storage_type":1}   # spark
+    - tests/wait_for_local_consumer_test.py::WaitForLocalConsumerTest.test_wait_for_local_consumer   # kaf
+    - tests/datalake/trino_smoke_test.py::TrinoSmokeTest.test_trino_smoke@{"cloud_storage_type":1}   # trino
+    - tests/compatibility/kafka_streams_test.py::KafkaStreamsSessionWindow.test_kafka_streams   # kafka-streams-examples
+    - tests/cluster_linking_schema_registry_sync_test.py::ConfluentSchemaRegistrySyncE2ETest.test_schema_registry_api_sync_context_remap   # confluent-schema-registry
+    - tests/data_migrations_api_test.py::DataMigrationsApiTest.test_creating_and_listing_migrations   # rust, rp-storage-tool
+    - tests/flink_basic_test.py::FlinkBasicTests.test_basic_workload   # flink
+    - tests/redpanda_oauth_proxy_test.py::OIDCProxyRejectsPlaintextOriginTest.test_rejects_plaintext_origin   # keycloak, mitmproxy
+    - tests/services_self_test.py::OpenBenchmarkSmokeSelfTest.test_smoke_omb_configuration   # omb
+    - tests/schema_registry_test.py::SchemaRegistryTest.test_serde_client@{"client_type":3,"protocol":2}   # protobuf, golang-test-clients
