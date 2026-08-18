@@ -47,7 +47,7 @@ void tag_invoke(
 
     const auto size = read_nested<serde_size_t>(in, bytes_left_limit);
     if constexpr (Reservable<decltype(t)>) {
-        t.reserve(size);
+        reserve_from_wire(t, size, in);
     }
     for (auto i = 0U; i < size; ++i) {
         t.push_back(read_nested<value_type>(in, bytes_left_limit));

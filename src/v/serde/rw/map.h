@@ -41,7 +41,7 @@ void tag_invoke(
     using Type = std::decay_t<decltype(t)>;
     const auto size = read_nested<serde_size_t>(in, bytes_left_limit);
     if constexpr (Reservable<Type>) {
-        t.reserve(size);
+        reserve_from_wire(t, size, in);
     }
     for (auto i = 0U; i < size; ++i) {
         typename Type::key_type key;
