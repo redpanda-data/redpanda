@@ -218,6 +218,111 @@ TEST_F(consumer_group_test, erasing_the_last_member_empties_the_group) {
     ASSERT_FALSE(group.erase_member(kafka::member_id("m1")));
 }
 
+TEST_F(consumer_group_test, upserting_a_subscription_keeps_the_assignment) {
+    group.upsert_member(member_at("m1", member_epoch(3)));
+
+    group.upsert_member_subscription(
+      kafka::member_id("m1"),
+      consumer_group_subscription{.client_id = kafka::client_id("new")});
+
+    const auto& m = group.members().at(kafka::member_id("m1"));
+    ASSERT_EQ(m.subscription.client_id, kafka::client_id("new"));
+    ASSERT_EQ(m.assignment.epoch, member_epoch(3));
+}
+
+TEST_F(consumer_group_test, upserting_an_assignment_keeps_the_subscription) {
+    group.upsert_member_subscription(
+      kafka::member_id("m1"),
+      consumer_group_subscription{.client_id = kafka::client_id("c")});
+
+    group.upsert_member_assignment(
+      kafka::member_id("m1"),
+      consumer_group_member_assignment{
+        .epoch = member_epoch(2),
+        .state = consumer_group_member_state::stable,
+      });
+
+    const auto& m = group.members().at(kafka::member_id("m1"));
+    ASSERT_EQ(m.subscription.client_id, kafka::client_id("c"));
+    ASSERT_EQ(m.assignment.epoch, member_epoch(2));
+}
+
+TEST_F(consumer_group_test, either_half_creates_a_missing_member) {
+    group.upsert_member_subscription(kafka::member_id("m1"), {});
+    group.upsert_member_assignment(kafka::member_id("m2"), {});
+
+    ASSERT_EQ(group.members().size(), 2);
+    ASSERT_EQ(group.members().at(kafka::member_id("m1")).id, "m1");
+    ASSERT_EQ(group.members().at(kafka::member_id("m2")).id, "m2");
+}
+
+TEST_F(consumer_group_test, clearing_an_assignment_keeps_the_member) {
+    group.upsert_member(member_at("m1", member_epoch(3)));
+
+    group.clear_member_assignment(kafka::member_id("m1"));
+
+    const auto& m = group.members().at(kafka::member_id("m1"));
+    ASSERT_EQ(m.assignment.epoch, member_epoch(0));
+    ASSERT_EQ(m.assignment.state, consumer_group_member_state::unknown);
+
+    // a member the group does not have is left alone
+    group.clear_member_assignment(kafka::member_id("m2"));
+    ASSERT_EQ(group.members().size(), 1);
+}
+
+TEST_F(consumer_group_test, the_target_assignment_is_kept_per_member) {
+    const auto topic = model::topic_id(uuid_t::create());
+    member_partitions target;
+    target.try_emplace(topic).first->second.emplace(model::partition_id(0));
+
+    group.set_member_target(kafka::member_id("m1"), std::move(target));
+    ASSERT_EQ(group.target_assignment().size(), 1);
+    ASSERT_TRUE(group.target_assignment()
+                  .at(kafka::member_id("m1"))
+                  .at(topic)
+                  .contains(model::partition_id(0)));
+
+    // replaced, not merged
+    group.set_member_target(kafka::member_id("m1"), {});
+    ASSERT_TRUE(group.target_assignment().at(kafka::member_id("m1")).empty());
+
+    ASSERT_TRUE(group.erase_member_target(kafka::member_id("m1")));
+    ASSERT_TRUE(group.target_assignment().empty());
+    ASSERT_FALSE(group.erase_member_target(kafka::member_id("m1")));
+}
+
+TEST_F(consumer_group_test, a_group_with_members_is_not_deletable) {
+    ASSERT_TRUE(group.deletable());
+    group.upsert_member(member_at("m1", member_epoch(1)));
+    ASSERT_FALSE(group.deletable());
+    group.erase_member(kafka::member_id("m1"));
+    ASSERT_TRUE(group.deletable());
+}
+
+TEST_F(consumer_group_test, an_open_transaction_blocks_deletion) {
+    group.offsets().apply_tx_fence(
+      model::producer_identity{7, 0},
+      model::tx_seq(1),
+      std::chrono::seconds(30),
+      model::partition_id(0),
+      model::offset(100));
+    ASSERT_FALSE(group.deletable());
+
+    group.offsets().apply_tx_abort(model::producer_identity{7, 0});
+    ASSERT_TRUE(group.deletable());
+}
+
+TEST_F(consumer_group_test, committed_offsets_do_not_block_deletion) {
+    group.offsets().try_upsert_offset(
+      model::topic_partition(model::topic("t"), model::partition_id(0)),
+      offset_store::offset_metadata{
+        .log_offset = model::offset(1),
+        .offset = model::offset(42),
+        .commit_timestamp = model::timestamp::now(),
+      });
+    ASSERT_TRUE(group.deletable());
+}
+
 TEST_F(consumer_group_test, state_names_match_the_kafka_names) {
     ASSERT_EQ(to_string_view(consumer_group_state::empty), "Empty");
     ASSERT_EQ(to_string_view(consumer_group_state::assigning), "Assigning");
