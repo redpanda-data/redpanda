@@ -41,6 +41,7 @@ redpanda_cc_gtest(
         "//src/v/cluster:topic_metrics_watcher",
         "//src/v/config",
         "//src/v/container:chunked_vector",
+        "//src/v/kafka/data:partition_proxy",
         "//src/v/kafka/server/tests:kafka_test_utils",
         "//src/v/model",
         "//src/v/model:batch_builder",
