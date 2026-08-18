@@ -74,23 +74,31 @@ struct consumer_group_subscription {
     std::optional<ss::sstring> assignor;
 };
 
-/// \brief One member of a consumer group.
+/// \brief How far a member has reconciled toward the target assignment.
 ///
-/// Carries what the member subscribed to, and how far it has reconciled toward
-/// the group's target assignment. A member owns a partition only once it has
-/// been assigned and the previous owner has released it, so `assigned` and
-/// `pending_revocation` are disjoint.
-struct consumer_group_member {
-    kafka::member_id id;
-    consumer_group_subscription subscription;
-    /// How far this member has reconciled. Advances toward the group epoch, and
-    /// equals the assignment epoch once the member is caught up.
+/// A member owns a partition only once it has been assigned and the previous
+/// owner has released it, so `assigned` and `pending_revocation` are disjoint.
+struct consumer_group_member_assignment {
+    /// Advances toward the group epoch, and equals the assignment epoch once
+    /// the member is caught up.
     kafka::member_epoch epoch{0};
     /// The epoch to accept if the member never saw the last bump.
     kafka::member_epoch previous_epoch{0};
     consumer_group_member_state state{consumer_group_member_state::unknown};
     member_partitions assigned;
     member_partitions pending_revocation;
+};
+
+/// \brief One member of a consumer group.
+///
+/// The two halves mirror the member's two persisted records: the subscription
+/// carries what the member asked for, and the assignment carries how far it
+/// has reconciled toward the group's target. Each half is written, and
+/// tombstoned, independently of the other.
+struct consumer_group_member {
+    kafka::member_id id;
+    consumer_group_subscription subscription;
+    consumer_group_member_assignment assignment;
 };
 
 /// \brief A consumer group, as defined by KIP-848.
@@ -111,6 +119,11 @@ class consumer_group {
 public:
     using members_map
       = chunked_hash_map<kafka::member_id, consumer_group_member>;
+
+    /// Keyed independently of the members: a target is written per member id,
+    /// and can outlive or precede the member's own records within a batch.
+    using target_assignment_map
+      = chunked_hash_map<kafka::member_id, member_partitions>;
 
     /// Takes the offset writer and the transaction-coordinator client rather
     /// than a partition, so the caller decides what the group writes through.
@@ -146,6 +159,11 @@ public:
 
     const members_map& members() const { return _members; }
 
+    /// The partitions the assignor wants each member to own.
+    const target_assignment_map& target_assignment() const {
+        return _target_assignment;
+    }
+
     /// The group's committed offsets and transaction state.
     offset_store& offsets() { return _offset_store; }
     const offset_store& offsets() const { return _offset_store; }
@@ -171,9 +189,40 @@ public:
     /// Add the member, or replace it if the group already has one by that id.
     void upsert_member(consumer_group_member member);
 
+    /// Set the member's subscription half, keeping its assignment half, and
+    /// add the member if the group does not have it.
+    void upsert_member_subscription(
+      kafka::member_id id, consumer_group_subscription subscription);
+
+    /// Set the member's assignment half, keeping its subscription half, and
+    /// add the member if the group does not have it.
+    void upsert_member_assignment(
+      kafka::member_id id, consumer_group_member_assignment assignment);
+
+    /// Applying the tombstone of the member's assignment record: the member
+    /// stays, with nothing assigned and its epochs back at zero. A member the
+    /// group does not have is left alone.
+    void clear_member_assignment(const kafka::member_id& id);
+
+    /// Set the member's target assignment, adding an entry if there is none.
+    void set_member_target(kafka::member_id id, member_partitions target);
+
+    /// \returns whether a target was removed.
+    bool erase_member_target(const kafka::member_id& id) {
+        return _target_assignment.erase(id) > 0;
+    }
+
     /// \returns whether a member was removed.
     bool erase_member(const kafka::member_id& id) {
         return _members.erase(id) > 0;
+    }
+
+    /// Whether the group may be deleted or converted to a classic group: it
+    /// has no members, and no transaction is staging offsets. Committed
+    /// offsets do not count against it; a conversion preserves them.
+    bool deletable() const {
+        return _members.empty()
+               && !_offset_store.has_transactions_in_progress();
     }
 
     /// Applying the group's tombstone. An offset commit that lands after this
@@ -193,6 +242,7 @@ private:
     int64_t _metadata_hash{0};
     bool _removed{false};
     members_map _members;
+    target_assignment_map _target_assignment;
     offset_store _offset_store;
 };
 

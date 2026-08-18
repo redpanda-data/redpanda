@@ -75,9 +75,11 @@ consumer_group_member member_at(
     return {
       .id = kafka::member_id(id),
       .subscription = {.client_id = kafka::client_id("c")},
-      .epoch = epoch,
-      .previous_epoch = epoch,
-      .state = state,
+      .assignment = {
+        .epoch = epoch,
+        .previous_epoch = epoch,
+        .state = state,
+      },
     };
 }
 
@@ -195,7 +197,8 @@ TEST_F(consumer_group_test, upserting_a_member_replaces_it) {
 
     ASSERT_EQ(group.members().size(), 1);
     ASSERT_EQ(
-      group.members().at(kafka::member_id("m1")).epoch, member_epoch(4));
+      group.members().at(kafka::member_id("m1")).assignment.epoch,
+      member_epoch(4));
 }
 
 TEST_F(consumer_group_test, erasing_the_last_member_empties_the_group) {

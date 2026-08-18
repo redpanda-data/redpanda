@@ -60,6 +60,31 @@ void consumer_group::upsert_member(consumer_group_member member) {
     _members.insert_or_assign(std::move(id), std::move(member));
 }
 
+void consumer_group::upsert_member_subscription(
+  kafka::member_id id, consumer_group_subscription subscription) {
+    auto [it, inserted] = _members.try_emplace(
+      id, consumer_group_member{.id = id});
+    it->second.subscription = std::move(subscription);
+}
+
+void consumer_group::upsert_member_assignment(
+  kafka::member_id id, consumer_group_member_assignment assignment) {
+    auto [it, inserted] = _members.try_emplace(
+      id, consumer_group_member{.id = id});
+    it->second.assignment = std::move(assignment);
+}
+
+void consumer_group::clear_member_assignment(const kafka::member_id& id) {
+    if (auto it = _members.find(id); it != _members.end()) {
+        it->second.assignment = {};
+    }
+}
+
+void consumer_group::set_member_target(
+  kafka::member_id id, member_partitions target) {
+    _target_assignment.insert_or_assign(std::move(id), std::move(target));
+}
+
 consumer_group_state consumer_group::state() const {
     if (_members.empty()) {
         return consumer_group_state::empty;
@@ -73,8 +98,8 @@ consumer_group_state consumer_group::state() const {
     // own state. Its epoch and the assignment epoch are separate types because
     // assigning one to the other is always a bug, so compare their values.
     const auto reconciled = [this](const members_map::value_type& m) {
-        return m.second.state == consumer_group_member_state::stable
-               && m.second.epoch() == _assignment_epoch();
+        return m.second.assignment.state == consumer_group_member_state::stable
+               && m.second.assignment.epoch() == _assignment_epoch();
     };
     return std::all_of(_members.begin(), _members.end(), reconciled)
              ? consumer_group_state::stable
