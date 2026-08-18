@@ -8,7 +8,7 @@ set -e
 # shellcheck disable=SC1091
 source "$SCRIPT_DIR/gh_wrapper.sh"
 
-cd "$GITHUB_WORKSPACE/fork"
+cd "$GITHUB_WORKSPACE/target-repo"
 
 if [[ $IS_MERGED != true ]]; then
   msg="The pull request is not merged yet. Cancelling backport..."
@@ -41,19 +41,16 @@ echo "fixing_issue_urls=$fixing_issue_urls" >>$GITHUB_OUTPUT
 suffix=$((RANDOM % 1000))
 git config --global user.email "$GIT_EMAIL"
 git config --global user.name "$GIT_USER"
-git remote add upstream "https://github.com/$TARGET_FULL_REPO.git"
 git fetch --all
-git remote set-url origin "https://$GIT_USER:$GITHUB_TOKEN@github.com/$GIT_USER/$TARGET_REPO.git"
 
 head_branch=$(echo "backport-pr-$PR_NUMBER-$BACKPORT_BRANCH-$suffix" | sed 's/ /-/g')
-git checkout -b "$head_branch" "remotes/upstream/$BACKPORT_BRANCH"
+git checkout -b "$head_branch" "remotes/origin/$BACKPORT_BRANCH"
 
 if ! git cherry-pick -x $BACKPORT_COMMITS; then
   msg="Failed to create a backport PR to $BACKPORT_BRANCH branch. I tried:\n
 \`\`\`\r
-git remote add upstream "https://github.com/$TARGET_FULL_REPO.git"
 git fetch --all
-git checkout -b "$head_branch" "remotes/upstream/$BACKPORT_BRANCH"
+git checkout -b "$head_branch" "remotes/origin/$BACKPORT_BRANCH"
 git cherry-pick -x $BACKPORT_COMMITS
 \`\`\`"
 
@@ -68,5 +65,4 @@ git cherry-pick -x $BACKPORT_COMMITS
 fi
 
 git push --set-upstream origin "$head_branch"
-git remote rm upstream
 echo "head_branch=$head_branch" >>$GITHUB_OUTPUT
