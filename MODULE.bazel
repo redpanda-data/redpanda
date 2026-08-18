@@ -123,7 +123,7 @@ python.toolchain(
 
 pip = use_extension("@rules_python//python/extensions:pip.bzl", "pip")
 pip.parse(
-    extra_pip_args = ["--require-hashes"],
+    experimental_index_url = "https://pypi.org/simple",
     hub_name = "python_deps",
     python_version = "3.12",
     requirements_lock = "//bazel/thirdparty:requirements.txt",
