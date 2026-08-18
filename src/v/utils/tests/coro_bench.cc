@@ -103,6 +103,23 @@ auto do_work(T& t) {
     return always_ready(std::move(t));
 }
 
+/**
+ * @brief Like do_work(), but returns the value rather than a ready future.
+ *
+ * Continuations returning a plain value satisfy their promise via
+ * promise::set_value(), while those returning an already-ready future go
+ * through future::forward_to() and hence promise::set_urgent_state(). The two
+ * forms therefore reach the task queue by different routes even though both
+ * results are equally ready by the time the continuation returns.
+ */
+template<typename T>
+[[gnu::noinline]] T do_work_value(T t) {
+    if (always_false()) [[unlikely]] {
+        return T{};
+    }
+    return t;
+}
+
 inline ss::future<> co_await_ready() {
     co_await always_ready();
     do_work();
@@ -116,6 +133,26 @@ inline ss::future<> co_await_ready_nested() {
         co_await always_ready();
     } else {
         co_await co_await_ready_nested<depth - 1>();
+    }
+    do_work();
+}
+
+/**
+ * @brief Nested coroutines, depth levels deep, yielding at the innermost.
+ *
+ * Compared to co_await_ready_nested, where nothing suspends and so no tasks
+ * are created at all, the yield forces every level to suspend. Each level
+ * then resumes its caller from its own task, so the single yield costs
+ * roughly depth trips through the task queue rather than one.
+ */
+template<size_t depth>
+inline ss::future<> co_await_yield_nested() {
+    static_assert(depth > 0);
+
+    if constexpr (depth == 1) {
+        co_await ss::yield();
+    } else {
+        co_await co_await_yield_nested<depth - 1>();
     }
     do_work();
 }
@@ -163,6 +200,33 @@ ss::future<> chained_after_yield() {
       .then([](T t) { return do_work(t); })
       .then([](T t) { return do_work(t); })
       .then([](T t) { return do_work(t); })
+      .then([](T) { return always_ready(); })
+      .finally([] {})
+      .finally([] {});
+}
+
+/**
+ * Same shape as chained_after_yield, except each continuation returns a plain
+ * value instead of an already-ready future. Both are ready by the time the
+ * continuation returns, but only the future-returning form resolves its
+ * promise urgently (via forward_to), so this variant is appended to the task
+ * queue at every link while chained_after_yield jumps to the front.
+ *
+ * Note that the two only diverge when the queue holds other work: with an
+ * otherwise idle reactor, as in this benchmark, front and back are the same
+ * position. What this pair measures is therefore the cost of the ready future
+ * itself, and it serves as a control showing that queue position is not what
+ * makes these differ here.
+ */
+ss::future<> chained_after_yield_value() {
+    using T = small_object;
+    T t{};
+    return ss::yield()
+      .then([t = t]() mutable { return do_work_value(t); })
+      .then([](T t) { return do_work_value(t); })
+      .then([](T t) { return do_work_value(t); })
+      .then([](T t) { return do_work_value(t); })
+      .then([](T t) { return do_work_value(t); })
       .then([](T) { return always_ready(); })
       .finally([] {})
       .finally([] {});
@@ -230,8 +294,24 @@ PERF_TEST_F(coro_bench, chained_after_yield) {
     return co_await_in_loop(chained_after_yield);
 }
 
+PERF_TEST_F(coro_bench, chained_after_yield_value) {
+    return co_await_in_loop(chained_after_yield_value);
+}
+
 PERF_TEST_F(coro_bench, coro_after_yield) {
     return co_await_in_loop(coro_after_yield);
+}
+
+PERF_TEST_F(coro_bench, co_await_yield_nested1) {
+    return co_await_in_loop(co_await_yield_nested<1>);
+}
+
+PERF_TEST_F(coro_bench, co_await_yield_nested3) {
+    return co_await_in_loop(co_await_yield_nested<3>);
+}
+
+PERF_TEST_F(coro_bench, co_await_yield_nested5) {
+    return co_await_in_loop(co_await_yield_nested<5>);
 }
 
 PERF_TEST_F(coro_bench, co_await_ready_nested3) {
