@@ -48,7 +48,7 @@ raft::replicate_stages partition_offset_writer::replicate_in_stages(
 ss::future<> partition_offset_writer::maybe_step_down(
   model::term_id term, std::string_view reason) {
     if (_partition->raft()->is_leader() && _partition->raft()->term() == term) {
-        return _partition->raft()->step_down(ss::sstring(reason));
+        return _partition->raft()->step_down(reason);
     }
     return ss::now();
 }
