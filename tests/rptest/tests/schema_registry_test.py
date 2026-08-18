@@ -10285,7 +10285,13 @@ class SchemaRegistryAclAuthzTestBase(SchemaRegistryEndpoints):
     Base class providing shared ACL test infrastructure (setup, helpers) without test methods.
     """
 
-    def __init__(self, context, extra_rp_conf: dict | None = None, **kwargs):
+    def __init__(
+        self,
+        context,
+        extra_rp_conf: dict | None = None,
+        num_brokers: int = 1,
+        **kwargs,
+    ):
         security = SecurityConfig()
         security.enable_sasl = True
         security.endpoint_authn_method = "sasl"
@@ -10297,7 +10303,7 @@ class SchemaRegistryAclAuthzTestBase(SchemaRegistryEndpoints):
         super().__init__(
             context,
             security=security,
-            num_brokers=1,
+            num_brokers=num_brokers,
             schema_registry_config=schema_registry_config,
             extra_rp_conf=extra_rp_conf,
             **kwargs,
@@ -10666,6 +10672,33 @@ class SchemaRegistryAclAuthzTest(SchemaRegistryAclAuthzTestBase):
         self.assert_equal(result.status_code, 403)
 
     @cluster(num_nodes=1)
+    def test_get_schemas_ids_id_unacceptable_accept_header(self):
+        """
+        A request that fails before the deferred authz check must produce an
+        error reply, not abort the broker.
+
+        GET /schemas/ids/{id} defers its authorization check until after the
+        schema id is resolved. parse_accept_header() runs first and throws 406
+        for an unsupported Accept header, so the check never runs. The
+        request_auth_result carrying the authentication result must not fault
+        the broker in that case.
+        """
+        subject = "test-subject-1"
+        schema_id = self._create_schema(subject)
+        self._post_acl(self._create_acl(subject, "SUBJECT", "LITERAL", "READ"))
+
+        result = self.sr_client.get_schemas_ids_id(
+            schema_id,
+            headers={"Accept": "application/vnd.not-a-real-format"},
+            auth=self.user_auth,
+        )
+        self.assert_equal(result.status_code, 406)
+
+        # The broker must still be serving.
+        result = self.sr_client.get_schemas_ids_id(schema_id, auth=self.user_auth)
+        self.assert_equal(result.status_code, 200)
+
+    @cluster(num_nodes=1)
     def test_get_schemas_ids_no_match(self):
         """
         Test that access is denied when no subject referencing the schema allows access.
@@ -10865,6 +10898,91 @@ class SchemaRegistryAclAuthzTest(SchemaRegistryAclAuthzTestBase):
             self.redpanda.set_cluster_config(
                 {"schema_registry_enable_authorization": True}
             )
+
+
+class SchemaRegistryAclAuthzUnavailableTest(SchemaRegistryAclAuthzTestBase):
+    """
+    Deferred-authz endpoints must survive an unreachable _schemas partition.
+    """
+
+    def __init__(self, context, **kwargs):
+        # This branch predates schema_registry_use_rpc: read_sync() always
+        # goes through the internal kafka client, which likewise throws after
+        # its suspension point once the _schemas partition has no leader.
+        super().__init__(
+            context,
+            num_brokers=3,
+            **kwargs,
+        )
+
+    @cluster(num_nodes=3)
+    def test_get_schemas_ids_id_unavailable_schemas_partition(self):
+        """
+        GET /schemas/ids/{id} calls read_sync() before its deferred authz
+        check, and that call suspends. When _schemas has no leader, read_sync()
+        throws after the suspension and the check never runs. The request must
+        produce an error reply rather than aborting the broker.
+
+        The suspension matters: an exception raised before the first co_await
+        unwinds on the caller's stack and is caught, but one raised after a
+        suspension tears the coroutine frame down inside the reactor's
+        noexcept task entry point, where a throw cannot be delivered.
+        """
+        subject = "test-subject-1"
+        schema_id = self._create_schema(subject)
+        self._post_acl(self._create_acl(subject, "SUBJECT", "LITERAL", "READ"))
+
+        # Serve the request from a node that does not lead _schemas. A leader
+        # answers the offset lookup out of its own log without needing a
+        # quorum, so read_sync() would keep succeeding there.
+        admin = Admin(self.redpanda)
+        leader_id = admin.await_stable_leader("_schemas", partition=0, timeout_s=30)
+        target = next(
+            n for n in self.redpanda.nodes if self.redpanda.node_id(n) != leader_id
+        )
+
+        # Warm up the target: its schema registry one_shot init must already
+        # have completed. Otherwise _os() throws from inside wrap::operator(),
+        # where the auth result is a local and safe, and the test would pass
+        # for the wrong reason.
+        result = self.sr_client.get_schemas_ids_id(
+            schema_id, hostname=target.account.hostname, auth=self.user_auth
+        )
+        self.assert_equal(result.status_code, 200)
+
+        # The target must not be able to take over _schemas leadership once
+        # the other brokers stop: a leader answers the offset lookup out of
+        # its own log, so read_sync() on it would keep succeeding. Stopping
+        # the brokers one by one leaves the two remaining ones as a live
+        # quorum long enough to elect the target. Maintenance mode blocks the
+        # node from acquiring any leadership while it keeps serving requests.
+        admin.maintenance_start(target)
+        wait_until(
+            lambda: admin.maintenance_status(target).get("finished", False),
+            timeout_sec=30,
+            backoff_sec=1,
+            err_msg="the target never finished draining its leaderships",
+        )
+
+        # Stop the other two brokers. The target is then left below quorum,
+        # so it cannot reach the old leader, and maintenance mode prevents it
+        # from becoming the leader itself: read_sync() has no leader to query.
+        for node in self.redpanda.nodes:
+            if node != target:
+                self.redpanda.stop_node(node)
+
+        def read_sync_fails():
+            result = self.sr_client.get_schemas_ids_id(
+                schema_id, hostname=target.account.hostname, auth=self.user_auth
+            )
+            return result.status_code >= 500
+
+        wait_until(
+            read_sync_fails,
+            timeout_sec=90,
+            backoff_sec=2,
+            err_msg="read_sync() never failed on the surviving broker",
+        )
 
 
 class SchemaRegistryContextAuthzTest(SchemaRegistryAclAuthzTestBase):
