@@ -135,6 +135,26 @@ class OMBSampleConfigurations:
         return is_valid, results
 
     # ------ Driver configurations --------
+    # Single-broker driver for the CDT smoke suite: RF=1 so the workload can
+    # run against a one node cluster.
+    SMOKE_DRIVER_RF1 = {
+        "name": "smoke-driver-rf1",
+        "replication_factor": 1,
+        "request_timeout": 300000,
+        "producer_config": {
+            "enable.idempotence": "false",
+            "acks": "1",
+            "linger.ms": 1,
+            "max.in.flight.requests.per.connection": 1,
+            "batch.size": 131072,
+        },
+        "consumer_config": {
+            "auto.offset.reset": "earliest",
+            "enable.auto.commit": "false",
+            "max.partition.fetch.bytes": 131072,
+        },
+    }
+
     SIMPLE_DRIVER = {
         "name": "simple-driver",
         "replication_factor": 3,
@@ -260,6 +280,22 @@ class OMBSampleConfigurations:
         "warmup_duration_minutes": 5,
     }
 
+    # Smallest workload that still exercises the whole OMB pipeline
+    # (producer and consumer). No warmup phase, so the run is one minute
+    # instead of two.
+    SMOKE_WORKLOAD: dict[str, Any] = {
+        "name": "Smoke-workload-config",
+        "topics": 1,
+        "partitions_per_topic": 1,
+        "subscriptions_per_topic": 1,
+        "consumer_per_subscription": 1,
+        "producers_per_topic": 1,
+        "producer_rate": 100,
+        "consumer_backlog_size_GB": 0,
+        "test_duration_minutes": 1,
+        "warmup_duration_minutes": 0,
+    }
+
     SIMPLE_WORKLOAD: dict[str, Any] = {
         "name": "Simple-workload-config",
         "topics": 1,
@@ -311,6 +347,7 @@ class OMBSampleConfigurations:
     # driver and workload combination.
     DRIVERS: dict[str, dict[str, Any]] = {
         "SIMPLE_DRIVER": SIMPLE_DRIVER,
+        "SMOKE_DRIVER_RF1": SMOKE_DRIVER_RF1,
         "ACK_ALL_GROUP_LINGER_1MS": ACK_ALL_GROUP_LINGER_1MS,
         "ACK_ALL_GROUP_LINGER_1MS_WITH_IDEMPOTENCE": ACK_ALL_GROUP_LINGER_1MS_WITH_IDEMPOTENCE,
         "ACK_ALL_GROUP_LINGER_1MS_IDEM_MAX_IN_FLIGHT": ACK_ALL_GROUP_LINGER_1MS_IDEM_MAX_IN_FLIGHT,
@@ -322,6 +359,7 @@ class OMBSampleConfigurations:
     # metric validator.
     WORKLOADS = {
         "SIMPLE_WORKLOAD": (SIMPLE_WORKLOAD, UNIT_TEST_LATENCY_VALIDATOR),
+        "SMOKE_WORKLOAD": (SMOKE_WORKLOAD, UNIT_TEST_LATENCY_VALIDATOR),
         "DEDICATED_NODE_WORKLOAD": (
             DEDICATED_NODE_WORKLOAD,
             UNIT_TEST_LATENCY_VALIDATOR,

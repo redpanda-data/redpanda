@@ -98,6 +98,39 @@ class OpenBenchmarkSelfTest(RedpandaTest):
         benchmark.check_succeed(validate_metrics=self.redpanda.dedicated_nodes)
 
 
+class OpenBenchmarkSmokeSelfTest(RedpandaTest):
+    """Cheap variant of OpenBenchmarkSelfTest for the CDT smoke suite.
+
+    Same goal (prove the OpenMessagingBenchmark service still works), but
+    sized down: one broker at RF=1, the minimum two OMB workers, and a one
+    minute workload with no warmup phase. OMB requires more than one worker
+    because it splits them into producer and consumer sets, so two is the
+    floor here.
+    """
+
+    BENCHMARK_WAIT_TIME_MIN = 5
+
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        super().__init__(*args, num_brokers=1, **kwargs)
+
+    @skip_debug_mode  # Sends meaningful traffic, and not intended to test Redpanda
+    @cluster(num_nodes=4)
+    def test_smoke_omb_configuration(self) -> None:
+        benchmark = OpenMessagingBenchmark(
+            self.test_context,
+            self.redpanda,
+            "SMOKE_DRIVER_RF1",
+            "SMOKE_WORKLOAD",
+            num_workers=2,
+        )
+        benchmark.start()
+        benchmark_time_min = (
+            benchmark.benchmark_time_mins() + self.BENCHMARK_WAIT_TIME_MIN
+        )
+        benchmark.wait(timeout_sec=benchmark_time_min * 60)
+        benchmark.check_succeed(validate_metrics=self.redpanda.dedicated_nodes)
+
+
 class ProducerSwarmSelfTest(RedpandaTest):
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         super().__init__(*args, num_brokers=3, **kwargs)
