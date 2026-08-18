@@ -7,12 +7,15 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
+import time
+
 from ducktape.tests.test import TestContext
 from typing import Any
 from ducktape.utils.util import wait_until
 from ducktape.mark import matrix
 from collections.abc import Iterable
 
+from rptest.clients.kafka_cat import KafkaCat
 from rptest.clients.kafka_cli_tools import KafkaCliTools
 from rptest.clients.rpk import RpkTool
 from rptest.clients.admin.v2 import Admin, metastore_pb, ntp_pb
@@ -201,6 +204,49 @@ class EndToEndCloudTopicsTest(EndToEndCloudTopicsBase):
             expected_missing_records=35 * self.topics[0].partition_count
         )
         self.wait_until_all_reconciled()
+
+    @cluster(num_nodes=4)
+    def test_timequery_below_start_offset(self):
+        """A timestamp query below the start offset must not fail or answer
+        below it.
+
+        ListOffsets-by-timestamp must return a fetchable offset. Reconciliation
+        allows the local log to be prefix truncated, so after a DeleteRecords
+        the Kafka start offset can be far below the local log start and the
+        query must be served from L1 rather than a local reader positioned
+        below the log start.
+
+        This mirrors BaseTimeQuery._test_timequery_below_start_offset, which
+        pins the same invariant for a non-cloud topic.
+        """
+        base_ts = int(time.time() * 1000) - 3600_000
+
+        self.start_producer()
+        self.await_num_produced(min_records=50000)
+        self.producer.stop()
+        self.wait_until_all_reconciled()
+
+        trim_to = 1000
+        self.rpk.trim_prefix(self.s3_topic_name, trim_to)
+
+        def start_offset() -> int:
+            for part in self.rpk.describe_topic(self.s3_topic_name):
+                if part.id == 0:
+                    return part.start_offset
+            raise AssertionError("partition 0 not found")
+
+        lwm = start_offset()
+        assert lwm >= trim_to, f"trim did not take effect, start offset is {lwm}"
+
+        assert self.redpanda
+        kcat = KafkaCat(self.redpanda)
+        offset = kcat.query_offset(self.s3_topic_name, 0, base_ts)
+        self.logger.info(f"timequery({base_ts}) -> {offset}, start_offset={lwm}")
+
+        assert offset >= lwm, (
+            f"timequery answered offset {offset}, below the start offset {lwm}; "
+            "the client cannot fetch this offset"
+        )
 
     @cluster(num_nodes=4)
     def test_get_size(self):
