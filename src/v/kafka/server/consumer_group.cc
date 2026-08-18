@@ -49,7 +49,11 @@ consumer_group::consumer_group(
       term,
       std::move(tx_coordinator),
       feature_table,
-      [this] { return _removed; }) {}
+      [this] { return _removed; },
+      // A consumer group is applied state on every replica of its partition:
+      // it neither expires transactions nor exports offset metrics, both of
+      // which belong to whichever replica is serving the group.
+      offset_store::role::applied) {}
 
 void consumer_group::upsert_member(consumer_group_member member) {
     auto id = member.id;

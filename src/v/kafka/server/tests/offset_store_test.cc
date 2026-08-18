@@ -282,7 +282,8 @@ struct offset_store_test : seastar_test {
       model::term_id(1),
       std::unique_ptr<tx_coordinator_client>(tx_coordinator),
       feature_table,
-      [this] { return group_is_dead; }};
+      [this] { return group_is_dead; },
+      offset_store::role::serving};
 
     /// Fences the producer and hands it the transaction, the way a begin that
     /// reached the log would.
@@ -336,7 +337,8 @@ struct short_interval_store {
           model::term_id(1),
           std::unique_ptr<tx_coordinator_client>(coordinator),
           features,
-          [] { return false; });
+          [] { return false; },
+          offset_store::role::serving);
     }
 
     void open_tx(

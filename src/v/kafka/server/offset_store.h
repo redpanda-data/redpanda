@@ -74,6 +74,13 @@ public:
     /// after that point must not apply its offsets.
     using group_is_dead_t = ss::noncopyable_function<bool()>;
 
+    /// Whether the store backs a group serving requests on its leader, or
+    /// state applied on every replica of its partition. Expiring a
+    /// transaction writes through the offset writer, and the per-offset
+    /// metrics are one series per group and partition cluster wide; both are
+    /// the leader's, so an applied store does neither.
+    enum class role { serving, applied };
+
     /**
      * represents an offset that is to be stored as a part of transaction
      */
@@ -149,18 +156,22 @@ public:
     struct offset_metadata_with_probe {
         offset_metadata metadata;
         group_offset_probe probe;
-        metrics_conversion_binding enable_group_metrics;
+        /// Empty on an applied store, which exports no metrics.
+        std::optional<metrics_conversion_binding> enable_group_metrics;
 
         offset_metadata_with_probe(
           offset_store::offset_metadata _metadata,
           const kafka::group_id& group_id,
           const model::topic_partition& tp,
-          metrics_conversion_binding _enable_group_metrics)
+          std::optional<metrics_conversion_binding> _enable_group_metrics)
           : metadata(std::move(_metadata))
           , probe(metadata.offset)
           , enable_group_metrics(std::move(_enable_group_metrics)) {
+            if (!enable_group_metrics.has_value()) {
+                return;
+            }
             const auto metrics_registration = [this, group_id, tp]() {
-                if (enable_group_metrics().partition) {
+                if ((*enable_group_metrics)().partition) {
                     probe.register_metrics(group_id, tp);
                     probe.register_public_metrics(group_id, tp);
                 } else {
@@ -169,7 +180,7 @@ public:
                 }
             };
 
-            enable_group_metrics.watch(metrics_registration);
+            enable_group_metrics->watch(metrics_registration);
             metrics_registration();
         }
     };
@@ -187,7 +198,8 @@ public:
       model::term_id term,
       std::unique_ptr<tx_coordinator_client> tx_coordinator,
       ss::sharded<features::feature_table>& feature_table,
-      group_is_dead_t group_is_dead);
+      group_is_dead_t group_is_dead,
+      role r);
 
     offset_store(const offset_store&) = delete;
     offset_store& operator=(const offset_store&) = delete;
@@ -415,9 +427,14 @@ private:
     ss::future<cluster::commit_group_tx_reply>
     do_commit(model::producer_identity pid, model::tx_seq sequence);
 
+    /// The callback is installed whatever the role, so that a serving-path
+    /// call that arms the timer on an applied store cannot fire an empty one.
+    /// Only the initial arming belongs to a serving store.
     void start_abort_timer() {
         _auto_abort_timer.set_callback([this] { abort_old_txes(); });
-        try_arm(clock_type::now() + _abort_interval_ms);
+        if (_role == role::serving) {
+            try_arm(clock_type::now() + _abort_interval_ms);
+        }
     }
 
     void abort_old_txes();
@@ -448,6 +465,7 @@ private:
     std::unique_ptr<tx_coordinator_client> _tx_coordinator;
     ss::sharded<features::feature_table>& _feature_table;
     group_is_dead_t _group_is_dead;
+    role _role;
     prefix_logger _ctxlog;
     prefix_logger _ctx_txlog;
 

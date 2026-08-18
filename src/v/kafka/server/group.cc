@@ -129,7 +129,8 @@ group::group(
       term,
       std::make_unique<routed_tx_coordinator_client>(tx_frontend),
       feature_table,
-      [this] { return in_state(group_state::dead); })
+      [this] { return in_state(group_state::dead); },
+      offset_store::role::serving)
   , _probe(_members, _static_members, offsets(), _lag_metrics)
   , _ctxlog(cg_klog, *this)
   , _ctx_txlog(cluster::txlog, *this)
@@ -169,7 +170,8 @@ group::group(
       term,
       std::make_unique<routed_tx_coordinator_client>(tx_frontend),
       feature_table,
-      [this] { return in_state(group_state::dead); })
+      [this] { return in_state(group_state::dead); },
+      offset_store::role::serving)
   , _probe(_members, _static_members, offsets(), _lag_metrics)
   , _ctxlog(cg_klog, *this)
   , _ctx_txlog(cluster::txlog, *this)
@@ -2282,8 +2284,10 @@ bool offset_store::try_upsert_offset(
             std::move(md),
             _id,
             tp,
-            _conf.enable_consumer_group_metrics.bind(
-              std::function{enabled_metrics::from_vector})));
+            _role == role::serving
+              ? std::optional(_conf.enable_consumer_group_metrics.bind(
+                  std::function{enabled_metrics::from_vector}))
+              : std::nullopt));
         return true;
     }
 }
@@ -3834,7 +3838,8 @@ offset_store::offset_store(
   model::term_id term,
   std::unique_ptr<tx_coordinator_client> tx_coordinator,
   ss::sharded<features::feature_table>& feature_table,
-  group_is_dead_t group_is_dead)
+  group_is_dead_t group_is_dead,
+  role r)
   : _id(std::move(id))
   , _conf(conf)
   , _catchup_lock(std::move(catchup_lock))
@@ -3843,6 +3848,7 @@ offset_store::offset_store(
   , _tx_coordinator(std::move(tx_coordinator))
   , _feature_table(feature_table)
   , _group_is_dead(std::move(group_is_dead))
+  , _role(r)
   , _ctxlog(cg_klog, ssx::sformat("[N:{}]", _id()))
   , _ctx_txlog(cluster::txlog, ssx::sformat("[N:{}]", _id()))
   , _abort_interval_ms(
