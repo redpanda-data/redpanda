@@ -250,6 +250,45 @@ public:
             const model::cluster_link_task_status_report&) { return pred(); });
     }
 
+    /// Shared body for the probe soft-delete tests: a new version that is
+    /// already soft-deleted at the source must land soft-deleted, whichever
+    /// way the source serializes read bodies. The tail probe always supplies
+    /// the listing-derived fallback classification.
+    void probe_soft_delete_lands(bool source_reports_deleted_flag) {
+        auto orders = ppsr::context_subject::unqualified("orders-value");
+        _source_state.add_with_id(orders, 1, 1);
+        _source_state.reports_deleted_flag = source_reports_deleted_flag;
+
+        disable_tail_feed();
+        lead_schema_registry();
+        fixture()->upsert_link(get_default_metadata()).get();
+
+        ASSERT_TRUE(wait_for_sync_status([](const auto& s) {
+                        return s.last_full_sync.has_value()
+                               && !s.current_sync.has_value();
+                    })
+                      .get()
+                      .has_value());
+
+        _source_state.add_with_id(orders, 2, 2, ppsr::is_deleted::yes);
+
+        ASSERT_TRUE(
+          wait_for_sync_status([](const auto& st) {
+              return st.totals_since_task_start.subject_versions_changed == 2;
+          })
+            .get()
+            .has_value());
+
+        const auto* v2 = find_stored(_registry.get_all(), orders, 2);
+        ASSERT_NE(v2, nullptr) << "v2 never landed on the destination";
+        EXPECT_EQ(v2->deleted, ppsr::is_deleted::yes);
+        auto status = wait_for_sync_status([](const auto&) {
+                          return true;
+                      }).get();
+        ASSERT_TRUE(status.has_value());
+        EXPECT_EQ(status->totals_since_task_start.errors, 0);
+    }
+
     static srs::tail_batch
     subjects_changed(std::initializer_list<ppsr::context_subject> subjects) {
         srs::tail_batch batch;
@@ -775,19 +814,9 @@ TEST_F(mirroring_task_test, syncs_soft_deleted_source_versions) {
     // All three versions are synced, each preserving its source deleted state.
     const auto& all = _registry.get_all();
     EXPECT_EQ(all.size(), 3);
-    auto find_ver = [&](
-                      const ppsr::context_subject& sub,
-                      int32_t v) -> const ppsr::stored_schema* {
-        for (const auto& s : all) {
-            if (s.schema.sub() == sub && s.version == ppsr::schema_version{v}) {
-                return &s;
-            }
-        }
-        return nullptr;
-    };
-    const auto* o1 = find_ver(orders, 1);
-    const auto* o2 = find_ver(orders, 2);
-    const auto* p1 = find_ver(payments, 1);
+    const auto* o1 = find_stored(all, orders, 1);
+    const auto* o2 = find_stored(all, orders, 2);
+    const auto* p1 = find_stored(all, payments, 1);
     ASSERT_NE(o1, nullptr);
     ASSERT_NE(o2, nullptr);
     ASSERT_NE(p1, nullptr);
@@ -2322,6 +2351,18 @@ TEST_F(
                   .get()
                   .has_value());
     EXPECT_EQ(_registry.get_all().size(), 3);
+}
+
+// A new version already soft-deleted at the source lands soft-deleted when
+// the source reports per-version deleted flags.
+TEST_F(mirroring_task_test, http_tail_probe_body_classifies_soft_delete) {
+    probe_soft_delete_lands(true);
+}
+
+// The same soft-delete from a source that omits per-version deleted flags:
+// the listing-derived split feeds the reconciler's fallback set.
+TEST_F(mirroring_task_test, http_tail_probe_imports_a_soft_deleted_version) {
+    probe_soft_delete_lands(false);
 }
 
 TEST_F(mirroring_task_test, http_tail_probe_stops_at_a_hole) {

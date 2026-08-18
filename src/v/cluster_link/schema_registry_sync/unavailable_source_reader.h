@@ -45,7 +45,10 @@ public:
 
     ss::future<source_result<chunked_vector<ppsr::subject_version>>>
     list_schema_id_subject_versions(
-      ppsr::schema_id, ppsr::context, ss::abort_source&) override;
+      ppsr::schema_id,
+      ppsr::context,
+      ppsr::include_deleted,
+      ss::abort_source&) override;
 
     ss::future<source_result<ppsr::source_schema_read>> read_subject_version(
       ppsr::context_subject, ppsr::schema_version, ss::abort_source&) override;

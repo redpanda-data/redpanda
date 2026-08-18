@@ -172,29 +172,28 @@ ss::future<discovery::probe_result> discovery::probe_new_ids(
            held(_probe_cursor)});
 
         while (true) {
+            // include_deleted::yes for existence: a source honoring the
+            // parameter would otherwise answer a fully soft-deleted id with a
+            // miss and end the walk early.
             auto res = co_await reader.list_schema_id_subject_versions(
-              id, src_ctx, as);
+              id, src_ctx, ppsr::include_deleted::yes, as);
             if (!res.has_value()) {
                 const auto kind = res.error().kind;
-                if (kind == source_error_kind::schema_id_not_found) {
-                    // The routine end of the walk: ids are consecutive, so
-                    // an absent id nearly always means the counter has not
-                    // moved. A hole (registered and hard-deleted between
-                    // ticks) stops the walk short instead, for at most one
-                    // full-sync interval -- the full sync imports by subject
-                    // and lifts the floor over it.
+                if (
+                  kind == source_error_kind::schema_id_not_found
+                  || kind == source_error_kind::forbidden) {
+                    // Usually means we've reached the current end of allocated
+                    // schema ids. A temporary hole from a hard-deleted id is
+                    // repaired by the next full sync. forbidden reads the
+                    // same: an ACL-enabled source deliberately answers a
+                    // missing id with 403, so the existence ask cannot tell
+                    // them apart.
                     break;
                 }
-                if (kind == source_error_kind::endpoint_unavailable) {
-                    // The source does not serve this endpoint (e.g. not
-                    // implemented). Skip the leg for this tick only -- no
-                    // error counted, no parking a link whose other reads
-                    // work -- and ask again next tick.
-                    //
-                    // Rate limited rather than logged once: the condition
-                    // is a lasting state, and a single line would scroll out
-                    // of retention. The limiter is a member, so one link's
-                    // denial cannot silence another's warning.
+                if (kind == source_error_kind::endpoint_unsupported) {
+                    // The source does not serve this endpoint. Skip this probe
+                    // leg for now without faulting the link, and retry next
+                    // tick. Warn with per-link rate limiting.
                     vloglr(
                       (*_logger),
                       ss::log_level::warn,
@@ -213,12 +212,62 @@ ss::future<discovery::probe_result> discovery::probe_new_ids(
                 result.errors.push_back(std::move(res.error().message));
                 break;
             }
-            // A resolving id continues the walk -- even with an empty result,
-            // which means every version behind it is soft-deleted, not that
-            // the id is unallocated.
-            for (auto& sv : res.value()) {
-                if (in_scope(sv.sub)) {
+            // A hit means the id exists, even if the pair list is empty.
+            //
+            // Ask again live-only; pairs missing from that result are
+            // soft-deleted. Deliberately not optimized away based on earlier
+            // body reads: the reconciler needs this listing-derived split as a
+            // safe fallback when one later body omits `deleted`.
+            chunked_hash_set<ppsr::subject_version> live;
+            // Skipped when no pair is in scope: the answer would be
+            // discarded whole.
+            const bool any_in_scope = std::ranges::any_of(
+              res.value(), [&](const auto& sv) { return in_scope(sv.sub); });
+            if (any_in_scope) {
+                auto active = co_await reader.list_schema_id_subject_versions(
+                  id, src_ctx, ppsr::include_deleted::no, as);
+                if (!active.has_value()) {
+                    const auto kind = active.error().kind;
+                    if (kind == source_error_kind::source_unavailable) {
+                        result.unavailable = std::move(active.error());
+                        co_return result;
+                    }
+                    if (kind != source_error_kind::schema_id_not_found) {
+                        // The first ask proved the id exists, so a follow-up
+                        // failure (403 included -- `forbidden` is not a
+                        // miss) must not hold the cursor here and wedge the
+                        // walk on this id every tick. The cost is real:
+                        // this id's pairs are dropped and wait for the next
+                        // full sync, which enumerates by subject and lifts
+                        // the floor past them. Counted so the tick is not
+                        // silent about it.
+                        result.errors.push_back(
+                          std::move(active.error().message));
+                        ++id;
+                        _probe_cursor[src_ctx] = id;
+                        continue;
+                    }
+                    // A miss here is how a source honoring the deleted
+                    // parameter answers an id whose every version is
+                    // soft-deleted: it has no live view. Fall through with
+                    // `live` empty, classifying every pair as soft-deleted.
+                    // (A hard-delete racing in between reads the same; its
+                    // stale pairs then fail their body reads as counted
+                    // per-item errors.)
+                } else {
+                    for (auto& sv : active.value()) {
+                        live.insert(std::move(sv));
+                    }
+                }
+            }
+            auto scoped = res.value() | std::views::filter([&](const auto& sv) {
+                              return in_scope(sv.sub);
+                          });
+            for (auto& sv : scoped) {
+                if (live.contains(sv)) {
                     result.found.push_back(std::move(sv));
+                } else {
+                    result.found_deleted.push_back(std::move(sv));
                 }
             }
             ++id;

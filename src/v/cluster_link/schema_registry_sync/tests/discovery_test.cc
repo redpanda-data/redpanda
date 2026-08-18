@@ -291,8 +291,9 @@ TEST(discovery, probe_starts_at_the_first_id_with_no_floor) {
                  .get();
 
     // No floor entry clamps the start to the lowest id a registry allocates
-    // (1), not to the type's default (0).
-    EXPECT_EQ(h.source.probes(1), 1);
+    // (1), not to the type's default (0). Two asks: the hit is split into
+    // live and soft-deleted with a second, live-only request.
+    EXPECT_EQ(h.source.probes(1), 2);
     ASSERT_EQ(res.found.size(), 1);
     EXPECT_TRUE(holds(res.found, key(orders, 1)));
 }
@@ -320,6 +321,8 @@ TEST(discovery, probe_cursor_advances_on_ids_that_yield_nothing) {
                      h.as)
                    .get();
     EXPECT_TRUE(first.found.empty());
+    // The out-of-scope hit skips the live-only ask (its answer would be
+    // discarded whole); the miss at 3 costs one.
     EXPECT_EQ(h.source.probes(2), 1);
 
     auto second = h.disc
@@ -357,11 +360,210 @@ TEST(discovery, probe_continues_past_a_fully_soft_deleted_id) {
                    h.as)
                  .get();
 
-    // Id 1 resolves with an empty pair list (every version behind it is
-    // soft-deleted); that is a hit that continues the walk, not a miss that
-    // ends it.
+    // Id 1's every version is soft-deleted: still a hit that continues the
+    // walk, and the pair lands as a deleted find, so the soft-delete
+    // propagates instead of waiting for the full sync.
     ASSERT_EQ(res.found.size(), 1);
     EXPECT_TRUE(holds(res.found, key(orders, 2)));
+    ASSERT_EQ(res.found_deleted.size(), 1);
+    EXPECT_TRUE(holds(res.found_deleted, key(orders, 1)));
+    EXPECT_EQ(h.source.probes(3), 1);
+}
+
+// The same schema id can appear under multiple subjects. The probe must split
+// those (subject, version) pairs individually into live vs. soft-deleted.
+TEST(discovery, probe_splits_soft_deleted_hits_per_pair) {
+    discovery_harness h;
+    auto a = ppsr::context_subject::unqualified("a");
+    auto b = ppsr::context_subject::unqualified("b");
+    h.source.add_with_id(a, 1, 1, ppsr::is_deleted::yes);
+    h.source.add_with_id(b, 1, 1);
+
+    auto mapper = identity_mapper();
+    auto res = h.disc
+                 .probe_new_ids(
+                   h.reader,
+                   contexts_of({ppsr::default_context}),
+                   mapper,
+                   {},
+                   all_in_scope(),
+                   h.as)
+                 .get();
+
+    ASSERT_EQ(res.found.size(), 1);
+    EXPECT_TRUE(holds(res.found, key(b, 1)));
+    ASSERT_EQ(res.found_deleted.size(), 1);
+    EXPECT_TRUE(holds(res.found_deleted, key(a, 1)));
+    EXPECT_TRUE(res.errors.empty());
+}
+
+// Even after a successful body read that included `deleted`, the probe still
+// does the live-only follow-up ask: a later body may omit the flag, and the
+// listing-derived split is the reconciler's safe fallback.
+TEST(discovery, probe_keeps_the_live_ask_after_body_reads) {
+    discovery_harness h;
+    auto orders = ppsr::context_subject::unqualified("orders");
+    h.source.add_with_id(orders, 1, 1);
+    h.source.add_with_id(orders, 2, 2, ppsr::is_deleted::yes);
+    // A prior successful read that reports `deleted` must not disable the
+    // listing-based classification of later probe hits.
+    ASSERT_TRUE(
+      h.reader.read_subject_version(orders, ppsr::schema_version{1}, h.as)
+        .get()
+        .has_value());
+    chunked_hash_map<ppsr::context, ppsr::schema_id> floor;
+    floor.emplace(ppsr::default_context, ppsr::schema_id{1});
+
+    auto mapper = identity_mapper();
+    auto res = h.disc
+                 .probe_new_ids(
+                   h.reader,
+                   contexts_of({ppsr::default_context}),
+                   mapper,
+                   floor,
+                   all_in_scope(),
+                   h.as)
+                 .get();
+
+    EXPECT_TRUE(res.found.empty());
+    ASSERT_EQ(res.found_deleted.size(), 1);
+    EXPECT_TRUE(holds(res.found_deleted, key(orders, 2)));
+    // The hit still costs two asks: full + live-only.
+    EXPECT_EQ(h.source.probes(2), 2);
+    EXPECT_TRUE(res.errors.empty());
+}
+
+// A failed live-only follow-up must not wedge the walk: the first ask
+// proved the id exists, so the cursor advances past it and higher ids are
+// still discovered; the failure degrades to one counted error.
+TEST(discovery, probe_advances_past_a_failed_live_ask) {
+    discovery_harness h;
+    auto orders = ppsr::context_subject::unqualified("orders");
+    h.source.add_with_id(orders, 1, 1);
+    h.source.add_with_id(orders, 2, 2);
+    h.source.schema_id_live_errors.emplace(ppsr::schema_id{1}, failed_error());
+
+    auto mapper = identity_mapper();
+    auto res = h.disc
+                 .probe_new_ids(
+                   h.reader,
+                   contexts_of({ppsr::default_context}),
+                   mapper,
+                   {},
+                   all_in_scope(),
+                   h.as)
+                 .get();
+
+    EXPECT_EQ(res.errors.size(), 1);
+    ASSERT_EQ(res.found.size(), 1);
+    EXPECT_TRUE(holds(res.found, key(orders, 2)));
+    EXPECT_EQ(h.source.probes(3), 1);
+
+    // The cursor moved past the failed id: the next walk does not retry it
+    // (id 1 keeps its two asks from the first walk and gains none).
+    auto again = h.disc
+                   .probe_new_ids(
+                     h.reader,
+                     contexts_of({ppsr::default_context}),
+                     mapper,
+                     {},
+                     all_in_scope(),
+                     h.as)
+                   .get();
+    EXPECT_TRUE(again.errors.empty());
+    EXPECT_EQ(h.source.probes(1), 2);
+}
+
+// 403 on the existence ask reads as the routine end of the walk (an
+// ACL-enabled source answers a missing id the same way): silent -- no error,
+// no park -- exactly like a miss.
+TEST(discovery, probe_forbidden_ends_the_walk_silently) {
+    discovery_harness h;
+    auto orders = ppsr::context_subject::unqualified("orders");
+    h.source.add_with_id(orders, 1, 1);
+    h.source.schema_id_errors.emplace(
+      ppsr::schema_id{2},
+      srs::source_error{
+        .kind = srs::source_error_kind::forbidden, .message = "403"});
+
+    auto mapper = identity_mapper();
+    auto res = h.disc
+                 .probe_new_ids(
+                   h.reader,
+                   contexts_of({ppsr::default_context}),
+                   mapper,
+                   {},
+                   all_in_scope(),
+                   h.as)
+                 .get();
+
+    ASSERT_EQ(res.found.size(), 1);
+    EXPECT_TRUE(holds(res.found, key(orders, 1)));
+    EXPECT_TRUE(res.errors.empty());
+    EXPECT_FALSE(res.unavailable.has_value());
+    EXPECT_EQ(h.source.probes(3), 0);
+}
+
+// 403 on the live-only follow-up is NOT the "every pair is soft-deleted"
+// miss: the pairs are dropped with a counted error (they wait for the full
+// sync) and the walk moves on rather than deactivating live schemas.
+TEST(discovery, probe_forbidden_follow_up_does_not_classify) {
+    discovery_harness h;
+    auto orders = ppsr::context_subject::unqualified("orders");
+    h.source.add_with_id(orders, 1, 1);
+    h.source.add_with_id(orders, 2, 2);
+    h.source.schema_id_live_errors.emplace(
+      ppsr::schema_id{1},
+      srs::source_error{
+        .kind = srs::source_error_kind::forbidden, .message = "403"});
+
+    auto mapper = identity_mapper();
+    auto res = h.disc
+                 .probe_new_ids(
+                   h.reader,
+                   contexts_of({ppsr::default_context}),
+                   mapper,
+                   {},
+                   all_in_scope(),
+                   h.as)
+                 .get();
+
+    EXPECT_TRUE(res.found_deleted.empty());
+    ASSERT_EQ(res.found.size(), 1);
+    EXPECT_TRUE(holds(res.found, key(orders, 2)));
+    EXPECT_EQ(res.errors.size(), 1);
+}
+
+// A parameter-ignoring source (Redpanda) answers both asks with the live
+// pairs only: soft-deleted pairs stay invisible to the probe (the deleted
+// split is empty) and a fully soft-deleted id is an empty-list hit that
+// keeps the walk moving.
+TEST(discovery, probe_on_a_parameter_ignoring_source) {
+    discovery_harness h;
+    h.source.honors_include_deleted = false;
+    auto orders = ppsr::context_subject::unqualified("orders");
+    h.source.add_with_id(orders, 1, 1, ppsr::is_deleted::yes);
+    h.source.add_with_id(orders, 2, 2);
+
+    auto mapper = identity_mapper();
+    auto res = h.disc
+                 .probe_new_ids(
+                   h.reader,
+                   contexts_of({ppsr::default_context}),
+                   mapper,
+                   {},
+                   all_in_scope(),
+                   h.as)
+                 .get();
+
+    ASSERT_EQ(res.found.size(), 1);
+    EXPECT_TRUE(holds(res.found, key(orders, 2)));
+    EXPECT_TRUE(res.found_deleted.empty());
+    EXPECT_TRUE(res.errors.empty());
+    // The empty hit on id 1 needs no follow-up; the real hit on id 2 costs
+    // two asks; the miss on id 3 one.
+    EXPECT_EQ(h.source.probes(1), 1);
+    EXPECT_EQ(h.source.probes(2), 2);
     EXPECT_EQ(h.source.probes(3), 1);
 }
 

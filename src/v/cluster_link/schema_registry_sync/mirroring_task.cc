@@ -1218,9 +1218,11 @@ ss::future<task::state_transition> mirroring_task::http_fallback_tail_sync(
     if (probe.unavailable.has_value()) {
         co_return make_unavailable(probe.unavailable->message);
     }
-    const auto probed_nodes = probe.found.size();
+    const auto probed_nodes = probe.found.size() + probe.found_deleted.size();
 
-    if (listing.subjects.empty() && probe.found.empty()) {
+    if (
+      listing.subjects.empty() && probe.found.empty()
+      && probe.found_deleted.empty()) {
         // The common case; costs the listings and the probe misses above.
         co_return make_active();
     }
@@ -1237,6 +1239,12 @@ ss::future<task::state_transition> mirroring_task::http_fallback_tail_sync(
     auto discovered = std::move(versions.discovered);
     for (auto& node : probe.found) {
         discovered.active.insert(std::move(node));
+    }
+    // Soft-deleted probe hits propagate the soft-delete: build_work_set
+    // records them in the fallback set the reconciler consults when the
+    // source omits per-version deleted flags.
+    for (auto& node : probe.found_deleted) {
+        discovered.deleted.insert(std::move(node));
     }
 
     // Same diff the full sync uses. Not redundant here: listing-leg nodes are

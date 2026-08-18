@@ -270,7 +270,10 @@ TEST(http_source_reader, list_schema_id_subject_versions_default_context) {
     ss::abort_source as;
     auto res = reader
                  .list_schema_id_subject_versions(
-                   pps::schema_id{138}, pps::default_context, as)
+                   pps::schema_id{138},
+                   pps::default_context,
+                   pps::include_deleted::no,
+                   as)
                  .get();
     reader.stop().get();
 
@@ -296,7 +299,39 @@ TEST(http_source_reader, list_schema_id_subject_versions_allows_empty_hit) {
     ss::abort_source as;
     auto res = reader
                  .list_schema_id_subject_versions(
-                   pps::schema_id{138}, pps::default_context, as)
+                   pps::schema_id{138},
+                   pps::default_context,
+                   pps::include_deleted::no,
+                   as)
+                 .get();
+    reader.stop().get();
+
+    EXPECT_THAT(res, Optional(IsEmpty()));
+}
+
+// include_deleted::yes sends `deleted=true`, which a source honoring the
+// parameter needs to answer a fully soft-deleted id with its pairs instead of
+// a miss; Redpanda ignores the parameter.
+TEST(http_source_reader, list_schema_id_subject_versions_asks_for_deleted) {
+    auto reader = reader_over([](mock_client& m) {
+        EXPECT_CALL(m, request_and_collect_response(_, _, _))
+          .WillOnce([](
+                      bh::request_header<>&& r,
+                      std::optional<iobuf>,
+                      ss::lowres_clock::duration) {
+              EXPECT_EQ(r.target(), "/schemas/ids/138/versions?deleted=true");
+              return ss::make_ready_future<http::downloaded_response>(
+                http::downloaded_response{
+                  .status = bh::status::ok, .body = iobuf::from("[]")});
+          });
+    });
+    ss::abort_source as;
+    auto res = reader
+                 .list_schema_id_subject_versions(
+                   pps::schema_id{138},
+                   pps::default_context,
+                   pps::include_deleted::yes,
+                   as)
                  .get();
     reader.stop().get();
 
@@ -325,7 +360,10 @@ TEST(http_source_reader, list_schema_id_subject_versions_targets_context) {
     ss::abort_source as;
     auto res = reader
                  .list_schema_id_subject_versions(
-                   pps::schema_id{7}, pps::context{".dev"}, as)
+                   pps::schema_id{7},
+                   pps::context{".dev"},
+                   pps::include_deleted::no,
+                   as)
                  .get();
     reader.stop().get();
 
@@ -516,7 +554,10 @@ TEST(http_source_reader, probe_endpoint_denial_is_distinct_from_a_down_source) {
         ss::abort_source as;
         auto res = reader
                      .list_schema_id_subject_versions(
-                       pps::schema_id{7}, pps::default_context, as)
+                       pps::schema_id{7},
+                       pps::default_context,
+                       pps::include_deleted::yes,
+                       as)
                      .get();
         reader.stop().get();
 
@@ -527,11 +568,11 @@ TEST(http_source_reader, probe_endpoint_denial_is_distinct_from_a_down_source) {
     }
 }
 
-// An ACL-enabled source answers a missing id -- the walk's routine end --
-// with the same 403 as a denial, by design. Both call for the same stop, so
-// 403 maps to the miss; a denial classification would misreport every
-// walk's end on such a source.
-TEST(http_source_reader, probe_forbidden_maps_to_schema_id_not_found) {
+// An ACL-enabled source answers a missing id with the same 403 as a denial,
+// by design, so 403 gets its own kind: the existence ask treats it as the
+// walk's routine end, while the live-only ask must never read it as the
+// "every pair is soft-deleted" miss.
+TEST(http_source_reader, probe_forbidden_maps_to_its_own_kind) {
     auto reader = reader_over([](mock_client& m) {
         EXPECT_CALL(m, request_and_collect_response(_, _, _))
           .WillOnce(respond(bh::status::forbidden, R"({"error_code": 40301})"));
@@ -539,12 +580,15 @@ TEST(http_source_reader, probe_forbidden_maps_to_schema_id_not_found) {
     ss::abort_source as;
     auto res = reader
                  .list_schema_id_subject_versions(
-                   pps::schema_id{7}, pps::default_context, as)
+                   pps::schema_id{7},
+                   pps::default_context,
+                   pps::include_deleted::yes,
+                   as)
                  .get();
     reader.stop().get();
 
     ASSERT_FALSE(res.has_value());
-    EXPECT_EQ(res.error().kind, srs::source_error_kind::schema_id_not_found);
+    EXPECT_EQ(res.error().kind, srs::source_error_kind::forbidden);
 }
 
 // The same statuses on the sync's other reads keep parking the link: those
@@ -614,7 +658,10 @@ TEST(http_source_reader, schema_id_miss_is_distinct_from_failure) {
         ss::abort_source as;
         auto res = reader
                      .list_schema_id_subject_versions(
-                       pps::schema_id{999}, pps::default_context, as)
+                       pps::schema_id{999},
+                       pps::default_context,
+                       pps::include_deleted::yes,
+                       as)
                      .get();
         reader.stop().get();
 

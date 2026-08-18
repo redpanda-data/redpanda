@@ -41,7 +41,7 @@ unavailable_source_reader::list_subject_versions(
 
 ss::future<source_result<chunked_vector<ppsr::subject_version>>>
 unavailable_source_reader::list_schema_id_subject_versions(
-  ppsr::schema_id, ppsr::context, ss::abort_source&) {
+  ppsr::schema_id, ppsr::context, ppsr::include_deleted, ss::abort_source&) {
     co_return std::unexpected(unavailable());
 }
 

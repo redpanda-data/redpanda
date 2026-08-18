@@ -87,6 +87,14 @@ public:
 
     struct probe_result {
         chunked_vector<ppsr::subject_version> found;
+        /// In-scope pairs a resolved id backs that are soft-deleted at the
+        /// source: pairs the deleted=true ask returned but the live-only
+        /// ask did not -- as a smaller list or as a miss (a source honoring
+        /// the parameter has no live view of a fully soft-deleted id). A
+        /// source ignoring the parameter never reveals soft-deleted pairs
+        /// to the probe at all, so there this stays empty and those pairs
+        /// wait for the full sync.
+        chunked_vector<ppsr::subject_version> found_deleted;
         chunked_vector<ss::sstring> errors;
         std::optional<source_error> unavailable;
     };
@@ -95,7 +103,18 @@ public:
     /// listing can see: probes source schema ids upward from `floor` (the
     /// caller's inventory-derived position) or this instance's cursor,
     /// whichever is higher, until the first absent id. Every in-scope
-    /// (subject, version) pair a resolved id backs lands in the result.
+    /// (subject, version) pair a resolved id backs lands in the result,
+    /// split by its soft-delete state at the source -- except pairs whose
+    /// live-only classification ask failed outright: those are dropped with
+    /// a counted error and wait for the full sync.
+    ///
+    /// Intentionally always classifies probe hits by the second, live-only
+    /// listing instead of deferring deleted-state to the reconciler or relying
+    /// on earlier read bodies to carry `deleted`: the probe endpoint does not
+    /// carry per-pair deleted state, and that body shape is only observed
+    /// heuristically, so one later response may still omit the flag. The
+    /// listing-derived split is the probe's safe fallback that keeps a newly
+    /// discovered soft-deleted version from landing active on the destination.
     ss::future<probe_result> probe_new_ids(
       source_reader& reader,
       const chunked_hash_set<ppsr::context>& contexts,

@@ -350,7 +350,10 @@ http_source_reader::list_subject_versions(
 
 ss::future<source_result<chunked_vector<ppsr::subject_version>>>
 http_source_reader::list_schema_id_subject_versions(
-  ppsr::schema_id id, ppsr::context ctx, ss::abort_source& as) {
+  ppsr::schema_id id,
+  ppsr::context ctx,
+  ppsr::include_deleted include_deleted,
+  ss::abort_source& as) {
     auto client = co_await ensure_client(as);
     if (!client.has_value()) {
         co_return std::unexpected(std::move(client.error()));
@@ -366,21 +369,20 @@ http_source_reader::list_schema_id_subject_versions(
                      : std::optional{
                          ppsr::context_subject{ctx, ppsr::subject{""}}};
     auto res = co_await client.value()->get_schema_id_subject_versions(
-      id, rtc, std::move(subject));
+      id, rtc, std::move(subject), include_deleted);
     if (!res.has_value()) {
         // Not in to_source_error: this probe is the sync's only optional
         // read; the shared mapping stays right for the required ones.
         //
-        // 403: an ACL-enabled source answers a missing id -- the walk's
-        // routine end -- with the same 403 as a denial, by design. Both
-        // call for the same action (stop; the full sync covers what the
-        // walk cannot see), so it maps to the miss, not to a fault that
-        // would misreport every walk's end on such a source. The broker
-        // logs which one it was.
+        // 403: an ACL-enabled source answers a missing id with the same
+        // 403 as a denial, by design -- the broker logs which one it was.
+        // Reported as its own kind: the existence ask treats it as the
+        // walk's routine end, but it must never read as a miss to the
+        // live-only ask, whose miss feeds soft-delete classification.
         if (is_forbidden(res.error())) {
             co_return std::unexpected(
               source_error{
-                .kind = source_error_kind::schema_id_not_found,
+                .kind = source_error_kind::forbidden,
                 .message = fmt::format("{}", res.error())});
         }
         if (is_endpoint_denied(res.error())) {

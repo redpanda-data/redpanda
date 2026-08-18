@@ -102,6 +102,20 @@ inline int index_of(
     return -1;
 }
 
+// The stored schema for one (subject, version) node, or nullptr.
+inline const ppsr::stored_schema* find_stored(
+  const std::vector<ppsr::stored_schema>& all,
+  const ppsr::context_subject& sub,
+  int32_t version) {
+    for (const auto& s : all) {
+        if (
+          s.schema.sub() == sub && s.version == ppsr::schema_version{version}) {
+            return &s;
+        }
+    }
+    return nullptr;
+}
+
 inline ppsr::subject_version
 key(const ppsr::context_subject& sub, int32_t version) {
     return ppsr::subject_version{sub, ppsr::schema_version{version}};
@@ -130,6 +144,16 @@ struct fake_source_state {
     // Forces list_schema_id_subject_versions to fail for specific ids: a real
     // probe failure, as opposed to the miss an unallocated id yields anyway.
     chunked_hash_map<ppsr::schema_id, srs::source_error> schema_id_errors;
+    // Like schema_id_errors, but only for the live-only ask
+    // (include_deleted::no), letting a test fail the split's follow-up
+    // request while the existence ask succeeded.
+    chunked_hash_map<ppsr::schema_id, srs::source_error> schema_id_live_errors;
+    // Whether list_schema_id_subject_versions honors include_deleted.
+    // True models Confluent: soft-deleted pairs included under ::yes, and
+    // the live-only ask answers a fully soft-deleted id with a miss. False
+    // models Redpanda, which ignores the parameter: live pairs only, and
+    // existence decided independently of it.
+    bool honors_include_deleted{true};
     // list_schema_id_subject_versions call count, keyed by probed id.
     chunked_hash_map<ppsr::schema_id, uint32_t> schema_id_probe_counts;
     // list_subjects call count: every run lists each in-scope context, so a
@@ -356,16 +380,27 @@ public:
 
     ss::future<srs::source_result<chunked_vector<ppsr::subject_version>>>
     list_schema_id_subject_versions(
-      ppsr::schema_id id, ppsr::context ctx, ss::abort_source&) override {
+      ppsr::schema_id id,
+      ppsr::context ctx,
+      ppsr::include_deleted include_deleted,
+      ss::abort_source&) override {
         ++_state->schema_id_probe_counts[id];
         if (
           auto it = _state->schema_id_errors.find(id);
           it != _state->schema_id_errors.end()) {
             co_return std::unexpected(it->second);
         }
-        // The real endpoint decides these independently: 404 only when the
-        // schema does not resolve, then the pair listing filters soft-deleted
-        // out. So a fully soft-deleted id is a hit with an empty list.
+        if (include_deleted == ppsr::include_deleted::no) {
+            if (
+              auto it = _state->schema_id_live_errors.find(id);
+              it != _state->schema_id_live_errors.end()) {
+                co_return std::unexpected(it->second);
+            }
+        }
+        // See fake_source_state::honors_include_deleted for the two source
+        // models this serves.
+        const bool honored = _state->honors_include_deleted
+                             && include_deleted == ppsr::include_deleted::yes;
         bool id_resolves = false;
         chunked_vector<ppsr::subject_version> pairs;
         for (const auto& s : _state->schemas) {
@@ -373,10 +408,19 @@ public:
                 continue;
             }
             id_resolves = true;
-            if (s.deleted == ppsr::is_deleted::no) {
+            if (s.deleted == ppsr::is_deleted::no || honored) {
                 pairs.push_back(
                   ppsr::subject_version{s.schema.sub(), s.version});
             }
+        }
+        // A source honoring the parameter has no live view of a fully
+        // soft-deleted id: the live-only ask misses rather than answering
+        // an empty list.
+        if (
+          _state->honors_include_deleted
+          && include_deleted == ppsr::include_deleted::no && id_resolves
+          && pairs.empty()) {
+            id_resolves = false;
         }
         if (!id_resolves) {
             co_return std::unexpected(

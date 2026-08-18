@@ -47,7 +47,14 @@ enum class source_error_kind : uint8_t {
     /// it -- not treat the source as down or count an error -- but may ask
     /// again later. Produced only by `list_schema_id_subject_versions`, the
     /// one endpoint the sync can do without.
-    endpoint_unavailable,
+    endpoint_unsupported,
+    /// The source answered this read with 403. Produced only by
+    /// `list_schema_id_subject_versions`: an ACL-enabled source deliberately
+    /// answers a missing id with the same 403 as a denial, so on the
+    /// existence ask this is the routine end of the walk -- but it is NOT a
+    /// miss, so it must never feed classification (a miss on the live-only
+    /// ask means "no live view"; a 403 means nothing of the sort).
+    forbidden,
 };
 
 struct source_error {
@@ -94,12 +101,25 @@ public:
     /// given numeric schema id -- tail sync's discovery probe. The result is
     /// not narrowed by the link's scope (the caller applies `in_scope`), and
     /// the pairs are unordered. An id the source never allocated (or
-    /// hard-deleted) yields `schema_id_not_found`; an allocated id whose
-    /// every version is soft-deleted yields an empty list instead -- only
-    /// existence tells the probe whether the id space is exhausted.
+    /// hard-deleted) yields `schema_id_not_found`.
+    ///
+    /// include_deleted::yes asks the source to include soft-deleted pairs
+    /// and, on a source honoring it, to answer a fully soft-deleted id with
+    /// its pairs rather than a miss; a source ignoring the parameter
+    /// (Redpanda) reports the live pairs only and answers a fully
+    /// soft-deleted id with an empty list -- either way only existence tells
+    /// the probe whether the id space is exhausted.
+    ///
+    /// Under include_deleted::no a miss carries meaning beyond "never
+    /// allocated": a source honoring the parameter has no live view of a
+    /// fully soft-deleted id, so its live-only ask misses for an id whose
+    /// existence the ::yes ask just proved. Implementations must map only a
+    /// genuine not-found onto schema_id_not_found here -- the probe reads
+    /// that miss as "every pair is soft-deleted".
     virtual ss::future<source_result<chunked_vector<ppsr::subject_version>>>
     list_schema_id_subject_versions(
-      ppsr::schema_id, ppsr::context, ss::abort_source&) = 0;
+      ppsr::schema_id, ppsr::context, ppsr::include_deleted, ss::abort_source&)
+      = 0;
 
     /// Reads a specific subject version's schema. The reconcile engine's
     /// schema-body fetch path: called for every node it discovers and imports.
