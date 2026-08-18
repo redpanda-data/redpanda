@@ -23,7 +23,6 @@ import (
 	"connectrpc.com/connect"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/adminapi"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
-	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/oauth/providers/auth0"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/out"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/publicapi"
 	"github.com/spf13/afero"
@@ -96,12 +95,7 @@ Create a Shadow Link without confirmation prompt:
 
 			successMsgTmpl := "Successfully created shadow link %q with ID %q. To query the status, run:\n  'rpk shadow status %[1]v'"
 			if prof.CheckFromCloud() {
-				cloudClient, err := publicapi.NewValidatedCloudClientSet(
-					cfg.DevOverrides().PublicAPIURL,
-					prof.CurrentAuth().AuthToken,
-					auth0.NewClient(cfg.DevOverrides()).Audience(),
-					[]string{prof.CurrentAuth().ClientID},
-				)
+				cloudClient, err := newCloudClientSet(cfg, prof)
 				out.MaybeDieErr(err)
 
 				err = validateCloudSecrets(cmd.Context(), prof, slCfg)
@@ -375,18 +369,15 @@ func validateCloudSecrets(ctx context.Context, prof *config.RpkProfile, slCfg *S
 	if err != nil {
 		return err
 	}
-	secrets, err := dpClient.Secret.ListSecrets(ctx, connect.NewRequest(&dataplanev1.ListSecretsRequest{
-		PageSize: 500, // 500 is a reasonable upper limit for now.
-		Filter: &dataplanev1.ListSecretsFilter{
-			Scopes: []dataplanev1.Scope{dataplanev1.Scope_SCOPE_REDPANDA_CLUSTER},
-		},
-	}))
+	secrets, err := dpClient.ListAllSecrets(ctx, &dataplanev1.ListSecretsFilter{
+		Scopes: []dataplanev1.Scope{dataplanev1.Scope_SCOPE_REDPANDA_CLUSTER},
+	})
 	if err != nil {
 		return fmt.Errorf("unable to list secrets at REDPANDA_CLUSTER scope: %v", err)
 	}
 
 	secretRefs := make(map[string]struct{})
-	for _, secret := range secrets.Msg.GetSecrets() {
+	for _, secret := range secrets {
 		secretRefs[fmt.Sprintf("%s%s}", secretsPrefix, secret.Id)] = struct{}{}
 	}
 

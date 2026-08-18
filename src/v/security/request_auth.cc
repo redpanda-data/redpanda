@@ -38,8 +38,8 @@ request_authenticator::request_authenticator(
  * Attempt to authenticate the request.
  *
  * The returned object **must be used** via one of its authorization
- * helpers (e.g. require_superuser) or it will throw an exception
- * on destruction.
+ * helpers (e.g. require_superuser) or it will log an error on
+ * destruction.
  *
  * @param req
  * @return
@@ -248,11 +248,14 @@ request_auth_result::request_auth_result(request_auth_result&& other) noexcept
  * a request handler that might be unintentionally allowing unchecked
  * access.
  *
- * This is a rare case of a throwing destructor.  It is made safe by
- * checking if there is already an exception in flight first, and by
- * knowing that all our member objects have nothrow destructors.
+ * The destructor can only log about it: throwing here used to be how the
+ * request was failed, but a coroutine that takes this object by value
+ * destroys it during frame teardown, inside the reactor's noexcept task
+ * entry point, where a throw aborts the broker.  Callers that hand an
+ * unchecked result to a handler are responsible for failing the request,
+ * by inspecting is_checked() once the handler completes.
  */
-request_auth_result::~request_auth_result() noexcept(false) {
+request_auth_result::~request_auth_result() {
     // If another exception is already in flight (e.g., thrown during request
     // handling between authenticate() and the check), it's acceptable that we
     // didn't perform the check. We only log the error if there is no active
@@ -263,10 +266,5 @@ request_auth_result::~request_auth_result() noexcept(false) {
     if (!_checked && !another_exception_in_flight) {
         vlog(
           logger.error, "request_auth_result destroyed without being checked!");
-
-        // In this case, it is essential that we do not send any data
-        // in a response: they get a 500 instead.  Since this is security
-        // code, we do not tell them why.
-        throw ss::httpd::server_error_exception("Internal Error");
     }
 }

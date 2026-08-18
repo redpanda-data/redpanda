@@ -1098,7 +1098,7 @@ replicated_metastore::get_extent_metadata_backwards(
 }
 
 ss::future<std::expected<std::nullopt_t, metastore::errc>>
-replicated_metastore::flush() {
+replicated_metastore::flush(flush_type type) {
     auto num_partitions = fe_.num_metastore_partitions();
     if (!num_partitions.has_value()) {
         vlog(cd_log.warn, "Unable to get num metastore partitions for flush");
@@ -1113,22 +1113,34 @@ replicated_metastore::flush() {
 
     chunked_vector<domain_uuid> domains;
     domains.reserve(*num_partitions);
+    std::optional<errc> flush_error;
     for (int pid = 0; pid < *num_partitions; ++pid) {
         rpc::flush_domain_request req{
-          .metastore_partition = model::partition_id{pid}};
+          .metastore_partition = model::partition_id{pid},
+          .skip_if_recent = type == flush_type::skip_if_recent};
 
         auto reply_fut = co_await ss::coroutine::as_future(
           fe_.flush_domain(std::move(req)));
         if (reply_fut.failed()) {
             auto ex = reply_fut.get_exception();
             vlog(cd_log.warn, "Error flushing partition {}: {}", pid, ex);
-            co_return std::unexpected(errc::transport_error);
+            flush_error = flush_error.value_or(errc::transport_error);
+            continue;
         }
         auto reply = reply_fut.get();
         if (reply.ec != rpc::errc::ok) {
-            co_return std::unexpected(rpc_to_meta_errc(reply.ec));
+            vlog(cd_log.warn, "Error flushing partition {}: {}", pid, reply.ec);
+            flush_error = flush_error.value_or(rpc_to_meta_errc(reply.ec));
+            continue;
         }
         domains.push_back(reply.uuid);
+    }
+
+    // The manifest must list every domain to be usable for restore, so only
+    // upload it if all partitions flushed. Otherwise report the error and let
+    // the caller retry.
+    if (flush_error.has_value()) {
+        co_return std::unexpected(*flush_error);
     }
 
     metastore_manifest manifest{

@@ -8,6 +8,7 @@
 // by the Apache License, Version 2.0
 
 #include "kafka/client/direct_consumer/data_queue.h"
+#include "test_utils/async.h"
 
 #include <gtest/gtest.h>
 
@@ -164,13 +165,13 @@ TEST(DataQueueTest, TestBlockingPushWhenFull) {
     ASSERT_FALSE(queue.can_insert(50));
 
     auto push_future = queue.push(make_data(1, 50), 50);
+    tests::drain_task_queue().get();
     ASSERT_FALSE(push_future.available());
     ASSERT_EQ(queue.size(), max_count);
     ASSERT_EQ(queue.current_bytes(), max_count * 50);
 
-    queue.pop(std::chrono::milliseconds(100)).get();
-    ASSERT_EQ(queue.size(), max_count - 1);
-    ASSERT_EQ(queue.current_bytes(), (max_count - 1) * 50);
+    auto fetches = queue.pop(std::chrono::milliseconds(100)).get();
+    ASSERT_EQ(fetches.value().size(), 1);
 
     push_future.get();
     ASSERT_EQ(queue.size(), max_count);

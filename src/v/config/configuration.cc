@@ -1175,7 +1175,7 @@ configuration::configuration()
       "Number of partitions in the internal group membership topic.",
       {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
       16)
-  , default_topic_replication(
+  , default_topic_replications(
       *this,
       "default_topic_replications",
       "Default replication factor for new topics.",
@@ -3543,7 +3543,7 @@ configuration::configuration()
       5min)
   , leader_balancer_node_mute_timeout(
       *this,
-      "leader_balancer_mute_timeout",
+      "leader_balancer_node_mute_timeout",
       "Leadership rebalancing node mute timeout.",
       {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
       20s)
@@ -5304,9 +5304,11 @@ configuration::configuration()
       "or any cluster where stability, data loss, or the ability to upgrade "
       "are a concern. To enable experimental features, set the value of this "
       "configuration option to the current unix epoch expressed in seconds. "
-      "The value must be within one hour of the current time on the broker."
+      "The value must be within one hour of the current time on the broker. "
       "Once experimental features are enabled they cannot be disabled.",
-      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
+      {.needs_restart = needs_restart::no,
+       .visibility = visibility::tunable,
+       .usable_before_ready = usable_before_ready::yes},
       "",
       [this](const ss::sstring& v) -> std::optional<ss::sstring> {
           if (development_features_enabled()) {

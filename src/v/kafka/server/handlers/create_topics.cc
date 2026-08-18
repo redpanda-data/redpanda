@@ -309,7 +309,7 @@ ss::future<response_ptr> create_topics_handler::handle(
         }
         if (r.replication_factor == -1) {
             r.replication_factor
-              = config::shard_local_cfg().default_topic_replication();
+              = config::shard_local_cfg().default_topic_replications();
         }
     }
 

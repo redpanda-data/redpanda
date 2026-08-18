@@ -10,6 +10,7 @@
 
 #include "cloud_io/tests/s3_imposter.h"
 #include "cloud_topics/level_zero/stm/ctp_stm.h"
+#include "container/chunked_vector.h"
 #include "kafka/server/tests/list_offsets_utils.h"
 #include "kafka/server/tests/produce_consume_utils.h"
 #include "model/batch_builder.h"
@@ -137,6 +138,62 @@ TEST_F(e2e_fixture, test_l0_path) {
             ASSERT_EQ(records[expected_offset].val, consumed.val);
         }
     }
+}
+
+// Regression test for an incorrect integity check: previous versions of
+// Redpanda wouldn't detect corrupted data on the L0 path, and would instead
+// re-CRC based on what was in the cloud. Guard against this by flipping a bit
+// in an uploaded object and ensure the client doesn't see it (our client
+// silently drops it).
+TEST_F(e2e_fixture, test_corrupt_l0_object_fails_client_crc_check) {
+    // Disable reconciliation and disable the batch cache to ensure we read
+    // from L0 objects.
+    test_local_cfg.get("cloud_topics_disable_reconciliation_loop")
+      .set_value(true);
+    test_local_cfg.get("disable_batch_cache").set_value(true);
+
+    const ss::sstring marker(64, 'A');
+    auto* producer = make_producer();
+    producer
+      ->produce_to_partition(
+        topic_name, model::partition_id(0), std::vector<kv_t>{{"key", marker}})
+      .get();
+
+    auto puts = get_requests(
+      [&marker](const http_test_utils::request_info& req) {
+          return req.method == "PUT"
+                 && req.content.find(marker) != ss::sstring::npos;
+      });
+    ASSERT_EQ(puts.size(), 1);
+    const auto l0_url = puts.front().url;
+    auto corrupted = puts.front().content;
+    auto flip_at = corrupted.find(marker) + marker.size() / 2;
+    corrupted[flip_at] = static_cast<char>(corrupted[flip_at] ^ 0x01);
+
+    // Republish the object with the corrupted body.
+    const auto key = l0_url.substr(1);
+    remove_expectations(chunked_vector<ss::sstring>::single(key));
+    add_expectations(
+      chunked_vector<expectation>::single(
+        expectation{.url = key, .body = corrupted}));
+
+    auto* consumer = make_consumer();
+    auto records = consumer
+                     ->raw_consume_from_partition(
+                       topic_name, model::partition_id(0), model::offset(0))
+                     .get();
+
+    // Sanity check that we actually got the object from storage.
+    auto gets = get_requests(
+      [&l0_url](const http_test_utils::request_info& req) {
+          return req.method == "GET" && req.url == l0_url;
+      });
+    ASSERT_FALSE(gets.empty()) << "fetch never downloaded the L0 object";
+
+    EXPECT_TRUE(records.empty())
+      << "client accepted " << records.size()
+      << " record(s) from a corrupted L0 object: the read path replaced the "
+         "produce-time record crc with one computed over the corrupted bytes";
 }
 
 TEST_F(e2e_fixture, timequery) {

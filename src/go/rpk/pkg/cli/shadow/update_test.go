@@ -13,7 +13,11 @@ import (
 	"testing"
 	"time"
 
+	controlplanev1 "buf.build/gen/go/redpandadata/cloud/protocolbuffers/go/redpanda/api/controlplane/v1"
+	adminv2 "buf.build/gen/go/redpandadata/core/protocolbuffers/go/redpanda/core/admin/v2"
+	"github.com/spf13/afero"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/protobuf/types/known/fieldmaskpb"
 )
 
 func TestDiffConfigs(t *testing.T) {
@@ -311,6 +315,333 @@ func TestDiffConfigs(t *testing.T) {
 			got := diffConfigs(tt.original, tt.updated)
 
 			require.Equal(t, tt.want, got)
+		})
+	}
+}
+
+func TestCloudUpdateReplacePaths(t *testing.T) {
+	_, err := fieldmaskpb.New(&controlplanev1.ShadowLinkUpdate{}, cloudUpdateReplacePaths...)
+	require.NoError(t, err)
+
+	// The replace mask must cover every updatable field of ShadowLinkUpdate;
+	// if the cloud API grows a new option group it must be added to the mask.
+	fields := (&controlplanev1.ShadowLinkUpdate{}).ProtoReflect().Descriptor().Fields()
+	var want []string
+	for i := 0; i < fields.Len(); i++ {
+		if name := string(fields.Get(i).Name()); name != "id" {
+			want = append(want, name)
+		}
+	}
+	require.ElementsMatch(t, want, cloudUpdateReplacePaths)
+}
+
+func TestAddRedactedPasswordString(t *testing.T) {
+	scramCfg := func(password string) *ShadowLinkConfig {
+		return &ShadowLinkConfig{
+			ClientOptions: &ShadowLinkClientOptions{
+				AuthenticationConfiguration: &AuthenticationConfiguration{
+					ScramConfiguration: &ScramConfiguration{Username: "user", Password: password},
+				},
+			},
+		}
+	}
+	plainCfg := func(password string) *ShadowLinkConfig {
+		return &ShadowLinkConfig{
+			ClientOptions: &ShadowLinkClientOptions{
+				AuthenticationConfiguration: &AuthenticationConfiguration{
+					PlainConfiguration: &PlainConfiguration{Username: "user", Password: password},
+				},
+			},
+		}
+	}
+	srBasicCfg := func(password string) *ShadowLinkConfig {
+		return &ShadowLinkConfig{
+			SchemaRegistrySyncOptions: &SchemaRegistrySyncOptions{
+				ShadowSchemaRegistryAPI: &ShadowSchemaRegistryAPI{
+					AuthOptions: &SchemaRegistryAuthOptions{
+						Basic: &HTTPBasicAuthOptions{Username: "user", Password: password},
+					},
+				},
+			},
+		}
+	}
+	tests := []struct {
+		name string
+		cfg  *ShadowLinkConfig
+		link *adminv2.ShadowLink
+		exp  *ShadowLinkConfig
+	}{
+		{
+			name: "scram password set",
+			cfg:  scramCfg(""),
+			link: &adminv2.ShadowLink{
+				Configurations: &adminv2.ShadowLinkConfigurations{
+					ClientOptions: &adminv2.ShadowLinkClientOptions{
+						AuthenticationConfiguration: &adminv2.AuthenticationConfiguration{
+							Authentication: &adminv2.AuthenticationConfiguration_ScramConfiguration{
+								ScramConfiguration: &adminv2.ScramConfig{Username: "user", PasswordSet: true},
+							},
+						},
+					},
+				},
+			},
+			exp: scramCfg(redacted),
+		},
+		{
+			name: "plain password set",
+			cfg:  plainCfg(""),
+			link: &adminv2.ShadowLink{
+				Configurations: &adminv2.ShadowLinkConfigurations{
+					ClientOptions: &adminv2.ShadowLinkClientOptions{
+						AuthenticationConfiguration: &adminv2.AuthenticationConfiguration{
+							Authentication: &adminv2.AuthenticationConfiguration_PlainConfiguration{
+								PlainConfiguration: &adminv2.PlainConfig{Username: "user", PasswordSet: true},
+							},
+						},
+					},
+				},
+			},
+			exp: plainCfg(redacted),
+		},
+		{
+			name: "schema registry basic password set",
+			cfg:  srBasicCfg(""),
+			link: &adminv2.ShadowLink{
+				Configurations: &adminv2.ShadowLinkConfigurations{
+					SchemaRegistrySyncOptions: &adminv2.SchemaRegistrySyncOptions{
+						SchemaRegistryShadowingMode: &adminv2.SchemaRegistrySyncOptions_ShadowSchemaRegistryApi_{
+							ShadowSchemaRegistryApi: &adminv2.SchemaRegistrySyncOptions_ShadowSchemaRegistryApi{
+								AuthOptions: &adminv2.SchemaRegistryAuthOptions{
+									AuthOptions: &adminv2.SchemaRegistryAuthOptions_Basic{
+										Basic: &adminv2.HTTPBasicAuthOptions{Username: "user", PasswordSet: true},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+			exp: srBasicCfg(redacted),
+		},
+		{
+			name: "no password set leaves config untouched",
+			cfg:  scramCfg(""),
+			link: &adminv2.ShadowLink{
+				Configurations: &adminv2.ShadowLinkConfigurations{
+					ClientOptions: &adminv2.ShadowLinkClientOptions{
+						AuthenticationConfiguration: &adminv2.AuthenticationConfiguration{
+							Authentication: &adminv2.AuthenticationConfiguration_ScramConfiguration{
+								ScramConfiguration: &adminv2.ScramConfig{Username: "user"},
+							},
+						},
+					},
+				},
+			},
+			exp: scramCfg(""),
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			addRedactedPasswordString(tt.cfg, tt.link)
+			require.Equal(t, tt.exp, tt.cfg)
+		})
+	}
+}
+
+func TestStripRedactedPasswords(t *testing.T) {
+	full := func(scram, plain, srBasic string) *ShadowLinkConfig {
+		return &ShadowLinkConfig{
+			ClientOptions: &ShadowLinkClientOptions{
+				AuthenticationConfiguration: &AuthenticationConfiguration{
+					ScramConfiguration: &ScramConfiguration{Username: "user", Password: scram},
+					PlainConfiguration: &PlainConfiguration{Username: "user", Password: plain},
+				},
+			},
+			SchemaRegistrySyncOptions: &SchemaRegistrySyncOptions{
+				ShadowSchemaRegistryAPI: &ShadowSchemaRegistryAPI{
+					AuthOptions: &SchemaRegistryAuthOptions{
+						Basic: &HTTPBasicAuthOptions{Username: "user", Password: srBasic},
+					},
+				},
+			},
+		}
+	}
+	tests := []struct {
+		name string
+		cfg  *ShadowLinkConfig
+		exp  *ShadowLinkConfig
+	}{
+		{
+			name: "placeholders are cleared",
+			cfg:  full(redacted, redacted, redacted),
+			exp:  full("", "", ""),
+		},
+		{
+			name: "real passwords are kept",
+			cfg:  full("hunter2", "hunter3", "hunter4"),
+			exp:  full("hunter2", "hunter3", "hunter4"),
+		},
+		{
+			name: "nil sections are ignored",
+			cfg:  &ShadowLinkConfig{Name: "test"},
+			exp:  &ShadowLinkConfig{Name: "test"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			stripRedactedPasswords(tt.cfg)
+			require.Equal(t, tt.exp, tt.cfg)
+		})
+	}
+}
+
+func TestUpdatedConfigFromFile(t *testing.T) {
+	tests := []struct {
+		name      string
+		contents  string // written to the config file path, unless noFile is set
+		noFile    bool
+		linkName  string
+		fromCloud bool
+		clusterID string
+		expErr    string
+		exp       *ShadowLinkConfig
+	}{
+		{
+			name: "valid config with matching name",
+			contents: `name: my-link
+client_options:
+  bootstrap_servers:
+    - localhost:9092
+`,
+			linkName: "my-link",
+			exp: &ShadowLinkConfig{
+				Name: "my-link",
+				ClientOptions: &ShadowLinkClientOptions{
+					BootstrapServers: []string{"localhost:9092"},
+				},
+			},
+		},
+		{
+			name: "non-placeholder password is accepted",
+			contents: `name: my-link
+client_options:
+  bootstrap_servers:
+    - localhost:9092
+  authentication_configuration:
+    scram_configuration:
+      username: user
+      password: hunter2
+`,
+			linkName: "my-link",
+			exp: &ShadowLinkConfig{
+				Name: "my-link",
+				ClientOptions: &ShadowLinkClientOptions{
+					BootstrapServers: []string{"localhost:9092"},
+					AuthenticationConfiguration: &AuthenticationConfiguration{
+						ScramConfiguration: &ScramConfiguration{
+							Username: "user",
+							Password: "hunter2",
+						},
+					},
+				},
+			},
+		},
+		{
+			name: "name mismatch",
+			contents: `name: other-link
+client_options:
+  bootstrap_servers:
+    - localhost:9092
+`,
+			linkName: "my-link",
+			expErr:   "does not match",
+		},
+		{
+			name:     "empty file",
+			contents: "",
+			linkName: "my-link",
+			expErr:   "the Shadow Link name is required",
+		},
+		{
+			name:     "missing file",
+			noFile:   true,
+			linkName: "my-link",
+			expErr:   "unable to read",
+		},
+		{
+			name: "redacted scram password",
+			contents: `name: my-link
+client_options:
+  bootstrap_servers:
+    - localhost:9092
+  authentication_configuration:
+    scram_configuration:
+      username: user
+      password: <redacted>
+`,
+			linkName: "my-link",
+			expErr:   "placeholder password",
+		},
+		{
+			name: "redacted schema registry password",
+			contents: `name: my-link
+client_options:
+  bootstrap_servers:
+    - localhost:9092
+schema_registry_sync_options:
+  shadow_schema_registry_api:
+    source_url: https://source-sr:8081
+    auth_options:
+      basic:
+        username: user
+        password: <redacted>
+`,
+			linkName: "my-link",
+			expErr:   "placeholder password",
+		},
+		{
+			name: "cloud shadow_redpanda_id mismatch",
+			contents: `name: my-link
+cloud_options:
+  shadow_redpanda_id: other-cluster
+`,
+			linkName:  "my-link",
+			fromCloud: true,
+			clusterID: "my-cluster",
+			expErr:    "does not match the selected cluster",
+		},
+		{
+			name: "cloud shadow_redpanda_id match",
+			contents: `name: my-link
+cloud_options:
+  shadow_redpanda_id: my-cluster
+`,
+			linkName:  "my-link",
+			fromCloud: true,
+			clusterID: "my-cluster",
+			exp: &ShadowLinkConfig{
+				Name: "my-link",
+				CloudOptions: &CloudShadowLinkOptions{
+					ShadowRedpandaID: "my-cluster",
+				},
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			fs := afero.NewMemMapFs()
+			const path = "/shadow-link.yaml"
+			if !tt.noFile {
+				require.NoError(t, afero.WriteFile(fs, path, []byte(tt.contents), 0o644))
+			}
+
+			cfg, err := updatedConfigFromFile(fs, path, tt.linkName, tt.fromCloud, tt.clusterID)
+			if tt.expErr != "" {
+				require.ErrorContains(t, err, tt.expErr)
+				return
+			}
+			require.NoError(t, err)
+			require.Equal(t, tt.exp, cfg)
 		})
 	}
 }

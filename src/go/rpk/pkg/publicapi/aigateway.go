@@ -47,7 +47,6 @@ type AIGatewayClientSet struct {
 	Settings       aigatewayv1connect.SettingsServiceClient
 	SpendLimit     aigatewayv1connect.SpendLimitServiceClient
 	SSO            aigatewayv1connect.SSOServiceClient
-	Team           aigatewayv1connect.TeamServiceClient
 	User           aigatewayv1connect.UserServiceClient
 	VisualMetadata aigatewayv1connect.VisualMetadataServiceClient
 	Workspace      aigatewayv1connect.WorkspaceServiceClient
@@ -141,7 +140,6 @@ func NewAIGatewayClientSet(host, authToken string, opts ...connect.ClientOption)
 	cl.Settings = aigatewayv1connect.NewSettingsServiceClient(httpCl, host, opts...)
 	cl.SpendLimit = aigatewayv1connect.NewSpendLimitServiceClient(httpCl, host, opts...)
 	cl.SSO = aigatewayv1connect.NewSSOServiceClient(httpCl, host, opts...)
-	cl.Team = aigatewayv1connect.NewTeamServiceClient(httpCl, host, opts...)
 	cl.User = aigatewayv1connect.NewUserServiceClient(httpCl, host, opts...)
 	cl.VisualMetadata = aigatewayv1connect.NewVisualMetadataServiceClient(httpCl, host, opts...)
 	cl.Workspace = aigatewayv1connect.NewWorkspaceServiceClient(httpCl, host, opts...)

@@ -36,7 +36,15 @@ go_library(
 
 go_test(
     name = "publicapi_test",
-    srcs = ["controlplane_test.go"],
+    srcs = [
+        "controlplane_test.go",
+        "dataplane_test.go",
+    ],
     embed = [":publicapi"],
-    deps = ["@com_github_stretchr_testify//require"],
+    deps = [
+        "@build_buf_gen_go_redpandadata_dataplane_connectrpc_go//redpanda/api/dataplane/v1/dataplanev1connect",
+        "@build_buf_gen_go_redpandadata_dataplane_protocolbuffers_go//redpanda/api/dataplane/v1:dataplane",
+        "@com_connectrpc_connect//:connect",
+        "@com_github_stretchr_testify//require",
+    ],
 )

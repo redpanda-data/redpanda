@@ -44,9 +44,9 @@ def data_dependency():
     http_archive(
         name = "c-ares",
         build_file = "//bazel/thirdparty:c-ares.BUILD",
-        sha256 = "912dd7cc3b3e8a79c52fd7fb9c0f4ecf0aaa73e45efda880266a2d6e26b84ef5",
-        strip_prefix = "c-ares-1.34.6",
-        url = "https://vectorized-public.s3.amazonaws.com/dependencies/c-ares-1.34.6.tar.gz",
+        sha256 = "556f781dd188ad932dc8263fee0ad3aaba675b4cd8e54d86908681b43ce3e327",
+        strip_prefix = "c-ares-1.34.7",
+        url = "https://vectorized-public.s3.amazonaws.com/dependencies/c-ares-1.34.7.tar.gz",
     )
 
     http_archive(
@@ -164,9 +164,9 @@ def data_dependency():
     http_archive(
         name = "seastar",
         build_file = "//bazel/thirdparty:seastar.BUILD",
-        sha256 = "120bb1711ea5c56124b83556fec3dc85d8edd9b3c0990419b7c8900659a46e5f",
-        strip_prefix = "seastar-cde680a9c6c3ff290a46f93a7ccea570ee8ccd87",
-        url = "https://github.com/redpanda-data/seastar/archive/cde680a9c6c3ff290a46f93a7ccea570ee8ccd87.tar.gz",
+        sha256 = "8d49c9bc4125e77aad3345ad1b29bb8d60e15cff34de60d217c0642c330c93a0",
+        strip_prefix = "seastar-5bf36c507142f1f82cd92ca78be3adc6030f4c3f",
+        url = "https://github.com/redpanda-data/seastar/archive/5bf36c507142f1f82cd92ca78be3adc6030f4c3f.tar.gz",
     )
 
     http_archive(

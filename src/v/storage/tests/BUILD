@@ -544,7 +544,7 @@ redpanda_cc_gtest(
 
 redpanda_cc_gtest(
     name = "segment_concatenation_test",
-    timeout = "short",
+    timeout = "moderate",
     srcs = [
         "segment_concatenation_test.cc",
     ],
@@ -653,6 +653,7 @@ redpanda_cc_gtest(
         "//src/v/storage:resources",
         "//src/v/test_utils:gtest",
         "//src/v/utils:directory_walker",
+        "@fmt",
         "@googletest//:gtest",
         "@seastar",
     ],

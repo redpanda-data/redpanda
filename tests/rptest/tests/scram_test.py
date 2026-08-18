@@ -858,8 +858,13 @@ class SaslPlainTest(BaseScramTest):
             assert not expect_success, (
                 f"Should not have failed with SASL/PLAIN enabled: {e}"
             )
-            assert "UnsupportedSaslMechanismException" in str(e), (
-                f"Expected to see UnsupportedSaslMechanismException, got {e}"
+            # str(e) only quotes the last "ERROR" line of the command output. The
+            # AdminClient network thread keeps logging authentication failures for
+            # the other bootstrap brokers after the tool has already reported the
+            # exception, so whether that last line is the one naming the exception
+            # is a race. Match against the whole output instead.
+            assert "UnsupportedSaslMechanismException" in e.output, (
+                f"Expected to see UnsupportedSaslMechanismException, got {e.output}"
             )
 
     @cluster(num_nodes=3)

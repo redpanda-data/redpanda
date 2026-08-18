@@ -20,17 +20,27 @@ func VersionFromString(s string) (Version, error) {
 	//   - index 1: the Major
 	//   - index 2: the Feature
 	//   - index 3: the Patch
-	vMatch := regexp.MustCompile(`^v?(\d{1,2})\.(\d{1,2})\.(\d{1,2})(?:\s|-rc\d{1,2}|-dev|-nightly|$)`).FindStringSubmatch(s)
+	vMatch := regexp.MustCompile(`^v?(\d+)\.(\d+)\.(\d+)(?:\s|-rc\d+|-dev|-nightly|$)`).FindStringSubmatch(s)
 
 	if len(vMatch) == 0 {
 		return Version{}, fmt.Errorf("unable to get the redpanda version from %q", s)
 	}
 
-	// We can safely ignore the errors since we are making sure in the regexp
-	// that we match digits only.
-	y, _ := strconv.Atoi(vMatch[1])
-	f, _ := strconv.Atoi(vMatch[2])
-	p, _ := strconv.Atoi(vMatch[3])
+	// The regexp guarantees each group is digits-only, but no longer bounds
+	// how many: an implausibly long segment can still overflow int, so check
+	// the conversion instead of ignoring its error.
+	y, err := strconv.Atoi(vMatch[1])
+	if err != nil {
+		return Version{}, fmt.Errorf("unable to parse major version from %q: %v", s, err)
+	}
+	f, err := strconv.Atoi(vMatch[2])
+	if err != nil {
+		return Version{}, fmt.Errorf("unable to parse feature version from %q: %v", s, err)
+	}
+	p, err := strconv.Atoi(vMatch[3])
+	if err != nil {
+		return Version{}, fmt.Errorf("unable to parse patch version from %q: %v", s, err)
+	}
 	return Version{y, f, p}, nil
 }
 

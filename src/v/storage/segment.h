@@ -460,10 +460,15 @@ segment::is_compactible(const compaction::compaction_config& cfg) const {
     // compaction a segment must both
     // 1. have latest batch timestamp longer ago than min.compaction.lag.ms, and
     // 2. end before the max compactible offset.
-    const auto now = to_time_point(model::timestamp::now());
-    const auto max_batch_ts = to_time_point(index().retention_timestamp());
-    if (now - max_batch_ts < cfg.min_lag_ms) {
-        return false;
+    //
+    // As in Kafka's LogCleanerManager::cleanableOffsets, the timestamp check is
+    // skipped entirely when the lag is unset.
+    if (cfg.min_lag_ms > std::chrono::milliseconds{0}) {
+        const auto now = to_time_point(model::timestamp::now());
+        const auto max_batch_ts = to_time_point(index().retention_timestamp());
+        if (now - max_batch_ts < cfg.min_lag_ms) {
+            return false;
+        }
     }
     return _tracker.get_stable_offset() <= cfg.max_removable_local_log_offset;
 }

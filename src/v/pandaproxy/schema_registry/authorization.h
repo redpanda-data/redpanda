@@ -34,13 +34,13 @@ void handle_authz(
 void handle_get_schemas_ids_id_authz(
   const server::request_t& rq,
   std::string_view operation_name,
-  std::optional<request_auth_result>& auth_result,
+  const ss::lw_shared_ptr<request_auth_result>& auth_result,
   const chunked_vector<context_subject>& subjects);
 
 void handle_get_subjects_authz(
   const server::request_t& rq,
   std::string_view operation_name,
-  std::optional<request_auth_result>& auth_result,
+  const ss::lw_shared_ptr<request_auth_result>& auth_result,
   chunked_vector<context_subject>& subjects);
 
 /// Handles authorization for GET /contexts by filtering the contexts vector
@@ -51,7 +51,7 @@ ss::future<> handle_get_contexts_authz(
   const server::request_t& rq,
   std::string_view operation_name,
   sharded_store& store,
-  std::optional<request_auth_result>& auth_result,
+  const ss::lw_shared_ptr<request_auth_result>& auth_result,
   chunked_vector<context>& contexts);
 
 /// Handles authorization for config/mode endpoints that operate on either
@@ -62,7 +62,7 @@ ss::future<> handle_get_contexts_authz(
 void handle_config_mode_authz(
   const server::request_t& rq,
   std::string_view operation_name,
-  std::optional<request_auth_result>& auth_result,
+  const ss::lw_shared_ptr<request_auth_result>& auth_result,
   const context_subject& ctx_sub,
   security::acl_operation op);
 

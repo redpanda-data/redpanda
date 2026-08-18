@@ -66,6 +66,11 @@ var (
 			"Metrics and KPIs that provide details of topic consumers and how far they are lagging behind the end of the log.",
 			"44a00385aa95cd7a531634ab7151d5f18c6057fdd48989c0e96d78a6f16eaae9",
 		},
+		"load-factor": {
+			"Redpanda-Load-Factor-Dashboard.json",
+			"Shows utilization relative to capacity (load factor) for key resources: CPU, IO scheduler, disk IOPS, memory, network bandwidth, and client connections, to help identify which resource a cluster will exhaust first.",
+			"8450444300c5d3f6b1d5abb1278f99fe792e879ffd046763bf5abfe1c226c57c",
+		},
 		"operations": {
 			"Redpanda-Ops-Dashboard.json",
 			"Provides an overview of KPIs for a Redpanda cluster with health indicators. This is suitable for ops or SRE to monitor on a daily or continuous basis.",
