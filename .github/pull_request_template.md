@@ -25,6 +25,17 @@ If this PR is a backport, link to the original with `Backport of PR`, e.g.
 - [ ] v26.1.x
 - [ ] v25.3.x
 
+## UX Changes
+
+<!--
+REQUIRED if this PR adds or changes anything a user sees, types, or configures:
+config properties, rpk commands/flags, metrics, defaults, API endpoints,
+error messages. Describe the change in plain language (see CONTRIBUTING.md,
+"UX Changes"), and make sure the user-facing doc strings in the source are
+written as documentation: docs.redpanda.com generates the property, metrics,
+and rpk references verbatim from the strings in this diff. Otherwise, `none`.
+-->
+
 ## Release Notes
 
 <!--

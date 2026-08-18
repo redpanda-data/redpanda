@@ -202,6 +202,11 @@ for memory safety in coroutines, not self-reference.
   - Links to external resources (specs, docs, issues)
   - Mapping internal types/concepts to external formats (e.g., wire protocols, APIs)
   - ASCII diagrams for complex state machines or data flows
+- **User-facing doc strings are not comments** - config property descriptions
+  (`configuration.cc`/`node_config.cc`), `sm::description(...)` metric help, and
+  rpk cobra `Short`/`Long`/flag usage strings are published documentation
+  (docs.redpanda.com and `--help` output are generated from them verbatim).
+  The no-comments default does not apply; the `doc-strings` skill governs them.
 - **Avoid obvious branching comments** - `if (x)` rarely needs `// when x is true`
 
 ### Benchmarking

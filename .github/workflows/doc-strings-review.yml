@@ -1,0 +1,34 @@
+---
+# Suggest-only review of user-facing doc strings (config property
+# descriptions, sm::description metric help, rpk cobra help strings) —
+# these are published verbatim to docs.redpanda.com by the doc generators.
+#
+# All review logic lives in the shared reusable workflow in
+# redpanda-data/docs-extensions-and-macros so it cannot drift between
+# repos; this shim owns only the trigger paths and the secrets. Pin the
+# ref to a release tag once one exists.
+name: doc-strings-review
+on:
+  pull_request:
+    types: [opened, synchronize, ready_for_review, reopened]
+    paths:
+      - "src/v/config/**"
+      - "src/go/rpk/pkg/cli/**"
+      - "src/v/**/*probe.cc"
+      - "src/v/metrics/**"
+concurrency:
+  group: doc-strings-review-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+jobs:
+  review:
+    if: "!github.event.pull_request.draft"
+    uses: redpanda-data/docs-extensions-and-macros/.github/workflows/doc-strings-review.yml@main
+    permissions:
+      contents: read
+      pull-requests: write
+      id-token: write
+    with:
+      surfaces: properties,rpk,metrics
+    secrets:
+      anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+      actions_bot_token: ${{ secrets.ACTIONS_BOT_TOKEN }}
