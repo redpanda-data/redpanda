@@ -249,10 +249,6 @@ class OpenMessagingBenchmark(Service):
             self.workload["payload_file"] = OpenMessagingBenchmark.CUSTOM_PAYLOAD_DIR
             self.workload["message_size"] = local_payload_dir.payload_size
 
-        assert int(self.workload.get("warmup_duration_minutes", "0")) >= 1, (
-            "must use non-zero warmup time as we rely on warm-up message to detect test start"
-        )
-
         self.logger.info(
             "Using driver: %s, workload: %s", self.driver["name"], self.workload["name"]
         )
@@ -348,8 +344,12 @@ class OpenMessagingBenchmark(Service):
             OpenMessagingBenchmark.STDOUT_STDERR_CAPTURE
         ) as monitor:
             node.account.ssh(start_cmd)
+            # OMB logs a banner when it begins each traffic phase. This
+            # pattern matches both the warm-up and the benchmark banner, so
+            # workloads with no warm-up phase are detected too. It is passed
+            # to grep, so it is a basic regex.
             monitor.wait_until(
-                "Starting warm-up traffic",
+                "Starting .* traffic",
                 timeout_sec=timeout_sec,
                 backoff_sec=4,
                 err_msg="Open Messaging Benchmark service didn't start",
