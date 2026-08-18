@@ -317,6 +317,30 @@ redpanda_cc_gtest(
 )
 
 redpanda_cc_gtest(
+    name = "consumer_group_stm_test",
+    timeout = "moderate",
+    srcs = [
+        "consumer_group_stm_test.cc",
+    ],
+    deps = [
+        "//src/v/features",
+        "//src/v/kafka/server",
+        "//src/v/model",
+        "//src/v/raft",
+        "//src/v/raft/tests:raft_fixture",
+        "//src/v/raft/tests:raft_fixture_retry_policy",
+        "//src/v/raft/tests:stm_test_fixture",
+        "//src/v/reflection:adl",
+        "//src/v/storage",
+        "//src/v/storage:record_batch_builder",
+        "//src/v/test_utils:gtest",
+        "@abseil-cpp//absl/container:flat_hash_map",
+        "@googletest//:gtest",
+        "@seastar",
+    ],
+)
+
+redpanda_cc_gtest(
     name = "offset_store_test",
     timeout = "short",
     srcs = [
