@@ -1439,3 +1439,163 @@ TEST_F_CORO(offset_store_test, the_timer_leaves_live_transactions_alone) {
     ASSERT_TRUE_CORO(timed.store->has_transactions_in_progress());
     ASSERT_TRUE_CORO(timed.coordinator->asked_about.empty());
 }
+
+// The apply mutators below are what a state machine replaying committed
+// transaction control batches calls, so these cover the recovery-grade
+// guards: a record that does not match the producer state in hand is dropped.
+
+TEST_F(offset_store_test, an_applied_fence_opens_a_transaction) {
+    const auto pid = model::producer_identity{7, 1};
+    store.apply_tx_fence(
+      pid, model::tx_seq(1), 30s, model::partition_id(0), model::offset(100));
+
+    ASSERT_TRUE(store.has_transactions_in_progress());
+    ASSERT_EQ(store.earliest_tx_begin_offset(), model::offset(100));
+}
+
+TEST_F(offset_store_test, a_stale_epoch_fence_is_dropped) {
+    const auto pid = model::producer_identity{7, 2};
+    store.apply_tx_fence(
+      pid, model::tx_seq(1), 30s, model::partition_id(0), model::offset(100));
+
+    store.apply_tx_fence(
+      model::producer_identity{7, 1},
+      model::tx_seq(2),
+      30s,
+      model::partition_id(0),
+      model::offset(200));
+
+    ASSERT_EQ(store.earliest_tx_begin_offset(), model::offset(100));
+}
+
+TEST_F(offset_store_test, an_equal_epoch_fence_restarts_the_transaction) {
+    const auto pid = model::producer_identity{7, 1};
+    store.apply_tx_fence(
+      pid, model::tx_seq(1), 30s, model::partition_id(0), model::offset(100));
+
+    store.apply_tx_fence(
+      pid, model::tx_seq(2), 30s, model::partition_id(0), model::offset(200));
+
+    ASSERT_EQ(store.earliest_tx_begin_offset(), model::offset(200));
+}
+
+TEST_F(offset_store_test, staging_requires_the_transaction_at_the_epoch) {
+    const auto pid = model::producer_identity{7, 1};
+    const auto t0 = tp("t", 0);
+    const auto staged = group_tx::offsets_metadata{
+      .group_id = test_group,
+      .pid = pid,
+      .tx_seq = model::tx_seq(1),
+      .offsets = {group_tx::partition_offset{
+        .tp = t0, .offset = model::offset(42), .leader_epoch = 1}},
+    };
+
+    // no transaction open: dropped, so a later commit folds nothing
+    store.stage_tx_offsets(pid, staged, model::offset(101));
+    store.apply_tx_commit(pid, model::timestamp(1));
+    ASSERT_FALSE(store.offset(t0).has_value());
+
+    store.apply_tx_fence(
+      pid, model::tx_seq(1), 30s, model::partition_id(0), model::offset(100));
+
+    // an older epoch than the fence: dropped
+    store.stage_tx_offsets(
+      model::producer_identity{7, 0}, staged, model::offset(101));
+    store.apply_tx_commit(pid, model::timestamp(1));
+    ASSERT_FALSE(store.offset(t0).has_value());
+    ASSERT_FALSE(store.has_transactions_in_progress());
+}
+
+TEST_F(offset_store_test, an_applied_commit_folds_the_staged_offsets) {
+    const auto pid = model::producer_identity{7, 1};
+    const auto t0 = tp("t", 0);
+    store.apply_tx_fence(
+      pid, model::tx_seq(1), 30s, model::partition_id(0), model::offset(100));
+    store.stage_tx_offsets(
+      pid,
+      group_tx::offsets_metadata{
+        .group_id = test_group,
+        .pid = pid,
+        .tx_seq = model::tx_seq(1),
+        .offsets = {group_tx::partition_offset{
+          .tp = t0, .offset = model::offset(42), .leader_epoch = 1}},
+      },
+      model::offset(101));
+
+    // the commit record's timestamp, so that every replica commits the
+    // offsets at the same time and a replay does not restamp them
+    const auto commit_ts = model::timestamp(1234567);
+    store.apply_tx_commit(pid, commit_ts);
+
+    ASSERT_TRUE(store.offset(t0).has_value());
+    ASSERT_EQ(store.offset(t0)->offset, model::offset(42));
+    ASSERT_EQ(store.offset(t0)->commit_timestamp, commit_ts);
+    ASSERT_FALSE(store.has_transactions_in_progress());
+    ASSERT_FALSE(store.earliest_tx_begin_offset().has_value());
+}
+
+TEST_F(offset_store_test, an_applied_end_of_transaction_drops_the_producer) {
+    const auto pid = model::producer_identity{7, 1};
+    store.apply_tx_fence(
+      pid, model::tx_seq(1), 30s, model::partition_id(0), model::offset(100));
+    ASSERT_EQ(store.producers().size(), 1);
+
+    // the state lives as long as the transaction: an applied store has no term
+    // change to prune on, so a producer kept past its transaction would grow
+    // without bound
+    store.apply_tx_commit(pid, model::timestamp(1));
+    ASSERT_TRUE(store.producers().empty());
+
+    store.apply_tx_fence(
+      pid, model::tx_seq(2), 30s, model::partition_id(0), model::offset(200));
+    store.apply_tx_abort(pid);
+    ASSERT_TRUE(store.producers().empty());
+}
+
+TEST_F(offset_store_test, an_applied_abort_discards_the_staged_offsets) {
+    const auto pid = model::producer_identity{7, 1};
+    const auto t0 = tp("t", 0);
+    store.apply_tx_fence(
+      pid, model::tx_seq(1), 30s, model::partition_id(0), model::offset(100));
+    store.stage_tx_offsets(
+      pid,
+      group_tx::offsets_metadata{
+        .group_id = test_group,
+        .pid = pid,
+        .tx_seq = model::tx_seq(1),
+        .offsets = {group_tx::partition_offset{
+          .tp = t0, .offset = model::offset(42), .leader_epoch = 1}},
+      },
+      model::offset(101));
+
+    store.apply_tx_abort(pid);
+
+    ASSERT_FALSE(store.offset(t0).has_value());
+    ASSERT_FALSE(store.has_transactions_in_progress());
+}
+
+TEST_F(offset_store_test, a_commit_without_a_transaction_is_ignored) {
+    store.apply_tx_commit(model::producer_identity{7, 1}, model::timestamp(1));
+    store.apply_tx_abort(model::producer_identity{7, 1});
+    ASSERT_FALSE(store.has_transactions_in_progress());
+}
+
+TEST_F(offset_store_test, the_earliest_open_transaction_sets_the_bound) {
+    store.apply_tx_fence(
+      model::producer_identity{7, 0},
+      model::tx_seq(1),
+      30s,
+      model::partition_id(0),
+      model::offset(100));
+    store.apply_tx_fence(
+      model::producer_identity{8, 0},
+      model::tx_seq(1),
+      30s,
+      model::partition_id(0),
+      model::offset(50));
+
+    ASSERT_EQ(store.earliest_tx_begin_offset(), model::offset(50));
+
+    store.apply_tx_abort(model::producer_identity{8, 0});
+    ASSERT_EQ(store.earliest_tx_begin_offset(), model::offset(100));
+}
