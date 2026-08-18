@@ -21,6 +21,7 @@ public:
     ss::future<> flush() final;
 
     ss::future<writer_error> finish() final;
+    chunked_vector<per_column_stats> column_stats() const final;
 
 private:
     serde::parquet::writer _writer;
@@ -30,6 +31,7 @@ private:
     // Used to store any errors that occur after a row write is successful.
     writer_error _error{writer_error::ok};
     writer_error set_error(writer_error);
+    chunked_vector<per_column_stats> _column_stats;
 };
 
 class serde_parquet_writer_factory : public parquet_ostream_factory {

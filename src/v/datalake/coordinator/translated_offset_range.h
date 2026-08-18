@@ -71,4 +71,15 @@ struct translated_offset_range
     }
 };
 
+inline size_t estimated_memory_bytes(const translated_offset_range& r) {
+    size_t bytes = sizeof(translated_offset_range);
+    for (const auto& f : r.files) {
+        bytes += estimated_memory_bytes(f);
+    }
+    for (const auto& f : r.dlq_files) {
+        bytes += estimated_memory_bytes(f);
+    }
+    return bytes;
+}
+
 } // namespace datalake::coordinator

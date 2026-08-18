@@ -214,6 +214,10 @@ public:
     virtual ss::future<> flush() = 0;
 
     virtual ss::future<writer_error> finish() = 0;
+
+    /// Per-column statistics extracted from the parquet footer after finish().
+    /// Returns an empty vector if not available (e.g. in test stubs).
+    virtual chunked_vector<per_column_stats> column_stats() const { return {}; }
 };
 
 class parquet_ostream_factory {

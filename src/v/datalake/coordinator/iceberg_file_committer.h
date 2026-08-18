@@ -32,12 +32,14 @@ public:
       iceberg::catalog& catalog,
       iceberg::manifest_io& io,
       config::binding<bool> disable_snapshot_tags,
-      config::binding<size_t> max_files_per_commit)
+      config::binding<size_t> max_files_per_commit,
+      config::binding<size_t> max_bytes_per_commit)
       : storage_(storage)
       , catalog_(catalog)
       , io_(io)
       , disable_snapshot_tags_(std::move(disable_snapshot_tags))
-      , max_files_per_commit_(std::move(max_files_per_commit)) {}
+      , max_files_per_commit_(std::move(max_files_per_commit))
+      , max_bytes_per_commit_(std::move(max_bytes_per_commit)) {}
     ~iceberg_file_committer() override = default;
 
     // Commits the given files to the table, creating the table if necessary.
@@ -69,6 +71,7 @@ private:
     iceberg::manifest_io& io_;
     config::binding<bool> disable_snapshot_tags_;
     config::binding<size_t> max_files_per_commit_;
+    config::binding<size_t> max_bytes_per_commit_;
 };
 
 } // namespace datalake::coordinator

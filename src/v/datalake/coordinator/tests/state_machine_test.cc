@@ -13,9 +13,13 @@
 #include "datalake/catalog_schema_manager.h"
 #include "datalake/coordinator/coordinator.h"
 #include "datalake/coordinator/state_machine.h"
+#include "datalake/coordinator/state_update.h"
 #include "datalake/coordinator/tests/state_test_utils.h"
 #include "datalake/record_schema_resolver.h"
+#include "model/record_batch_types.h"
 #include "raft/tests/stm_test_fixture.h"
+#include "serde/rw/rw.h"
+#include "storage/record_batch_builder.h"
 #include "test_utils/container_ostream.h" // IWYU pragma: keep
 
 using coordinator = std::unique_ptr<datalake::coordinator::coordinator>;
@@ -50,6 +54,10 @@ struct coordinator_stm_fixture : stm_raft_fixture<stm> {
         return config::mock_binding<size_t>(100000);
     }
 
+    config::binding<size_t> max_pending_bytes() const {
+        return config::mock_binding<size_t>(32ULL * 1024 * 1024);
+    }
+
     stm_shptrs_t create_stms(
       state_machine_manager_builder& builder,
       raft_node_instance& node) override {
@@ -75,7 +83,8 @@ struct coordinator_stm_fixture : stm_raft_fixture<stm> {
                 commit_interval(),
                 default_partition_spec(),
                 disable_snapshot_expiry(),
-                max_pending_files());
+                max_pending_files(),
+                max_pending_bytes());
             coordinators[node.get_vnode()]->start();
             return ss::now();
         });
@@ -167,6 +176,78 @@ struct coordinator_stm_fixture : stm_raft_fixture<stm> {
           tp_ns.tp,
           model::partition_id(
             random_generators::get_int<int32_t>(0, max_partitions - 1))};
+    }
+
+    // Replicates a lifecycle transition registering `tp`'s topic as live,
+    // directly through the STM (no coordinator commit loop involved).
+    ss::future<bool> register_topic(stm_ptr stm) {
+        auto term = co_await stm->sync(5s);
+        if (term.has_error()) {
+            co_return false;
+        }
+        datalake::coordinator::topic_lifecycle_update upd{
+          .topic = tp_ns.tp,
+          .revision = rev,
+          .new_state
+          = datalake::coordinator::topic_state::lifecycle_state_t::live};
+        storage::record_batch_builder builder(
+          model::record_batch_type::datalake_coordinator, model::offset{0});
+        builder.add_raw_kv(
+          serde::to_iobuf(datalake::coordinator::topic_lifecycle_update::key),
+          serde::to_iobuf(std::move(upd)));
+        ss::abort_source as;
+        auto res = co_await stm->replicate_and_wait(
+          term.value(), std::move(builder).build(), as);
+        co_return !res.has_error();
+    }
+
+    // Replicates a batch of pending files (with data files, so their estimated
+    // memory footprint is non-zero) contiguous with `tp`'s current pending
+    // state, directly through the STM. Files are never committed, so the
+    // pending totals only grow.
+    ss::future<bool> add_next_files(stm_ptr stm) {
+        auto term = co_await stm->sync(5s);
+        if (term.has_error()) {
+            co_return false;
+        }
+        int64_t start = 0;
+        const auto& st = stm->state();
+        auto it = st.topic_to_state.find(tp_ns.tp);
+        if (it != st.topic_to_state.end()) {
+            auto pit = it->second.pid_to_pending_files.find(tp.partition);
+            if (pit != it->second.pid_to_pending_files.end()) {
+                const auto& entries = pit->second.pending_entries;
+                if (!entries.empty()) {
+                    start = entries.back().data.last_offset() + 1;
+                } else if (pit->second.last_committed.has_value()) {
+                    start = pit->second.last_committed.value()() + 1;
+                }
+            }
+        }
+        std::vector<std::pair<int64_t, int64_t>> bounds;
+        bounds.reserve(5);
+        for (int i = 0; i < 5; ++i) {
+            bounds.emplace_back(start, start + 5);
+            start += 6;
+        }
+        auto build_res = datalake::coordinator::add_files_update::build(
+          st,
+          tp,
+          rev,
+          datalake::coordinator::make_pending_files(
+            bounds, /*with_file=*/true));
+        if (build_res.has_error()) {
+            co_return false;
+        }
+        storage::record_batch_builder builder(
+          model::record_batch_type::datalake_coordinator, model::offset{0});
+        builder.add_raw_kv(
+          serde::to_iobuf(datalake::coordinator::add_files_update::key),
+          serde::to_iobuf(std::move(build_res.value())));
+        ss::abort_source as;
+        auto res = co_await stm->replicate_and_wait(
+          term.value(), std::move(builder).build(), as);
+        co_return !res.has_error();
     }
 
     ss::future<> register_in_topic_table() {
@@ -303,4 +384,60 @@ TEST_F_CORO(coordinator_stm_fixture, test_snapshots) {
         bytes_processed.begin()))
       << "Topic state mismatch across replicas for partition: " << tp_ns.tp
       << ", bytes processed: " << bytes_processed;
+}
+
+// The pending file and byte totals are derived state left out of the
+// serialized snapshot, so they must be rebuilt when a node is seeded from a
+// snapshot. Adds files (never committed, so the totals stay non-zero), forces
+// enough snapshots to truncate the log, then brings up a fresh node that can
+// only catch up from the snapshot and checks its totals match a recompute.
+TEST_F_CORO(coordinator_stm_fixture, test_snapshot_recomputes_pending) {
+    co_await initialize_state_machines();
+    co_await wait_for_leader(5s);
+
+    auto registered = co_await stm_retry_with_leader<0>(
+      5s, [this](stm_ptr stm) { return register_topic(stm); });
+    ASSERT_TRUE_CORO(registered) << "Failed to register topic";
+
+    // Add files until the state machine has snapshotted a few times, so the
+    // leader's log prefix is truncated and a new node must hydrate from a
+    // snapshot rather than replay the log.
+    constexpr auto max_snapshots = 5;
+    auto completed_snapshots = 0;
+    auto prev_snapshot_offset = last_snapshot_offset();
+    while (completed_snapshots != max_snapshots) {
+        auto added = co_await stm_retry_with_leader<0>(
+          5s, [this](stm_ptr stm) { return add_next_files(stm); });
+        ASSERT_TRUE_CORO(added) << "Timed out waiting to add files";
+        auto snapshot_offset = last_snapshot_offset();
+        if (snapshot_offset > prev_snapshot_offset) {
+            completed_snapshots++;
+        }
+        prev_snapshot_offset = snapshot_offset;
+    }
+
+    // Add a new raft group member to hydrate from snapshot.
+    auto new_node_id = model::node_id{static_cast<int32_t>(node_stms.size())};
+    auto& node = add_node(new_node_id, model::revision_id{10});
+    co_await start_node(node);
+    co_await with_leader(
+      10s, [vn = node.get_vnode()](raft_node_instance& node) {
+          return node.raft()->add_group_member(vn, model::revision_id{10});
+      });
+    RPTEST_REQUIRE_EVENTUALLY_CORO(5s, [this]() {
+        auto offsets = last_applied_offsets();
+        return ss::make_ready_future<bool>(
+          std::equal(offsets.begin() + 1, offsets.end(), offsets.begin()));
+    });
+    ASSERT_GT_CORO(node.raft()->start_offset(), model::offset{0})
+      << "New node not seeded with snapshot";
+
+    // The snapshot-hydrated node's maintained totals (rebuilt on install) must
+    // equal a fresh recompute, and be non-zero since nothing was committed.
+    auto new_stm = get_stm<0>(node);
+    auto expected = new_stm->state().copy();
+    expected.recompute_pending();
+    EXPECT_EQ(new_stm->state().pending_files(), expected.pending_files());
+    EXPECT_EQ(new_stm->state().pending_bytes(), expected.pending_bytes());
+    EXPECT_GT(new_stm->state().pending_bytes(), 0u);
 }

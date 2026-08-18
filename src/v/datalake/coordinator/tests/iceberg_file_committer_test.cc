@@ -101,7 +101,8 @@ public:
           catalog,
           manifest_io,
           config::mock_binding(false),
-          config::mock_binding<size_t>(10000)) {
+          config::mock_binding<size_t>(10000),
+          config::mock_binding<size_t>(1'000'000'000)) {
         feature_table
           .invoke_on_all(
             [](features::feature_table& f) { f.testing_activate_all(); })
@@ -574,7 +575,8 @@ TEST_F(FileCommitterTest, TestDontDeduplicateFromOtherCluster) {
       catalog,
       manifest_io,
       config::mock_binding(false),
-      config::mock_binding<size_t>(10000));
+      config::mock_binding<size_t>(10000),
+      config::mock_binding<size_t>(1'000'000'000));
     res = new_cluster_committer
             .commit_topic_files_to_catalog(topic, new_cluster_state)
             .get();
@@ -770,13 +772,16 @@ TEST_F(FileCommitterTest, TestChunkedCommitsAcrossPartitions) {
                   .added_pending_at = model::offset{control_offset++}});
         }
     }
+    // Entries were appended directly, so the totals need reconciling.
+    state.recompute_pending();
 
     iceberg_file_committer chunked_committer(
       storage,
       catalog,
       manifest_io,
       config::mock_binding(false),
-      config::mock_binding<size_t>(chunk_files));
+      config::mock_binding<size_t>(chunk_files),
+      config::mock_binding<size_t>(1'000'000'000));
 
     // Drain the backlog in chunks.
     size_t passes = 0;
@@ -803,4 +808,153 @@ TEST_F(FileCommitterTest, TestChunkedCommitsAcrossPartitions) {
     chunked_hash_set<ss::sstring> unique_uris;
     unique_uris.insert(uris.begin(), uris.end());
     ASSERT_EQ(unique_uris.size(), total_files);
+}
+
+// Verify that per_column_stats on coordinator::data_file are written into the
+// Iceberg manifest entry as lower_bounds, upper_bounds, null_value_counts,
+// value_counts, and column_sizes.
+TEST_F(FileCommitterTest, TestColumnStatsInManifest) {
+    create_table();
+
+    auto t_state = make_topic_state({{{0, 99}}}, model::offset{1000});
+
+    // Build a data_file with column stats for field_id=1.
+    datalake::per_column_stats cs;
+    cs.field_id = 1;
+    cs.lower_bound = bytes::from_string("aardvark");
+    cs.upper_bound = bytes::from_string("zebra");
+    cs.null_value_count = 5;
+    cs.value_count = 100;
+    cs.column_size_bytes = 4096;
+
+    data_file df{
+      .remote_path = "test-file.parquet",
+      .row_count = 100,
+      .file_size_bytes = 4096,
+      .table_schema_id = 0,
+      .partition_spec_id = 0,
+      .partition_key = chunked_vector<std::optional<bytes>>::single(
+        std::nullopt),
+    };
+    df.column_stats.push_back(std::move(cs));
+
+    auto& p_entries
+      = t_state.pid_to_pending_files[model::partition_id{0}].pending_entries;
+    ASSERT_FALSE(p_entries.empty());
+    p_entries.front().data.files.push_back(std::move(df));
+
+    topics_state state;
+    state.topic_to_state[topic] = std::move(t_state);
+
+    auto res = committer.commit_topic_files_to_catalog(topic, state).get();
+    ASSERT_FALSE(res.has_error());
+    ASSERT_EQ(1, res.value().updates.size());
+
+    // Read back the manifest and inspect the committed iceberg::data_file.
+    auto load_res = catalog.load_table(table_ident).get();
+    ASSERT_FALSE(load_res.has_error());
+    const auto& table = load_res.value();
+    ASSERT_TRUE(table.current_snapshot_id.has_value());
+    const auto snap = table.get_snapshots_by_id().at(
+      *table.current_snapshot_id);
+
+    auto mlist_res
+      = manifest_io.download_manifest_list(snap.manifest_list_path).get();
+    ASSERT_TRUE(mlist_res.has_value());
+
+    chunked_vector<iceberg::manifest_entry> entries;
+    for (const auto& m : mlist_res.value().files) {
+        auto m_res = manifest_io.download_manifest(m.manifest_path).get();
+        ASSERT_TRUE(m_res.has_value());
+        for (auto& e : m_res.value().entries) {
+            entries.push_back(std::move(e));
+        }
+    }
+    ASSERT_EQ(1, entries.size());
+
+    const auto& ifile = entries[0].data_file;
+    const auto fid = iceberg::nested_field::id_t{1};
+
+    ASSERT_TRUE(ifile.lower_bounds.has_value());
+    ASSERT_TRUE(ifile.upper_bounds.has_value());
+    ASSERT_TRUE(ifile.null_value_counts.has_value());
+    ASSERT_TRUE(ifile.value_counts.has_value());
+    ASSERT_TRUE(ifile.column_sizes.has_value());
+
+    ASSERT_NE(ifile.lower_bounds->find(fid), ifile.lower_bounds->end());
+    ASSERT_NE(ifile.upper_bounds->find(fid), ifile.upper_bounds->end());
+    EXPECT_EQ(
+      bytes::from_string("aardvark"),
+      iobuf_to_bytes(ifile.lower_bounds->at(fid)));
+    EXPECT_EQ(
+      bytes::from_string("zebra"), iobuf_to_bytes(ifile.upper_bounds->at(fid)));
+
+    ASSERT_NE(
+      ifile.null_value_counts->find(fid), ifile.null_value_counts->end());
+    EXPECT_EQ(5, ifile.null_value_counts->at(fid));
+
+    ASSERT_NE(ifile.value_counts->find(fid), ifile.value_counts->end());
+    EXPECT_EQ(100, ifile.value_counts->at(fid));
+
+    ASSERT_NE(ifile.column_sizes->find(fid), ifile.column_sizes->end());
+    EXPECT_EQ(4096, ifile.column_sizes->at(fid));
+}
+
+// With a byte-based commit limit, files carrying large column stats are split
+// across commit passes even though the file count stays under the file cap.
+TEST_F(FileCommitterTest, TestChunkedCommitsByBytes) {
+    create_table();
+
+    constexpr int num_files = 6;
+    topics_state state;
+    auto& tstate = state.topic_to_state[topic];
+    for (int i = 0; i < num_files; ++i) {
+        const int64_t begin = i * 100;
+        auto ranges = make_pending_files(
+          {{begin, begin + 99}}, /*with_file=*/true);
+        // Attach a chunky stat payload so each file is many KB.
+        datalake::per_column_stats cs;
+        cs.field_id = 1;
+        cs.lower_bound = bytes::from_string(std::string(8192, 'a'));
+        cs.upper_bound = bytes::from_string(std::string(8192, 'z'));
+        ranges[0].files[0].column_stats.push_back(std::move(cs));
+        tstate.pid_to_pending_files[model::partition_id{0}]
+          .pending_entries.emplace_back(
+            pending_entry{
+              .data = std::move(ranges[0]),
+              .added_pending_at = model::offset{i}});
+    }
+    // Entries were appended directly, so the totals need reconciling.
+    state.recompute_pending();
+
+    // File cap high; byte cap ~ one file, so each pass commits roughly one
+    // file.
+    iceberg_file_committer chunked_committer(
+      storage,
+      catalog,
+      manifest_io,
+      config::mock_binding(false),
+      config::mock_binding<size_t>(1'000'000),
+      config::mock_binding<size_t>(16 * 1024));
+
+    size_t passes = 0;
+    while (tstate.has_pending_entries()) {
+        ASSERT_LE(passes, static_cast<size_t>(num_files))
+          << "drain did not converge";
+        ++passes;
+        auto res
+          = chunked_committer.commit_topic_files_to_catalog(topic, state).get();
+        ASSERT_FALSE(res.has_error());
+        auto updates = std::move(res.value().updates);
+        ASSERT_FALSE(updates.empty()) << "a pass committed nothing";
+        for (auto& update : updates) {
+            ASSERT_FALSE(update.apply(state).has_error());
+        }
+    }
+
+    ASSERT_GT(passes, 1u) << "byte cap did not chunk the commit";
+
+    chunked_vector<ss::sstring> uris;
+    ASSERT_NO_FATAL_FAILURE(get_current_data_files(&uris));
+    ASSERT_EQ(uris.size(), static_cast<size_t>(num_files));
 }
