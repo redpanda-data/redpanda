@@ -20,7 +20,7 @@
 namespace kafka {
 
 ss::future<>
-group_recovery_consumer::handle_raft_data(model::record_batch batch) {
+group_recovery_consumer::handle_raft_data(const model::record_batch& batch) {
     _batch_base_offset = batch.base_offset();
     co_await model::for_each_record(
       batch, [this](model::record& r) { return handle_record(std::move(r)); });
@@ -183,7 +183,7 @@ group_recovery_consumer::operator()(model::record_batch batch) {
         co_return ss::stop_iteration::yes;
     }
     _state.last_read_offset = batch.last_offset();
-    co_await base_t::parse(std::move(batch));
+    co_await base_t::parse(batch);
     co_return ss::stop_iteration::no;
 }
 

@@ -108,7 +108,8 @@ public:
     ss::future<> apply_raft_snapshot(const iobuf&) final;
     ss::future<iobuf> take_raft_snapshot(model::offset) final;
 
-    ss::future<> handle_raft_data(model::record_batch);
+    ss::future<> handle_raft_data(const model::record_batch&);
+    void apply_record(model::record);
     ss::future<> handle_tx_offsets(
       model::record_batch_header, kafka::group_tx::offsets_metadata);
     ss::future<> handle_fence_v0(

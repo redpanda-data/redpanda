@@ -52,7 +52,7 @@ public:
 
     group_recovery_consumer_state end_of_stream() { return std::move(_state); }
 
-    ss::future<> handle_raft_data(model::record_batch);
+    ss::future<> handle_raft_data(const model::record_batch&);
     ss::future<> handle_tx_offsets(
       model::record_batch_header, kafka::group_tx::offsets_metadata);
     ss::future<> handle_fence_v0(

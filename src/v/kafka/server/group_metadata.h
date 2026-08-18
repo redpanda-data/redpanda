@@ -160,6 +160,15 @@ struct offset_metadata_value {
      */
     bool non_reclaimable{true};
 
+    /// A commit made with no retention deadline leaves the expiry missing on
+    /// the wire, which is what an absent deadline decodes back to.
+    std::optional<model::timestamp> expiry() const {
+        if (expiry_timestamp.is_missing()) {
+            return std::nullopt;
+        }
+        return expiry_timestamp;
+    }
+
     fmt::iterator format_to(fmt::iterator it) const;
     friend bool operator==(
       const offset_metadata_value&, const offset_metadata_value&) = default;

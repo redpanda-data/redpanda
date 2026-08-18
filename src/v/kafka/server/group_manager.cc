@@ -1276,10 +1276,6 @@ ss::future<> group_manager::do_recover_group(
         }
 
         for (auto& [tp, meta] : group_stm.offsets()) {
-            const auto expiry_timestamp
-              = meta.metadata.expiry_timestamp == model::timestamp(-1)
-                  ? std::optional<model::timestamp>(std::nullopt)
-                  : meta.metadata.expiry_timestamp;
             group->try_upsert_offset(
               tp,
               group::offset_metadata{
@@ -1288,7 +1284,7 @@ ss::future<> group_manager::do_recover_group(
                 .metadata = meta.metadata.metadata,
                 .committed_leader_epoch = meta.metadata.leader_epoch,
                 .commit_timestamp = meta.metadata.commit_timestamp,
-                .expiry_timestamp = expiry_timestamp,
+                .expiry_timestamp = meta.metadata.expiry(),
                 .non_reclaimable = meta.metadata.non_reclaimable,
               });
         }

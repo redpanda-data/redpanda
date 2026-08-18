@@ -64,7 +64,7 @@ using group_block_info_map
 
 template<class T>
 concept GroupDataParserBase = requires(T impl, model::record_batch b) {
-    { impl.handle_raft_data(std::move(b)) } -> std::same_as<ss::future<>>;
+    { impl.handle_raft_data(std::as_const(b)) } -> std::same_as<ss::future<>>;
     {
         impl.handle_tx_offsets(b.header(), kafka::group_tx::offsets_metadata{})
     } -> std::same_as<ss::future<>>;
@@ -105,11 +105,12 @@ public:
     }
 
 protected:
-    // Callers to maintain the object lifetime via a gate or otherwise.
-    ss::future<> parse(model::record_batch b) {
+    // Callers to maintain the object lifetime via a gate or otherwise. The
+    // batch is only copied for the record types whose decoders consume it.
+    ss::future<> parse(const model::record_batch& b) {
         switch (b.header().type) {
         case model::record_batch_type::raft_data:
-            return handle_raft_data(std::move(b));
+            return handle_raft_data(b);
         case model::record_batch_type::raft_configuration:
             // silently ignore raft configuration.
             return ss::now();
@@ -131,14 +132,14 @@ protected:
         }
         case model::record_batch_type::tx_fence:
         case model::record_batch_type::group_fence_tx:
-            return parse_fence(std::move(b));
+            return parse_fence(b.copy());
         case model::record_batch_type::version_fence: {
             auto fence = features::feature_table::decode_version_fence(
-              std::move(b));
+              b.copy());
             return handle_version_fence(fence);
         }
         case model::record_batch_type::group_block: {
-            return handle_group_block(std::move(b));
+            return handle_group_block(b.copy());
         }
         default:
             vlog(klog.debug, "ignoring batch with type: {}", b.header().type);
@@ -249,8 +250,8 @@ private:
           group::fence_control_record_version);
     }
 
-    ss::future<> handle_raft_data(model::record_batch b) {
-        return static_cast<Impl*>(this)->handle_raft_data(std::move(b));
+    ss::future<> handle_raft_data(const model::record_batch& b) {
+        return static_cast<Impl*>(this)->handle_raft_data(b);
     }
     ss::future<> handle_tx_offsets(
       model::record_batch_header header,

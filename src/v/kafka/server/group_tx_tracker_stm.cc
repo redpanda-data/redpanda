@@ -117,7 +117,7 @@ ss::future<> group_tx_tracker_stm::do_apply(const model::record_batch& b) {
         co_await _feature_table.local().await_feature(
           features::feature::group_tx_fence_dedicated_batch_type, _as);
     }
-    co_await parse(b.copy());
+    co_await parse(b);
 }
 
 model::offset group_tx_tracker_stm::max_removable_local_log_offset() {
@@ -212,30 +212,44 @@ ss::future<iobuf> group_tx_tracker_stm::take_raft_snapshot(model::offset) {
     return ss::make_ready_future<iobuf>(iobuf());
 }
 
-ss::future<> group_tx_tracker_stm::handle_raft_data(model::record_batch batch) {
+ss::future<>
+group_tx_tracker_stm::handle_raft_data(const model::record_batch& batch) {
     co_await model::for_each_record(batch, [this](model::record& r) {
-        auto record_type = group_metadata_serializer::get_metadata_type(
-          r.key().copy());
-        switch (record_type) {
-        case offset_commit:
-        case noop:
-        // Consumer-protocol group state belongs to consumer_group_stm, which
-        // bounds those groups' open transactions itself. This STM registers a
-        // group only from a classic group_metadata record, so it never matches
-        // a fence against one.
-        case consumer_group_metadata:
-        case consumer_group_member_metadata:
-        case consumer_group_target_assignment_metadata:
-        case consumer_group_target_assignment_member:
-        case consumer_group_current_member_assignment:
-            return;
-        case group_metadata:
-            handle_group_metadata(
-              group_metadata_serializer::decode_group_metadata(std::move(r)));
-            return;
+        // A record whose key version no decoder knows is not this machine's:
+        // it tracks classic group records only. Letting the decoder throw
+        // would stall apply, and with it this machine's contribution to the
+        // compaction bound, for the whole partition.
+        try {
+            apply_record(std::move(r));
+        } catch (...) {
+            vlog(
+              cg_klog.error, "skipping a record: {}", std::current_exception());
         }
-        __builtin_unreachable();
     });
+}
+
+void group_tx_tracker_stm::apply_record(model::record r) {
+    auto record_type = group_metadata_serializer::get_metadata_type(
+      r.key().copy());
+    switch (record_type) {
+    case offset_commit:
+    case noop:
+    // Consumer-protocol group state belongs to consumer_group_stm, which
+    // bounds those groups' open transactions itself. This STM registers a
+    // group only from a classic group_metadata record, so it never matches
+    // a fence against one.
+    case consumer_group_metadata:
+    case consumer_group_member_metadata:
+    case consumer_group_target_assignment_metadata:
+    case consumer_group_target_assignment_member:
+    case consumer_group_current_member_assignment:
+        return;
+    case group_metadata:
+        handle_group_metadata(
+          group_metadata_serializer::decode_group_metadata(std::move(r)));
+        return;
+    }
+    __builtin_unreachable();
 }
 
 void group_tx_tracker_stm::handle_group_metadata(group_metadata_kv md) {
