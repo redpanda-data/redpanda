@@ -36,6 +36,7 @@
 #include "datalake/coordinator/state_machine.h"
 #include "datalake/translation/state_machine.h"
 #include "debug_bundle/debug_bundle_service.h"
+#include "kafka/server/consumer_group_stm.h"
 #include "kafka/server/group_manager.h"
 #include "kafka/server/group_tx_tracker_stm.h"
 #include "kafka/server/quota_manager.h"
@@ -80,6 +81,7 @@ void application::start_runtime_services(
             feature_table);
           pm.register_factory<kafka::group_tx_tracker_stm_factory>(
             feature_table);
+          pm.register_factory<kafka::consumer_group_stm_factory>(feature_table);
           pm.register_factory<cluster::partition_properties_stm_factory>(
             storage.local().kvs(),
             config::shard_local_cfg().internal_rpc_request_timeout_ms.bind());
