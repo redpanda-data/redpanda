@@ -94,11 +94,23 @@ redpanda_cc_fuzz_test(
     args = [
         "-max_total_time=60",
         "-rss_limit_mb=8192",
+        # The decode modes in fuzz.cc need inputs long enough to hold a nested
+        # envelope. libFuzzer tries short inputs first and only raises the limit
+        # when coverage stops growing, which at the default rate of 100 leaves it
+        # around 20 bytes for the whole run; 3 reaches the cap within a minute
+        # while keeping short inputs first.
+        "-max_len=512",
+        "-len_control=3",
     ],
     deps = [
         ":generated_structs",
+        "//src/v/bytes:iobuf",
+        "//src/v/bytes:iobuf_parser",
         "//src/v/reflection:type_traits",
         "//src/v/serde",
+        "//src/v/serde:iobuf",
+        "//src/v/serde:optional",
+        "//src/v/serde:sstring",
         "//src/v/serde:vector",
     ],
 )
@@ -110,7 +122,13 @@ redpanda_cc_binary(
     defines = ["MAIN=1"],
     deps = [
         ":generated_structs",
+        "//src/v/bytes:iobuf",
+        "//src/v/bytes:iobuf_parser",
         "//src/v/reflection:type_traits",
         "//src/v/serde",
+        "//src/v/serde:iobuf",
+        "//src/v/serde:optional",
+        "//src/v/serde:sstring",
+        "//src/v/serde:vector",
     ],
 )
