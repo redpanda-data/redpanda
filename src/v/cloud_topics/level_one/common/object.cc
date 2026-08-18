@@ -264,12 +264,13 @@ footer::seek_result footer::file_position_before_max_timestamp(
           .length = partition.length,
         };
     }
-    // If we're past all index entries, but still within the recorded file
-    // bounds, the best we can do is start at the last well known offset (the
-    // last index entry).
-    if (it == index.end()) {
-        --it;
-    }
+    // `it` is the first entry whose running max reaches the target, but each
+    // entry's max_timestamp includes every batch up to and including its own
+    // file position, so the batch that pushed the max over the target may sit
+    // in the unindexed gap before `it`. The last entry with a running max
+    // below the target is the latest provably safe starting position for a
+    // forward scan.
+    --it;
     auto delta = it->file_position - partition.file_position;
     return {
       .file_position = it->file_position,
