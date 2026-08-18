@@ -1536,7 +1536,7 @@ configuration::configuration(ctor_key)
       {.needs_restart = needs_restart::no,
        .example = "32768",
        .visibility = visibility::tunable},
-      32_MiB,
+      2_MiB,
       storage::validate_fallocation_step)
   , storage_target_replay_bytes(
       *this,
