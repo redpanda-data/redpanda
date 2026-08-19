@@ -68,6 +68,23 @@ reconciler::limits sync_limits() {
       = config::shard_local_cfg().schema_registry_sync_parallelism()};
 }
 
+void add_reconcile_stats(
+  model::schema_registry_sync_status& status, const reconcile_stats& stats) {
+    if (!status.current_sync.has_value()) {
+        return;
+    }
+    status.current_sync->summary.subject_versions_changed
+      += stats.versions_changed;
+    status.current_sync->summary.errors += stats.errors;
+    status.current_sync->summary.unsupported_features_removed
+      += stats.unsupported_features_removed;
+    status.totals_since_task_start.subject_versions_changed
+      += stats.versions_changed;
+    status.totals_since_task_start.errors += stats.errors;
+    status.totals_since_task_start.unsupported_features_removed
+      += stats.unsupported_features_removed;
+}
+
 // Stops one reader, logging rather than propagating a failure: a reader that
 // cannot shut down cleanly must not block the task's teardown, and its stop()
 // is called from a noexcept context.
@@ -317,18 +334,7 @@ mirroring_task::get_live_sync_status() const {
     // Reflect the in-flight reconcile's live counters for mid-sync
     // progress. Guarded on current_sync so it cannot double-count after the
     // fold (which zeroes _reconcile_stats and bakes them into _status).
-    if (status.current_sync.has_value()) {
-        status.current_sync->summary.subject_versions_changed
-          += _reconcile_stats.versions_changed;
-        status.current_sync->summary.errors += _reconcile_stats.errors;
-        status.current_sync->summary.unsupported_features_removed
-          += _reconcile_stats.unsupported_features_removed;
-        status.totals_since_task_start.subject_versions_changed
-          += _reconcile_stats.versions_changed;
-        status.totals_since_task_start.errors += _reconcile_stats.errors;
-        status.totals_since_task_start.unsupported_features_removed
-          += _reconcile_stats.unsupported_features_removed;
-    }
+    add_reconcile_stats(status, _reconcile_stats);
     return status;
 }
 
@@ -806,9 +812,9 @@ ss::future<source_result<reconcile_stats>> mirroring_task::run_reconcile(
     // The reconciler increments _reconcile_stats live (reflected mid-sync by
     // get_status_report); the fold below moves them into persistent state.
     _reconcile_stats = reconcile_stats{};
-    // Seed with the full (active + soft-deleted) set: soft-deleted nodes still
-    // satisfy references. reconcile sinks it by value and
-    // _destination_inventory is rebuilt next run, so move `all` in rather than
+    // Pass the full destination set (active + soft-deleted) as the
+    // reconciler's "already replicated" seed: soft-deleted nodes still satisfy
+    // references. reconcile sinks it by value, so move `all` in rather than
     // copy it.
     auto result = co_await rec.reconcile(
       std::move(work),
@@ -1154,16 +1160,7 @@ ss::future<task::state_transition> mirroring_task::feed_tail_sync(
 reconcile_stats mirroring_task::fold_reconcile_stats() {
     const auto stats = _reconcile_stats;
     _reconcile_stats = reconcile_stats{};
-    _status.current_sync->summary.subject_versions_changed
-      += stats.versions_changed;
-    _status.current_sync->summary.errors += stats.errors;
-    _status.current_sync->summary.unsupported_features_removed
-      += stats.unsupported_features_removed;
-    _status.totals_since_task_start.subject_versions_changed
-      += stats.versions_changed;
-    _status.totals_since_task_start.errors += stats.errors;
-    _status.totals_since_task_start.unsupported_features_removed
-      += stats.unsupported_features_removed;
+    add_reconcile_stats(_status, stats);
     return stats;
 }
 
