@@ -129,7 +129,14 @@ void skipping_consumer::consume_batch_start(
   size_t /*size_on_disk*/) {
     _expected_next_batch = header.last_offset() + model::offset(1);
     _header = header;
-    _header.ctx.term = _reader._seg.offsets().get_term();
+    auto term = _reader._seg.offsets().term_at(header.base_offset);
+    vassert(
+      term.has_value(),
+      "batch at offset {} outside of segment offset range [{}, {}]",
+      header.base_offset,
+      _reader._seg.offsets().get_base_offset(),
+      _reader._seg.offsets().get_dirty_offset());
+    _header.ctx.term = *term;
 }
 
 void skipping_consumer::consume_records(iobuf&& records) {

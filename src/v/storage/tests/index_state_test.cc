@@ -36,6 +36,20 @@ static storage::index_state make_random_index_state(
             st.broker_timestamp = model::timestamp(
               random_generators::get_int<int64_t>());
         }
+        if (random_generators::get_int(0, 1) == 1) {
+            // term spans, strictly monotonic in both base offset and term
+            int64_t base = 0;
+            auto term = model::term_id(0);
+            const auto spans = random_generators::get_int(1, 4);
+            for (int s = 0; s < spans; ++s) {
+                st.term_spans.push_back(
+                  storage::term_span{
+                    .base = model::offset(base), .term = term});
+                base += random_generators::get_int(1, 1000);
+                term = model::term_id(
+                  term() + random_generators::get_int(1, 3));
+            }
+        }
     }
 
     const auto n = random_generators::get_int(1, 10000);

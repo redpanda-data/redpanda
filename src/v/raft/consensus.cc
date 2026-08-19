@@ -1506,20 +1506,28 @@ void consensus::try_updating_configuration_version(group_configuration& cfg) {
     auto version = cfg.version();
     if (
       version >= group_configuration::v_4
-      && version < group_configuration::v_7) {
-        version = supports_symmetric_reconfiguration_cancel()
-                      && cfg.get_state() == configuration_state::simple
-                    ? group_configuration::v_7
-                    : group_configuration::v_6;
-        if (version == cfg.version()) {
+      && version < group_configuration::v_8) {
+        // switching the change strategy (v_7) is only safe for
+        // configurations in the simple state, hence configurations that are
+        // mid-change stay at their current version until the change finishes
+        auto target = version;
+        if (
+          supports_symmetric_reconfiguration_cancel()
+          && cfg.get_state() == configuration_state::simple) {
+            target = supports_configuration_term() ? group_configuration::v_8
+                                                   : group_configuration::v_7;
+        } else if (version < group_configuration::v_6) {
+            target = group_configuration::v_6;
+        }
+        if (target <= version) {
             return;
         }
         vlog(
           _ctxlog.debug,
           "Upgrading configuration {} version to {}",
           cfg,
-          version);
-        cfg.set_version(version);
+          target);
+        cfg.set_version(target);
     }
 }
 
@@ -2850,6 +2858,7 @@ ss::future<std::error_code> consensus::replicate_configuration(
     return ss::with_gate(
       _bg, [this, u = std::move(u), cfg = std::move(cfg)]() mutable {
           try_updating_configuration_version(cfg);
+          cfg.set_term(model::term_id(_term));
 
           auto batch = details::serialize_configuration_as_batch(
             std::move(cfg));

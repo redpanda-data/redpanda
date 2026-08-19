@@ -40,6 +40,7 @@ from rptest.utils.si_utils import (
     BucketView,
     gen_local_path_from_remote,
     gen_segment_name_from_meta,
+    strip_segment_name_version,
 )
 
 # First capture group is the log name. The last (optional) group is the archiver term to be removed.
@@ -106,19 +107,22 @@ ManifestRecord = namedtuple(
 
 
 def _get_name_version(path):
-    """Return segment size based on path"""
+    """Return segment size based on path. Accepts names both with and
+    without the trailing -vN version token (see
+    strip_segment_name_version)."""
     items = path.split("/")
     name = items[-1]
     ndelim = name.count("-")
-    if ndelim == 2:
+    if ndelim in (1, 2):
         return "v1"
-    elif ndelim == 4:
+    elif ndelim in (3, 4):
         return "v2"  # v3 is the same format
     raise ValueError(f"unexpected path format {path}")
 
 
 def _parse_normalized_segment_path_v1(path, md5, segment_size):
-    """Parse path like 'kafka/panda-topic/1_8/3319-1-v1.log' and
+    """Parse path like 'kafka/panda-topic/1_8/3319-1-v1.log' (or the
+    version-agnostic 'kafka/panda-topic/1_8/3319-1.log') and
     return the components - topic: panda-topic, ns: kafka, partition: 1
     revision: 8, base offset: 3319, term: 1"""
     items = path.split("/")
@@ -129,7 +133,7 @@ def _parse_normalized_segment_path_v1(path, md5, segment_size):
     revision = int(part_rev[1])
     fname = items[3].split("-")
     base_offset = int(fname[0])
-    term = int(fname[1])
+    term = int(fname[1].split(".")[0])
     ntp = NTPR(ns=ns, topic=topic, partition=partition, revision=revision)
     return SegmentMetadata(
         ntp=ntp,
@@ -482,7 +486,11 @@ class ArchivalTest(RedpandaTest):
             checksums = self._get_redpanda_log_segment_checksums(node)
             self.logger.info(f"Node: {node.account.hostname} checksums: {checksums}")
             for k, v in checksums.items():
-                local[k].add(v)
+                # Local segment names use -v1 or -v2 depending on whether the
+                # multi_term_segments feature was active when the segment was
+                # created (and may differ across replicas), so key the dict
+                # version-agnostically to match remote-derived lookup keys.
+                local[strip_segment_name_version(k)].add(v)
         remote = self._get_redpanda_s3_checksums()
         self.logger.info(f"S3 checksums: {remote}")
         self.logger.info(f"Local checksums: {local}")

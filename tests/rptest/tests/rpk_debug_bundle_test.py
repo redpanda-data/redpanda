@@ -243,12 +243,19 @@ class RpkDebugBundleTest(RedpandaTest):
                             assert f"{root_name}/redpanda.yaml" in bfiles, (
                                 f"{root_name}/redpanda.yaml not found in zip files: {bfiles}"
                             )
-                            # At least the first controller log is being saved:
-                            assert (
-                                f"{root_name}/controller-logs/redpanda/controller/0_0/0-1-v1.log"
-                                in bfiles
-                            ), (
-                                f"{root_name}/controller-logs/redpanda/controller/0_0/0-1-v1.log not found in zip files: {bfiles}"
+                            # At least the first controller log is being saved.
+                            # The segment name version suffix (-v1/-v2) depends
+                            # on whether the multi_term_segments feature was
+                            # active when the segment was created, so match it
+                            # version-agnostically.
+                            first_controller_log = re.compile(
+                                re.escape(
+                                    f"{root_name}/controller-logs/redpanda/controller/0_0/0-1-v"
+                                )
+                                + r"\d+\.log$"
+                            )
+                            assert any(first_controller_log.match(f) for f in bfiles), (
+                                f"{root_name}/controller-logs/redpanda/controller/0_0/0-1-v*.log not found in zip files: {bfiles}"
                             )
                             # At least one cluster admin API call:
                             assert f"{root_name}/admin/brokers.json" in bfiles, (

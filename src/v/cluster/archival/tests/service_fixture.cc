@@ -345,12 +345,20 @@ segment_matcher<Fixture>::list_segments(const model::ntp& ntp) {
 template<class Fixture>
 ss::lw_shared_ptr<storage::segment> segment_matcher<Fixture>::get_segment(
   const model::ntp& ntp, const archival::segment_name& name) {
+    // remote segment names always use the v1 naming scheme while local
+    // segments may be v2, so match on the parsed base offset and term
+    // rather than the exact file name
+    auto meta = cloud_storage::parse_segment_name(name);
+    if (!meta.has_value()) {
+        return nullptr;
+    }
     auto log
       = static_cast<Fixture*>(this)->get_local_storage_api().log_mgr().get(ntp);
     for (const auto& s : log->segments()) {
         if (
           !s->has_appender()
-          && boost::ends_with(s->reader().filename(), name())) {
+          && s->offsets().get_base_offset() == meta->base_offset
+          && s->offsets().get_base_term() == meta->term) {
             return s;
         }
     }
@@ -363,6 +371,8 @@ void segment_matcher<Fixture>::verify_segment(
   const archival::segment_name& name,
   const ss::sstring& expected) {
     auto segment = get_segment(ntp, name);
+    BOOST_REQUIRE_MESSAGE(
+      segment, fmt::format("no local segment matching {}", name));
     auto pos = segment->offsets().get_base_offset();
     auto size = segment->size_bytes();
     auto reader_handle = segment->offset_data_stream(pos).get();

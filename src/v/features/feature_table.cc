@@ -117,6 +117,8 @@ std::string_view to_string_view(feature f) {
         return "datalake_iceberg";
     case feature::raft_symmetric_reconfiguration_cancel:
         return "raft_symmetric_reconfiguration_cancel";
+    case feature::multi_term_segments:
+        return "multi_term_segments";
     case feature::datalake_iceberg_ga:
         return "datalake_iceberg_ga";
     case feature::cloud_storage_metadata_rw_fence:
@@ -807,6 +809,15 @@ void feature_table::testing_activate_all() {
           || s.spec.available_rule
                == feature_spec::available_policy::new_clusters_only) {
             s.transition_active();
+        }
+    }
+    on_update();
+}
+
+void feature_table::testing_deactivate(feature f) {
+    for (auto& s : _feature_state) {
+        if (s.spec.bits == f) {
+            s.transition_unavailable();
         }
     }
     on_update();

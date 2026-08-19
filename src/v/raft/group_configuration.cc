@@ -1458,12 +1458,14 @@ void group_configuration::maybe_set_initial_revision(
 fmt::iterator group_configuration::format_to(fmt::iterator it) const {
     it = fmt::format_to(
       it,
-      "{{current: {}, old:{}, revision: {}, update: {}, version: {}",
+      "{{current: {}, old:{}, revision: {}, update: {}, version: {}, term: "
+      "{}",
       _current,
       _old,
       _revision,
       _configuration_update,
-      _version);
+      _version,
+      _term);
     if (_version < group_configuration::v_5) {
         it = fmt::format_to(it, ", brokers: {}}}", _brokers);
     } else {
@@ -1491,6 +1493,11 @@ group_configuration group_configuration::serde_direct_read(
         ret._version = version;
     }
 
+    if (h._version >= 8) {
+        ret._term = serde::read_nested<std::optional<model::term_id>>(
+          p, h._bytes_left_limit);
+    }
+
     if (p.bytes_left() > h._bytes_left_limit) {
         p.skip(p.bytes_left() - h._bytes_left_limit);
     }
@@ -1501,6 +1508,9 @@ void group_configuration::serde_write(iobuf& out) {
     using serde::write;
     serde_write_v6(out);
     write(out, _version);
+    if (_version >= v_8) {
+        write(out, _term);
+    }
 }
 
 void group_configuration::serde_write_v6(iobuf& out) {
@@ -1520,8 +1530,14 @@ void tag_invoke(
   serde::tag_t<serde::write_tag>, iobuf& out, group_configuration cfg) {
     using serde::write;
     const bool newer_than_v6 = cfg.version() >= group_configuration::v_7;
-    std::uint8_t s_version
-      = newer_than_v6 ? raft::group_configuration::redpanda_serde_version : 6;
+    // the serde version must match the configuration version so that readers
+    // only expect the fields the configuration version actually wrote
+    std::uint8_t s_version = 6;
+    if (cfg.version() >= group_configuration::v_8) {
+        s_version = 8;
+    } else if (cfg.version() >= group_configuration::v_7) {
+        s_version = 7;
+    }
     write(out, s_version);
     write(out, group_configuration::redpanda_serde_compat_version);
 

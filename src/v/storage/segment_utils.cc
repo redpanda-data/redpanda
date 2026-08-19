@@ -517,7 +517,7 @@ model::record_batch_reader create_segment_full_reader(
   storage::probe& pb,
   ss::rwlock::holder h,
   std::optional<model::offset> start_offset) {
-    auto o = s->offsets();
+    const auto& o = s->offsets();
     auto reader_cfg = local_log_reader_config(
       start_offset.value_or(o.get_base_offset()), o.get_dirty_offset());
     reader_cfg.skip_batch_cache = true;
@@ -644,6 +644,9 @@ ss::future<compaction_result> do_self_compact_segment(
     staging_to_clean.clear();
 
     s->index().swap_index_state(std::move(idx));
+    // the rebuilt index state has no term spans; re-mirror them from the
+    // tracker, which is unaffected by the rewrite
+    s->index().set_term_spans(s->offsets().term_spans().copy());
     s->force_set_commit_offset_from_index();
     co_await s->reset_batch_cache_index();
     co_await mark_segment_as_finished_self_compaction(s, pb);
@@ -931,7 +934,17 @@ make_concatenated_segment(
     auto& back = segments.back()->offsets();
 
     // offsets span the concatenated range
-    segment::offset_tracker offsets(front.get_term(), front.get_base_offset());
+    segment::offset_tracker offsets(
+      front.get_base_term(), front.get_base_offset());
+    // carry over the term spans of all source segments; the sources are
+    // adjacent and in offset order, so their spans are monotonic
+    for (const auto& source : segments) {
+        for (const auto& [base, term] : source->offsets().term_spans()) {
+            if (term > offsets.last_term()) {
+                offsets.add_term_span(term, base);
+            }
+        }
+    }
     const auto committed_offset = std::max(
       front.get_committed_offset(), back.get_committed_offset());
     const auto stable_offset = std::max(
@@ -1041,10 +1054,11 @@ make_concatenated_segment(
       new_self_compact_timestamp,
       new_may_have_transaction_control_batches,
       new_may_have_transaction_data_or_fence_batches);
+    index.set_term_spans(offsets.term_spans().copy());
 
     co_return std::make_tuple(
       ss::make_lw_shared<segment>(
-        offsets,
+        std::move(offsets),
         std::move(reader),
         std::move(index),
         nullptr,
@@ -1188,6 +1202,8 @@ ss::future<chunked_vector<ss::rwlock::holder>> transfer_segment(
     // offset index
     to->index().swap_index_state(
       std::move(from->index()).release_index_state());
+    // adopt the replacement's term spans (merge outputs may span terms)
+    to->set_term_spans(from->offsets().term_spans());
     to->force_set_commit_offset_from_index();
     co_await to->index().flush();
 

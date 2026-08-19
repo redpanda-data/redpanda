@@ -119,6 +119,12 @@ struct log_config {
     // sanitizing or erroring file wrappers.
     std::optional<file_sanitize_config> file_config;
 
+    // Extracts the replication term from raft configuration batch payloads,
+    // used to rebuild segment term spans from log data during recovery.
+    // Injected by the raft layer at startup; may be empty (e.g. in tests),
+    // in which case recovered segments fall back to their filename term.
+    config_batch_term_parser batch_term_parser;
+
     std::optional<ntp_sanitizer_config>
     maybe_get_ntp_sanitizer_config(const model::ntp& ntp) const {
         if (file_config) {

@@ -168,7 +168,7 @@ public:
 
     model::term_id get_term() { return file_part.term; }
     model::offset get_base_offset() { return file_part.base_offset; }
-    record_version_type get_version() { return file_part.version; };
+    record_version_type get_version() const { return file_part.version; };
     const model::ntp& get_ntp() const { return dir_part.ntp; }
 
     /**

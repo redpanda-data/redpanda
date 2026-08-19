@@ -97,9 +97,13 @@ SEASTAR_THREAD_TEST_CASE(roundtrip_raft_configuration_entry) {
     for (auto v :
          {raft::group_configuration::v_5,
           raft::group_configuration::v_6,
-          raft::group_configuration::v_7}) {
+          raft::group_configuration::v_7,
+          raft::group_configuration::v_8}) {
         auto cfg = random_configuration();
         cfg.set_version(v);
+        if (v >= raft::group_configuration::v_8) {
+            cfg.set_term(tests::random_named_int<model::term_id>());
+        }
 
         // serialize to entry
         auto batch = raft::details::serialize_configuration_as_batch(cfg);
@@ -108,7 +112,35 @@ SEASTAR_THREAD_TEST_CASE(roundtrip_raft_configuration_entry) {
         auto new_cfg = raft::details::deserialize_configuration(parser);
 
         BOOST_REQUIRE_EQUAL(new_cfg, cfg);
+        // term is not part of configuration equality, verify it explicitly
+        BOOST_REQUIRE(new_cfg.term() == cfg.term());
     }
+}
+
+SEASTAR_THREAD_TEST_CASE(configuration_term_version_compat) {
+    // a configuration serialized at a version older than v_8 must
+    // deserialize with an absent term, even if a term was set on the
+    // in-memory configuration before serialization
+    auto cfg = random_configuration();
+    cfg.set_version(raft::group_configuration::v_7);
+    cfg.set_term(model::term_id(42));
+
+    auto batch = raft::details::serialize_configuration_as_batch(cfg);
+    iobuf_parser parser(batch.copy_records().begin()->release_value());
+    auto new_cfg = raft::details::deserialize_configuration(parser);
+
+    BOOST_REQUIRE(!new_cfg.term().has_value());
+    BOOST_REQUIRE_EQUAL(new_cfg.version(), raft::group_configuration::v_7);
+
+    // and a v_8 configuration with no term set roundtrips a nullopt term
+    auto cfg_v8 = random_configuration();
+    cfg_v8.set_version(raft::group_configuration::v_8);
+    auto batch_v8 = raft::details::serialize_configuration_as_batch(cfg_v8);
+    iobuf_parser parser_v8(batch_v8.copy_records().begin()->release_value());
+    auto new_cfg_v8 = raft::details::deserialize_configuration(parser_v8);
+
+    BOOST_REQUIRE(!new_cfg_v8.term().has_value());
+    BOOST_REQUIRE_EQUAL(new_cfg_v8.version(), raft::group_configuration::v_8);
 }
 
 struct test_consumer {

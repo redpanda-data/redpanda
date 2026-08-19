@@ -10,6 +10,7 @@ import collections
 import io
 import json
 import pprint
+import re
 import struct
 import time
 from collections import defaultdict, namedtuple
@@ -556,11 +557,26 @@ def gen_segment_name_from_meta(meta: dict, key: str) -> str:
         return key
 
 
+def strip_segment_name_version(path: str) -> str:
+    """Strip the trailing -vN version token from a segment path, e.g.
+    '3319-1-v2.log' -> '3319-1.log'. Local segments are named with -v1 or
+    -v2 depending on whether the multi_term_segments feature was active
+    when they were created, so comparisons between local segment names
+    (and names derived from remote paths) must be version-agnostic."""
+    return re.sub(r"-v\d+(\.log)$", r"\1", path)
+
+
 def gen_local_path_from_remote(remote_path: str) -> str:
+    """Convert a remote segment path to a version-agnostic local lookup
+    key of the form <prefix>/{base_offset}-{term}.log. Remote names always
+    use the v1 scheme, while local segments may be -v1 or -v2 (see
+    strip_segment_name_version), so the version token is dropped. Local
+    paths must be normalized with strip_segment_name_version before being
+    compared against the returned key."""
     head, tail = remote_path.rsplit("/", 1)
     tokens = tail.split("-")
     # extract base offset and term from new style path
-    adjusted = f"{tokens[0]}-{tokens[-2]}-{tokens[-1]}"
+    adjusted = f"{tokens[0]}-{tokens[-2]}.log"
     return f"{head}/{adjusted}"
 
 

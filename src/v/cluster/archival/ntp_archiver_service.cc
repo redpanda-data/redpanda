@@ -107,6 +107,8 @@ is_nested_shutdown_exception(const ss::nested_exception& ex) {
            && (ssx::is_shutdown_exception(ex.inner) || ssx::is_shutdown_exception(ex.outer));
 }
 
+} // namespace
+
 bool segment_meta_matches_stats(
   const cloud_storage::segment_meta& meta,
   const cloud_storage::segment_record_stats& stats,
@@ -161,6 +163,8 @@ bool segment_meta_matches_stats(
     }
     return true;
 }
+
+namespace {
 
 bool emit_read_write_fence(
   const ss::sharded<features::feature_table>& feature_table) {
@@ -2327,12 +2331,17 @@ ntp_archiver::wait_uploads_complete(
             if (
               upload.upload_kind == segment_upload_kind::non_compacted
               && upload.meta.has_value()) {
+                // compacted content may legitimately contain gaps: a
+                // candidate clamped to a term boundary inside a compacted
+                // multi-term segment claims the term's logical end offset
+                // while its physically last batch may be smaller
                 if (!segment_meta_matches_stats(
                       *upload.meta,
                       stats,
                       _rtclog,
-                      _parent.get_ntp_config()
-                        .is_remote_allow_gaps_enabled())) {
+                      upload.meta->is_compacted
+                        || _parent.get_ntp_config()
+                             .is_remote_allow_gaps_enabled())) {
                     break;
                 }
             }
@@ -3782,11 +3791,15 @@ ss::future<bool> ntp_archiver::do_upload_local(
         // the actual segment is scanned and represents the 'ground truth' about
         // its content. The 'meta' is the expected segment metadata. We
         // shouldn't replicate it if it doesn't match the 'stats'.
+        // Compacted content may legitimately contain gaps, including a
+        // trailing gap when the candidate is clamped to a term boundary
+        // inside a compacted multi-term segment.
         if (!segment_meta_matches_stats(
               meta,
               stats,
               _rtclog,
-              _parent.get_ntp_config().is_remote_allow_gaps_enabled())) {
+              meta.is_compacted
+                || _parent.get_ntp_config().is_remote_allow_gaps_enabled())) {
             co_return false;
         }
     }

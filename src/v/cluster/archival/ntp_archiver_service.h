@@ -52,6 +52,18 @@ enum class segment_upload_kind { compacted, non_compacted };
 
 fmt::iterator format_to(segment_upload_kind upload_kind, fmt::iterator);
 
+/// Validate that the metadata of an uploaded segment matches the stats
+/// gathered while scanning its content. With gaps_allowed (compacted
+/// content, or topics that permit gaps) the stats offset range only needs
+/// to be contained within the metadata offset range: compaction may have
+/// removed batches at either end, e.g. when a candidate is clamped to a
+/// term boundary inside a compacted multi-term segment.
+bool segment_meta_matches_stats(
+  const cloud_storage::segment_meta& meta,
+  const cloud_storage::segment_record_stats& stats,
+  retry_chain_logger& ctxlog,
+  bool gaps_allowed);
+
 class ntp_archiver_upload_result {
 public:
     ntp_archiver_upload_result() = default;
