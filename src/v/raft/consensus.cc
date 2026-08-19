@@ -2224,6 +2224,11 @@ consensus::do_append_entries(append_entries_request&& r) {
                 reply.last_flushed_log_index = std::min(
                   adjusted_prev_log_index, _flushed_offset);
                 reply.result = reply_result::success;
+                // the request proved our log matches the leader's up to
+                // adjusted_prev_log_index, so its commit index is usable for
+                // that prefix even though we append nothing here
+                maybe_update_follower_commit_idx(
+                  request_metadata.commit_index, adjusted_prev_log_index);
                 co_return reply;
             }
         }
@@ -2261,8 +2266,10 @@ consensus::do_append_entries(append_entries_request&& r) {
         }
 
         co_await std::move(f);
+        // reached only when adjusted_prev_log_index >= lstats.dirty_offset, so
+        // our whole log is a verified prefix of the leader's
         maybe_update_follower_commit_idx(
-          model::offset(request_metadata.commit_index));
+          model::offset(request_metadata.commit_index), lstats.dirty_offset);
         reply.last_flushed_log_index = _flushed_offset;
         reply.result = reply_result::success;
         co_return reply;
@@ -2312,6 +2319,10 @@ consensus::do_append_entries(append_entries_request&& r) {
         _last_quorum_replicated_index_with_flush = std::min(
           model::prev_offset(truncate_at),
           _last_quorum_replicated_index_with_flush);
+        // the entries the leader reported as committed are about to be
+        // replaced
+        _last_leader_commit_index = std::min(
+          model::prev_offset(truncate_at), _last_leader_commit_index);
         // update flushed offset since truncation may happen to already
         // flushed entries
         _flushed_offset = std::min(
@@ -2388,7 +2399,8 @@ consensus::do_append_entries(append_entries_request&& r) {
           request_metadata.last_visible_index, _last_leader_visible_offset);
         _confirmed_term = _term;
 
-        maybe_update_follower_commit_idx(request_metadata.commit_index);
+        maybe_update_follower_commit_idx(
+          request_metadata.commit_index, ofs.last_offset);
 
         if (_follower_recovery_state) {
             _follower_recovery_state->update_progress(
@@ -2546,6 +2558,7 @@ consensus::truncate_to_latest_snapshot(storage::truncate_prefix_config cfg) {
           // when log was prefix truncate flushed offset should be equal to at
           // least last snapshot index
           _flushed_offset = std::max(_last_snapshot_index, _flushed_offset);
+          maybe_advance_follower_commit_idx();
       });
 }
 
@@ -2760,6 +2773,7 @@ ss::future<> consensus::write_snapshot(write_snapshot_cfg cfg) {
      * the offset will be at most equal to log start offset
      */
     _flushed_offset = std::max(last_included_index, _flushed_offset);
+    maybe_advance_follower_commit_idx();
 
     co_await _snapshot_lock.with([this, last_included_index]() mutable {
         return _configuration_manager.prefix_truncate(last_included_index);
@@ -2982,6 +2996,7 @@ ss::future<consensus::flushed> consensus::flush_log() {
     _flushed_offset = std::max(flushed_up_to, _flushed_offset);
     vlog(_ctxlog.trace, "flushed offset updated: {}", _flushed_offset);
 
+    maybe_advance_follower_commit_idx();
     maybe_update_majority_replicated_index();
     maybe_update_leader_commit_idx();
 
@@ -3346,22 +3361,42 @@ consensus::do_maybe_update_leader_commit_idx(ssx::semaphore_units u) {
 }
 
 void consensus::maybe_update_follower_commit_idx(
-  model::offset request_commit_idx) {
+  model::offset leader_commit_idx, model::offset matched_upto) {
     // Raft paper:
     //
     // If leaderCommit > commitIndex, set commitIndex =
     // min(leaderCommit, index of last new entry)
-    if (request_commit_idx > _commit_index) {
-        auto new_commit_idx = std::min(request_commit_idx, _flushed_offset);
-        if (new_commit_idx > _commit_index) {
-            _commit_index = new_commit_idx;
-            vlog(
-              _ctxlog.trace, "Follower commit index updated {}", _commit_index);
-            _replication_monitor.notify_committed();
-            _commit_index_updated.broadcast();
-            _event_manager.notify_commit_index();
-        }
+    //
+    // A leader may report a commit index past the end of our log (recovery
+    // requests), so only the part backed by the prefix this request verified is
+    // usable. The value is remembered because the entries it covers become
+    // committed locally only once they are flushed, which may be well after
+    // this request was replied to.
+    _last_leader_commit_index = std::max(
+      _last_leader_commit_index, std::min(leader_commit_idx, matched_upto));
+    maybe_advance_follower_commit_idx();
+}
+
+void consensus::maybe_advance_follower_commit_idx() {
+    if (is_elected_leader()) {
+        /**
+         * do_maybe_update_leader_commit_idx() must remain the only writer of a
+         * leader's commit index: its update is also the only place where a
+         * joint configuration is committed and where the leader's visible index
+         * advances.
+         */
+        return;
     }
+    const auto new_commit_idx = std::min(
+      _last_leader_commit_index, _flushed_offset);
+    if (new_commit_idx <= _commit_index) {
+        return;
+    }
+    _commit_index = new_commit_idx;
+    vlog(_ctxlog.trace, "Follower commit index updated {}", _commit_index);
+    _replication_monitor.notify_committed();
+    _commit_index_updated.broadcast();
+    _event_manager.notify_commit_index();
 }
 
 void consensus::update_follower_states(const group_configuration& cfg) {
