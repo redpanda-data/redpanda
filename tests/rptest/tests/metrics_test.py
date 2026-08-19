@@ -14,8 +14,11 @@ from ducktape.tests.test import Test
 
 from rptest.clients.default import DefaultClient
 from rptest.clients.types import TopicSpec
+from rptest.services.admin import Admin
 from rptest.services.cluster import cluster
 from rptest.services.redpanda import MetricsEndpoint, make_redpanda_service
+from rptest.tests.redpanda_test import RedpandaTest
+from rptest.util import wait_until_result
 
 BOOTSTRAP_CONFIG = {
     "disable_metrics": False,
@@ -47,7 +50,13 @@ class MetricsTest(Test):
         # We ignore those because:
         #  - seastar metrics so not affected by aggregate_metrics anyway
         #  - compaction io_queue class metrics can pop up after a delay so might make this flaky
-        return list(metric for metric in metrics if "io_queue" not in metric)
+        #  - cluster_info registers in the background once the cluster UUID is
+        #    known, so it can appear between scrapes
+        return list(
+            metric
+            for metric in metrics
+            if "io_queue" not in metric and "cluster_info" not in metric
+        )
 
     @cluster(num_nodes=3)
     @matrix(aggregate_metrics=[True, False])
@@ -202,3 +211,59 @@ class DisableMetricsTest(Test):
         internal endpoint is unaffected and still exposes Redpanda metrics.
         """
         self._verify_endpoint_disabled(MetricsEndpoint.PUBLIC_METRICS)
+
+
+class ClusterIdentityMetricsTest(RedpandaTest):
+    def __init__(self, test_ctx, *args, **kwargs):
+        super().__init__(test_ctx, num_brokers=3, *args, **kwargs)
+
+    def _cluster_uuid_label(self, node, endpoint) -> str | None:
+        """The cluster_uuid label of the cluster_info metric on `endpoint`,
+        or None if the metric has not been registered yet."""
+        prefix = (
+            "redpanda" if endpoint == MetricsEndpoint.PUBLIC_METRICS else "vectorized"
+        )
+        families = [
+            f
+            for f in self.redpanda.metrics(
+                node, endpoint, name=f"{prefix}_cluster_info"
+            )
+            if f.samples
+        ]
+        if not families:
+            return None
+        assert len(families) == 1, f"expected a single family, got {families}"
+        samples = families[0].samples
+        assert len(samples) == 1, (
+            f"expected a single cluster_info series, got {samples}"
+        )
+        assert samples[0].value == 1
+        return samples[0].labels["cluster_uuid"]
+
+    @cluster(num_nodes=3)
+    def test_cluster_info_metric(self):
+        """
+        Every broker must expose the cluster_info identity metric on both
+        metrics endpoints, carrying the bootstrap cluster UUID as reported
+        by the admin API's GET /v1/cluster/uuid.
+
+        The metric registers in the background once the cluster UUID is
+        known, so tolerate a brief delay after startup.
+        """
+        expected_uuid = Admin(self.redpanda).get_cluster_uuid(self.redpanda.nodes[0])
+        assert expected_uuid, "admin API returned no cluster UUID"
+
+        for node in self.redpanda.nodes:
+            for endpoint in [MetricsEndpoint.METRICS, MetricsEndpoint.PUBLIC_METRICS]:
+                uuid = wait_until_result(
+                    lambda: self._cluster_uuid_label(node, endpoint),
+                    timeout_sec=30,
+                    backoff_sec=1,
+                    retry_on_exc=True,
+                    err_msg=f"cluster_info metric did not appear on "
+                    f"{endpoint.value} of {node.name}",
+                )
+                assert uuid == expected_uuid, (
+                    f"cluster_info on {endpoint.value} of {node.name} reports "
+                    f"cluster_uuid={uuid}, expected {expected_uuid}"
+                )

@@ -37,6 +37,7 @@
 #include "resource_mgmt/scheduling_groups_probe.h"
 #include "rpc/rpc_utils.h"
 #include "security/audit/audit_log_manager.h"
+#include "ssx/future-util.h"
 #include "ssx/thread_worker.h"
 #include "storage/api.h"
 #include "storage/chunk_cache.h"
@@ -807,4 +808,9 @@ void application::post_start_tasks() {
     // misconfigurations are also treated as unclean shutdowns
     // thus avoiding crashloops.
     schedule_crash_tracker_file_cleanup();
+
+    ssx::spawn_with_gate(_cluster_identity_gate, [this] {
+        return register_cluster_identity_metrics();
+    });
+    _deferred.emplace_back([this] { _cluster_identity_gate.close().get(); });
 }
