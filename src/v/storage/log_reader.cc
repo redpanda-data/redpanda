@@ -17,6 +17,7 @@
 #include "model/fundamental.h"
 #include "model/offset_interval.h"
 #include "model/record.h"
+#include "model/record_fields.h"
 #include "storage/logger.h"
 #include "storage/offset_translator_state.h"
 #include "storage/parser_errc.h"
@@ -573,14 +574,15 @@ ss::future<timequery_result> batch_timequery(
         batch = co_await model::decompress_batch(batch);
     }
     const auto& header = batch.header();
-    co_await batch.for_each_record_async(
-      [&result_o, &result_t, &header, query_interval, t](
-        const model::record& r) {
-          auto record_o = model::offset{r.offset_delta()} + header.base_offset;
+    co_await batch.for_each_record_async<
+      model::record_field::offset_delta,
+      model::record_field::timestamp_delta>(
+      [&result_o, &result_t, &header, query_interval, t](auto r) {
+          auto record_o = model::offset{r.offset_delta} + header.base_offset;
           auto record_t = header.attrs.timestamp_type()
                               == model::timestamp_type::create_time
                             ? model::timestamp(
-                                header.first_timestamp() + r.timestamp_delta())
+                                header.first_timestamp() + r.timestamp_delta)
                             : header.max_timestamp;
           if (record_t >= t && query_interval.contains(record_o)) {
               result_o = record_o;

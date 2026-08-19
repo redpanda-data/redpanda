@@ -14,6 +14,7 @@
 #include "compaction/utils.h"
 #include "config/configuration.h"
 #include "model/batch_compression.h"
+#include "model/record_fields.h"
 #include "ssx/future-util.h"
 #include "storage/batch_cache.h"
 #include "storage/compacted_index_writer.h"
@@ -486,14 +487,15 @@ void segment::cache_truncate(model::offset offset) {
 ss::future<> segment::do_compaction_index_batch(const model::record_batch& b) {
     vassert(!b.compressed(), "wrong method. Call compact_index_batch. {}", b);
     auto& w = compaction_index();
-    return model::for_each_record(
-      b,
+    return b.for_each_record_async<
+      model::record_field::offset_delta,
+      model::record_field::key>(
       [o = b.base_offset(),
        batch_type = b.header().type,
        is_control_batch = b.header().attrs.is_control(),
-       &w](const model::record& r) {
+       &w](auto r) {
           return w.index(
-            batch_type, is_control_batch, r.key(), o, r.offset_delta());
+            batch_type, is_control_batch, r.key, o, r.offset_delta);
       });
 }
 ss::future<> segment::compaction_index_batch(const model::record_batch& b) {

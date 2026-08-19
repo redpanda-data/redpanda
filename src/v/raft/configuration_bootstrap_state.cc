@@ -12,6 +12,7 @@
 #include "base/likely.h"
 #include "bytes/iobuf_parser.h"
 #include "model/record.h"
+#include "model/record_fields.h"
 #include "raft/consensus_utils.h"
 
 namespace raft {
@@ -33,11 +34,12 @@ void configuration_bootstrap_state::process_configuration(
     auto last_offset = b.last_offset();
 
     process_offsets(b.base_offset(), last_offset);
-    b.for_each_record([this, o = b.base_offset()](model::record rec) {
-        iobuf_parser parser(rec.release_value());
-        _configurations.emplace_back(
-          o, details::deserialize_configuration(parser));
-    });
+    b.for_each_record<model::record_field::value>(
+      [this, o = b.base_offset()](auto rec) {
+          iobuf_parser parser(std::move(rec.value));
+          _configurations.emplace_back(
+            o, details::deserialize_configuration(parser));
+      });
 }
 void configuration_bootstrap_state::process_data_offsets(
   model::record_batch b) {

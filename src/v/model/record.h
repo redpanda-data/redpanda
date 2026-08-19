@@ -39,6 +39,7 @@
 #include <cstdint>
 #include <limits>
 #include <numeric>
+#include <stdexcept>
 #include <variant>
 #include <vector>
 
@@ -357,6 +358,12 @@ private:
     iobuf _value;
     chunked_vector<record_header> _headers{};
 };
+
+/// Compile-time record-field selector for `record_batch::for_each_record<>()`.
+/// The enumerators, the `parsed_record<>` return type and the parsing logic all
+/// live in `model/record_fields.h`; only the opaque enum is forward-declared
+/// here so `record_batch` can declare its `for_each_record<>` members.
+enum class record_field : uint8_t;
 
 class record_batch_attributes final {
 public:
@@ -927,6 +934,12 @@ public:
     /**
      * Iterate over records with lazy record materialization.
      *
+     * This function materializes every `model::record` within the batch,
+     * which includes making allocations and copies for each record's key,
+     * value, headers, etc. If you are writing a loop over a record batch which
+     * only requires a subset of the fields present in `model::record`, strongly
+     * consider using `for_each_record<Fields...>()` for optimization purposes.
+     *
      * Use `model::for_each_record(..)` for futurized version.
      */
     template<typename Func>
@@ -944,6 +957,24 @@ public:
             }
         }
     }
+
+    /**
+     * Iterate over records materializing only the requested `Fields`.
+     *
+     * `f` is invoked with a `parsed_record<Fields...>&&` that exposes exactly
+     * the requested fields as members. Unrequested variable-length fields
+     * (key/value/headers) are skipped in the buffer rather than copied out.
+     *
+     * As with `for_each_record`, `f` may return `ss::stop_iteration` to halt.
+     */
+    template<record_field First, record_field... Rest, typename Func>
+    void for_each_record(Func f) const;
+
+    /**
+     * Futurized `for_each_record<Fields...>`.
+     */
+    template<record_field First, record_field... Rest, typename Func>
+    ss::future<> for_each_record_async(Func f) const;
 
     /**
      * Iterate over record metadata.

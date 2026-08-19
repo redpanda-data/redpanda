@@ -11,6 +11,7 @@
 
 #include "hashing/crc32c.h"
 #include "model/record.h"
+#include "model/record_fields.h"
 #include "utils/vint.h"
 
 #include <type_traits>
@@ -90,123 +91,42 @@ uint32_t crc_record_batch(const record_batch& b) {
     return crc_record_batch(b.header(), b.data());
 }
 
-template<typename Parser, typename ParserData>
-static chunked_vector<model::record_header>
-parse_record_headers(Parser& parser, ParserData parser_data) {
-    chunked_vector<model::record_header> headers;
-    auto [header_count, _] = parser.read_varlong();
-    /**
-     * If records buffer is corrupted, it may result in reading very large
-     * number, check if it is the case and throw an exception.
-     */
-    if (static_cast<size_t>(header_count) > parser.bytes_left()) [[unlikely]] {
-        throw std::out_of_range(
-          fmt::format(
-            "Expected {} headers, but only {} bytes left",
-            header_count,
-            parser.bytes_left()));
-    }
-    headers.reserve(header_count);
-    for (int i = 0; i < header_count; ++i) {
-        auto [key_length, kv] = parser.read_varlong();
-        iobuf key;
-        if (key_length > 0) {
-            key = parser_data(parser, key_length);
-        }
-        auto [value_length, vv] = parser.read_varlong();
-        iobuf value;
-        if (value_length > 0) {
-            value = parser_data(parser, value_length);
-        }
-        headers.emplace_back(
-          model::record_header(
-            key_length, std::move(key), value_length, std::move(value)));
-    }
-    return headers;
+namespace {
+
+// Materializes the record's key/value/headers zero-copy (via `share`) when
+// given an `iobuf_parser`, and by copying when given an `iobuf_const_parser`.
+template<typename Parser>
+model::record do_parse_one_record(Parser& parser) {
+    auto pr = parse_record_fields<
+      model::record_field::size_bytes,
+      model::record_field::attributes,
+      model::record_field::timestamp_delta,
+      model::record_field::offset_delta,
+      model::record_field::key_size,
+      model::record_field::key,
+      model::record_field::value_size,
+      model::record_field::value,
+      model::record_field::headers>(parser);
+    return {
+      pr.size_bytes,
+      pr.attributes,
+      pr.timestamp_delta,
+      pr.offset_delta,
+      pr.key_size,
+      std::move(pr.key),
+      pr.value_size,
+      std::move(pr.value),
+      std::move(pr.headers)};
 }
 
-template<typename Parser, typename ParserData>
-static model::record do_parse_one_record_from_buffer(
-  Parser& parser,
-  int32_t record_size,
-  model::record_attributes::type attr,
-  ParserData parser_data) {
-    auto [timestamp_delta, tv] = parser.read_varlong();
-    auto [offset_delta, ov] = parser.read_varlong();
-    auto [key_length, kv] = parser.read_varlong();
-    iobuf key;
-    if (key_length > 0) {
-        if (key_length > record_size) [[unlikely]] {
-            throw std::out_of_range(
-              fmt::format(
-                "Expected key length {} but record has only {} bytes in total",
-                key_length,
-                record_size));
-        }
-        key = parser_data(parser, key_length);
-    }
-    auto [value_length, vv] = parser.read_varlong();
-    iobuf value;
-    if (value_length > 0) {
-        if (value_length > record_size) [[unlikely]] {
-            throw std::out_of_range(
-              fmt::format(
-                "Expected value length {} but record has only {} bytes in "
-                "total",
-                value_length,
-                record_size));
-        }
-        value = parser_data(parser, value_length);
-    }
-    auto headers = parse_record_headers(parser, parser_data);
-    return model::record(
-      record_size,
-      model::record_attributes(attr),
-      static_cast<int64_t>(timestamp_delta),
-      static_cast<int32_t>(offset_delta),
-      key_length,
-      std::move(key),
-      value_length,
-      std::move(value),
-      std::move(headers));
-}
-
-static std::pair<int64_t, model::record_attributes::type>
-parse_record_meta_from_buffer(iobuf_parser_base& parser) {
-    /*
-     * require that record attributes be unaffected by endianness. all of the
-     * other record fields are properly handled by virtue of their types being
-     * either blobs or variable length integers.
-     */
-    static_assert(
-      sizeof(model::record_attributes::type) == 1,
-      "model attributes expected to be one byte");
-    auto [record_size, rv] = parser.read_varlong();
-    if (static_cast<size_t>(record_size) > parser.bytes_left()) [[unlikely]] {
-        throw std::out_of_range(
-          fmt::format(
-            "Expected record size {} but only {} bytes left",
-            record_size,
-            parser.bytes_left()));
-    }
-    auto attr = parser.consume_type<model::record_attributes::type>();
-    return std::make_pair(record_size, attr);
-}
+} // namespace
 
 model::record parse_one_record_from_buffer(iobuf_parser& parser) {
-    auto [record_size, attr] = parse_record_meta_from_buffer(parser);
-    return do_parse_one_record_from_buffer(
-      parser, record_size, attr, [](iobuf_parser& parser, int64_t len) {
-          return parser.share(len);
-      });
+    return do_parse_one_record(parser);
 }
 
 model::record parse_one_record_copy_from_buffer(iobuf_const_parser& parser) {
-    auto [record_size, attr] = parse_record_meta_from_buffer(parser);
-    return do_parse_one_record_from_buffer(
-      parser, record_size, attr, [](iobuf_const_parser& parser, int64_t len) {
-          return parser.copy(len);
-      });
+    return do_parse_one_record(parser);
 }
 
 static inline void append_vint_to_iobuf(iobuf& b, int64_t v) {
@@ -261,109 +181,38 @@ void append_record_to_buffer(iobuf& a, const model::record& r) {
 }
 
 model::record_key_metadata parse_record_key_from_buffer(iobuf_const_parser& p) {
-    [[maybe_unused]] auto [record_size, attr] = parse_record_meta_from_buffer(
-      p);
-    [[maybe_unused]] auto [timestamp_delta, tv] = p.read_varlong();
-    auto [offset_delta, ov] = p.read_varlong();
-    auto [key_length, kv] = p.read_varlong();
-    bytes key;
-    if (key_length > 0) {
-        key = p.read_bytes(static_cast<size_t>(key_length));
-    }
-    auto [value_length, vv] = p.read_varlong();
-    const bool is_tombstone = value_length < 0;
-    // record_size covers attributes(1) + the four varints + key + value +
-    // headers; we've consumed up to and including value_length, so the rest is
-    // the value bytes plus the (skipped) headers.
-    const int64_t header_and_key_bytes = 1 + tv + ov + kv
-                                         + std::max<int64_t>(key_length, 0)
-                                         + vv;
-    if (record_size < header_and_key_bytes) [[unlikely]] {
-        throw std::out_of_range(
-          fmt::format(
-            "Record size {} smaller than parsed header+key bytes {}",
-            record_size,
-            header_and_key_bytes));
-    }
-    p.skip(static_cast<size_t>(record_size - header_and_key_bytes));
-    return {static_cast<int32_t>(offset_delta), is_tombstone, std::move(key)};
+    auto pr = parse_record_fields<
+      model::record_field::offset_delta,
+      model::record_field::key_bytes,
+      model::record_field::is_tombstone>(p);
+    return {
+      .offset_delta = pr.offset_delta,
+      .is_tombstone = pr.is_tombstone,
+      .key = std::move(pr.key_bytes)};
 }
+
+namespace {
+
+template<bool FullyParse>
+model::record_metadata do_parse_record_metadata(iobuf_const_parser& p) {
+    auto pr = parse_record_fields<
+      FullyParse,
+      model::record_field::size_bytes,
+      model::record_field::attributes,
+      model::record_field::timestamp_delta,
+      model::record_field::offset_delta>(p);
+    return {pr.size_bytes, pr.attributes, pr.timestamp_delta, pr.offset_delta};
+}
+
+} // namespace
 
 model::record_metadata parse_record_metadata_from_buffer(
   iobuf_const_parser& p, bool fully_parse_record) {
-    auto [record_size, attr] = parse_record_meta_from_buffer(p);
-    auto [timestamp_delta, tv] = p.read_varlong();
-    auto [offset_delta, ov] = p.read_varlong();
-
-    if (!fully_parse_record) {
-        auto total_bytes_read = 1 + tv + ov;
-        if (record_size <= total_bytes_read) [[unlikely]] {
-            throw std::out_of_range(
-              fmt::format(
-                "Expected record size {} to be greater than bytes read {}",
-                record_size,
-                total_bytes_read));
-        }
-        p.skip(record_size - total_bytes_read);
-    } else {
-        auto start = p.bytes_consumed() - (tv + ov);
-        auto [key_length, kv] = p.read_varlong();
-        if (key_length > record_size) [[unlikely]] {
-            throw std::out_of_range(
-              fmt::format(
-                "Expected key length {} but record has only {} bytes in total",
-                key_length,
-                record_size));
-        }
-        if (key_length > 0) {
-            p.skip(key_length);
-        }
-        auto [value_length, vv] = p.read_varlong();
-        if (value_length > record_size) [[unlikely]] {
-            throw std::out_of_range(
-              fmt::format(
-                "Expected value length {} but record has only {} bytes in "
-                "total",
-                value_length,
-                record_size));
-        }
-        if (value_length > 0) {
-            p.skip(value_length);
-        }
-        auto [header_count, hcv] = p.read_varlong();
-        if (static_cast<size_t>(header_count) > p.bytes_left()) [[unlikely]] {
-            throw std::out_of_range(
-              fmt::format(
-                "Expected {} headers, but only {} bytes left",
-                header_count,
-                p.bytes_left()));
-        }
-        for (int64_t i = 0; i < header_count; ++i) {
-            auto [hk_len, hkv] = p.read_varlong();
-            if (hk_len > 0) {
-                p.skip(hk_len);
-            }
-            auto [hv_len, hvv] = p.read_varlong();
-            if (hv_len > 0) {
-                p.skip(hv_len);
-            }
-        }
-        // record_size includes the 1-byte attr already consumed above.
-        auto bytes_parsed = p.bytes_consumed() - start + 1;
-        if (bytes_parsed != static_cast<size_t>(record_size)) [[unlikely]] {
-            throw std::out_of_range(
-              fmt::format(
-                "Record size mismatch: expected {} but parsed {} bytes",
-                record_size,
-                bytes_parsed));
-        }
-    }
-    return {
-      static_cast<int32_t>(record_size),
-      model::record_attributes(attr),
-      static_cast<int64_t>(timestamp_delta),
-      static_cast<int32_t>(offset_delta),
-    };
+    // With `fully_parse_record` the entire record structure (key, value and
+    // every header) is walked and validated without being materialized;
+    // otherwise those fields are skipped over wholesale.
+    return fully_parse_record ? do_parse_record_metadata<true>(p)
+                              : do_parse_record_metadata<false>(p);
 }
 
 } // namespace model
