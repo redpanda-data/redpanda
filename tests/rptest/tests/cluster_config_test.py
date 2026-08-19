@@ -2215,13 +2215,6 @@ cloud_storage_graceful_transfer_timeout = PropertyAliasData(
     test_values=(1234, 1235, 1236),
     expect_restart=False,
 )
-log_retention_ms = PropertyAliasData(
-    primary_name="log_retention_ms",
-    aliased_name="delete_retention_ms",
-    redpanda_version=(23, 3),
-    test_values=(1000000, 300000, 500000),
-    expect_restart=False,
-)
 # NOTE due to https://github.com/redpanda-data/redpanda/issues/13432 ,
 # test_values can't be -1 (a valid value nonetheless to signal infinite value)
 data_transforms_per_core_memory_reservation = PropertyAliasData(
@@ -2235,7 +2228,6 @@ data_transforms_per_core_memory_reservation = PropertyAliasData(
 # Mapping from identifier string to PropertyAliasData for use in @matrix annotations
 PROPERTY_ALIAS_SETS: dict[str, PropertyAliasData] = {
     "cloud_storage_graceful_transfer_timeout": cloud_storage_graceful_transfer_timeout,
-    "log_retention_ms": log_retention_ms,
     "data_transforms_per_core_memory_reservation": data_transforms_per_core_memory_reservation,
 }
 
@@ -2255,7 +2247,6 @@ class ClusterConfigAliasTest(RedpandaTest, ClusterConfigHelpersMixin):
     @matrix(
         prop_set_name=[
             "cloud_storage_graceful_transfer_timeout",
-            "log_retention_ms",
             "data_transforms_per_core_memory_reservation",
         ]
     )
@@ -2317,7 +2308,7 @@ class ClusterConfigAliasTest(RedpandaTest, ClusterConfigHelpersMixin):
     @cluster(num_nodes=3)
     @matrix(
         wipe_cache=[False, True],
-        prop_set_name=["cloud_storage_graceful_transfer_timeout", "log_retention_ms"],
+        prop_set_name=["cloud_storage_graceful_transfer_timeout"],
     )
     def test_aliasing_with_upgrade(self, wipe_cache: bool, prop_set_name: str):
         prop_set = PROPERTY_ALIAS_SETS[prop_set_name]

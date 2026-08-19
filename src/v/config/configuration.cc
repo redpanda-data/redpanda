@@ -1049,9 +1049,7 @@ configuration::configuration(ctor_key)
       "milliseconds). If set to `-1`, no time limit is applied. This is a "
       "cluster-wide default when a topic does not set or disable "
       "`retention.ms`.",
-      {.needs_restart = needs_restart::no,
-       .visibility = visibility::user,
-       .aliases = {"delete_retention_ms"}},
+      {.needs_restart = needs_restart::no, .visibility = visibility::user},
       7 * 24h)
   , log_compaction_interval_ms(
       *this,
