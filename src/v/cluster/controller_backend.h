@@ -22,12 +22,14 @@
 #include "cluster/topic_table.h"
 #include "cluster/types.h"
 #include "config/property.h"
+#include "container/chunked_hash_map.h"
+#include "container/chunked_vector.h"
 #include "features/feature_table.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "raft/group_configuration.h"
+#include "ssx/semaphore.h"
 #include "storage/api.h"
-#include "utils/adjustable_semaphore.h"
 
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/chunked_fifo.hh>
@@ -271,8 +273,19 @@ private:
 
     void process_delta(const topic_table::ntp_delta&);
 
-    ss::future<> reconcile_ntp_fiber(
-      model::ntp, ss::lw_shared_ptr<ntp_reconciliation_state>);
+    /// Queues an ntp for a reconciliation attempt and wakes the reconciliation
+    /// fiber.
+    void notify_pending(const model::ntp&);
+
+    /// One iteration of the loop driving reconciliation for every ntp on this
+    /// shard: wait for work or the housekeeping tick, then reconcile the queued
+    /// ntps with bounded concurrency. Passes do not overlap, and an ntp appears
+    /// in a pass at most once, so an ntp is never reconciled concurrently with
+    /// itself.
+    ss::future<> reconciliation_pass();
+    ss::future<> reconcile_ntp(const model::ntp&);
+    ss::future<> drain_leader_removals();
+
     ss::future<>
     try_reconcile_ntp(const model::ntp&, ntp_reconciliation_state&);
     ss::future<result<ss::stop_iteration>>
@@ -429,18 +442,20 @@ private:
     ss::scheduling_group _scheduling_group;
     ss::sharded<ss::abort_source>& _as;
 
-    absl::btree_map<model::ntp, ss::lw_shared_ptr<ntp_reconciliation_state>>
-      _states;
+    using state_ptr = ss::lw_shared_ptr<ntp_reconciliation_state>;
+    absl::btree_map<model::ntp, state_ptr> _states;
     // Will hold xshard_transfer_state for partitions that are being transferred
     // to this shard.
     chunked_hash_map<model::ntp, xshard_transfer_state> _xst_states;
 
+    // ntps awaiting a reconciliation attempt in the next pass.
+    chunked_hash_set<model::ntp> _pending;
+    // Leader removals pending for deleted ntps.
+    chunked_vector<std::pair<model::ntp, model::revision_id>> _leader_removals;
+    ssx::semaphore _reconcile_sem{0, "c/cb/reconcile"};
+
     cluster::notification_id_type _topic_table_notify_handle
       = notification_id_type_invalid;
-    // Limits the number of concurrently executing reconciliation fibers.
-    // Initially reconciliation is blocked and we deposit a non-zero amount of
-    // units when we are ready to start reconciling.
-    adjustable_semaphore _reconciliation_sem{0, "c/controller-be"};
     ss::gate _gate;
 
     metrics::internal_metric_groups _metrics;

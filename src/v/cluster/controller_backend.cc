@@ -37,8 +37,8 @@
 #include "model/namespace.h"
 #include "raft/fundamental.h"
 #include "raft/group_configuration.h"
-#include "ssx/event.h"
 #include "ssx/future-util.h"
+#include "ssx/semaphore.h"
 #include "storage/offset_translator.h"
 #include "types.h"
 
@@ -46,11 +46,13 @@
 #include <seastar/core/future.hh>
 #include <seastar/core/gate.hh>
 #include <seastar/core/sharded.hh>
-#include <seastar/coroutine/switch_to.hh>
+#include <seastar/coroutine/as_future.hh>
+#include <seastar/util/later.hh>
 
 #include <algorithm>
 #include <exception>
 #include <optional>
+#include <utility>
 
 /// on every core, sharded
 namespace cluster {
@@ -203,7 +205,6 @@ struct controller_backend::ntp_reconciliation_state {
     std::optional<model::revision_id> properties_changed_at;
     std::optional<model::revision_id> removed_at;
 
-    ssx::event wakeup_event{"c/cb/rfwe"};
     ss::lowres_clock::time_point last_retried_at = ss::lowres_clock::now();
     std::optional<in_progress_operation> cur_operation;
 
@@ -313,10 +314,7 @@ ss::future<> controller_backend::stop() {
     _topics.local().unregister_ntp_delta_notification(
       _topic_table_notify_handle);
 
-    for (auto& [_, rs] : _states) {
-        rs->wakeup_event.set();
-    }
-    _reconciliation_sem.broken();
+    _reconcile_sem.broken();
     co_await _gate.close();
 }
 
@@ -414,16 +412,22 @@ ss::future<> controller_backend::start() {
                   });
             }
 
-            // unblock reconciliation fibers
-            _reconciliation_sem.set_capacity(
-              _controller_backend_reconciliation_concurrency());
-
-            // register for any future updates
-            _controller_backend_reconciliation_concurrency.watch([this]() {
-                _reconciliation_sem.set_capacity(
-                  _controller_backend_reconciliation_concurrency());
-            });
-
+            ssx::repeat_until_gate_closed_or_aborted(
+              _gate,
+              _as.local(),
+              [this] {
+                  return ss::with_scheduling_group(
+                    ss::default_scheduling_group(),
+                    [this] { return reconciliation_pass(); });
+              },
+              [](const std::exception_ptr& ex) {
+                  if (!ssx::is_shutdown_exception(ex)) {
+                      vlog(
+                        clusterlog.error,
+                        "unexpected exception in reconciliation loop: {}",
+                        ex);
+                  }
+              });
             ssx::background = stuck_ntp_watchdog_fiber();
         });
     });
@@ -732,13 +736,8 @@ void controller_backend::process_delta(const topic_table::ntp_delta& d) {
     // update partition_leaders_table if needed
 
     if (d.type == topic_table_ntp_delta_type::removed) {
-        ssx::spawn_with_gate(
-          _gate, [this, ntp = d.ntp, rev = d.revision] mutable {
-              return ss::do_with(std::move(ntp), [this, rev](const auto& ntp) {
-                  return _partition_leaders_table.local().remove_leader(
-                    ntp, rev);
-              });
-          });
+        _leader_removals.emplace_back(d.ntp, d.revision);
+        _reconcile_sem.signal();
     }
 
     // notify reconciliation fiber
@@ -764,10 +763,7 @@ void controller_backend::process_delta(const topic_table::ntp_delta& d) {
         rs.properties_changed_at = d.revision;
     }
 
-    rs.wakeup_event.set();
-    if (inserted) {
-        ssx::background = reconcile_ntp_fiber(d.ntp, rs_it->second);
-    }
+    notify_pending(d.ntp);
 }
 
 void controller_backend::notify_reconciliation(const model::ntp& ntp) {
@@ -783,10 +779,7 @@ void controller_backend::notify_reconciliation(const model::ntp& ntp) {
       "[{}] notify reconciliation fiber, current state: {}",
       ntp,
       rs);
-    rs.wakeup_event.set();
-    if (inserted) {
-        ssx::background = reconcile_ntp_fiber(ntp, rs_it->second);
-    }
+    notify_pending(ntp);
 }
 
 ss::future<result<ss::stop_iteration>>
@@ -954,40 +947,104 @@ ss::future<> controller_backend::clear_orphan_topic_files(
       });
 }
 
-ss::future<> controller_backend::reconcile_ntp_fiber(
-  model::ntp ntp, ss::lw_shared_ptr<ntp_reconciliation_state> rs) {
-    if (_gate.is_closed()) {
+void controller_backend::notify_pending(const model::ntp& ntp) {
+    _pending.insert(ntp);
+    _reconcile_sem.signal();
+}
+
+ss::future<> controller_backend::reconciliation_pass() {
+    try {
+        co_await _reconcile_sem.wait(
+          _housekeeping_jitter.next_duration(),
+          std::max(_reconcile_sem.current(), size_t(1)));
+    } catch (const ss::semaphore_timed_out&) {
+        // Fallthrough
+    }
+
+    co_await drain_leader_removals();
+
+    if (_pending.empty()) {
         co_return;
     }
-    auto gate_holder = _gate.hold();
 
-    // If we don't switch here, reconciliation will inherit the scheduling group
-    // of whoever triggered it (could be e.g. the admin SG).
-    co_await ss::coroutine::switch_to(ss::default_scheduling_group());
+    auto to_reconcile = std::exchange(_pending, {});
+    auto pass = co_await ss::coroutine::as_future(
+      ss::max_concurrent_for_each(
+        to_reconcile,
+        _controller_backend_reconciliation_concurrency(),
+        [this](const model::ntp& ntp) { return reconcile_ntp(ntp); }));
 
-    while (true) {
-        co_await rs->wakeup_event.wait(_housekeeping_jitter.next_duration());
-        if (_as.local().abort_requested()) {
-            break;
+    if (pass.failed()) {
+        auto ex = pass.get_exception();
+        if (!ssx::is_shutdown_exception(ex)) {
+            vlog(clusterlog.error, "reconciliation pass failed: {}", ex);
         }
-
-        try {
-            auto sem_units = co_await _reconciliation_sem.get_units(1);
-            rs->last_retried_at = ss::lowres_clock::now();
-            co_await try_reconcile_ntp(ntp, *rs);
-            if (rs->is_reconciled()) {
-                _states.erase(ntp);
-                break;
+        // Retry ntps that were not processed.
+        for (auto& ntp : to_reconcile) {
+            auto it = _states.find(ntp);
+            if (it == _states.end()) {
+                continue;
             }
+            if (it->second->is_reconciled()) {
+                _states.erase(ntp);
+                continue;
+            }
+            _pending.insert(ntp);
+        }
+    }
+}
+
+ss::future<> controller_backend::reconcile_ntp(const model::ntp& ntp) {
+    if (_as.local().abort_requested() || _gate.is_closed()) {
+        co_return;
+    }
+
+    auto it = _states.find(ntp);
+    if (it == _states.end()) {
+        co_return;
+    }
+
+    state_ptr rs = it->second;
+
+    try {
+        rs->last_retried_at = ss::lowres_clock::now();
+        co_await try_reconcile_ntp(ntp, *rs);
+    } catch (...) {
+        auto ex = std::current_exception();
+        if (!ssx::is_shutdown_exception(ex)) {
+            vlog(
+              clusterlog.error,
+              "[{}] unexpected exception during reconciliation: {}",
+              ntp,
+              ex);
+        }
+    }
+
+    if (rs->is_reconciled()) {
+        _states.erase(ntp);
+    } else {
+        // Retry on the next reconciliation pass.
+        _pending.insert(ntp);
+    }
+}
+
+ss::future<> controller_backend::drain_leader_removals() {
+    if (_leader_removals.empty()) {
+        co_return;
+    }
+    auto removals = std::exchange(_leader_removals, {});
+    for (const auto& [ntp, revision] : removals) {
+        try {
+            co_await _partition_leaders_table.local().remove_leader(
+              ntp, revision);
         } catch (...) {
             auto ex = std::current_exception();
             if (!ssx::is_shutdown_exception(ex)) {
                 vlog(
-                  clusterlog.error,
-                  "[{}] unexpected exception during reconciliation: {}",
-                  ntp,
-                  ex);
+                  clusterlog.warn, "[{}] failed to remove leader: {}", ntp, ex);
+                continue;
             }
+            co_return;
         }
     }
 }
@@ -1944,9 +2001,8 @@ ss::future<std::error_code> controller_backend::transfer_partition(
 
     auto shard_callback = [this](const model::ntp& ntp) {
         auto& dest = container().local();
-        auto it = dest._states.find(ntp);
-        if (it != dest._states.end()) {
-            it->second->wakeup_event.set();
+        if (dest._states.contains(ntp)) {
+            dest.notify_pending(ntp);
         }
     };
 
