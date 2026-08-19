@@ -107,6 +107,21 @@ redpanda_test_cc_library(
 )
 
 redpanda_test_cc_library(
+    name = "reactor_stall_probe",
+    hdrs = [
+        "reactor_stall_probe.h",
+    ],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//src/v/base",
+        "//src/v/ssx:future_util",
+        "//src/v/utils:hdr_hist",
+        "@fmt",
+        "@seastar",
+    ],
+)
+
+redpanda_test_cc_library(
     name = "random",
     hdrs = [
         "randoms.h",

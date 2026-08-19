@@ -14,6 +14,21 @@ redpanda_cc_gtest(
 )
 
 redpanda_cc_gtest(
+    name = "reactor_stall_probe_test",
+    timeout = "short",
+    srcs = [
+        "reactor_stall_probe_test.cc",
+    ],
+    deps = [
+        "//src/v/test_utils:gtest",
+        "//src/v/test_utils:reactor_stall_probe",
+        "@fmt",
+        "@googletest//:gtest",
+        "@seastar",
+    ],
+)
+
+redpanda_cc_gtest(
     name = "test_random_bytes_test",
     timeout = "short",
     srcs = [
