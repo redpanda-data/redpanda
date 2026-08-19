@@ -905,6 +905,9 @@ class SchemaRegistrySyncMixin:
             > before_totals.subject_versions_changed,
             "the purge did not advance the subject-version counter",
         )
+        self._wait_inventory_agrees(
+            "the inventory counters disagree after tail-driven changes"
+        )
 
         # A whole source context, deleted the way the source requires: empty it,
         # then DELETE /contexts. Nothing about that is a change to any subject,

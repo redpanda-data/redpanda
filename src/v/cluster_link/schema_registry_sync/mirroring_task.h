@@ -27,11 +27,28 @@ namespace cluster_link::schema_registry_sync {
 
 /// A snapshot of the destination Schema Registry's in-scope (subject, version)
 /// nodes, retained for diffing against the source during reconciliation.
-struct inventory {
+struct destination_inventory {
     /// Non-deleted (subject, version) nodes.
     chunked_hash_set<ppsr::subject_version> active;
     /// Non-deleted and soft-deleted nodes; a superset of `active`.
     chunked_hash_set<ppsr::subject_version> all;
+};
+
+/// What the source Schema Registry holds, as of the last listing that saw each
+/// subject.
+struct source_inventory {
+    /// Versions per in-scope subject, soft-deleted included.
+    chunked_hash_map<ppsr::context_subject, uint64_t> versions_by_subject;
+    /// Sum of the values above, maintained as they change so a tail tick costs
+    /// its own subjects rather than a walk of every one.
+    uint64_t total_versions{0};
+};
+
+/// The source (subject, version) nodes a discovery pass found, split by
+/// their soft-delete state at the source.
+struct discovered_versions {
+    chunked_hash_set<ppsr::subject_version> active;
+    chunked_hash_set<ppsr::subject_version> deleted;
 };
 
 /// Scans the destination registry for every in-scope (subject, version) node.
@@ -44,7 +61,7 @@ struct inventory {
 /// nodes in the source namespace, keeping the whole diff single-namespaced.
 /// Under the identity mapper this is a passthrough. `in_scope` must be pure; it
 /// runs on each registry shard.
-ss::future<inventory> scan_destination_inventory(
+ss::future<destination_inventory> scan_destination_inventory(
   schema::registry& destination,
   ss::noncopyable_function<bool(const ppsr::context_subject&)> in_scope,
   const context_mapper& mapper,
@@ -101,12 +118,13 @@ private:
     /// next run.
     ss::future<> reset_reader();
 
-    /// Clears the in-memory sync state (status counters, destination inventory,
-    /// last-full-sync timestamp) on losing leadership, so the next leader -- a
-    /// new instance or this same one regaining leadership -- re-derives
-    /// everything from the durable destination store instead of a prior
-    /// tenure's view. `_config`/`_config_changed` are preserved: config is
-    /// authoritative and a change queued while stopped must still take effect.
+    /// Clears the in-memory sync state (status counters, source and destination
+    /// inventories, last-full-sync timestamp) on losing leadership, so the next
+    /// leader -- a new instance or this same one regaining leadership --
+    /// re-derives everything from the durable destination store instead of a
+    /// prior tenure's view. `_config`/`_config_changed` are preserved: config
+    /// is authoritative and a change queued while stopped must still take
+    /// effect.
     void reset_sync_state();
 
     /// Whether a periodic full scan is due (first run, or the full-sync
@@ -177,18 +195,30 @@ private:
       reconciler::limits limits,
       ss::abort_source& as);
 
-    /// The source (subject, version) nodes a discovery pass found, split by
-    /// their soft-delete state at the source.
-    struct discovered_versions {
-        chunked_hash_set<ppsr::subject_version> active;
-        chunked_hash_set<ppsr::subject_version> deleted;
-    };
-
     /// Diffs the discovered source nodes against the retained destination
     /// inventory into the versions to import, propagating source soft-deletes.
     /// Versions the source no longer has at all are hard-deleted instead, see
     /// `collect_purge_targets`.
     work_set build_work_set(const discovered_versions& discovered) const;
+
+    /// Publishes the reported source counters from `_source_inventory`.
+    void report_source_inventory();
+
+    /// Rebuilds `_source_inventory` from a full sync's discovery of the whole
+    /// selected source. Also what bounds the drift an incremental update can
+    /// leave behind, since it re-derives rather than adjusts.
+    void publish_source_inventory(
+      const chunked_vector<ppsr::context_subject>& selected,
+      const discovered_versions& discovered);
+
+    /// Folds a tail tick's discovery of `examined` into `_source_inventory`. A
+    /// subject the source no longer has is dropped; one whose listing failed
+    /// keeps the count it had, because reading that as zero would drop a live
+    /// subject from the reported counters.
+    void patch_source_inventory(
+      const chunked_vector<ppsr::context_subject>& examined,
+      const discovered_versions& discovered,
+      const chunked_hash_set<ppsr::context_subject>& failed);
 
     /// Imports `work` referent-first, then folds the reconcile's counters into
     /// the in-progress sync summary and the task totals and returns them.
@@ -362,7 +392,8 @@ private:
     // stop+reassign, never across the run-fiber join, so it cannot deadlock
     // with task::stop().
     ssx::mutex _reader_lifecycle{"cluster_link/sr_source/reader_lifecycle"};
-    inventory _destination_inventory;
+    destination_inventory _destination_inventory;
+    source_inventory _source_inventory;
     model::schema_registry_sync_status _status;
     // Live counters for the in-flight reconcile; reflected by get_status_report
     // for mid-sync progress, then folded into _status at end of run.

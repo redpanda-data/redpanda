@@ -108,6 +108,19 @@ chunked_vector<ppsr::context_subject> select_in_scope(
            | std::ranges::to<chunked_vector<ppsr::context_subject>>();
 }
 
+void count_versions_by_subject(
+  const discovered_versions& discovered,
+  chunked_hash_map<ppsr::context_subject, uint64_t>& counts) {
+    const auto count =
+      [&counts](const chunked_hash_set<ppsr::subject_version>& versions) {
+          for (const auto& node : versions) {
+              ++counts[node.sub];
+          }
+      };
+    count(discovered.active);
+    count(discovered.deleted);
+}
+
 chunked_hash_set<ppsr::context> batch_contexts(
   const chunked_vector<ppsr::context_subject>& subjects,
   const chunked_vector<ppsr::context_subject>& mode_config_targets) {
@@ -136,7 +149,7 @@ bool is_context_not_empty(const std::exception_ptr& ep) {
 
 } // namespace
 
-ss::future<inventory> scan_destination_inventory(
+ss::future<destination_inventory> scan_destination_inventory(
   schema::registry& destination,
   ss::noncopyable_function<bool(const ppsr::context_subject&)> in_scope,
   const context_mapper& mapper,
@@ -156,7 +169,7 @@ ss::future<inventory> scan_destination_inventory(
     co_await destination.sync();
     auto versions = co_await destination.list_subject_versions(
       std::move(dest_in_scope), ppsr::include_deleted::yes);
-    inventory inv;
+    destination_inventory inv;
     inv.all.reserve(versions.size());
     for (const auto& sv : versions) {
         // Back to the source namespace, so the diff/seed/purge phases speak
@@ -204,7 +217,8 @@ void mirroring_task::update_config(const model::metadata& link_metadata) {
 
 void mirroring_task::reset_sync_state() {
     _status = model::schema_registry_sync_status{};
-    _destination_inventory = inventory{};
+    _destination_inventory = destination_inventory{};
+    _source_inventory = source_inventory{};
     _reconcile_stats = reconcile_stats{};
     _mapper = context_mapper{};
     _last_full_sync.reset();
@@ -789,6 +803,63 @@ mirroring_task::build_work_set(const discovered_versions& discovered) const {
     return work;
 }
 
+void mirroring_task::report_source_inventory() {
+    _status.inventory.selected_source_subjects = static_cast<uint64_t>(
+      _source_inventory.versions_by_subject.size());
+    _status.inventory.selected_source_subject_versions
+      = _source_inventory.total_versions;
+}
+
+void mirroring_task::publish_source_inventory(
+  const chunked_vector<ppsr::context_subject>& selected,
+  const discovered_versions& discovered) {
+    _source_inventory = source_inventory{};
+    auto& counts = _source_inventory.versions_by_subject;
+    counts.reserve(selected.size());
+    // Seeded from the selected set rather than from what discovery found: a
+    // subject whose listing failed is still selected, and leaving it out here
+    // would drop it from the reported subject count.
+    for (const auto& subject : selected) {
+        counts.try_emplace(subject, 0);
+    }
+    count_versions_by_subject(discovered, counts);
+    for (const auto& [_, versions] : counts) {
+        _source_inventory.total_versions += versions;
+    }
+    report_source_inventory();
+}
+
+void mirroring_task::patch_source_inventory(
+  const chunked_vector<ppsr::context_subject>& examined,
+  const discovered_versions& discovered,
+  const chunked_hash_set<ppsr::context_subject>& failed) {
+    chunked_hash_map<ppsr::context_subject, uint64_t> found;
+    count_versions_by_subject(discovered, found);
+
+    auto& counts = _source_inventory.versions_by_subject;
+    // A failed listing leaves its subject undiscovered, which below would read
+    // as the source no longer having it.
+    auto patchable = examined
+                     | std::views::filter(
+                       [&failed](const ppsr::context_subject& subject) {
+                           return !failed.contains(subject);
+                       });
+    for (const auto& subject : patchable) {
+        if (const auto stale = counts.find(subject); stale != counts.end()) {
+            const auto& [_, versions] = *stale;
+            _source_inventory.total_versions -= versions;
+            counts.erase(stale);
+        }
+        // Undiscovered here means gone from the source, so it stays erased.
+        if (const auto fresh = found.find(subject); fresh != found.end()) {
+            const auto& [_, versions] = *fresh;
+            counts.insert_or_assign(subject, versions);
+            _source_inventory.total_versions += versions;
+        }
+    }
+    report_source_inventory();
+}
+
 chunked_vector<mirroring_task::purge_target>
 mirroring_task::collect_purge_targets(
   const ss::noncopyable_function<bool(const ppsr::context_subject&)>&
@@ -940,11 +1011,10 @@ ss::future<task::state_transition> mirroring_task::full_source_sync(
         co_return make_unavailable(unavailable->message);
     }
 
-    // Every discovered source version is selected for sync, soft-deleted ones
-    // included (they are imported too), so count both -- mirroring
-    // selected_source_subjects, a discovery count rather than a change count.
-    _status.inventory.selected_source_subject_versions = static_cast<uint64_t>(
-      discovered.active.size() + discovered.deleted.size());
+    // Soft-deleted versions count too: they are imported, so this reports what
+    // the source holds rather than what changed. Retained per subject so a tail
+    // tick can patch what it examined.
+    publish_source_inventory(subjects, discovered);
 
     auto work = build_work_set(discovered);
 
@@ -1049,8 +1119,10 @@ mirroring_task::sync_batch_subjects(
     if (unavailable.has_value()) {
         co_return std::unexpected(std::move(*unavailable));
     }
-    // The inventory counters stay as the full sync left them: they describe the
-    // whole selected source, and this pass looked at a handful of subjects.
+    // Below the unavailable check: that path leaves `discovered` partial and
+    // its skipped subjects in `failed_subjects`, so patching there would report
+    // a truncated source.
+    patch_source_inventory(subjects, discovered, failed_subjects);
 
     // Only the subjects this tick refreshed may be purged; every other subject
     // went unexamined and would otherwise read as source-absent. A subject the

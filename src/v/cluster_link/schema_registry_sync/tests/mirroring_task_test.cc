@@ -48,6 +48,28 @@ void PrintTo(const schema_registry_inventory& inv, std::ostream* os) {
       inv.destination_subject_versions);
 }
 
+void PrintTo(const schema_registry_sync_summary& summary, std::ostream* os) {
+    fmt::format_to(
+      std::ostreambuf_iterator<char>{*os},
+      "summary{{finished: {}, {} versions, {} modes, {} configs, {} errors}}",
+      summary.finish_time,
+      summary.subject_versions_changed,
+      summary.modes_changed,
+      summary.compatibility_configs_changed,
+      summary.errors);
+}
+
+void PrintTo(const schema_registry_sync_status& status, std::ostream* os) {
+    PrintTo(status.inventory, os);
+    fmt::format_to(
+      std::ostreambuf_iterator<char>{*os},
+      ", last_full_sync: {}, current_sync: {}",
+      status.last_full_sync.has_value()
+        ? fmt::format("finished {}", status.last_full_sync->finish_time)
+        : "none",
+      status.current_sync.has_value() ? "in progress" : "none");
+}
+
 } // namespace cluster_link::model
 
 namespace cluster_link::tests {
@@ -233,6 +255,13 @@ public:
             return s.last_full_sync.has_value() && !s.current_sync.has_value();
         });
         co_return status.value_or(model::schema_registry_sync_status{});
+    }
+
+    // Waits until `count` versions have been imported since the task started.
+    ss::future<> wait_for_versions_changed(uint64_t count) {
+        co_await wait_for_sync_status([count](const auto& s) {
+            return s.totals_since_task_start.subject_versions_changed == count;
+        });
     }
 
     // Stages `batch` for the next tail poll.
@@ -641,6 +670,9 @@ TEST_F(mirroring_task_test, source_list_failure_completes_and_advances) {
     EXPECT_GE(status->totals_since_task_start.errors, 1);
     EXPECT_EQ(status->last_full_sync->errors, 1);
     EXPECT_EQ(status->inventory.selected_source_subject_versions, 1);
+    // Both subjects stay selected: the failing one exists at the source and
+    // only its versions went unread, so it must not vanish from the count.
+    EXPECT_EQ(status->inventory.selected_source_subjects, 2);
     EXPECT_EQ(status->last_full_sync->subject_versions_changed, 1);
 
     // The reachable subject was still imported; the failing one was skipped.
@@ -1841,6 +1873,8 @@ TEST_F(mirroring_task_test, tail_sync_imports_a_newly_registered_version) {
                   }).get();
 
     EXPECT_THAT(_registry.get_all(), testing::SizeIs(2));
+    // Both sides follow the tail, so a converged mirror still reports matching
+    // numbers between full syncs.
     EXPECT_THAT(
       status,
       testing::Optional(
@@ -1848,22 +1882,121 @@ TEST_F(mirroring_task_test, tail_sync_imports_a_newly_registered_version) {
           // A tail sync is no substitute for a full scan, so it must not report
           // as one: the full-sync summary is still the previous sync's.
           testing::Field(
+            "last_full_sync",
             &model::schema_registry_sync_status::last_full_sync,
-            testing::Optional(
-              testing::Field(
-                &model::schema_registry_sync_summary::finish_time,
-                full.last_full_sync->finish_time))),
-          // Nor may it rewrite the source inventory, which describes the whole
-          // selected source rather than the subjects one tick examined.
+            full.last_full_sync),
           testing::Field(
+            "inventory",
             &model::schema_registry_sync_status::inventory,
-            testing::AllOf(
-              testing::Field(
-                &model::schema_registry_inventory::selected_source_subjects, 1),
-              testing::Field(
-                &model::schema_registry_inventory::
-                  selected_source_subject_versions,
-                1))))));
+            converged(1, 2)))));
+}
+
+TEST_F(mirroring_task_test, tail_sync_counts_a_newly_registered_subject) {
+    auto a = ppsr::context_subject::unqualified("a");
+    auto b = ppsr::context_subject::unqualified("b");
+    _source_state.add(a, 1);
+
+    lead_schema_registry();
+    fixture()->upsert_link(get_default_metadata()).get();
+    wait_for_first_full_sync().get();
+
+    // A subject the last full sync never saw, so the tick adds to the source
+    // inventory rather than replacing an entry in it.
+    _source_state.add(b, 1);
+    stage_tail(subjects_changed({b}));
+
+    wait_for_versions_changed(2).get();
+    EXPECT_THAT(current_sync_status().inventory, converged(2, 2));
+}
+
+TEST_F(mirroring_task_test, tail_sync_uncounts_a_source_deleted_subject) {
+    auto a = ppsr::context_subject::unqualified("a");
+    auto b = ppsr::context_subject::unqualified("b");
+    _source_state.add(a, 1);
+    _source_state.add(b, 1);
+
+    lead_schema_registry();
+    fixture()->upsert_link(get_default_metadata()).get();
+    const auto full = wait_for_first_full_sync().get();
+    ASSERT_EQ(full.inventory.selected_source_subjects, 2);
+
+    // Gone from the source, which lists as no versions rather than as a
+    // failure, so the tick drops it from both counters.
+    _source_state.remove_subject(b);
+    stage_tail(subjects_changed({b}));
+
+    ::tests::cooperative_spin_wait_with_timeout(wait_interval, [this] {
+        return _registry.get_all().size() == 1;
+    }).get();
+    EXPECT_THAT(current_sync_status().inventory, converged(1, 1));
+}
+
+TEST_F(mirroring_task_test, tail_sync_counts_a_soft_deleted_version) {
+    auto a = ppsr::context_subject::unqualified("a");
+    _source_state.add(a, 1);
+
+    lead_schema_registry();
+    fixture()->upsert_link(get_default_metadata()).get();
+    wait_for_first_full_sync().get();
+
+    // Soft-deleted at the source and still imported, so it counts on both
+    // sides.
+    _source_state.add(a, 2);
+    _source_state.soft_delete(a, 2);
+    stage_tail(subjects_changed({a}));
+
+    wait_for_versions_changed(2).get();
+    EXPECT_THAT(current_sync_status().inventory, converged(1, 2));
+}
+
+TEST_F(mirroring_task_test, tail_listing_failure_leaves_the_source_counters) {
+    auto a = ppsr::context_subject::unqualified("a");
+    _source_state.add(a, 1);
+
+    lead_schema_registry();
+    fixture()->upsert_link(get_default_metadata()).get();
+    wait_for_first_full_sync().get();
+
+    // Reachable but failing, so the subject's versions go undiscovered. Reading
+    // that as the source having none would drop a live subject from the counts.
+    _source_state.add(a, 2);
+    _source_state.list_versions_errors.emplace(
+      a,
+      srs::source_error{
+        .kind = srs::source_error_kind::operation_failed,
+        .message = "version listing failed"});
+    const auto polls = _tail_state.polls;
+    stage_tail(subjects_changed({a}));
+    ::tests::cooperative_spin_wait_with_timeout(wait_interval, [this, polls] {
+        return _tail_state.polls > polls + 1;
+    }).get();
+
+    EXPECT_THAT(current_sync_status().inventory, converged(1, 1));
+}
+
+TEST_F(mirroring_task_test, tail_patches_only_the_subjects_it_could_read) {
+    auto a = ppsr::context_subject::unqualified("a");
+    auto b = ppsr::context_subject::unqualified("b");
+    _source_state.add(a, 1);
+    _source_state.add(b, 1);
+
+    lead_schema_registry();
+    fixture()->upsert_link(get_default_metadata()).get();
+    wait_for_first_full_sync().get();
+
+    // One batch, two subjects: "a" gains a version and "b"'s listing fails. The
+    // patch is per subject, so one unreadable subject must not hold back the
+    // count of one that was read.
+    _source_state.add(a, 2);
+    _source_state.list_versions_errors.emplace(
+      b,
+      srs::source_error{
+        .kind = srs::source_error_kind::operation_failed,
+        .message = "version listing failed"});
+    stage_tail(subjects_changed({a, b}));
+
+    wait_for_versions_changed(3).get();
+    EXPECT_THAT(current_sync_status().inventory, converged(2, 3));
 }
 
 TEST_F(mirroring_task_test, tail_sync_hard_deletes_a_removed_subject) {
