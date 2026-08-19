@@ -1,0 +1,2 @@
+ Redpanda uses --spawn_strategy=local (line 117 of redpanda.nix), which disables Bazel's sandbox entirely for build actions. Neither hermetic nor non-hermetic — no linux-sandbox at all.     
+  Everything runs directly in the parent namespace (Nix's sandbox). 
