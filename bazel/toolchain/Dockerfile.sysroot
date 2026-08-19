@@ -1,4 +1,4 @@
-FROM ubuntu:jammy AS pkgs
+FROM ubuntu:noble AS pkgs
 
 ENV DEBIAN_FRONTEND=noninteractive
 SHELL ["/bin/bash", "-c"]
@@ -7,7 +7,7 @@ RUN apt-get update && apt-get install -y \
     libc6 \
     libc6-dev \
     libc6-dbg \
-    libgcc-12-dev \
+    libgcc-13-dev \
     valgrind \
     xfslibs-dev \
     && apt-get clean && rm -rf /var/lib/apt/lists/*
@@ -19,7 +19,15 @@ RUN mkdir -p /output/pkgs/{usr/,}lib/$(uname -m)-linux-gnu /output/pkgs/usr/incl
     && cp -r /usr/lib/*-linux-gnu/libc.{a,so}* /output/pkgs/lib/$(uname -m)-linux-gnu/ \
     && cp -r /usr/lib/*-linux-gnu/libc_nonshared.a* /output/pkgs/usr/lib/$(uname -m)-linux-gnu/ \
     && cp -r /usr/lib/*-linux-gnu/libm.{a,so}* /output/pkgs/lib/$(uname -m)-linux-gnu/ \
-    && (if test $(uname -m) = "x86_64"; then cp -r /usr/lib/x86_64-linux-gnu/libmvec.{a,so}* /output/pkgs/lib/x86_64-linux-gnu/; fi) \
+    # libm.so and libm.a are ld scripts naming these by absolute path, resolved
+    # inside the sysroot at link time, so both must be present or linking fails.
+    # libmvec is not x86_64-only any more: glibc 2.39 added it for aarch64.
+    # Placement follows the libc.so/libc_nonshared.a convention above - shared
+    # objects under lib/, static archives under usr/lib/ - because that is where
+    # the scripts look for them.
+    && cp -r /usr/lib/*-linux-gnu/libmvec.so* /output/pkgs/lib/$(uname -m)-linux-gnu/ \
+    && cp -r /usr/lib/*-linux-gnu/libmvec.a /output/pkgs/usr/lib/$(uname -m)-linux-gnu/ \
+    && cp -r /usr/lib/*-linux-gnu/libm-*.a /output/pkgs/usr/lib/$(uname -m)-linux-gnu/ \
     && cp -r /usr/lib/*-linux-gnu/libdl.{a,so}* /output/pkgs/usr/lib/$(uname -m)-linux-gnu/ \
     && cp -r /usr/lib/*-linux-gnu/librt.{a,so}* /output/pkgs/usr/lib/$(uname -m)-linux-gnu/ \
     && cp -r /usr/lib/*-linux-gnu/libutil.{a,so}* /output/pkgs/usr/lib/$(uname -m)-linux-gnu/ \
@@ -28,8 +36,8 @@ RUN mkdir -p /output/pkgs/{usr/,}lib/$(uname -m)-linux-gnu /output/pkgs/usr/incl
     && cp -r /usr/lib/*-linux-gnu/*crt*.o /output/pkgs/usr/lib/$(uname -m)-linux-gnu/ \
     && cp -r /usr/lib/*-linux-gnu/libatomic.so* /output/pkgs/usr/lib/$(uname -m)-linux-gnu/ \
     && cp -r /usr/lib/*-linux-gnu/libresolv.{a,so}* /output/pkgs/usr/lib/$(uname -m)-linux-gnu/ \
-    && cp -r /usr/lib/gcc/*-linux-gnu/12/*.o /output/pkgs/usr/lib/$(uname -m)-linux-gnu/ \
-    && cp -r /usr/lib/gcc/*-linux-gnu/12/libgcc*.{a,so}* /output/pkgs/usr/lib/$(uname -m)-linux-gnu/ \
+    && cp -r /usr/lib/gcc/*-linux-gnu/13/*.o /output/pkgs/usr/lib/$(uname -m)-linux-gnu/ \
+    && cp -r /usr/lib/gcc/*-linux-gnu/13/libgcc*.{a,so}* /output/pkgs/usr/lib/$(uname -m)-linux-gnu/ \
     && cp -r /usr/include/* /output/pkgs/usr/include/
 
 # Rewrite absolute symlinks (e.g. libmvec.so -> /lib/<triple>/libmvec.so.1) as

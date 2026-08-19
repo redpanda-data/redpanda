@@ -194,10 +194,14 @@ def data_dependency():
     # //bazel/packaging need individual file labels for the dynamic loader
     # and versioned shared libraries to ship alongside the binary, so we
     # also pull the same tarball via http_archive with a glob-based BUILD.
-    _SYSROOT_URL = "https://github.com/redpanda-data/llvm-project/releases/download/llvmorg-22.1.0/sysroot-ubuntu-22.04-{arch}-2026-05-05.tar.zst"
+    #
+    # Built from //bazel/toolchain:Dockerfile.sysroot; that directory's README
+    # covers the build commands and why the distro choice sets both the
+    # kernel-API floor (its linux-libc-dev) and the glibc we ship.
+    _SYSROOT_URL = "https://github.com/redpanda-data/llvm-project/releases/download/llvmorg-22.1.0/sysroot-ubuntu-24.04-{arch}-2026-08-13.tar.zst"
     for arch, sha in [
-        ("x86_64", "0d85fc9e155e664403c1c3c40831d865796d36a91b78a2e6d8922aa6ad3f0375"),
-        ("aarch64", "1afc00adf978c90ad8ffd3b729180923c27d57a7702ea23ba35c714e11d0def2"),
+        ("x86_64", "9d320e4a9a69b6a9dfd0be7ed9267b8d01133dbd70ebc1e6e8aae6d455f5cc26"),
+        ("aarch64", "ce479afe9e1ea93976558c0bf5b500ef83e4695524494876475a35cd64d6927c"),
     ]:
         url = _SYSROOT_URL.format(arch = arch)
         sysroot(

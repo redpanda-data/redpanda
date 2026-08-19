@@ -65,13 +65,57 @@ the correct packages in it, then extracting out the exact set of headers and sha
 To build an `x86_64` sysroot on an `x86_64` machine the following command can be used
 
 ```
-OUTPUT_FILE="sysroot-ubuntu-22.04-x86_64-$(date --rfc-3339=date -u).tar.zst"
+OUTPUT_FILE="sysroot-ubuntu-24.04-x86_64-$(date --rfc-3339=date -u).tar.zst"
 docker build --file Dockerfile.sysroot --output type=tar,dest=- . | zstd -19 -o "$OUTPUT_FILE"
 ```
 
 Building for `arm64` can be done from an `x86_64` host with the following command
 
 ```
-OUTPUT_FILE="sysroot-ubuntu-22.04-aarch64-$(date --rfc-3339=date -u).tar.zst"
+OUTPUT_FILE="sysroot-ubuntu-24.04-aarch64-$(date --rfc-3339=date -u).tar.zst"
 docker buildx build --platform=linux/arm64 --file Dockerfile.sysroot --output type=tar,dest=- . | zstd -19 -o "$OUTPUT_FILE"
 ```
+
+### Checking a freshly built sysroot
+
+Run `check-sysroot.sh` on the extracted tarball before pinning it:
+
+```
+mkdir /tmp/s && zstd -dc "$OUTPUT_FILE" | tar -x -C /tmp/s
+./check-sysroot.sh /tmp/s
+```
+
+It catches the failure mode that a file listing does not. Several glibc
+libraries are GNU ld scripts holding **absolute paths** that are resolved inside
+the sysroot at link time - `libm.so` names `libmvec.so.1` via `AS_NEEDED`,
+`libm.a` names `libm-<version>.a` and `libmvec.a`, `libc.so` names `libc.so.6`
+and `libc_nonshared.a`. If one of those files was not copied in, the sysroot
+looks complete and then `ld.lld` fails on some unrelated target with
+`cannot find /lib/<triple>/... inside <sysroot>`.
+
+Diffing the file list against the previous sysroot does **not** find these: when
+a glibc bump makes a script reference something new, the file is missing from
+both old and new, so the diff is empty. The reference is what changed. This is
+exactly how the 24.04 bump first broke aarch64 - glibc 2.39 added `libmvec` for
+aarch64, where 2.35 had none, so the previously x86_64-only `libmvec` copy left
+`libm.so` dangling on arm64 only.
+
+Note the script reports the same `libm.a` dangle for the **22.04** sysroots as
+well; it is pre-existing and harmless in practice only because nothing links
+static libm.
+
+### The two floors a distro choice sets
+
+The distro the sysroot is built from sets two independent floors, and both
+matter when picking it:
+
+* **Kernel API surface.** The `linux-libc-dev` in the image decides which uapi
+  constants the build can see, regardless of the kernel the broker runs on.
+  24.04 carries 6.8 headers; 22.04 carried 5.15, which silently compiled out
+  `MADV_COLLAPSE` in Seastar's memory prefaulter and forced a hand-rolled
+  `struct statx` stand-in for `STATX_DIOALIGN`.
+* **glibc.** The sysroot's glibc is *shipped with the package* (see
+  `//bazel/packaging`, which installs the sysroot's shared libraries and sets
+  the binaries' interpreter to the bundled loader), so the host's glibc does
+  not constrain us. The floor that does move is the loader's minimum kernel,
+  which is 3.2.0 on both 22.04 (glibc 2.35) and 24.04 (glibc 2.39).

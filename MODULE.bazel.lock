@@ -359,7 +359,7 @@
   "moduleExtensions": {
     "//bazel:extensions.bzl%non_module_dependencies": {
       "general": {
-        "bzlTransitiveDigest": "1TtbJjp+c4IAXmHLvNQGubKvnNxXhajyYN+pRWAe8ZY=",
+        "bzlTransitiveDigest": "5zsPxES0dR55B1nSHyajP0kMNcQ6to0pTTsl0SeXaiI=",
         "usagesDigest": "FEiDyZe9eAU6yEqnarZf0XMEUk+prUyYClvq1RU1J98=",
         "recordedInputs": [
           "REPO_MAPPING:,bazel_tools bazel_tools",
@@ -560,9 +560,9 @@
           "x86_64_sysroot": {
             "repoRuleId": "@@toolchains_llvm+//toolchain:sysroot.bzl%sysroot",
             "attributes": {
-              "sha256": "0d85fc9e155e664403c1c3c40831d865796d36a91b78a2e6d8922aa6ad3f0375",
+              "sha256": "9d320e4a9a69b6a9dfd0be7ed9267b8d01133dbd70ebc1e6e8aae6d455f5cc26",
               "urls": [
-                "https://github.com/redpanda-data/llvm-project/releases/download/llvmorg-22.1.0/sysroot-ubuntu-22.04-x86_64-2026-05-05.tar.zst"
+                "https://github.com/redpanda-data/llvm-project/releases/download/llvmorg-22.1.0/sysroot-ubuntu-24.04-x86_64-2026-08-13.tar.zst"
               ]
             }
           },
@@ -570,18 +570,18 @@
             "repoRuleId": "@@bazel_tools//tools/build_defs/repo:http.bzl%http_archive",
             "attributes": {
               "build_file_content": "filegroup(\n    name = \"runtime\",\n    srcs = glob([\"**/*.so.*\"], allow_empty = False),\n    visibility = [\"//visibility:public\"],\n)\n",
-              "sha256": "0d85fc9e155e664403c1c3c40831d865796d36a91b78a2e6d8922aa6ad3f0375",
+              "sha256": "9d320e4a9a69b6a9dfd0be7ed9267b8d01133dbd70ebc1e6e8aae6d455f5cc26",
               "urls": [
-                "https://github.com/redpanda-data/llvm-project/releases/download/llvmorg-22.1.0/sysroot-ubuntu-22.04-x86_64-2026-05-05.tar.zst"
+                "https://github.com/redpanda-data/llvm-project/releases/download/llvmorg-22.1.0/sysroot-ubuntu-24.04-x86_64-2026-08-13.tar.zst"
               ]
             }
           },
           "aarch64_sysroot": {
             "repoRuleId": "@@toolchains_llvm+//toolchain:sysroot.bzl%sysroot",
             "attributes": {
-              "sha256": "1afc00adf978c90ad8ffd3b729180923c27d57a7702ea23ba35c714e11d0def2",
+              "sha256": "ce479afe9e1ea93976558c0bf5b500ef83e4695524494876475a35cd64d6927c",
               "urls": [
-                "https://github.com/redpanda-data/llvm-project/releases/download/llvmorg-22.1.0/sysroot-ubuntu-22.04-aarch64-2026-05-05.tar.zst"
+                "https://github.com/redpanda-data/llvm-project/releases/download/llvmorg-22.1.0/sysroot-ubuntu-24.04-aarch64-2026-08-13.tar.zst"
               ]
             }
           },
@@ -589,9 +589,9 @@
             "repoRuleId": "@@bazel_tools//tools/build_defs/repo:http.bzl%http_archive",
             "attributes": {
               "build_file_content": "filegroup(\n    name = \"runtime\",\n    srcs = glob([\"**/*.so.*\"], allow_empty = False),\n    visibility = [\"//visibility:public\"],\n)\n",
-              "sha256": "1afc00adf978c90ad8ffd3b729180923c27d57a7702ea23ba35c714e11d0def2",
+              "sha256": "ce479afe9e1ea93976558c0bf5b500ef83e4695524494876475a35cd64d6927c",
               "urls": [
-                "https://github.com/redpanda-data/llvm-project/releases/download/llvmorg-22.1.0/sysroot-ubuntu-22.04-aarch64-2026-05-05.tar.zst"
+                "https://github.com/redpanda-data/llvm-project/releases/download/llvmorg-22.1.0/sysroot-ubuntu-24.04-aarch64-2026-08-13.tar.zst"
               ]
             }
           }

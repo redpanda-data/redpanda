@@ -434,4 +434,16 @@ build:io_uring --//bazel:io_uring=True
 test --test_env=REDPANDA_RNG_SEEDING_MODE
 test --test_env=REDPANDA_DEBUG_TEST_HOOKS
 
+# TEMPORARY - DROP BEFORE MERGE, ALONG WITH bazel/toolchain/sysroot-dist/.
+# The Ubuntu 24.04 sysroot tarballs this branch pins are not published yet, so
+# they are carried in-tree and handed to bazel through a distdir: it matches a
+# local file by basename + sha256 and skips the download, which is what lets the
+# unreachable _SYSROOT_URL in bazel/repositories.bzl resolve. Once the tarballs
+# are published, this line and the directory go away with no other change - the
+# pinned sha256s are already the final ones.
+# Path is workspace-relative on purpose: %workspace% is only substituted in
+# import/try-import statements, not in flag values, so using it here yields a
+# literal "%workspace%" path component and a silently non-existent distdir.
+common --distdir=bazel/toolchain/sysroot-dist
+
 try-import %workspace%/user.bazelrc

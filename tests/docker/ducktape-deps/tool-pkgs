@@ -50,17 +50,73 @@ ln -s /usr/bin/llvm-addr2line-$LLVM_VERSION /opt/llvm/llvm-addr2line
 
 # Install an llvm-symbolizer shim in the PATH, this allows ASAN, UBSAN, etc
 # symbolization to work out of the box.
-cat <<EOF >/usr/local/bin/llvm-symbolizer
-#!/bin/bash
+#
+# The shim exists because redpanda runs with LD_LIBRARY_PATH pointing at the
+# libraries it ships (the bin/redpanda thunk that vtools generates exports it),
+# and every process it spawns inherits that. Loading redpanda's libraries into
+# the symbolizer breaks it, so the shim scrubs the variable before handing off
+# to the real binary.
+#
+# It has to be a *statically linked* binary rather than a script. A script's
+# interpreter is itself a dynamically linked system binary, exec'd with the
+# inherited LD_LIBRARY_PATH still in place, so it is subject to exactly the
+# breakage the shim is meant to prevent and dies before its first line runs.
+# When the shipped glibc is newer than the image's, that is fatal rather than
+# merely undesirable: libc.so.6 and ld.so are version-locked through
+# GLIBC_PRIVATE symbols, so the interpreter fails with
+#   /bin/bash: symbol lookup error: .../libc.so.6:
+#     undefined symbol: __tunable_is_initialized, version GLIBC_PRIVATE
+# and ASAN falls back to unsymbolized hex frames. A static binary has no
+# PT_INTERP, so ld.so never runs for it and LD_LIBRARY_PATH cannot touch it.
+#
+# The name matters: ASAN validates the symbolizer by basename and rejects
+# anything it does not recognize, so this must stay called llvm-symbolizer.
+#
+# gcc comes from build-essential, installed by base-tools in the parent image.
+cat <<'EOF' >/tmp/llvm-symbolizer-thunk.c
+#include <stdio.h>
+#include <stdlib.h>
+#include <unistd.h>
 
-# This shim unsets LD_LIBRARY_PATH to avoid the issue that
-# redpanda libraries are loaded into the symbolizer, causing
-# it to crash.
-echo "exec llvm-symbolizer shim, cmd: '\$*', ASAN_OPTIONS=\$ASAN_OPTIONS, UBSAN_OPTIONS=\$UBSAN_OPTIONS" >&2
-unset LD_LIBRARY_PATH
-exec /usr/bin/llvm-symbolizer-$LLVM_VERSION "\$@"
+int main(int argc, char **argv) {
+    const char *asan = getenv("ASAN_OPTIONS");
+    const char *ubsan = getenv("UBSAN_OPTIONS");
+    /* Same information the shell shim used to print. The addresses to resolve
+       arrive on stdin, not in argv, so this stays short. */
+    fputs("exec llvm-symbolizer thunk, cmd: '", stderr);
+    for (int i = 1; i < argc; i++) {
+        fprintf(stderr, "%s%s", i > 1 ? " " : "", argv[i]);
+    }
+    fprintf(
+      stderr,
+      "', ASAN_OPTIONS=%s, UBSAN_OPTIONS=%s\n",
+      asan ? asan : "",
+      ubsan ? ubsan : "");
+    /* Scrub what would otherwise be inherited into the real symbolizer. */
+    unsetenv("LD_LIBRARY_PATH");
+    unsetenv("LD_PRELOAD");
+    argv[0] = (char *)REAL_SYMBOLIZER;
+    execv(REAL_SYMBOLIZER, argv);
+    /* Only reached if exec failed; say so rather than dying silently. */
+    perror("llvm-symbolizer thunk: execv " REAL_SYMBOLIZER);
+    _exit(127);
+}
 EOF
+gcc -static -Os -Wall -Wextra -Werror \
+  -DREAL_SYMBOLIZER="\"/usr/bin/llvm-symbolizer-$LLVM_VERSION\"" \
+  -o /usr/local/bin/llvm-symbolizer /tmp/llvm-symbolizer-thunk.c
+rm /tmp/llvm-symbolizer-thunk.c
 chmod +x /usr/local/bin/llvm-symbolizer
+
+# Fail the image build rather than the tests if the thunk is ever built in a way
+# that reintroduces a dynamic loader dependency. Captured into a variable rather
+# than piped into `if`, so that a missing or failing readelf trips `set -e` here
+# instead of evaluating false and passing the check vacuously.
+thunk_segments=$(readelf -l /usr/local/bin/llvm-symbolizer)
+if grep -q INTERP <<<"$thunk_segments"; then
+  echo "llvm-symbolizer thunk is dynamically linked; LD_LIBRARY_PATH would break it" >&2
+  exit 1
+fi
 
 ###########
 # ripgrep #
