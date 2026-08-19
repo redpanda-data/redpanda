@@ -6,6 +6,7 @@ go_library(
         "bundle.go",
         "client.go",
         "collect.go",
+        "collect_k8s.go",
         "messages.go",
     ],
     importpath = "github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/sql/debug/bundle",
@@ -18,5 +19,7 @@ go_library(
         "@com_github_spf13_afero//:afero",
         "@com_github_spf13_cobra//:cobra",
         "@com_github_spf13_pflag//:pflag",
+        "@io_k8s_client_go//kubernetes",
+        "@io_k8s_client_go//rest",
     ],
 )

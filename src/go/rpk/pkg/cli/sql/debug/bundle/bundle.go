@@ -52,18 +52,21 @@ type authFlags struct {
 }
 
 type bundleFlags struct {
-	adminHosts  []string
-	output      string
-	uploadURL   string
-	tls         tlsFlags
-	auth        authFlags
-	sqlText     string
-	vmstat      bool
-	cpuSeconds  uint
-	logSince    time.Duration
-	logSizeLim  uint64
-	metricsPort uint16
-	timeout     time.Duration
+	adminHosts      []string
+	output          string
+	uploadURL       string
+	tls             tlsFlags
+	auth            authFlags
+	sqlText         string
+	vmstat          bool
+	cpuSeconds      uint
+	logSince        time.Duration
+	logSizeLim      uint64
+	metricsPort     uint16
+	metricsSamples  int
+	metricsInterval time.Duration
+	namespace       string
+	timeout         time.Duration
 }
 
 func NewCommand(fs afero.Fs, _ *config.Params) *cobra.Command {
@@ -119,10 +122,13 @@ func (c *bundleFlags) install(f *pflag.FlagSet) {
 	f.StringVar(&c.auth.token, "token", "", "Bearer token (mutually exclusive with --user/--password)")
 	f.StringVar(&c.sqlText, "include-sql-text", "masked", "SQL text in query artifacts: masked|raw")
 	f.BoolVar(&c.vmstat, "include-vmstat", false, "Include vmstat in host probes (~1s slower)")
-	f.UintVar(&c.cpuSeconds, "cpu-profile-seconds", 0, "Collect a CPU profile of this duration per node (0 = skip)")
+	f.UintVar(&c.cpuSeconds, "cpu-profile-seconds", 30, "Collect a CPU profile of this duration per node (0 = skip)")
 	f.DurationVar(&c.logSince, "log-since", 0, "Collect log lines newer than this (0 = server default window)")
 	f.Uint64Var(&c.logSizeLim, "log-size-limit", 0, "Max log bytes per node (0 = server default)")
-	f.Uint16Var(&c.metricsPort, "metrics-port", 8080, "Per-node Prometheus metrics port (scraped twice ~1s apart)")
+	f.Uint16Var(&c.metricsPort, "metrics-port", 8080, "Per-node Prometheus metrics port")
+	f.IntVar(&c.metricsSamples, "metrics-samples", 2, "Number of metrics samples to take per node (at the interval of --metrics-interval). Must be > 0")
+	f.DurationVar(&c.metricsInterval, "metrics-interval", 10*time.Second, "Interval between metrics samples")
+	f.StringVarP(&c.namespace, "namespace", "n", "", "Kubernetes namespace to collect resources from (K8s only; default: the pod's own namespace)")
 	f.DurationVar(&c.timeout, "timeout", 60*time.Second, "Per-RPC timeout")
 }
 
@@ -131,6 +137,15 @@ func (c *bundleFlags) options(fs afero.Fs) (Options, error) {
 	sqlMode, err := sqlTextMode(c.sqlText)
 	if err != nil {
 		return Options{}, err
+	}
+
+	if c.metricsSamples < 1 {
+		return Options{}, fmt.Errorf("--metrics-samples must be > 0, got %d", c.metricsSamples)
+	}
+
+	// The profile RPC blocks for the whole profiling duration.
+	if profile := time.Duration(c.cpuSeconds) * time.Second; profile >= c.timeout {
+		return Options{}, fmt.Errorf("--cpu-profile-seconds (%v) must be below --timeout (%v); raise --timeout or lower the profile duration", profile, c.timeout)
 	}
 
 	var tlsCfg *tls.Config
@@ -158,6 +173,9 @@ func (c *bundleFlags) options(fs afero.Fs) (Options, error) {
 		LogSinceUnixMs:    logSinceMs,
 		LogSizeLimitBytes: c.logSizeLim,
 		MetricsPort:       c.metricsPort,
+		MetricsSamples:    c.metricsSamples,
+		MetricsInterval:   c.metricsInterval,
+		Namespace:         c.namespace,
 		ToolVersion:       "rpk",
 	}, nil
 }
