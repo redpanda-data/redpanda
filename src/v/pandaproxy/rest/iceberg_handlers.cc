@@ -120,13 +120,15 @@ get_translation_state(proxy::server::request_t rq, proxy::server::reply_t rp) {
 
     auto& topic_table = rq.service().topic_table();
 
-    // A requested topic the coordinator doesn't track, but which exists with
-    // Iceberg disabled, is reported as disabled below instead of being omitted.
-    // Enabled-but-untracked topics are excluded: they are still initializing
-    // and will appear via the coordinator with full table state once
-    // registered; surfacing them here without a table identity would be
-    // misleading.
+    // Topics the coordinator doesn't track are classified by their Iceberg
+    // mode so the response always includes an entry for every requested topic
+    // that exists:
+    //  - disabled → status=DISABLED, no table identity
+    //  - enabled  → status=ENABLED with namespace/table derived from config
+    //               (same table_id_provider used once the coordinator tracks
+    //               the topic), but no partition offsets or snapshot id yet
     chunked_vector<model::topic> disabled_topics;
+    chunked_vector<model::topic> enabled_untracked_topics;
     for (const auto& topic_name : req.get_topics_filter()) {
         model::topic topic{topic_name};
         if (topic_states.contains(topic)) {
@@ -134,13 +136,16 @@ get_translation_state(proxy::server::request_t rq, proxy::server::reply_t rp) {
         }
         auto tp_md = topic_table.get_topic_metadata_ref(
           model::topic_namespace_view(model::kafka_namespace, topic));
-        if (
-          !tp_md
-          || get_translation_status(tp_md->get().get_configuration())
-               != proto::pandaproxy::translation_status::disabled) {
+        if (!tp_md) {
             continue;
         }
-        disabled_topics.push_back(std::move(topic));
+        if (
+          get_translation_status(tp_md->get().get_configuration())
+          == proto::pandaproxy::translation_status::disabled) {
+            disabled_topics.push_back(std::move(topic));
+        } else {
+            enabled_untracked_topics.push_back(std::move(topic));
+        }
     }
 
     // Filter out topics the user is not authorized to describe.
@@ -170,6 +175,10 @@ get_translation_state(proxy::server::request_t rq, proxy::server::reply_t rp) {
           disabled_topics,
           [&](const auto& topic) { return !is_authorized(topic); });
         disabled_topics.erase_to_end(unauthorized.begin());
+        auto unauth_enabled = std::ranges::remove_if(
+          enabled_untracked_topics,
+          [&](const auto& topic) { return !is_authorized(topic); });
+        enabled_untracked_topics.erase_to_end(unauth_enabled.begin());
     }
 
     proto::pandaproxy::get_translation_state_response resp;
@@ -241,6 +250,18 @@ get_translation_state(proxy::server::request_t rq, proxy::server::reply_t rp) {
         proto::pandaproxy::topic_state pb_state;
         pb_state.set_translation_status(
           proto::pandaproxy::translation_status::disabled);
+        pb_topic_states.emplace(topic(), std::move(pb_state));
+    }
+
+    for (const auto& topic : enabled_untracked_topics) {
+        proto::pandaproxy::topic_state pb_state;
+        pb_state.set_translation_status(
+          proto::pandaproxy::translation_status::enabled);
+        auto table_id = datalake::table_id_provider::table_id(topic);
+        pb_state.set_table_name(std::move(table_id.table));
+        pb_state.set_namespace_name(std::move(table_id.ns));
+        pb_state.set_dlq_table_name(
+          datalake::table_id_provider::dlq_table_id(topic).table);
         pb_topic_states.emplace(topic(), std::move(pb_state));
     }
     resp.set_topic_states(std::move(pb_topic_states));
