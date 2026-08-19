@@ -178,6 +178,26 @@ redpanda_cc_btest(
 )
 
 redpanda_cc_btest(
+    name = "deferred_auth",
+    timeout = "short",
+    srcs = [
+        "deferred_auth.cc",
+    ],
+    cpu = 1,
+    deps = [
+        "//src/v/container:chunked_vector",
+        "//src/v/pandaproxy:core",
+        "//src/v/pandaproxy/schema_registry:server",
+        "//src/v/security",
+        "//src/v/security:request_auth",
+        "//src/v/test_utils:seastar_boost",
+        "@boost//:test",
+        "@seastar",
+        "@seastar//:testing",
+    ],
+)
+
+redpanda_cc_btest(
     name = "sharded_store",
     timeout = "short",
     srcs = [
