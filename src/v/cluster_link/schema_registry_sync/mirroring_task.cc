@@ -347,13 +347,13 @@ ss::future<> mirroring_task::refresh_destination_inventory(
       as);
 
     chunked_hash_set<ppsr::context_subject> subjects;
-    for (const auto& key : _destination_inventory.active) {
+    for (const auto& key : _destination_inventory.all) {
         subjects.insert(key.sub);
     }
     _status.inventory.destination_subjects = static_cast<uint64_t>(
       subjects.size());
     _status.inventory.destination_subject_versions = static_cast<uint64_t>(
-      _destination_inventory.active.size());
+      _destination_inventory.all.size());
 }
 
 ss::future<> mirroring_task::hard_delete_target(

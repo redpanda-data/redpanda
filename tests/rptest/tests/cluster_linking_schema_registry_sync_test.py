@@ -759,6 +759,31 @@ class SchemaRegistrySyncMixin:
         assert src.delete_subject(whole).status_code == 200
         self._wait_delete_synced(src, dest, subjects)
 
+        self._wait_inventory_agrees(
+            "the inventory counters disagree across soft deletes"
+        )
+
+    def _wait_inventory_agrees(self, err_msg: str) -> None:
+        """Waits for the reported source and destination inventories to match.
+
+        Both sides count what each registry holds, soft-deleted versions
+        included, so a converged mirror reports the same numbers. Asserted as
+        equality rather than against exact values: the counts are the same
+        question asked of each side, and that is what makes them comparable.
+        """
+
+        def agrees() -> bool:
+            inv = self._admin_sr_status().inventory
+            self.logger.debug(f"inventory: {inv}")
+            return (
+                inv.selected_source_subjects > 0
+                and inv.selected_source_subjects == inv.destination_subjects
+                and inv.selected_source_subject_versions
+                == inv.destination_subject_versions
+            )
+
+        wait_until(agrees, timeout_sec=60, backoff_sec=1, err_msg=err_msg)
+
     def _test_schema_registry_api_sync_tail_latency(self):
         # Incremental propagation: the link tails the source's _schemas topic
         # over the Kafka API and re-reads only the targets its records name.

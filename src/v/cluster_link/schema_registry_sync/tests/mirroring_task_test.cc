@@ -34,6 +34,22 @@
 
 using namespace std::chrono_literals;
 
+// Found by ADL, so gtest prints these in matcher failures instead of dumping
+// their bytes. Only the fields the tests here assert on.
+namespace cluster_link::model {
+
+void PrintTo(const schema_registry_inventory& inv, std::ostream* os) {
+    fmt::format_to(
+      std::ostreambuf_iterator<char>{*os},
+      "inventory{{source: {} subjects / {} versions, destination: {} / {}}}",
+      inv.selected_source_subjects,
+      inv.selected_source_subject_versions,
+      inv.destination_subjects,
+      inv.destination_subject_versions);
+}
+
+} // namespace cluster_link::model
+
 namespace cluster_link::tests {
 
 namespace {
@@ -58,6 +74,16 @@ std::optional<uint64_t> sr_sync_metric(std::string_view counter, int handle) {
 
 const auto both_metric_handles = std::to_array(
   {ss::metrics::default_handle(), metrics::public_metrics_handle});
+
+// A converged mirror: both sides count the same subjects and versions.
+model::schema_registry_inventory
+converged(uint64_t subjects, uint64_t versions) {
+    return {
+      .selected_source_subjects = subjects,
+      .selected_source_subject_versions = versions,
+      .destination_subjects = subjects,
+      .destination_subject_versions = versions};
+}
 
 model::metadata get_default_metadata() {
     model::metadata metadata{
@@ -1580,6 +1606,27 @@ TEST_F(
                   "subject_versions_changed", ss::metrics::default_handle())
                   .has_value();
     }).get();
+}
+
+TEST_F(mirroring_task_test, inventory_counts_soft_deleted_versions_both_sides) {
+    // "a" keeps an active version and a soft-deleted one; "gone" is
+    // soft-deleted outright, which the source still lists (its listings are
+    // include_deleted) and the sync still imports. Both sides must therefore
+    // count soft-deleted versions, or a converged mirror reports fewer than it
+    // holds.
+    auto a = ppsr::context_subject::unqualified("a");
+    auto gone = ppsr::context_subject::unqualified("gone");
+    _source_state.add(a, 1);
+    _source_state.add(a, 2);
+    _source_state.soft_delete(a, 2);
+    _source_state.add(gone, 1);
+    _source_state.soft_delete(gone, 1);
+
+    lead_schema_registry();
+    fixture()->upsert_link(get_default_metadata()).get();
+    auto status = wait_for_first_full_sync().get();
+
+    EXPECT_THAT(status.inventory, converged(2, 3));
 }
 
 TEST_F(mirroring_task_test, destination_inventory_spans_contexts_and_deleted) {
