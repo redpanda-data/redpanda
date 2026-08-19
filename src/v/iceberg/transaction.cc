@@ -11,6 +11,7 @@
 
 #include "iceberg/merge_append_action.h"
 #include "iceberg/remove_snapshots_action.h"
+#include "iceberg/row_delta_action.h"
 #include "iceberg/schema.h"
 #include "iceberg/table_update_applier.h"
 #include "iceberg/update_partition_spec_action.h"
@@ -86,6 +87,24 @@ ss::future<transaction::txn_outcome> transaction::merge_append(
       io,
       table_,
       std::move(files),
+      std::move(snapshot_props),
+      std::move(tag_name),
+      tag_expiration_ms);
+    co_return co_await apply(std::move(a));
+}
+
+ss::future<transaction::txn_outcome> transaction::row_delta(
+  manifest_io& io,
+  chunked_vector<file_to_append> data_files,
+  chunked_vector<file_to_delete> delete_files,
+  chunked_vector<std::pair<ss::sstring, ss::sstring>> snapshot_props,
+  std::optional<ss::sstring> tag_name,
+  std::optional<int64_t> tag_expiration_ms) {
+    auto a = std::make_unique<row_delta_action>(
+      io,
+      table_,
+      std::move(data_files),
+      std::move(delete_files),
       std::move(snapshot_props),
       std::move(tag_name),
       tag_expiration_ms);

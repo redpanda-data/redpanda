@@ -485,6 +485,32 @@ redpanda_cc_library(
 )
 
 redpanda_cc_library(
+    name = "manifest_utils",
+    srcs = [
+        "manifest_utils.cc",
+    ],
+    hdrs = [
+        "manifest_utils.h",
+    ],
+    implementation_deps = [
+        ":compatibility",
+        ":logger",
+        ":manifest",
+        ":partition_key_type",
+        ":values_bytes",
+    ],
+    deps = [
+        ":action",
+        ":manifest_entry",
+        ":manifest_io",
+        ":manifest_list",
+        ":schema",
+        ":table_metadata",
+        "//src/v/base",
+    ],
+)
+
+redpanda_cc_library(
     name = "merge_append_action",
     srcs = [
         "merge_append_action.cc",
@@ -493,9 +519,7 @@ redpanda_cc_library(
         "merge_append_action.h",
     ],
     implementation_deps = [
-        ":compatibility",
         ":logger",
-        ":manifest",
         ":manifest_file_packer",
         ":snapshot",
         ":table_requirement",
@@ -506,9 +530,37 @@ redpanda_cc_library(
         ":manifest_entry",
         ":manifest_io",
         ":manifest_list",
+        ":manifest_utils",
         ":schema",
         ":table_metadata",
-        ":values_bytes",
+        "//src/v/base",
+    ],
+)
+
+redpanda_cc_library(
+    name = "row_delta_action",
+    srcs = [
+        "row_delta_action.cc",
+    ],
+    hdrs = [
+        "row_delta_action.h",
+    ],
+    implementation_deps = [
+        ":logger",
+        ":manifest_file_packer",
+        ":snapshot",
+        ":table_requirement",
+        "//src/v/random:generators",
+    ],
+    deps = [
+        ":action",
+        ":manifest_entry",
+        ":manifest_io",
+        ":manifest_list",
+        ":manifest_utils",
+        ":merge_append_action",
+        ":schema",
+        ":table_metadata",
         "//src/v/base",
     ],
 )
@@ -591,6 +643,30 @@ redpanda_cc_library(
         ":struct_accessor",
         ":transform_utils",
         ":values",
+    ],
+)
+
+redpanda_cc_library(
+    name = "equality_delete_file",
+    srcs = [
+        "equality_delete_file.cc",
+    ],
+    hdrs = [
+        "equality_delete_file.h",
+    ],
+    implementation_deps = [
+        "//src/v/bytes:iostream",
+        "//src/v/serde/parquet:writer",
+    ],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":datatypes",
+        ":manifest_entry",
+        "//src/v/bytes:iobuf",
+        "//src/v/container:chunked_vector",
+        "//src/v/serde/parquet:schema",
+        "//src/v/serde/parquet:value",
+        "@seastar",
     ],
 )
 
@@ -1008,6 +1084,7 @@ redpanda_cc_library(
         ":action",
         ":manifest_io",
         ":merge_append_action",
+        ":row_delta_action",
         ":schema",
         ":table_metadata",
         ":table_requirement",

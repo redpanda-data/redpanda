@@ -1,5 +1,5 @@
 /*
- * Copyright 2024 Redpanda Data, Inc.
+ * Copyright 2026 Redpanda Data, Inc.
  *
  * Licensed as a Redpanda Enterprise file under the Redpanda Community
  * License (the "License"); you may not use this file except in compliance with
@@ -7,8 +7,9 @@
  *
  * https://github.com/redpanda-data/redpanda/blob/master/licenses/rcl.md
  */
-#include "iceberg/merge_append_action.h"
+#include "iceberg/row_delta_action.h"
 
+#include "base/units.h"
 #include "base/vlog.h"
 #include "iceberg/logger.h"
 #include "iceberg/manifest_file_packer.h"
@@ -127,7 +128,7 @@ pack_mlist_and_new_data(
   size_t min_to_merge,
   size_t target_size_bytes,
   const table_snapshot_ctx& ctx,
-  manifest_list old_mlist,
+  chunked_vector<manifest_file> old_data_mfiles,
   chunked_vector<file_to_append> new_data_files) {
     struct per_spec_data {
         chunked_vector<manifest_file> existing_manifests;
@@ -135,7 +136,7 @@ pack_mlist_and_new_data(
     };
 
     chunked_hash_map<partition_spec::id_t, per_spec_data> spec2data;
-    for (auto& m : old_mlist.files) {
+    for (auto& m : old_data_mfiles) {
         auto spec_id = m.partition_spec_id;
         spec2data[spec_id].existing_manifests.push_back(std::move(m));
     }
@@ -209,15 +210,33 @@ pack_mlist_and_new_data(
 
 } // namespace
 
-ss::future<action::action_outcome> merge_append_action::build_updates() && {
+row_delta_action::row_delta_action(
+  manifest_io& io,
+  const table_metadata& table,
+  chunked_vector<file_to_append> data_files,
+  chunked_vector<file_to_delete> delete_files,
+  chunked_vector<std::pair<ss::sstring, ss::sstring>> snapshot_props,
+  std::optional<ss::sstring> tag_name,
+  std::optional<int64_t> tag_expiration_ms)
+  : io_(io)
+  , table_(table)
+  , commit_uuid_(uuid_t::create())
+  , new_data_files_(std::move(data_files))
+  , new_delete_files_(std::move(delete_files))
+  , snapshot_props_(std::move(snapshot_props))
+  , tag_name_(std::move(tag_name))
+  , tag_expiration_ms_(tag_expiration_ms) {}
+
+ss::future<action::action_outcome> row_delta_action::build_updates() && {
     vlog(
       log.info,
-      "Building append update for {} data files",
-      new_data_files_.size());
+      "Building row delta update for {} data files and {} delete files",
+      new_data_files_.size(),
+      new_delete_files_.size());
 
-    // Validate our input files that their partition keys look sane.
-    size_t added_records{0};
-    size_t added_files_size{0};
+    // Validate data files.
+    size_t added_data_records{0};
+    size_t added_data_files_size{0};
     for (const auto& f : new_data_files_) {
         if (f.file.partition.val == nullptr) {
             vlog(
@@ -245,10 +264,43 @@ ss::future<action::action_outcome> merge_append_action::build_updates() && {
               pspec->fields.size());
             co_return action::errc::unexpected_state;
         }
-        added_records += f.file.record_count;
-        added_files_size += f.file.file_size_bytes;
+        added_data_records += f.file.record_count;
+        added_data_files_size += f.file.file_size_bytes;
     }
-    auto added_data_files = new_data_files_.size();
+    auto added_data_files_count = new_data_files_.size();
+
+    // Validate delete files.
+    size_t deleted_records{0};
+    for (const auto& f : new_delete_files_) {
+        if (f.file.partition.val == nullptr) {
+            vlog(
+              log.error,
+              "Metadata for delete file {} is missing partition key",
+              f.file.file_path);
+            co_return action::errc::unexpected_state;
+        }
+        const auto* pspec = table_.get_partition_spec(f.partition_spec_id);
+        if (!pspec) {
+            vlog(
+              log.error,
+              "partition spec {} for delete file {} not found in metadata",
+              f.partition_spec_id,
+              f.file.file_path);
+            co_return action::errc::unexpected_state;
+        }
+        auto f_num_fields = f.file.partition.val->fields.size();
+        if (f_num_fields != pspec->fields.size()) {
+            vlog(
+              log.error,
+              "Partition key for delete file {} has {} fields, expected {}",
+              f.file.file_path,
+              f_num_fields,
+              pspec->fields.size());
+            co_return action::errc::unexpected_state;
+        }
+        deleted_records += f.file.record_count;
+    }
+    auto added_delete_files_count = new_delete_files_.size();
 
     // Get the manifest list for the current snapshot, if any.
     manifest_list mlist;
@@ -301,24 +353,97 @@ ss::future<action::action_outcome> merge_append_action::build_updates() && {
       .seq_num = new_seq_num,
     };
 
-    auto mfiles_res = co_await pack_mlist_and_new_data(
-      io_,
-      table_,
-      [this]() { return generate_manifest_num(); },
-      default_min_to_merge_new_files,
-      default_target_size_bytes,
-      ctx,
-      std::move(mlist),
-      std::move(new_data_files_));
-    if (mfiles_res.has_error()) {
-        co_return mfiles_res.error();
+    // Separate existing manifest files into data and delete manifests.
+    chunked_vector<manifest_file> old_data_mfiles;
+    chunked_vector<manifest_file> old_delete_mfiles;
+    for (auto& mf : mlist.files) {
+        if (mf.content == manifest_file_content::data) {
+            old_data_mfiles.push_back(std::move(mf));
+        } else {
+            old_delete_mfiles.push_back(std::move(mf));
+        }
     }
-    manifest_list new_mlist{std::move(mfiles_res.value())};
 
-    // NOTE: 0 here is the attempt number for this manifest list. Other Iceberg
-    // implementations retry appends on failure and increment an count for
-    // naming uniqueness. Retries for us are expected to take the form of an
-    // entirely new transaction.
+    // Handle data files using the same pack+merge logic as merge_append.
+    chunked_vector<manifest_file> new_mfiles;
+    if (!new_data_files_.empty() || !old_data_mfiles.empty()) {
+        auto mfiles_res = co_await pack_mlist_and_new_data(
+          io_,
+          table_,
+          [this]() { return generate_manifest_num(); },
+          merge_append_action::default_min_to_merge_new_files,
+          merge_append_action::default_target_size_bytes,
+          ctx,
+          std::move(old_data_mfiles),
+          std::move(new_data_files_));
+        if (mfiles_res.has_error()) {
+            co_return mfiles_res.error();
+        }
+        auto data_mfiles = std::move(mfiles_res.value());
+        std::move(
+          data_mfiles.begin(),
+          data_mfiles.end(),
+          std::back_inserter(new_mfiles));
+    }
+
+    // Handle delete files: create a new delete manifest per partition spec.
+    if (!new_delete_files_.empty()) {
+        struct per_spec_delete_data {
+            chunked_vector<manifest_entry> entries;
+            schema::id_t max_schema_id{schema::id_t::min()};
+        };
+        chunked_hash_map<partition_spec::id_t, per_spec_delete_data>
+          spec2deletes;
+        for (auto& f : new_delete_files_) {
+            auto spec_id = f.partition_spec_id;
+            auto& per_spec = spec2deletes[spec_id];
+            per_spec.max_schema_id = std::max(
+              per_spec.max_schema_id, f.schema_id);
+            manifest_entry e{
+              .status = manifest_entry_status::added,
+              .snapshot_id = new_snap_id,
+              .sequence_number = std::nullopt,
+              .file_sequence_number = std::nullopt,
+              .data_file = std::move(f.file),
+            };
+            per_spec.entries.emplace_back(std::move(e));
+        }
+
+        for (auto& [spec_id, per_spec] : spec2deletes) {
+            const auto* pspec = table_.get_partition_spec(spec_id);
+            if (!pspec) {
+                vlog(
+                  log.error,
+                  "partition spec {} not found in metadata",
+                  spec_id);
+                co_return action::errc::unexpected_state;
+            }
+
+            auto mfile_res = co_await merge_mfiles(
+              io_,
+              table_,
+              [this]() { return generate_manifest_num(); },
+              manifest_content_type::deletes,
+              {},
+              std::move(per_spec.entries),
+              per_spec.max_schema_id,
+              *pspec,
+              ctx);
+            if (mfile_res.has_error()) {
+                co_return mfile_res.error();
+            }
+            new_mfiles.emplace_back(std::move(mfile_res.value()));
+        }
+    }
+
+    // Carry forward existing delete manifests.
+    std::move(
+      old_delete_mfiles.begin(),
+      old_delete_mfiles.end(),
+      std::back_inserter(new_mfiles));
+
+    manifest_list new_mlist{std::move(new_mfiles)};
+
     const auto new_mlist_path = get_manifest_list_path(
       table_, new_snap_id, commit_uuid_, 0);
 
@@ -333,34 +458,55 @@ ss::future<action::action_outcome> merge_append_action::build_updates() && {
         co_return to_action_errc(mlist_up_res.error());
     }
 
+    // Determine snapshot operation.
+    snapshot_operation op;
+    if (added_data_files_count > 0 && added_delete_files_count > 0) {
+        op = snapshot_operation::overwrite;
+    } else if (added_delete_files_count > 0) {
+        op = snapshot_operation::delete_data;
+    } else {
+        op = snapshot_operation::append;
+    }
+
     snapshot_summary new_summary = {
-      .operation = snapshot_operation::append,
-      .added_data_files = added_data_files,
-      .added_records = added_records,
-      .added_files_size = added_files_size,
-      // TODO: serialize other fields.
+      .operation = op,
+      .added_data_files = static_cast<int64_t>(added_data_files_count),
+      .added_records = static_cast<int64_t>(added_data_records),
+      .added_files_size = static_cast<int64_t>(added_data_files_size),
+      .added_delete_files = static_cast<int64_t>(added_delete_files_count),
+      .deleted_records = static_cast<int64_t>(deleted_records),
       .other = {},
     };
     if (old_summary) {
         if (old_summary->total_data_files.has_value()) {
-            new_summary.total_data_files = added_data_files
+            new_summary.total_data_files = static_cast<int64_t>(
+                                             added_data_files_count)
                                            + *old_summary->total_data_files;
         }
         if (old_summary->total_records.has_value()) {
-            new_summary.total_records = added_records
+            new_summary.total_records = static_cast<int64_t>(added_data_records)
                                         + *old_summary->total_records;
         }
         if (old_summary->total_files_size.has_value()) {
-            new_summary.total_files_size = added_files_size
+            new_summary.total_files_size = static_cast<int64_t>(
+                                             added_data_files_size)
                                            + *old_summary->total_files_size;
         }
+        if (old_summary->total_delete_files.has_value()) {
+            new_summary.total_delete_files = static_cast<int64_t>(
+                                               added_delete_files_count)
+                                             + *old_summary->total_delete_files;
+        }
     } else {
-        new_summary.total_data_files = added_data_files;
-        new_summary.total_records = added_records;
-        new_summary.total_files_size = added_files_size;
+        new_summary.total_data_files = static_cast<int64_t>(
+          added_data_files_count);
+        new_summary.total_records = static_cast<int64_t>(added_data_records);
+        new_summary.total_files_size = static_cast<int64_t>(
+          added_data_files_size);
+        new_summary.total_delete_files = static_cast<int64_t>(
+          added_delete_files_count);
     }
 
-    // Return the snapshot metadata.
     snapshot s{
       .id = new_snap_id,
       .parent_snapshot_id = old_snap_id,
@@ -376,12 +522,12 @@ ss::future<action::action_outcome> merge_append_action::build_updates() && {
     updates_and_reqs ret;
     ret.updates.emplace_back(table_update::add_snapshot{std::move(s)});
     ret.updates.emplace_back(table_update::set_snapshot_ref{
-          .ref_name = "main",
-          .ref = snapshot_reference{
-            .snapshot_id = new_snap_id,
-            .type = snapshot_ref_type::branch,
-          },
-        });
+      .ref_name = "main",
+      .ref = snapshot_reference{
+        .snapshot_id = new_snap_id,
+        .type = snapshot_ref_type::branch,
+      },
+    });
     if (tag_name_.has_value()) {
         ret.updates.emplace_back(table_update::set_snapshot_ref{
           .ref_name = tag_name_.value(),
