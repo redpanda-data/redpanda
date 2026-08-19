@@ -8,17 +8,14 @@
 // by the Apache License, Version 2.0
 
 #include "base/seastarx.h"
+#include "net/tests/dns_test_utils.h"
 #include "test_utils/test.h"
 
-#include <seastar/core/reactor.hh>
 #include <seastar/core/sstring.hh>
-#include <seastar/core/temporary_buffer.hh>
 #include <seastar/core/when_all.hh>
 #include <seastar/core/with_timeout.hh>
-#include <seastar/net/api.hh>
 #include <seastar/net/dns.hh>
 #include <seastar/net/inet_address.hh>
-#include <seastar/net/socket_defs.hh>
 #include <seastar/util/log.hh>
 
 #include <gtest/gtest.h>
@@ -26,11 +23,6 @@
 #include <array>
 #include <chrono>
 #include <cstddef>
-#include <cstring>
-#include <optional>
-#include <span>
-#include <string>
-#include <string_view>
 
 using namespace std::chrono_literals;
 
@@ -68,96 +60,6 @@ constexpr auto queries_per_lookup = search_domain_count + 1;
 constexpr auto chains = 64;
 constexpr auto lookups_per_chain = 1024;
 constexpr auto qid_draws = chains * lookups_per_chain * queries_per_lookup;
-
-// Minimal DNS wire format handling. A query datagram is:
-//   [id:2][flags:2][qdcount:2][ancount:2][nscount:2][arcount:2]
-//   [qname: length-prefixed labels, 0-terminated][qtype:2][qclass:2]
-//   [optional additional records, e.g. EDNS OPT]
-// The reply echoes the header id and question verbatim and patches the
-// header to a no-answer NXDOMAIN response.
-std::optional<ss::temporary_buffer<char>>
-make_nxdomain_reply(std::string_view request) {
-    constexpr size_t header_size = 12;
-    if (request.size() < header_size) {
-        return std::nullopt;
-    }
-    auto pos = header_size;
-    while (pos < request.size()) {
-        auto label_len = static_cast<uint8_t>(request[pos]);
-        if (label_len == 0) {
-            pos += 1;
-            break;
-        }
-        if ((label_len & 0xc0) != 0) {
-            // Compression pointers never appear in queries.
-            return std::nullopt;
-        }
-        pos += 1 + label_len;
-    }
-    pos += 4; // qtype + qclass
-    if (pos > request.size()) {
-        return std::nullopt;
-    }
-
-    auto reply = ss::temporary_buffer<char>(pos);
-    std::memcpy(reply.get_write(), request.data(), pos);
-    auto* b = reinterpret_cast<unsigned char*>(reply.get_write());
-    b[2] = 0x81; // QR=1, opcode=QUERY, RD=1
-    b[3] = 0x83; // RA=1, rcode=NXDOMAIN
-    b[4] = 0;
-    b[5] = 1;                 // qdcount=1
-    std::memset(b + 6, 0, 6); // ancount/nscount/arcount=0 (drops any OPT)
-    return reply;
-}
-
-class mock_dns_server {
-public:
-    ss::future<> start() {
-        _chan = ss::engine().net().make_bound_datagram_channel(
-          ss::socket_address(ss::ipv4_addr("127.0.0.1", 0)));
-        _loop = run();
-        co_return;
-    }
-
-    ss::future<> stop() {
-        _stopping = true;
-        _chan.shutdown_input();
-        _chan.shutdown_output();
-        co_await std::move(_loop);
-    }
-
-    uint16_t port() const { return _chan.local_address().port(); }
-    uint64_t queries_served() const { return _queries_served; }
-
-private:
-    ss::future<> run() {
-        while (!_stopping) {
-            try {
-                auto datagram = co_await _chan.receive();
-                std::string request;
-                for (auto& buf : datagram.get_buffers()) {
-                    request.append(buf.get(), buf.size());
-                }
-                auto reply = make_nxdomain_reply(request);
-                if (!reply) {
-                    continue;
-                }
-                ++_queries_served;
-                std::array<ss::temporary_buffer<char>, 1> bufs{
-                  std::move(*reply)};
-                co_await _chan.send(datagram.get_src(), std::span(bufs));
-            } catch (...) {
-                // receive()/send() throw on shutdown_input/output.
-                co_return;
-            }
-        }
-    }
-
-    ss::net::datagram_channel _chan;
-    ss::future<> _loop = ss::make_ready_future<>();
-    bool _stopping = false;
-    uint64_t _queries_served = 0;
-};
 
 struct chain_result {
     uint64_t completed = 0;
@@ -197,7 +99,7 @@ TEST_CORO(dns_liveness, every_resolution_completes) {
     ss::global_logger_registry().set_logger_level(
       "dns_resolver", ss::log_level::error);
 
-    auto server = mock_dns_server{};
+    auto server = net::dns_test::mock_dns_server{};
     co_await server.start();
 
     auto opts = ss::net::dns_resolver::options{};
@@ -235,8 +137,8 @@ TEST_CORO(dns_liveness, every_resolution_completes) {
 
     EXPECT_EQ(total.timed_out, 0u)
       << total.timed_out << " DNS resolution(s) timed out (" << total.completed
-      << " completed, " << server.queries_served()
-      << " DNS queries served, test configured for " << qid_draws
+      << " completed, " << server.queries_received()
+      << " DNS queries received, test configured for " << qid_draws
       << " QID draws). One known cause is a lost c-ares callback; see "
          "CORE-17096 and "
          "https://github.com/c-ares/c-ares/issues/1256";

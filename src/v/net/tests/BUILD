@@ -1,4 +1,4 @@
-load("//bazel:test.bzl", "redpanda_cc_btest", "redpanda_cc_gtest")
+load("//bazel:test.bzl", "redpanda_cc_btest", "redpanda_cc_gtest", "redpanda_test_cc_library")
 
 redpanda_cc_btest(
     name = "connection_rate_test",
@@ -76,6 +76,17 @@ redpanda_cc_gtest(
     ],
 )
 
+redpanda_test_cc_library(
+    name = "dns_test_utils",
+    hdrs = [
+        "dns_test_utils.h",
+    ],
+    deps = [
+        "//src/v/base",
+        "@seastar",
+    ],
+)
+
 redpanda_cc_gtest(
     name = "dns_liveness_test",
     timeout = "moderate",
@@ -83,6 +94,7 @@ redpanda_cc_gtest(
         "dns_liveness_test.cc",
     ],
     deps = [
+        ":dns_test_utils",
         "//src/v/base",
         "//src/v/test_utils:gtest",
         "@googletest//:gtest",
