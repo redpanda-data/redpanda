@@ -14,7 +14,6 @@
 #include "base/seastarx.h"
 #include "base/vassert.h" // IWYU pragma: keep; macro expansion
 #include "model/timeout_clock.h"
-#include "ssx/sformat.h" // IWYU pragma: keep; macro expansion
 #include "test_utils/test_macros.h"
 
 #include <seastar/core/future-util.hh>
@@ -26,64 +25,136 @@
 #include <seastar/core/thread.hh>
 #include <seastar/core/timed_out_error.hh>
 
+#include <fmt/format.h>
+
 #include <chrono>
+#include <string>
+#include <type_traits>
 
 using namespace std::chrono_literals;
 
+/// Waits until the given condition becomes true, failing the test on timeout.
+///
+/// The condition is either a boolean expression, re-evaluated every poll
+/// interval:
+///     RPTEST_REQUIRE_EVENTUALLY(5s, consumed_offset() == 100);
+/// or a nullary predicate returning bool or ss::future<bool>:
+///     RPTEST_REQUIRE_EVENTUALLY(5s, [&] { ... });
 // NOLINTNEXTLINE(cppcoreguidelines-macro-usage)
-#define RPTEST_REQUIRE_EVENTUALLY_CORO(...)                                    \
+#define RPTEST_REQUIRE_EVENTUALLY(timeout, ...)                                \
     /* NOLINTNEXTLINE(*do-while*) */                                           \
     do {                                                                       \
         try {                                                                  \
-            co_await ::tests::cooperative_spin_wait_with_timeout(__VA_ARGS__); \
+            ::tests::cooperative_spin_wait_with_timeout(                       \
+              timeout, ::tests::detail::eventually_predicate([&] {             \
+                  return (__VA_ARGS__);                                        \
+              }))                                                              \
+              .get();                                                          \
         } catch (const ss::timed_out_error&) {                                 \
-            RPTEST_FAIL_CORO(                                                  \
-              ssx::sformat("Timed out at {}:{}", __FILE__, __LINE__));         \
+            RPTEST_FAIL(                                                       \
+              ::tests::detail::eventually_timeout_message(                     \
+                #__VA_ARGS__, __FILE__, __LINE__));                            \
         }                                                                      \
     } while (0);
 
+/// Coroutine variant of RPTEST_REQUIRE_EVENTUALLY.
 // NOLINTNEXTLINE(cppcoreguidelines-macro-usage)
-#define RPTEST_REQUIRE_EVENTUALLY(...)                                         \
+#define RPTEST_REQUIRE_EVENTUALLY_CORO(timeout, ...)                           \
     /* NOLINTNEXTLINE(*do-while*) */                                           \
     do {                                                                       \
         try {                                                                  \
-            ::tests::cooperative_spin_wait_with_timeout(__VA_ARGS__).get();    \
+            co_await ::tests::cooperative_spin_wait_with_timeout(              \
+              timeout, ::tests::detail::eventually_predicate([&] {             \
+                  return (__VA_ARGS__);                                        \
+              }));                                                             \
         } catch (const ss::timed_out_error&) {                                 \
-            RPTEST_FAIL(                                                       \
-              ssx::sformat("Timed out at {}:{}", __FILE__, __LINE__));         \
+            RPTEST_FAIL_CORO(                                                  \
+              ::tests::detail::eventually_timeout_message(                     \
+                #__VA_ARGS__, __FILE__, __LINE__));                            \
         }                                                                      \
     } while (0);
 
 namespace tests {
 
-// clang-format off
+namespace detail {
+
+/// A nullary predicate returning bool or ss::future<bool>.
+template<typename R>
+inline constexpr bool is_eventually_predicate
+  = std::is_invocable_r_v<bool, R>
+    || std::is_invocable_r_v<ss::future<bool>, R>;
+
+/// A value testable for truthiness, or an ss::future<bool>.
+template<typename R>
+inline constexpr bool is_eventually_value
+  = std::is_constructible_v<bool, R> || std::is_same_v<R, ss::future<bool>>;
+
+/// The coroutine frame keeps \p p at a stable address: a suspended
+/// coroutine predicate holds a pointer to it.
+template<typename Predicate>
+ss::future<>
+spin_wait_loop(model::timeout_clock::time_point deadline, Predicate p) {
+    while (model::timeout_clock::now() <= deadline) {
+        bool stop = co_await ss::futurize_invoke(p);
+        if (stop) {
+            co_return;
+        }
+        co_await ss::sleep(std::chrono::milliseconds(10));
+    }
+    throw ss::timed_out_error();
+}
+
+} // namespace detail
+
 template<typename Rep, typename Period, typename Predicate>
-requires std::is_invocable_r_v<bool, Predicate> ||
-         std::is_invocable_r_v<ss::future<bool>, Predicate>
-// clang-format on
+requires detail::is_eventually_predicate<Predicate>
 /// Used to wait for Predicate to become true
 ss::future<> cooperative_spin_wait_with_timeout(
   std::chrono::duration<Rep, Period> timeout, Predicate p) {
-    using futurator = ss::futurize<std::invoke_result_t<Predicate>>;
-    auto tout = model::timeout_clock::now() + timeout;
+    auto deadline = model::timeout_clock::now() + timeout;
+    // with_timeout bounds a predicate call that never resolves; the loop's
+    // deadline check ends polling, including in the abandoned fiber.
     return ss::with_timeout(
-      tout, ss::repeat([tout, p = std::forward<Predicate>(p)]() mutable {
-          if (model::timeout_clock::now() > tout) {
-              return ss::make_exception_future<ss::stop_iteration>(
-                ss::timed_out_error());
-          }
-          auto f = futurator::invoke(p);
-          return f.then([](bool stop) {
-              if (stop) {
-                  return ss::make_ready_future<ss::stop_iteration>(
-                    ss::stop_iteration::yes);
-              }
-              return ss::sleep(std::chrono::milliseconds(10)).then([] {
-                  return ss::stop_iteration::no;
-              });
-          });
-      }));
+      deadline, detail::spin_wait_loop(deadline, std::move(p)));
 }
+
+namespace detail {
+
+inline std::string
+eventually_timeout_message(const char* condition, const char* file, int line) {
+    return fmt::format(
+      "Timed out waiting for {} at {}:{}", condition, file, line);
+}
+
+/// \p f is the macro-wrapped condition. A predicate condition is unwrapped
+/// and polled directly; a value condition is re-evaluated on every poll by
+/// polling the wrapper itself.
+template<typename F>
+auto eventually_predicate(F f) {
+    using R = std::invoke_result_t<F&>;
+    static_assert(
+      !(is_eventually_predicate<R> && is_eventually_value<R>),
+      "RPTEST_REQUIRE_EVENTUALLY condition is ambiguous: its value is both "
+      "invocable and convertible to bool. Wrap it in a lambda ([&] { return "
+      "p(); }) to poll it, or write an explicit condition (p != nullptr) to "
+      "test its value. For captureless lambdas, use [&] instead of []");
+    if constexpr (is_eventually_predicate<R>) {
+        return f();
+    } else if constexpr (std::is_same_v<R, ss::future<bool>>) {
+        return f;
+    } else if constexpr (is_eventually_value<R>) {
+        return [f = std::move(f)]() mutable { return static_cast<bool>(f()); };
+    } else {
+        static_assert(
+          false,
+          "RPTEST_REQUIRE_EVENTUALLY condition must be a boolean expression "
+          "or a nullary predicate returning bool or ss::future<bool>");
+        // keeps the static_assert the only error
+        return [] { return false; };
+    }
+}
+
+} // namespace detail
 
 // When a test expects that any background fibers should complete promptly,
 // and wants to send a barrier through all the inter-CPU queues to ensure
