@@ -359,7 +359,7 @@
   "moduleExtensions": {
     "//bazel:extensions.bzl%non_module_dependencies": {
       "general": {
-        "bzlTransitiveDigest": "1TtbJjp+c4IAXmHLvNQGubKvnNxXhajyYN+pRWAe8ZY=",
+        "bzlTransitiveDigest": "fkMdLvKMU8vr/ZS2EUt5B8zDz0vrA6K1Af/aKVC6XoQ=",
         "usagesDigest": "FEiDyZe9eAU6yEqnarZf0XMEUk+prUyYClvq1RU1J98=",
         "recordedInputs": [
           "REPO_MAPPING:,bazel_tools bazel_tools",
@@ -398,9 +398,9 @@
             "repoRuleId": "@@bazel_tools//tools/build_defs/repo:http.bzl%http_archive",
             "attributes": {
               "build_file": "@@//bazel/thirdparty:c-ares.BUILD",
-              "sha256": "556f781dd188ad932dc8263fee0ad3aaba675b4cd8e54d86908681b43ce3e327",
-              "strip_prefix": "c-ares-1.34.7",
-              "url": "https://vectorized-public.s3.amazonaws.com/dependencies/c-ares-1.34.7.tar.gz"
+              "sha256": "912dd7cc3b3e8a79c52fd7fb9c0f4ecf0aaa73e45efda880266a2d6e26b84ef5",
+              "strip_prefix": "c-ares-1.34.6",
+              "url": "https://vectorized-public.s3.amazonaws.com/dependencies/c-ares-1.34.6.tar.gz"
             }
           },
           "hdrhistogram": {
