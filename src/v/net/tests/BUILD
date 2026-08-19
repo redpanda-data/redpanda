@@ -77,6 +77,20 @@ redpanda_cc_gtest(
 )
 
 redpanda_cc_gtest(
+    name = "dns_liveness_test",
+    timeout = "moderate",
+    srcs = [
+        "dns_liveness_test.cc",
+    ],
+    deps = [
+        "//src/v/base",
+        "//src/v/test_utils:gtest",
+        "@googletest//:gtest",
+        "@seastar",
+    ],
+)
+
+redpanda_cc_gtest(
     name = "dial_test",
     timeout = "short",
     srcs = [
