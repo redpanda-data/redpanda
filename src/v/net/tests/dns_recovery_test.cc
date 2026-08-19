@@ -10,6 +10,7 @@
 #include "base/seastarx.h"
 #include "net/dns.h"
 #include "net/tests/dns_test_utils.h"
+#include "net/transport.h"
 #include "test_utils/test.h"
 #include "utils/unresolved_address.h"
 
@@ -17,6 +18,7 @@
 #include <seastar/core/sleep.hh>
 #include <seastar/net/dns.hh>
 #include <seastar/net/inet_address.hh>
+#include <seastar/util/log.hh>
 
 #include <gtest/gtest.h>
 
@@ -98,5 +100,39 @@ TEST_CORO(dns_recovery, lost_lookup_fails_and_resolver_is_replaced) {
       ss::socket_address(ss::net::inet_address("127.0.0.1"), 19094));
     EXPECT_EQ(net::dns_resolver_replacements_for_testing(), 1u);
 
+    co_await server.stop();
+}
+
+// The connect deadline must bound the DNS phase of dialing: a transport
+// whose target's resolution makes no progress fails by the deadline
+// instead of pinning the caller until the (longer) resolver liveness
+// bound, let alone forever.
+TEST_CORO(dns_recovery, connect_deadline_bounds_dns) {
+    constexpr auto dial_deadline = 500ms;
+    constexpr auto dns_liveness_timeout = 5s;
+
+    auto server = net::dns_test::mock_dns_server{
+      net::dns_test::server_mode::blackhole};
+    co_await server.start();
+    net::configure_dns_resolution_for_testing(
+      make_options(server.port()), dns_liveness_timeout);
+
+    static ss::logger test_log{"dns_recovery_test"};
+    auto transport = net::base_transport(
+      net::base_transport::configuration{
+        .server_addr = net::unresolved_address("wedged.test", 19095)},
+      &test_log);
+
+    const auto start = ss::lowres_clock::now();
+    EXPECT_THROW(
+      co_await transport.connect(start + dial_deadline), ss::timed_out_error);
+    // Failed by the dial deadline, well before the resolver liveness bound.
+    EXPECT_LT(ss::lowres_clock::now() - start, dns_liveness_timeout);
+    co_await transport.stop();
+
+    // Let the abandoned lookup hit the liveness bound and replace the
+    // resolver so the test tears down with no lookup in flight.
+    co_await ss::sleep(dns_liveness_timeout + 1s);
+    EXPECT_EQ(net::dns_resolver_replacements_for_testing(), 1u);
     co_await server.stop();
 }

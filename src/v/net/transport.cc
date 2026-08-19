@@ -8,6 +8,7 @@
 #include "net/dns.h"
 
 #include <seastar/core/coroutine.hh>
+#include <seastar/core/with_timeout.hh>
 
 #include <algorithm>
 #include <string_view>
@@ -166,7 +167,11 @@ base_transport::base_transport(configuration c, seastar::logger* log)
 
 ss::future<ss::connected_socket> base_transport::dial(
   const unresolved_address& target, clock_type::time_point deadline) {
-    auto resolved_address = co_await net::resolve_dns(target);
+    // Bound the DNS phase by the same deadline as the TCP dial, so a
+    // resolver that stops making progress cannot pin the caller (and,
+    // through it, the reconnect semaphore) past the connect deadline.
+    auto resolved_address = co_await ss::with_timeout(
+      deadline, net::resolve_dns(target));
     vlog(_log->trace, "Resolved address {}", resolved_address);
     co_return co_await detail::dial_single(resolved_address, deadline, _log);
 }
