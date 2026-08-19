@@ -33,6 +33,52 @@ func TestPrometheusURLFlagDeprecation(t *testing.T) {
 	require.Contains(t, cmd.Flag("prometheus-url").Deprecated, "Use --metrics-endpoint instead")
 }
 
+// TestOperationsStretchDashboard tests that --dashboard operations-stretch
+// downloads the stretch cluster dashboard and falls back to the embedded copy
+// when the download fails.
+func TestOperationsStretchDashboard(t *testing.T) {
+	stretch := dashboardMap["operations-stretch"]
+
+	serve := func(t *testing.T, handler http.HandlerFunc) {
+		ts := httptest.NewServer(handler)
+		t.Cleanup(ts.Close)
+		old := dashboardHost
+		dashboardHost = ts.URL + "/"
+		t.Cleanup(func() { dashboardHost = old })
+	}
+	execute := func(t *testing.T, args ...string) []byte {
+		p := new(config.Params)
+		cmd := newGrafanaDashboardCmd(p)
+		var buf bytes.Buffer
+		cmd.SetOut(&buf)
+		cmd.SetArgs(args)
+		require.NoError(t, cmd.Execute())
+		return buf.Bytes()
+	}
+
+	t.Run("downloads from github", func(t *testing.T) {
+		serve(t, func(w http.ResponseWriter, r *http.Request) {
+			require.Equal(t, "/"+stretch.Location, r.URL.Path)
+			fmt.Fprint(w, `{"title":"stretch from github"}`)
+		})
+		b := execute(t, "--dashboard", "operations-stretch")
+		require.JSONEq(t, `{"title":"stretch from github"}`, string(b))
+	})
+
+	t.Run("falls back to the embedded copy", func(t *testing.T) {
+		serve(t, func(w http.ResponseWriter, _ *http.Request) {
+			w.WriteHeader(http.StatusNotFound)
+		})
+		b := execute(t, "--dashboard", "operations-stretch")
+		sum := sha256.Sum256(b)
+		require.Equal(t, stretch.Hash, fmt.Sprintf("%x", sum))
+
+		var dash map[string]any
+		require.NoError(t, json.Unmarshal(b, &dash))
+		require.Equal(t, "Redpanda Stretch Cluster — Operator Observability", dash["title"])
+	})
+}
+
 func TestGrafanaParseResponse(t *testing.T) {
 	res := `# HELP vectorized_vectorized_internal_rpc_consumed_mem Amount of memory consumed for requests processing
 # TYPE vectorized_vectorized_internal_rpc_consumed_mem gauge
