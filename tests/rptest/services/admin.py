@@ -494,6 +494,23 @@ class Admin:
     the successful HTTP response object is returned.
     """
 
+    # Internal topics whose replication factor the health manager reconciles up
+    # to internal_topic_replication_factor. Keep in sync with the
+    # `internal_topics` array in src/v/cluster/health_manager.cc. All but the
+    # cloud-topics metastore (ct_l1_domain) are created lazily, so callers wait
+    # only on the ones that exist.
+    HEALTH_MANAGER_INTERNAL_TOPICS: list[tuple[str, str]] = [
+        ("kafka", "__consumer_offsets"),
+        ("kafka_internal", "id_allocator"),
+        ("kafka_internal", "tx"),
+        ("kafka", "_schemas"),
+        ("kafka_internal", "wasm_binaries"),
+        ("kafka_internal", "transform_offsets"),
+        ("kafka", "_redpanda.audit_log"),
+        ("kafka", "_redpanda.transform_logs"),
+        ("kafka_internal", "ct_l1_domain"),
+    ]
+
     def __init__(
         self,
         redpanda: RedpandaServiceProto,
@@ -1235,6 +1252,70 @@ class Admin:
         self, ns: str, topic: str, id: int, node: MaybeNode = None
     ) -> dict[str, Any]:
         return self._request("GET", f"partitions/{ns}/{topic}/{id}", node=node).json()
+
+    def internal_topic_replication_factor(self, node: MaybeNode = None) -> int:
+        """The configured target replication factor for internal topics."""
+        return int(
+            self.get_cluster_config(node=node, include_defaults=True)[
+                "internal_topic_replication_factor"
+            ]
+        )
+
+    def all_partitions_have_replicas(
+        self,
+        topic: str,
+        replication_factor: int,
+        *,
+        namespace: str | None = None,
+        node: MaybeNode = None,
+    ) -> bool:
+        """True if every partition of `topic` has at least `replication_factor`
+        replicas. Vacuously true if the topic does not exist yet (e.g. a
+        lazily-created internal topic)."""
+        try:
+            partitions = self.get_partitions(
+                topic=topic, namespace=namespace, node=node
+            )
+        except HTTPError as e:
+            if e.response is not None and e.response.status_code == 404:
+                return True
+            raise
+        return all(len(p["replicas"]) >= replication_factor for p in partitions)
+
+    def wait_for_internal_topic_replication(
+        self,
+        *,
+        timeout_sec: float = 180,
+        backoff_sec: float = 2,
+        node: MaybeNode = None,
+    ) -> None:
+        """Wait until every existing health-manager-managed internal topic is
+        fully replicated at the target replication factor, i.e. its move has
+        completed and every replica is a voter. get_partitions reports the
+        target replica set as soon as a move is issued, so we also require the
+        topic to have no in-flight reconfiguration. Reconfigurations of other
+        topics are ignored."""
+        rf = self.internal_topic_replication_factor(node=node)
+
+        def replicated() -> bool:
+            reconfiguring = {
+                (r["ns"], r["topic"]) for r in self.list_reconfigurations(node=node)
+            }
+            return all(
+                (ns, topic) not in reconfiguring
+                and self.all_partitions_have_replicas(
+                    topic, rf, namespace=ns, node=node
+                )
+                for ns, topic in self.HEALTH_MANAGER_INTERNAL_TOPICS
+            )
+
+        wait_until(
+            replicated,
+            timeout_sec=timeout_sec,
+            backoff_sec=backoff_sec,
+            err_msg=f"internal topics did not reach replication factor {rf}",
+            retry_on_exc=True,
+        )
 
     def get_transactions(
         self, topic: str, partition: int, namespace: str, node: MaybeNode = None
