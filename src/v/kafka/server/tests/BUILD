@@ -227,6 +227,41 @@ redpanda_cc_btest(
 )
 
 redpanda_cc_gtest(
+    name = "subscription_metadata_hash_test",
+    timeout = "short",
+    srcs = [
+        "subscription_metadata_hash_test.cc",
+    ],
+    deps = [
+        "//src/v/container:chunked_vector",
+        "//src/v/kafka/server:subscription_metadata_hash",
+        "//src/v/model",
+        "//src/v/test_utils:gtest",
+        "//src/v/utils:uuid",
+        "@googletest//:gtest",
+        "@seastar",
+    ],
+)
+
+redpanda_cc_gtest(
+    name = "subscription_metadata_hash_cache_test",
+    timeout = "short",
+    srcs = [
+        "subscription_metadata_hash_cache_test.cc",
+    ],
+    deps = [
+        "//src/v/container:chunked_vector",
+        "//src/v/kafka/server:subscription_metadata_hash",
+        "//src/v/kafka/server:subscription_metadata_hash_cache",
+        "//src/v/model",
+        "//src/v/test_utils:gtest",
+        "//src/v/utils:uuid",
+        "@googletest//:gtest",
+        "@seastar",
+    ],
+)
+
+redpanda_cc_gtest(
     name = "fetch_memory_units_test",
     timeout = "short",
     srcs = [
@@ -1382,6 +1417,21 @@ redpanda_cc_btest(
         "//src/v/test_utils:seastar_boost",
         "@seastar",
         "@seastar//:testing",
+    ],
+)
+
+redpanda_cc_bench(
+    name = "subscription_metadata_hash_rpbench",
+    srcs = [
+        "subscription_metadata_hash_bench.cc",
+    ],
+    memory = "2GiB",
+    deps = [
+        "//src/v/container:chunked_vector",
+        "//src/v/kafka/server:subscription_metadata_hash",
+        "//src/v/model",
+        "@seastar",
+        "@seastar//:benchmark",
     ],
 )
 
