@@ -1,4 +1,4 @@
-load("//bazel:test.bzl", "redpanda_cc_bench", "redpanda_cc_btest", "redpanda_cc_gtest", "redpanda_test_cc_library")
+load("//bazel:test.bzl", "redpanda_cc_bench", "redpanda_cc_btest", "redpanda_cc_fuzz_test", "redpanda_cc_gtest", "redpanda_test_cc_library")
 
 redpanda_test_cc_library(
     name = "storage_e2e_fixture",
@@ -1078,6 +1078,42 @@ redpanda_cc_gtest(
         "//src/v/test_utils:random_bytes",
         "//src/v/test_utils:scoped_config",
         "@googletest//:gtest",
+        "@seastar",
+    ],
+)
+
+redpanda_cc_fuzz_test(
+    name = "segment_appender_fuzz",
+    timeout = "short",
+    srcs = [
+        "segment_appender_fuzz.cc",
+    ],
+    args = [
+        "-max_total_time=30",
+        "-rss_limit_mb=8192",
+        # The full input window: 8 prologue bytes plus max_ops op bytes.
+        # Completions are fully manual, so roughly half the op stream goes to
+        # complete ops and a 256-byte budget would halve the reachable depth.
+        # Units over 256 bytes lose libFuzzer's inline `Base64:` reproducer;
+        # the artifact file it writes replays the same.
+        "-max_len=520",
+        # Load bearing: the default (100) keeps inputs at around 8 bytes for a
+        # whole session, so the op stream would never grow past the prologue.
+        # 0 means "allow max_len immediately".
+        "-len_control=0",
+    ],
+    deps = [
+        "//src/v/base",
+        "//src/v/config",
+        "//src/v/resource_mgmt:memory_groups",
+        "//src/v/ssx:future_util",
+        "//src/v/storage:chunk_cache",
+        "//src/v/storage:resources",
+        "//src/v/storage:segment_appender",
+        "//src/v/test_utils:manual_file",
+        "//src/v/test_utils:scoped_config",
+        "//src/v/test_utils:seastar_fuzz",
+        "@fmt",
         "@seastar",
     ],
 )
