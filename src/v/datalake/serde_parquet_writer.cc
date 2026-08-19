@@ -132,6 +132,7 @@ ss::future<writer_error> serde_parquet_writer::finish() {
         if (cs.bounds.max) {
             ps.upper_bound = iobuf_to_bytes(cs.bounds.max->value);
         }
+        ps.nan_value_count = cs.nan_value_count;
         _column_stats.push_back(std::move(ps));
     }
     _buffered_bytes = _flushed_bytes = 0;

@@ -20,6 +20,7 @@
 #include "iceberg/values_bytes.h"
 #include "random/generators.h"
 
+#include <cmath>
 #include <iterator>
 #include <limits>
 
@@ -105,9 +106,23 @@ void update_partition_summaries(
             summaries[i].contains_null = true;
             continue;
         }
-        // TODO: contains_nan
         const auto& file_prim_val = std::get<primitive_value>(
           file_val_field.value());
+        bool is_nan = std::visit(
+          [](const auto& v) -> bool {
+              using T = std::decay_t<decltype(v)>;
+              if constexpr (
+                std::is_same_v<T, float_value>
+                || std::is_same_v<T, double_value>) {
+                  return std::isnan(v.val);
+              }
+              return false;
+          },
+          file_prim_val);
+        if (is_nan) {
+            summaries[i].contains_nan = true;
+            continue;
+        }
         if (!summaries[i].lower_bound.has_value()) {
             summaries[i].lower_bound = make_copy(file_prim_val);
         } else {

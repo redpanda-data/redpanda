@@ -54,6 +54,7 @@ public:
     virtual ss::future<> next_page() = 0;
     virtual ss::future<flushed_pages> flush_pages() = 0;
     virtual statistics file_column_stats() = 0;
+    virtual int64_t file_nan_count() = 0;
 };
 
 namespace {
@@ -369,6 +370,8 @@ public:
         return build_statistics(_file_stats);
     }
 
+    int64_t file_nan_count() override { return _file_stats.nan_count(); }
+
 private:
     using collector = column_stats_collector<value_type, comparator>;
 
@@ -524,6 +527,8 @@ ss::future<flushed_pages> column_writer::flush_pages() {
 statistics column_writer::file_column_stats() {
     return _impl->file_column_stats();
 }
+
+int64_t column_writer::file_nan_count() { return _impl->file_nan_count(); }
 
 size_t estimated_column_memory() {
     // Empirical: the column writer object, the chunks its containers take on
