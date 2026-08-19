@@ -86,12 +86,20 @@ var (
 			"Monitoring dashboard for Redpanda Serverless clusters.",
 			"29078f9b13e9566c50b2f45cc34128e588b8f186ecca95cba1773a231eb18dfa",
 		},
+		"operations-stretch": {
+			"Redpanda-Stretch-Cluster-Dashboard.json",
+			"Observability dashboard for Redpanda stretch clusters managed by the Redpanda operator: cross-cluster raft health, StretchCluster member status, and operator reconcile health.",
+			"8f3491dcf4f1e9b52e5aaebdf5dfa37a46fa3787d274ae3482c354cfba25dced",
+		},
 		"legacy": {
 			"",
 			"Generates dashboard based on selected metrics endpoint (--metrics-endpoint). Modify prometheus datasource and job-name with --datasource and --job-name flags.",
 			"",
 		},
 	}
+	// dashboardHost is where non-legacy dashboards are downloaded from; a
+	// variable so tests can point it at a local server.
+	dashboardHost = "https://raw.githubusercontent.com/redpanda-data/observability/main/grafana-dashboards/"
 )
 
 const panelHeight = 6
@@ -131,11 +139,18 @@ The selected dashboard will be downloaded from our GitHub repository:
 
   https://github.com/redpanda-data/observability
 
-Note that the legacy dashboard is still available as an option, and will not be 
-downloaded from github. Instead, the dashboard will be generated based on the 
+Note that the legacy dashboard is still available as an option, and will not be
+downloaded from github. Instead, the dashboard will be generated based on the
 metrics endpoint used.
 
 To see a list of all available dashboards, use the '--dashboard help' flag.
+
+For Redpanda clusters stretched across multiple Kubernetes clusters and managed
+by the Redpanda Operator, generate the stretch cluster observability dashboard
+(cross-cluster raft health, StretchCluster member status, and operator
+reconcile health) with:
+
+    rpk generate grafana-dashboard --dashboard operations-stretch
 `,
 		Args: cobra.NoArgs,
 		Run: func(cmd *cobra.Command, _ []string) {
@@ -149,17 +164,18 @@ To see a list of all available dashboards, use the '--dashboard help' flag.
 
 				fmt.Println(jsonOut)
 			case dashboardMap[dashboard] != nil:
-				jsonOut, err := tryFromGithub(cmd.Context(), dashboard)
+				spec := dashboardMap[dashboard]
+				jsonOut, err := tryFromGithub(cmd.Context(), spec)
 				if err == nil {
-					fmt.Println(jsonOut)
+					fmt.Fprintln(cmd.OutOrStdout(), jsonOut)
 					return
 				}
 				fmt.Fprintf(os.Stderr, "unable to retrieve dashboard from github: %v; using static file...\n", err)
 
 				// The embedded dashboard file is compressed, and located
 				// under grafana-dashboard dir:
-				path := filepath.Join("grafana-dashboards", dashboardMap[dashboard].Location+".gz")
-				err = decompressAndPrint(dashFS, path, os.Stdout)
+				path := filepath.Join("grafana-dashboards", spec.Location+".gz")
+				err = decompressAndPrint(dashFS, path, cmd.OutOrStdout())
 
 				// This is unlikely and if we ever hit this must be investigated.
 				out.MaybeDie(err, "unable to print the static file: %v; as an alternative you still may use the legacy dashboard via '--dashboard legacy' flag", err)
@@ -202,14 +218,13 @@ To see a list of all available dashboards, use the '--dashboard help' flag.
 	return cmd
 }
 
-func tryFromGithub(ctx context.Context, dashboard string) (string, error) {
-	const host = "https://raw.githubusercontent.com/redpanda-data/observability/main/grafana-dashboards/"
+func tryFromGithub(ctx context.Context, spec *fileSpec) (string, error) {
 	cl := httpapi.NewClient(
-		httpapi.Host(host),
+		httpapi.Host(dashboardHost),
 	)
 
 	var jsonOut string
-	return jsonOut, cl.Get(ctx, dashboardMap[dashboard].Location, nil, &jsonOut)
+	return jsonOut, cl.Get(ctx, spec.Location, nil, &jsonOut)
 }
 
 func decompressAndPrint(fs fs.FS, path string, writer io.Writer) error {
