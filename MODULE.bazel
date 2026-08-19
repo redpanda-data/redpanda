@@ -79,7 +79,7 @@ single_version_override(
 bazel_dep(name = "rules_go", version = "0.59.0")
 bazel_dep(name = "rules_pkg", version = "1.0.1")
 bazel_dep(name = "rules_proto", version = "7.1.0")
-bazel_dep(name = "rules_python", version = "1.7.0")
+bazel_dep(name = "rules_python", version = "2.3.1")
 bazel_dep(name = "rules_rust", version = "0.70.0")
 bazel_dep(name = "snappy", version = "1.2.2.bcr.3")
 single_version_override(
@@ -110,6 +110,9 @@ single_version_override(
 bazel_dep(name = "rules_shell", version = "0.6.1", dev_dependency = True)
 
 bazel_dep(name = "protovalidate", version = "1.2.0")
+
+rules_python_config = use_extension("@rules_python//python/extensions:config.bzl", "config")
+rules_python_config.explicit_init_py(default = True)
 
 python = use_extension("@rules_python//python/extensions:python.bzl", "python", dev_dependency = True)
 python.toolchain(
