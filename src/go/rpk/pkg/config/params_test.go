@@ -1356,6 +1356,28 @@ func TestParamsListComplete(t *testing.T) {
 	}
 }
 
+func TestXFlagDocsComplete(t *testing.T) {
+	m := maps.Clone(xflags)
+	delete(m, xCloudEnvironment) // We leave this out of the list and docs on purpose.
+	seen := make(map[string]bool)
+	for _, d := range xflagDocs {
+		if seen[d.name] {
+			t.Errorf("xflagDocs contains duplicate entry %q", d.name)
+		}
+		seen[d.name] = true
+		if _, ok := xflags[d.name]; !ok {
+			t.Errorf("xflagDocs documents %q, which is not an -X flag in xflags", d.name)
+		}
+		if d.listHint == "" || d.helpExample == "" || d.help == "" {
+			t.Errorf("xflagDocs entry %q must set listHint, helpExample, and help", d.name)
+		}
+		delete(m, d.name)
+	}
+	if len(m) > 0 {
+		t.Errorf("xflagDocs is missing entries for -X flags: %v (add them, or exclude deliberately undocumented flags here and in the ParamsHelp/ParamsList tests)", maps.Keys(m))
+	}
+}
+
 func TestXSetExamples(t *testing.T) {
 	m := maps.Clone(xflags)
 	for _, fn := range []func() (xs, yamlPaths []string){

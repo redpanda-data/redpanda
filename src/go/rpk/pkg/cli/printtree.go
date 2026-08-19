@@ -19,6 +19,7 @@ import (
 	"strings"
 
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/version"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/out"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
@@ -46,12 +47,13 @@ type commandPrint struct {
 }
 
 type rootPrint struct {
-	Name        string         `json:"name"`
-	Version     string         `json:"version"`
-	Description string         `json:"description"`
-	Usage       string         `json:"usage"`
-	GlobalFlags []flagPrint    `json:"global_flags"`
-	Commands    []commandPrint `json:"commands"`
+	Name        string            `json:"name"`
+	Version     string            `json:"version"`
+	Description string            `json:"description"`
+	Usage       string            `json:"usage"`
+	GlobalFlags []flagPrint       `json:"global_flags"`
+	XOptions    []config.XFlagDoc `json:"x_options"`
+	Commands    []commandPrint    `json:"commands"`
 }
 
 func printTreeJSON(root *cobra.Command) ([]byte, error) {
@@ -61,6 +63,7 @@ func printTreeJSON(root *cobra.Command) ([]byte, error) {
 		Description: root.Short,
 		Usage:       root.UseLine(),
 		GlobalFlags: printFlagSet(root.PersistentFlags()),
+		XOptions:    config.XFlagDocs(),
 		Commands:    printChildren(root),
 	}
 	return json.Marshal(rp)

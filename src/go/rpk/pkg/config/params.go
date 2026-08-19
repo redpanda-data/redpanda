@@ -100,6 +100,235 @@ type xflag struct {
 	parse       func(string, *RpkYaml) error
 }
 
+// xflagDoc is the documentation for one -X flag: the short value hint shown
+// by -X list, and the example value and description shown by -X help. This
+// table is the single source of -X flag documentation; ParamsHelp, ParamsList,
+// and the --print-tree x_options output all render from it. Flags that are
+// deliberately undocumented (for example cloud_environment) are simply not
+// listed here; TestXFlagDocsComplete pins the table to the xflags map in both
+// directions.
+type xflagDoc struct {
+	name        string
+	listHint    string
+	helpExample string
+	help        string
+}
+
+var xflagDocs = []xflagDoc{
+	{
+		name:        xKafkaBrokers,
+		listHint:    `comma,delimited,host:ports`,
+		helpExample: `127.0.0.1:9092,localhost:9094`,
+		help:        "A comma separated list of host:ports that rpk talks to for the Kafka API.\nBy default, this is 127.0.0.1:9092.",
+	},
+	{
+		name:        xKafkaTLSEnabled,
+		listHint:    `boolean`,
+		helpExample: `true`,
+		help:        "A boolean that enables rpk to speak TLS to your broker's Kafka API listeners.\nYou can use this if you have well known certificates setup on your Kafka API.\nIf you use mTLS, specifying mTLS certificate filepaths automatically opts\ninto TLS enabled.",
+	},
+	{
+		name:        xKafkaTLSInsecure,
+		listHint:    `boolean`,
+		helpExample: `false`,
+		help:        "A boolean that disables rpk from verifying the broker's certificate chain.",
+	},
+	{
+		name:        xKafkaCACert,
+		listHint:    `/path/to/ca.pem`,
+		helpExample: `/path/to/ca.pem`,
+		help:        "A filepath to a PEM encoded CA certificate file to talk to your broker's\nKafka API listeners with mTLS. You may also need this if your listeners are\nusing a certificate by a well known authority that is not yet bundled on your\noperating system.",
+	},
+	{
+		name:        xKafkaClientCert,
+		listHint:    `/path/to/cert.pem`,
+		helpExample: `/path/to/cert.pem`,
+		help:        "A filepath to a PEM encoded client certificate file to talk to your broker's\nKafka API listeners with mTLS.",
+	},
+	{
+		name:        xKafkaClientKey,
+		listHint:    `/path/to/key.pem`,
+		helpExample: `/path/to/key.pem`,
+		help:        "A filepath to a PEM encoded client key file to talk to your broker's Kafka\nAPI listeners with mTLS.",
+	},
+	{
+		name:        xKafkaSASLMechanism,
+		listHint:    `SCRAM-SHA-256, SCRAM-SHA-512, PLAIN, or OAUTHBEARER`,
+		helpExample: `SCRAM-SHA-256`,
+		help:        "The SASL mechanism to use for authentication. This can be SCRAM-SHA-256,\nSCRAM-SHA-512, PLAIN, or OAUTHBEARER. For OAUTHBEARER, pass the token via\nthe pass field (optionally prefixed with \"token:\"). Note that with Redpanda,\nthe Admin API can be configured to require basic authentication with your\nKafka API SASL credentials. This defaults to SCRAM-SHA-256 if no mechanism\nis specified.",
+	},
+	{
+		name:        xKafkaSASLUser,
+		listHint:    `username`,
+		helpExample: `username`,
+		help:        "The SASL username to use for authentication. This is also used for the admin\nAPI if you have configured it to require basic authentication.",
+	},
+	{
+		name:        xKafkaSASLPass,
+		listHint:    `password`,
+		helpExample: `password`,
+		help:        "The SASL password to use for authentication. This is also used for the admin\nAPI if you have configured it to require basic authentication.",
+	},
+	{
+		name:        xAdminHosts,
+		listHint:    `comma,delimited,host:ports`,
+		helpExample: `localhost:9644,rp.example.com:9644`,
+		help:        "A comma separated list of host:ports that rpk talks to for the Admin API.\nBy default, this is 127.0.0.1:9644.",
+	},
+	{
+		name:        xAdminTLSEnabled,
+		listHint:    `boolean`,
+		helpExample: `false`,
+		help:        "A boolean that enables rpk to speak TLS to your broker's Admin API listeners.\nYou can use this if you have well known certificates setup on your admin API.\nIf you use mTLS, specifying mTLS certificate filepaths automatically opts\ninto TLS enabled.",
+	},
+	{
+		name:        xAdminTLSInsecure,
+		listHint:    `boolean`,
+		helpExample: `false`,
+		help:        "A boolean that disables rpk from verifying the broker's certificate chain.",
+	},
+	{
+		name:        xAdminCACert,
+		listHint:    `/path/to/ca.pem`,
+		helpExample: `/path/to/ca.pem`,
+		help:        "A filepath to a PEM encoded CA certificate file to talk to your broker's\nAdmin API listeners with mTLS. You may also need this if your listeners are\nusing a certificate by a well known authority that is not yet bundled on your\noperating system.",
+	},
+	{
+		name:        xAdminClientCert,
+		listHint:    `/path/to/cert.pem`,
+		helpExample: `/path/to/cert.pem`,
+		help:        "A filepath to a PEM encoded client certificate file to talk to your broker's\nAdmin API listeners with mTLS.",
+	},
+	{
+		name:        xAdminClientKey,
+		listHint:    `/path/to/key.pem`,
+		helpExample: `/path/to/key.pem`,
+		help:        "A filepath to a PEM encoded client key file to talk to your broker's Admin\nAPI listeners with mTLS.",
+	},
+	{
+		name:        xSchemaRegistryHosts,
+		listHint:    `comma,delimited,host:ports`,
+		helpExample: `localhost:8081,rp.example.com:8081`,
+		help:        "A comma separated list of host:ports that rpk talks to for the schema registry\nAPI. By default, this is 127.0.0.1:8081.",
+	},
+	{
+		name:        xSchemaRegistryTLSEnabled,
+		listHint:    `boolean`,
+		helpExample: `false`,
+		help:        "A boolean that enables rpk to speak TLS to your broker's schema registry API\nlisteners. You can use this if you have well known certificates setup on your\nschema registry API. If you use mTLS, specifying mTLS certificate filepaths\nautomatically opts into TLS enabled.",
+	},
+	{
+		name:        xSchemaRegistryTLSInsecure,
+		listHint:    `boolean`,
+		helpExample: `false`,
+		help:        "A boolean that disables rpk from verifying the broker's certificate chain.",
+	},
+	{
+		name:        xSchemaRegistryCACert,
+		listHint:    `/path/to/ca.pem`,
+		helpExample: `/path/to/ca.pem`,
+		help:        "A filepath to a PEM encoded CA certificate file to talk to your broker's\nschema registry API listeners with mTLS. You may also need this if your\nlisteners are using a certificate by a well known authority that is not yet\nbundled on your operating system.",
+	},
+	{
+		name:        xSchemaRegistryClientCert,
+		listHint:    `/path/to/cert.pem`,
+		helpExample: `/path/to/cert.pem`,
+		help:        "A filepath to a PEM encoded client certificate file to talk to your broker's\nschema registry API listeners with mTLS.",
+	},
+	{
+		name:        xSchemaRegistryClientKey,
+		listHint:    `/path/to/key.pem`,
+		helpExample: `/path/to/key.pem`,
+		help:        "A filepath to a PEM encoded client key file to talk to your broker's schema\nregistry API listeners with mTLS.",
+	},
+	{
+		name:        xCloudClientID,
+		listHint:    `somestring`,
+		helpExample: `somestring`,
+		help:        "An oauth client ID to use for authenticating with the Redpanda Cloud API.\nOverrides the client ID in the current profile if it is for a cloud cluster,\notherwise overrides the default cloud auth client ID.",
+	},
+	{
+		name:        xCloudClientSecret,
+		listHint:    `somelongerstring`,
+		helpExample: `somelongerstring`,
+		help:        "An oauth client secret to use for authenticating with the Redpanda Cloud API.\nOverrides the client secret in the current profile if it is for a cloud\ncluster, otherwise overrides the default cloud auth client secret.",
+	},
+	{
+		name:        "globals.prompt",
+		listHint:    `"%n"`,
+		helpExample: `"%n"`,
+		help:        "A format string to use for the default prompt; see 'rpk profile prompt' for\nmore information.",
+	},
+	{
+		name:        "globals.no_default_cluster",
+		listHint:    `boolean`,
+		helpExample: `false`,
+		help:        "A boolean that disables rpk from talking to localhost:9092 if no other\ncluster is specified.",
+	},
+	{
+		name:        "globals.command_timeout",
+		listHint:    `(30s,1m)`,
+		helpExample: `30s`,
+		help:        "A duration that rpk will wait for a command to complete before timing out,\nfor certain commands.",
+	},
+	{
+		name:        "globals.dial_timeout",
+		listHint:    `duration(3s,1m,2h)`,
+		helpExample: `3s`,
+		help:        "A duration that rpk will wait for a connection to be established before\ntiming out.",
+	},
+	{
+		name:        "globals.request_timeout_overhead",
+		listHint:    `duration(10s,1m,2h)`,
+		helpExample: `5s`,
+		help:        "A duration that limits how long rpk waits for responses, *on top* of any\nrequest-internal timeout. For example, ListOffsets has no Timeout field so\nif request_timeout_overhead is 10s, rpk will wait for 10s for a response.\nHowever, JoinGroup has a RebalanceTimeoutMillis field, so the 10s is applied\non top of the rebalance timeout.",
+	},
+	{
+		name:        "globals.retry_timeout",
+		listHint:    `duration(30s,1m,2h)`,
+		helpExample: `11s`,
+		help:        "This timeout specifies how long rpk will retry Kafka API requests. This\ntimeout is evaluated before any backoff -- if a request fails, we first check\nif the retry timeout has elapsed and if so, we stop retrying. If not, we wait\nfor the backoff and then retry.",
+	},
+	{
+		name:        "globals.fetch_max_wait",
+		listHint:    `duration(5s,1m,2h)`,
+		helpExample: `5s`,
+		help:        "This timeout specifies the maximum time that brokers will wait before\nreplying to a fetch request with whatever data is available.",
+	},
+	{
+		name:        "globals.kafka_protocol_request_client_id",
+		listHint:    `rpk`,
+		helpExample: `rpk`,
+		help:        "This string value is the client ID that rpk uses when issuing Kafka protocol\nrequests to Redpanda. This client ID shows up in Redpanda logs and metrics,\nchanging it can be useful if you want to have your own rpk client stand out\nfrom others that may be hitting the cluster.",
+	},
+}
+
+// XFlagDoc is the exported form of one -X flag's documentation, used by
+// --print-tree to expose the flags to automation tooling.
+type XFlagDoc struct {
+	Name        string `json:"name"`
+	Env         string `json:"env"`
+	Format      string `json:"format"`
+	Example     string `json:"example"`
+	Description string `json:"description"`
+}
+
+// XFlagDocs returns the documentation for every documented -X flag, in
+// display order.
+func XFlagDocs() []XFlagDoc {
+	docs := make([]XFlagDoc, 0, len(xflagDocs))
+	for _, d := range xflagDocs {
+		docs = append(docs, XFlagDoc{
+			Name:        d.name,
+			Env:         XEnvVar(d.name),
+			Format:      d.listHint,
+			Example:     d.helpExample,
+			Description: d.help,
+		})
+	}
+	return docs
+}
+
 func splitCommaIntoStrings(in string, dst *[]string) error {
 	*dst = nil
 	split := strings.SplitSeq(in, ",")
@@ -651,8 +880,25 @@ type Params struct {
 
 // ParamsHelp returns the long help text for -X help.
 func ParamsHelp() string {
-	return `The -X flag can be used to override any rpk specific configuration option.
-As an example, -X brokers.tls.enabled=true enables TLS for the Kafka API.
+	var sb strings.Builder
+	sb.WriteString(xflagHelpIntro)
+	for _, d := range xflagDocs {
+		sb.WriteString("\n")
+		sb.WriteString(d.name)
+		sb.WriteString("=")
+		sb.WriteString(d.helpExample)
+		sb.WriteString("\n")
+		for line := range strings.SplitSeq(d.help, "\n") {
+			sb.WriteString("  ")
+			sb.WriteString(line)
+			sb.WriteString("\n")
+		}
+	}
+	return sb.String()
+}
+
+const xflagHelpIntro = `The -X flag can be used to override any rpk specific configuration option.
+As an example, -X tls.enabled=true enables TLS for the Kafka API.
 
 All -X flags can also be set via environment variables. The corresponding
 environment variable is the flag name uppercased, with dots replaced by
@@ -660,189 +906,18 @@ underscores, and prefixed with RPK_. For example, -X brokers becomes
 RPK_BROKERS, and -X tls.enabled becomes RPK_TLS_ENABLED.
 
 The following options are available, with an example value for each option:
-
-brokers=127.0.0.1:9092,localhost:9094
-  A comma separated list of host:ports that rpk talks to for the Kafka API.
-  By default, this is 127.0.0.1:9092.
-
-tls.enabled=true
-  A boolean that enables rpk to speak TLS to your broker's Kafka API listeners.
-  You can use this if you have well known certificates setup on your Kafka API.
-  If you use mTLS, specifying mTLS certificate filepaths automatically opts
-  into TLS enabled.
-
-tls.insecure_skip_verify=false
-  A boolean that disables rpk from verifying the broker's certificate chain.
-
-tls.ca=/path/to/ca.pem
-  A filepath to a PEM encoded CA certificate file to talk to your broker's
-  Kafka API listeners with mTLS. You may also need this if your listeners are
-  using a certificate by a well known authority that is not yet bundled on your
-  operating system.
-
-tls.cert=/path/to/cert.pem
-  A filepath to a PEM encoded client certificate file to talk to your broker's
-  Kafka API listeners with mTLS.
-
-tls.key=/path/to/key.pem
-  A filepath to a PEM encoded client key file to talk to your broker's Kafka
-  API listeners with mTLS.
-
-sasl.mechanism=SCRAM-SHA-256
-  The SASL mechanism to use for authentication. This can be SCRAM-SHA-256,
-  SCRAM-SHA-512, PLAIN, or OAUTHBEARER. For OAUTHBEARER, pass the token via
-  the pass field (optionally prefixed with "token:"). Note that with Redpanda,
-  the Admin API can be configured to require basic authentication with your
-  Kafka API SASL credentials. This defaults to SCRAM-SHA-256 if no mechanism
-  is specified.
-
-user=username
-  The SASL username to use for authentication. This is also used for the admin
-  API if you have configured it to require basic authentication.
-
-pass=password
-  The SASL password to use for authentication. This is also used for the admin
-  API if you have configured it to require basic authentication.
-
-admin.hosts=localhost:9644,rp.example.com:9644
-  A comma separated list of host:ports that rpk talks to for the Admin API.
-  By default, this is 127.0.0.1:9644.
-
-admin.tls.enabled=false
-  A boolean that enables rpk to speak TLS to your broker's Admin API listeners.
-  You can use this if you have well known certificates setup on your admin API.
-  If you use mTLS, specifying mTLS certificate filepaths automatically opts
-  into TLS enabled.
-
-admin.tls.insecure_skip_verify=false
-  A boolean that disables rpk from verifying the broker's certificate chain.
-
-admin.tls.ca=/path/to/ca.pem
-  A filepath to a PEM encoded CA certificate file to talk to your broker's
-  Admin API listeners with mTLS. You may also need this if your listeners are
-  using a certificate by a well known authority that is not yet bundled on your
-  operating system.
-
-admin.tls.cert=/path/to/cert.pem
-  A filepath to a PEM encoded client certificate file to talk to your broker's
-  Admin API listeners with mTLS.
-
-admin.tls.key=/path/to/key.pem
-  A filepath to a PEM encoded client key file to talk to your broker's Admin
-  API listeners with mTLS.
-
-registry.hosts=localhost:8081,rp.example.com:8081
-  A comma separated list of host:ports that rpk talks to for the schema registry
-  API. By default, this is 127.0.0.1:8081.
-
-registry.tls.enabled=false
-  A boolean that enables rpk to speak TLS to your broker's schema registry API
-  listeners. You can use this if you have well known certificates setup on your
-  schema registry API. If you use mTLS, specifying mTLS certificate filepaths
-  automatically opts into TLS enabled.
-
-registry.tls.insecure_skip_verify=false
-  A boolean that disables rpk from verifying the broker's certificate chain.
-
-registry.tls.ca=/path/to/ca.pem
-  A filepath to a PEM encoded CA certificate file to talk to your broker's
-  schema registry API listeners with mTLS. You may also need this if your
-  listeners are using a certificate by a well known authority that is not yet
-  bundled on your operating system.
-
-registry.tls.cert=/path/to/cert.pem
-  A filepath to a PEM encoded client certificate file to talk to your broker's
-  schema registry API listeners with mTLS.
-
-registry.tls.key=/path/to/key.pem
-  A filepath to a PEM encoded client key file to talk to your broker's schema
-  registry API listeners with mTLS.
-
-cloud.client_id=somestring
-  An oauth client ID to use for authenticating with the Redpanda Cloud API.
-  Overrides the client ID in the current profile if it is for a cloud cluster,
-  otherwise overrides the default cloud auth client ID.
-
-cloud.client_secret=somelongerstring
-  An oauth client secret to use for authenticating with the Redpanda Cloud API.
-  Overrides the client secret in the current profile if it is for a cloud
-  cluster, otherwise overrides the default cloud auth client secret.
-
-globals.prompt="%n"
-  A format string to use for the default prompt; see 'rpk profile prompt' for
-  more information.
-
-globals.no_default_cluster=false
-  A boolean that disables rpk from talking to localhost:9092 if no other
-  cluster is specified.
-
-globals.command_timeout=30s
-  A duration that rpk will wait for a command to complete before timing out,
-  for certain commands.
-
-globals.dial_timeout=3s
-  A duration that rpk will wait for a connection to be established before
-  timing out.
-
-globals.request_timeout_overhead=5s
-  A duration that limits how long rpk waits for responses, *on top* of any
-  request-internal timeout. For example, ListOffsets has no Timeout field so
-  if request_timeout_overhead is 10s, rpk will wait for 10s for a response.
-  However, JoinGroup has a RebalanceTimeoutMillis field, so the 10s is applied
-  on top of the rebalance timeout.
-
-globals.retry_timeout=11s
-  This timeout specifies how long rpk will retry Kafka API requests. This
-  timeout is evaluated before any backoff -- if a request fails, we first check
-  if the retry timeout has elapsed and if so, we stop retrying. If not, we wait
-  for the backoff and then retry.
-
-globals.fetch_max_wait=5s
-  This timeout specifies the maximum time that brokers will wait before
-  replying to a fetch request with whatever data is available.
-
-globals.kafka_protocol_request_client_id=rpk
-  This string value is the client ID that rpk uses when issuing Kafka protocol
-  requests to Redpanda. This client ID shows up in Redpanda logs and metrics,
-  changing it can be useful if you want to have your own rpk client stand out
-  from others that may be hitting the cluster.
 `
-}
 
 // ParamsList returns the short help text for -X list.
 func ParamsList() string {
-	return `brokers=comma,delimited,host:ports
-tls.enabled=boolean
-tls.insecure_skip_verify=boolean
-tls.ca=/path/to/ca.pem
-tls.cert=/path/to/cert.pem
-tls.key=/path/to/key.pem
-sasl.mechanism=SCRAM-SHA-256, SCRAM-SHA-512, PLAIN, or OAUTHBEARER
-user=username
-pass=password
-admin.hosts=comma,delimited,host:ports
-admin.tls.enabled=boolean
-admin.tls.insecure_skip_verify=boolean
-admin.tls.ca=/path/to/ca.pem
-admin.tls.cert=/path/to/cert.pem
-admin.tls.key=/path/to/key.pem
-registry.hosts=comma,delimited,host:ports
-registry.tls.enabled=boolean
-registry.tls.insecure_skip_verify=boolean
-registry.tls.ca=/path/to/ca.pem
-registry.tls.cert=/path/to/cert.pem
-registry.tls.key=/path/to/key.pem
-cloud.client_id=somestring
-cloud.client_secret=somelongerstring
-globals.prompt="%n"
-globals.no_default_cluster=boolean
-globals.command_timeout=(30s,1m)
-globals.dial_timeout=duration(3s,1m,2h)
-globals.request_timeout_overhead=duration(10s,1m,2h)
-globals.retry_timeout=duration(30s,1m,2h)
-globals.fetch_max_wait=duration(5s,1m,2h)
-globals.kafka_protocol_request_client_id=rpk
-`
+	var sb strings.Builder
+	for _, d := range xflagDocs {
+		sb.WriteString(d.name)
+		sb.WriteString("=")
+		sb.WriteString(d.listHint)
+		sb.WriteString("\n")
+	}
+	return sb.String()
 }
 
 //////////////////////
@@ -1611,14 +1686,18 @@ func envOverrides() []string {
 		}
 	}
 	for _, k := range XFlags() {
-		targetKey := k
-		k = strings.ReplaceAll(k, ".", "_")
-		k = strings.ToUpper(k)
-		if v, exists := os.LookupEnv("RPK_" + k); exists {
-			envOverrides = append(envOverrides, targetKey+"="+v)
+		if v, exists := os.LookupEnv(XEnvVar(k)); exists {
+			envOverrides = append(envOverrides, k+"="+v)
 		}
 	}
 	return envOverrides
+}
+
+// XEnvVar returns the environment variable that overrides the given -X flag:
+// the flag name uppercased, with dots replaced by underscores, prefixed with
+// RPK_. For example, tls.enabled becomes RPK_TLS_ENABLED.
+func XEnvVar(name string) string {
+	return "RPK_" + strings.ToUpper(strings.ReplaceAll(name, ".", "_"))
 }
 
 // processes first env and then flag overrides into our virtual rpk yaml.
