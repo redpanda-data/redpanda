@@ -1,0 +1,45 @@
+# Initial cluster configuration applied on first cluster bootstrap (staged to
+# /etc/redpanda/.bootstrap.yaml on every node by redpanda-entrypoint.sh).
+cloud_storage_enabled: true
+cloud_storage_access_key: {{ s3_access_key }}
+cloud_storage_secret_key: {{ s3_secret_key }}
+cloud_storage_region: {{ s3_region }}
+cloud_storage_api_endpoint: minio
+cloud_storage_api_endpoint_port: 9000
+cloud_storage_disable_tls: true
+cloud_storage_url_style: path
+cloud_storage_bucket: {{ bucket }}
+
+auto_create_topics_enabled: false
+
+default_redpanda_storage_mode_tiered_impl: tiered_v2
+
+# One metastore/domain partition (kafka_internal/ct_l1_domain) to have
+# more concentrated activity. Since they don't interact between each other,
+# more partitions don't add more coverage.
+cloud_topics_num_metastore_partitions: 1
+
+# Shrink cloud-topics object sizes so a light workload still produces many
+# L0/L1 objects and dense indexes. This drives reconciliation, leveling and
+# the offset-mapping paths across many object boundaries in a short run,
+# where the checker's ordering/contiguity assertions do their work.
+cloud_topics_produce_batching_size_threshold: 65536   # 64 KiB (default 4 MiB)
+cloud_topics_reconciliation_max_object_size: 1048576  # 1 MiB (default 80 MiB)
+# NB: config key is cloud_topics_indexing_interval (not ..._l1_...).
+cloud_topics_indexing_interval: 16384                 # 16 KiB (default 4 MiB)
+
+# Compact cloud topics more often than the 30s default so the compacted
+# topic (ctc) goes through many compaction rounds in a short run.
+cloud_topics_compaction_interval_ms: 10000
+
+# Smallest metastore LSM memtable and SST read chunk the config allows
+# (both floor at 1 MiB), to get as much SST churn / chunked object-storage
+# reads as the low metastore load permits.
+cloud_topics_metastore_write_buffer_size: 1048576     # 1 MiB (min; default 16 MiB)
+cloud_topics_metastore_sst_chunk_size: 1048576        # 1 MiB (min; default 24 MiB)
+
+# Cap per-shard compaction key-offset map memory. The defaults (128 MiB each)
+# were the top allocators under the memory-constrained Antithesis environment
+# and pushed the cluster into OOM.
+storage_compaction_key_map_memory: 33554432          # 32 MiB (default 128 MiB)
+cloud_topics_compaction_key_map_memory: 33554432     # 32 MiB (default 128 MiB)

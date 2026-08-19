@@ -1,0 +1,123 @@
+name: {{ test_slug }}
+
+services:
+  minio:
+    image: {{ minio_image }}
+    container_name: minio
+    hostname: minio
+    platform: linux/amd64
+    init: true
+    restart: "no"
+    command: server /data
+    environment:
+      MINIO_REGION_NAME: {{ s3_region }}
+      MINIO_ROOT_USER: {{ s3_access_key }}
+      MINIO_ROOT_PASSWORD: {{ s3_secret_key }}
+      MINIO_BROWSER: "off"
+    expose:
+      - "9000"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 5s
+      timeout: 5s
+      retries: 60
+
+  minio-init:
+    image: {{ minio_image }}
+    container_name: minio-init
+    hostname: minio-init
+    platform: linux/amd64
+    init: true
+    restart: "no"
+    entrypoint: ["/bin/bash", "/scripts/minio-init.sh"]
+    environment:
+      MINIO_URL: http://minio:9000
+      BUCKET: {{ bucket }}
+      ACCESS_KEY: {{ s3_access_key }}
+      SECRET_KEY: {{ s3_secret_key }}
+    volumes:
+      - ./scripts:/scripts:ro
+    depends_on:
+      minio:
+        condition: service_healthy
+{% for i in range(nodes) %}
+
+  redpanda-{{ i }}:
+    image: {{ redpanda_image }}
+    container_name: redpanda-{{ i }}
+    hostname: redpanda-{{ i }}
+    platform: linux/amd64
+    init: true
+    # No restart policy: docker-compose restarting a killed broker would
+    # nullify Antithesis node-termination faults. Antithesis restarts the
+    # container itself after the fault window. See
+    # https://antithesis.com/docs/concepts/fault_injection/fault_types/#node-termination
+    restart: "no"
+    entrypoint: ["/scripts/redpanda-entrypoint.sh"]
+    command:
+      - redpanda
+      - start
+      # Pin node_id to the container index so redpanda-N is node N. Auto-assigned
+      # ids follow registration order, not container names, which makes log
+      # correlation error-prone.
+      - --node-id={{ i }}
+      - --smp={{ smp }}
+      - --memory={{ memory }}
+      - --reserve-memory=0M
+      - --overprovisioned
+      - --kafka-addr=PLAINTEXT://0.0.0.0:9092
+      - --advertise-kafka-addr=PLAINTEXT://redpanda-{{ i }}:9092
+      - --rpc-addr=0.0.0.0:33145
+      - --advertise-rpc-addr=redpanda-{{ i }}:33145
+{% if i > 0 %}
+      - --seeds=redpanda-0:33145
+{% endif %}
+    volumes:
+      - ./scripts:/scripts:ro
+      - /var/lib/redpanda-{{ i }}:/var/lib/redpanda/data
+    # Abort a connection after ~12.6s without a TCP ack for transmitted data
+    # (boundary = (2^(n+1)-1) * RTO_MIN) instead of the ~15min default. A
+    # network fault can leave an established socket as a black hole that the
+    # kernel retransmits into with backoff; redpanda's RPC layer never tears
+    # such a connection down on its own, so broker-to-broker traffic stays
+    # dead long after the network heals. Sender-side, so every broker needs
+    # it.
+    sysctls:
+      net.ipv4.tcp_retries2: 5
+    ulimits:
+      nofile:
+        soft: 131072
+        hard: 131072
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9644/v1/status/ready"]
+      interval: 5s
+      timeout: 5s
+      retries: 120
+    depends_on:
+      minio-init:
+        condition: service_completed_successfully
+{% endfor %}
+
+  # franz-go workload. Its entrypoint (workload setup) waits for the cluster,
+  # emits setup_complete, then idles so Antithesis runs the baked-in test
+  # commands (/opt/antithesis/test/v1/ct/) in this container.
+  workload:
+    image: {{ workload_image }}
+    container_name: workload
+    hostname: workload
+    platform: linux/amd64
+    init: true
+    restart: "no"
+    environment:
+      KAFKA_BROKERS: "{% for i in range(nodes) %}{% if not loop.first %},{% endif %}redpanda-{{ i }}:9092{% endfor %}"
+      ADMIN_HOSTS: "{% for i in range(nodes) %}{% if not loop.first %},{% endif %}redpanda-{{ i }}:9644{% endfor %}"
+      EXPECTED_BROKERS: "{{ nodes }}"
+    # Same rationale as on the brokers: kernel-level dead-connection
+    # detection in ~12.6s, complementing franz-go's own read deadlines.
+    sysctls:
+      net.ipv4.tcp_retries2: 5
+    depends_on:
+{% for i in range(nodes) %}
+      redpanda-{{ i }}:
+        condition: service_healthy
+{% endfor %}

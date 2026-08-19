@@ -1,0 +1,55 @@
+# Antithesis test manifest, consumed by tools/antithesis/template_test_package.py.
+#
+# vars provides the default values for the Jinja2 templates (*.j2) in this
+# directory; override individual values at packaging time with --var KEY=VALUE.
+#
+# images declares companion images built from this test's own sources. Each
+# is built, tagged with a hash of its build context, exposed to the templates
+# as the named variable, and (for real runs) pushed and registered with
+# Antithesis so libvoidstar is injected into it.
+name: cloud cluster stress testing
+
+images:
+  workload_image:
+    context: ct
+
+# Antithesis fault scoping, applied at launch (--submit). List entries name
+# container roles: `redpanda` expands to every broker (redpanda-0..nodes-1),
+# other entries are literal container names. Every entry is sent explicitly
+# (empty lists as ""), so this manifest -- not the webhook defaults -- is the
+# source of truth for the fault posture.
+faults:
+  # Global toggles (pinned here so the fault posture is self-documenting).
+  # clock_skew: on by the webhook default anyway.
+  # cpu_mod: simulates different hardware by varying CPU/instruction speed,
+  #   reordering concurrent execution to surface races. Runs in addition to the
+  #   thread pausing induced by the Antithesis instrumentation in our
+  #   --config=antithesis build. Not recorded in the fault log.
+  clock_skew: true
+  cpu_mod: true
+  node_hang: [redpanda, workload]
+  node_throttle: [redpanda, workload]
+  # Exclude workload for now. Exclude minio (single instance, no S3 durability).
+  node_termination: [redpanda]
+  # Containers excluded from network faults. Explicitly empty: nothing excluded,
+  # so every container -- minio too -- sees network faults, exercising
+  # object-storage disruption.
+  exclude_from_faults: []
+
+vars:
+  # Any image with the stock rpk entrypoint works here. Override with an
+  # instrumented build for real Antithesis runs (--redpanda-image).
+  redpanda_image: docker.redpanda.com/redpandadata/redpanda-nightly:latest
+  minio_image: minio/minio:RELEASE.2025-07-23T15-54-02Z
+  nodes: 5
+  # 2 shards (threads) per broker. Memory must fit Antithesis' ~10G total:
+  # 5 brokers x 1.2G = 6G leaves room for MinIO, the workload, the OS page
+  # cache and hypervisor overhead.
+  # This is below Redpanda's 1 GiB/shard floor (unavoidable: 5x2 shards at
+  # 1 GiB would need the whole 10G), so expect a cosmetic memory warning.
+  smp: 2
+  memory: 1200M
+  bucket: cloud-cluster-stress
+  s3_access_key: panda-user
+  s3_secret_key: panda-secret
+  s3_region: panda-region
