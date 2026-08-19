@@ -3353,7 +3353,7 @@ void consensus::maybe_update_follower_commit_idx(
     // min(leaderCommit, index of last new entry)
     if (request_commit_idx > _commit_index) {
         auto new_commit_idx = std::min(request_commit_idx, _flushed_offset);
-        if (new_commit_idx != _commit_index) {
+        if (new_commit_idx > _commit_index) {
             _commit_index = new_commit_idx;
             vlog(
               _ctxlog.trace, "Follower commit index updated {}", _commit_index);
