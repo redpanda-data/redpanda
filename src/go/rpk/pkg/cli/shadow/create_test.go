@@ -346,7 +346,7 @@ func TestValidateParsedShadowLinkConfig(t *testing.T) {
 			expectedErr: "shadow_redpanda_id and source_redpanda_id cannot be the same",
 		},
 		{
-			name: "cloud config - role sync not allowed",
+			name: "valid config - cloud with role sync",
 			config: &ShadowLinkConfig{
 				Name: "test-link",
 				CloudOptions: &CloudShadowLinkOptions{
@@ -361,7 +361,6 @@ func TestValidateParsedShadowLinkConfig(t *testing.T) {
 					},
 				},
 			},
-			expectedErr: "role sync options are not yet supported for Redpanda Cloud shadow links",
 		},
 		{
 			name: "cloud config - TLS file settings not allowed",

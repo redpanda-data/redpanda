@@ -1952,20 +1952,34 @@ func TestCloudRoundTrip(t *testing.T) {
 		SchemaRegistrySyncOptions: &SchemaRegistrySyncOptions{
 			ShadowSchemaRegistryTopic: &ShadowSchemaRegistryTopic{},
 		},
+		RoleSyncOptions: &RoleSyncOptions{
+			Interval: 30 * time.Second,
+			Paused:   true,
+			RoleNameFilters: []*NameFilter{
+				{
+					PatternType: PatternTypePrefix,
+					FilterType:  FilterTypeInclude,
+					Name:        "team-",
+				},
+			},
+		},
 	}
 
-	// Step 1: Convert config to cloud ShadowLink proto (simulating what the API returns)
-	// We build this manually since shadowLinkConfigToCloudCreate creates ShadowLinkCreate,
-	// and the API returns ShadowLink (which has additional fields like Id).
+	// Step 1: Convert config to cloud ShadowLink proto (simulating what the API
+	// returns). shadowLinkConfigToCloudCreate produces ShadowLinkCreate while the
+	// API returns ShadowLink (which has additional fields like Id), so copy the
+	// mapped options over; a field missed by the create mapper fails step 3.
+	create := shadowLinkConfigToCloudCreate(originalConfig)
 	cloudSL := &controlplanev1.ShadowLink{
 		Id:                        "sl-generated-id",
-		ShadowRedpandaId:          originalConfig.CloudOptions.ShadowRedpandaID,
-		Name:                      originalConfig.Name,
-		ClientOptions:             mapCloudClientOptions(originalConfig.ClientOptions),
-		TopicMetadataSyncOptions:  mapTopicMetadataSyncOptions(originalConfig.TopicMetadataSyncOptions),
-		ConsumerOffsetSyncOptions: mapConsumerOffsetSyncOptions(originalConfig.ConsumerOffsetSyncOptions),
-		SecuritySyncOptions:       mapSecuritySyncOptions(originalConfig.SecuritySyncOptions),
-		SchemaRegistrySyncOptions: mapSchemaRegistrySyncOptions(originalConfig.SchemaRegistrySyncOptions),
+		ShadowRedpandaId:          create.GetShadowRedpandaId(),
+		Name:                      create.GetName(),
+		ClientOptions:             create.GetClientOptions(),
+		TopicMetadataSyncOptions:  create.GetTopicMetadataSyncOptions(),
+		ConsumerOffsetSyncOptions: create.GetConsumerOffsetSyncOptions(),
+		SecuritySyncOptions:       create.GetSecuritySyncOptions(),
+		SchemaRegistrySyncOptions: create.GetSchemaRegistrySyncOptions(),
+		RoleSyncOptions:           create.GetRoleSyncOptions(),
 	}
 	require.NotNil(t, cloudSL)
 
@@ -1983,6 +1997,79 @@ func TestCloudRoundTrip(t *testing.T) {
 	}
 
 	require.Equal(t, &expectedConfig, roundTripConfig, "round-trip config should match expected config")
+}
+
+func TestShadowLinkConfigToCloudUpdate(t *testing.T) {
+	tests := []struct {
+		name string
+		cfg  *ShadowLinkConfig
+		want *controlplanev1.ShadowLinkUpdate
+	}{
+		{
+			name: "nil config returns nil",
+			cfg:  nil,
+			want: nil,
+		},
+		{
+			name: "config with all option groups",
+			cfg: &ShadowLinkConfig{
+				ClientOptions: &ShadowLinkClientOptions{
+					BootstrapServers: []string{"seed:9092"},
+				},
+				TopicMetadataSyncOptions: &TopicMetadataSyncOptions{
+					Interval: 45 * time.Second,
+				},
+				ConsumerOffsetSyncOptions: &ConsumerOffsetSyncOptions{
+					Paused: true,
+				},
+				SecuritySyncOptions: &SecuritySettingsSyncOptions{
+					Interval: 2 * time.Minute,
+				},
+				SchemaRegistrySyncOptions: &SchemaRegistrySyncOptions{
+					ShadowSchemaRegistryTopic: &ShadowSchemaRegistryTopic{},
+				},
+				RoleSyncOptions: &RoleSyncOptions{
+					Interval: 30 * time.Second,
+					RoleNameFilters: []*NameFilter{
+						{PatternType: PatternTypeLiteral, FilterType: FilterTypeInclude, Name: "*"},
+					},
+				},
+			},
+			want: &controlplanev1.ShadowLinkUpdate{
+				Id: "sl-123",
+				ClientOptions: &controlplanev1.ShadowLinkClientOptions{
+					BootstrapServers: []string{"seed:9092"},
+				},
+				TopicMetadataSyncOptions: &adminv2.TopicMetadataSyncOptions{
+					Interval: durationpb.New(45 * time.Second),
+				},
+				ConsumerOffsetSyncOptions: &adminv2.ConsumerOffsetSyncOptions{
+					Paused: true,
+				},
+				SecuritySyncOptions: &adminv2.SecuritySettingsSyncOptions{
+					Interval: durationpb.New(2 * time.Minute),
+				},
+				SchemaRegistrySyncOptions: &adminv2.SchemaRegistrySyncOptions{
+					SchemaRegistryShadowingMode: &adminv2.SchemaRegistrySyncOptions_ShadowSchemaRegistryTopic_{
+						ShadowSchemaRegistryTopic: &adminv2.SchemaRegistrySyncOptions_ShadowSchemaRegistryTopic{},
+					},
+				},
+				RoleSyncOptions: &adminv2.RoleSyncOptions{
+					Interval: durationpb.New(30 * time.Second),
+					RoleNameFilters: []*adminv2.NameFilter{
+						{PatternType: adminv2.PatternType_PATTERN_TYPE_LITERAL, FilterType: adminv2.FilterType_FILTER_TYPE_INCLUDE, Name: "*"},
+					},
+				},
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := shadowLinkConfigToCloudUpdate(tt.cfg, "sl-123")
+			require.Equal(t, tt.want, got)
+		})
+	}
 }
 
 // Test reverse enum mapping functions return empty string for

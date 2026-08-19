@@ -55,6 +55,7 @@ func shadowLinkConfigToCloudCreate(slCfg *ShadowLinkConfig) *controlplanev1.Shad
 	cloudSl.ConsumerOffsetSyncOptions = mapConsumerOffsetSyncOptions(slCfg.ConsumerOffsetSyncOptions)
 	cloudSl.SecuritySyncOptions = mapSecuritySyncOptions(slCfg.SecuritySyncOptions)
 	cloudSl.SchemaRegistrySyncOptions = mapSchemaRegistrySyncOptions(slCfg.SchemaRegistrySyncOptions)
+	cloudSl.RoleSyncOptions = mapRoleSyncOptions(slCfg.RoleSyncOptions)
 	return cloudSl
 }
 
@@ -1103,6 +1104,7 @@ func cloudShadowLinkToConfig(sl *controlplanev1.ShadowLink) *ShadowLinkConfig {
 	cfg.ConsumerOffsetSyncOptions = adminConsumerOffsetSyncToCfg(sl.GetConsumerOffsetSyncOptions())
 	cfg.SecuritySyncOptions = adminSecuritySyncToCfg(sl.GetSecuritySyncOptions())
 	cfg.SchemaRegistrySyncOptions = adminSchemaRegistrySyncToCfg(sl.GetSchemaRegistrySyncOptions())
+	cfg.RoleSyncOptions = adminRoleSyncToCfg(sl.GetRoleSyncOptions())
 
 	return cfg
 }
@@ -1168,5 +1170,6 @@ func shadowLinkConfigToCloudUpdate(slCfg *ShadowLinkConfig, id string) *controlp
 		ConsumerOffsetSyncOptions: mapConsumerOffsetSyncOptions(slCfg.ConsumerOffsetSyncOptions),
 		SecuritySyncOptions:       mapSecuritySyncOptions(slCfg.SecuritySyncOptions),
 		SchemaRegistrySyncOptions: mapSchemaRegistrySyncOptions(slCfg.SchemaRegistrySyncOptions),
+		RoleSyncOptions:           mapRoleSyncOptions(slCfg.RoleSyncOptions),
 	}
 }
