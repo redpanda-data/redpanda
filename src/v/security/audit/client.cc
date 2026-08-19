@@ -25,8 +25,12 @@
 #include "security/authorizer.h"
 #include "utils/retry.h"
 
+#include <seastar/coroutine/as_future.hh>
+#include <seastar/coroutine/exception.hh>
+
 #include <algorithm>
 #include <chrono>
+#include <optional>
 
 namespace security::audit {
 
@@ -263,6 +267,27 @@ public:
     }
     ss::future<> client_shutdown() final { co_await _client.stop(); }
     ss::future<> do_configure() final {
+        // Set _misconfigured on a failure from any configuration step. Only
+        // create_internal_topic() reports through the kafka client's
+        // mitigate_error(), and it runs only while the local topic table has
+        // no audit topic.
+        auto fut = co_await ss::coroutine::as_future(configure_client());
+        if (fut.failed()) {
+            auto eptr = fut.get_exception();
+            if (const auto errc = misconfigured_auth_error(eptr)) {
+                co_await update_status(*errc);
+            }
+            co_await ss::coroutine::return_exception_ptr(std::move(eptr));
+        }
+        // Every step succeeded, so the authorization works. Clear a flag
+        // that an earlier attempt set.
+        co_await update_status(kafka::error_code::none);
+    }
+
+private:
+    kafka_sink_impl* sink();
+
+    ss::future<> configure_client() {
         co_await set_client_credentials();
         // Propagate the audit principal's credential to every broker up
         // front (best effort). Previously propagation relied on
@@ -285,11 +310,30 @@ public:
         _client.set_max_retries(size_t{5});
     }
 
-private:
-    kafka_sink_impl* sink();
-
     auth_misconfigured_t _misconfigured{auth_misconfigured_t::no};
     kafka::client::client _client;
+
+    /// The error code in `eptr`, when it says authorization is misconfigured.
+    static std::optional<kafka::error_code>
+    misconfigured_auth_error(const std::exception_ptr& eptr) {
+        try {
+            std::rethrow_exception(eptr);
+        } catch (const kafka::exception_base& ex) {
+            if (indicates_misconfigured_auth(ex.error)) {
+                return ex.error;
+            }
+        } catch (...) {
+        }
+        return std::nullopt;
+    }
+
+    /// illegal_sasl_state means a listener rejects the audit client's SASL
+    /// handshake. topic_authorization_failed means the audit principal lacks
+    /// ACLs on the audit topic. Both need an operator to fix the cluster.
+    static bool indicates_misconfigured_auth(kafka::error_code errc) {
+        return errc == kafka::error_code::illegal_sasl_state
+               || errc == kafka::error_code::topic_authorization_failed;
+    }
 
     ss::future<> update_status(kafka::error_code errc);
     ss::future<> do_update_status(auth_misconfigured_t);
@@ -851,23 +895,12 @@ kafka_client_impl::do_update_status(auth_misconfigured_t misconfigured) {
 
 ss::future<> kafka_client_impl::update_status(kafka::error_code errc) {
     /// If the status changed to erroneous from anything else.
-    /// topic_authorization_failed means the audit principal's ACL bindings
-    /// are gone (or the exists-skip in set_auditing_permissions read a
-    /// stale positive); treat it like illegal_sasl_state so the condition
-    /// degrades loudly through _misconfigured instead of silently dropping
-    /// batches.
-    if (
-      (errc == kafka::error_code::illegal_sasl_state
-       || errc == kafka::error_code::topic_authorization_failed)
-      && !_misconfigured) {
+    if (indicates_misconfigured_auth(errc) && !_misconfigured) {
         return do_update_status(auth_misconfigured_t::yes);
     }
 
-    constexpr auto failed_codes = std::to_array(
-      {kafka::error_code::illegal_sasl_state,
-       kafka::error_code::topic_authorization_failed,
-       kafka::error_code::broker_not_available});
-    const bool success = !std::ranges::contains(failed_codes, errc);
+    const bool success = !indicates_misconfigured_auth(errc)
+                         && errc != kafka::error_code::broker_not_available;
     if (success && _misconfigured) {
         /// The status changed from erroneous to anything else
         return do_update_status(auth_misconfigured_t::no);
