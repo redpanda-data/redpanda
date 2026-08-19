@@ -17,7 +17,10 @@
 #include <seastar/core/seastar.hh>
 #include <seastar/core/temporary_buffer.hh>
 
+#include <exception>
 #include <filesystem>
+#include <string>
+#include <string_view>
 
 /// \brief Read an entire file into a ss::temporary_buffer
 ///
@@ -39,3 +42,10 @@ ss::future<> write_fully(const std::filesystem::path&, iobuf buf);
 // returned if the file does not exist. Any other errors are propagated via
 // thrown exception.
 ss::future<> maybe_remove_file(std::string_view name);
+
+/// \brief Format a file I/O error message for logging or throwing.
+///
+/// Appends an O_DIRECT hint when the error is EINVAL; see the definition for
+/// why (some filesystems reject direct I/O).
+std::string
+format_file_io_error(std::string_view context, std::exception_ptr eptr);

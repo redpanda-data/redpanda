@@ -26,7 +26,11 @@
 #include "rpc/connection_cache.h"
 #include "utils/file_io.h"
 
+#include <fmt/format.h>
+
 #include <algorithm>
+#include <stdexcept>
+#include <system_error>
 
 namespace cluster {
 
@@ -440,15 +444,39 @@ config_manager::preload(const YAML::Node& legacy_config) {
  */
 ss::future<bool> config_manager::load_bootstrap() {
     YAML::Node config;
+    ss::sstring config_str;
+
     try {
-        auto config_str = co_await read_fully_to_string(bootstrap_path());
-        config = YAML::Load(config_str);
+        config_str = co_await read_fully_to_string(bootstrap_path());
     } catch (const std::filesystem::filesystem_error& e) {
-        // This is normal on upgrade from pre-config_manager version or
-        // on newly added node.  Also permitted later if user
-        // chooses to e.g. blow away config cache during disaster recovery.
-        vlog(clusterlog.info, "Can't load config bootstrap file: {}", e);
-        co_return false;
+        if (e.code() == std::errc::no_such_file_or_directory) {
+            // This is normal on upgrade from pre-config_manager version or
+            // on newly added node.  Also permitted later if user
+            // chooses to e.g. blow away config cache during disaster recovery.
+            vlog(clusterlog.info, "Can't load config bootstrap file: {}", e);
+            co_return false;
+        }
+        throw std::runtime_error(format_file_io_error(
+          fmt::format(
+            "Failed to read config bootstrap file {}",
+            bootstrap_path().string()),
+          std::current_exception()));
+    } catch (...) {
+        throw std::runtime_error(format_file_io_error(
+          fmt::format(
+            "Failed to read config bootstrap file {}",
+            bootstrap_path().string()),
+          std::current_exception()));
+    }
+
+    try {
+        config = YAML::Load(config_str);
+    } catch (...) {
+        throw std::runtime_error(
+          fmt::format(
+            "Failed to parse config bootstrap file {}: {}",
+            bootstrap_path(),
+            std::current_exception()));
     }
 
     // This node has never seen a cluster configuration message.
