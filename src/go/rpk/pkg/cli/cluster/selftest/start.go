@@ -10,7 +10,10 @@
 package selftest
 
 import (
+	"context"
 	"fmt"
+	"io"
+	"time"
 
 	"github.com/redpanda-data/common-go/rpadmin"
 
@@ -24,6 +27,10 @@ import (
 	"github.com/spf13/cobra"
 )
 
+// selfTestWatchInterval is how often 'self-test start --watch' polls the
+// cluster for self-test status updates.
+const selfTestWatchInterval = 2 * time.Second
+
 func newStartCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 	var (
 		noConfirm      bool
@@ -35,6 +42,7 @@ func newStartCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 		onlyDisk       bool
 		onlyNetwork    bool
 		onlyCloud      bool
+		watch          bool
 	)
 	cmd := &cobra.Command{
 		Use:   "start",
@@ -69,7 +77,9 @@ Available tests to run:
 
 This command prompts users for confirmation (unless the flag '--no-confirm' is specified), then returns a test identifier ID, and runs the tests.
 
-To view the test status, poll 'rpk cluster self-test status'. Once the tests end, the cached results will be available with 'rpk cluster self-test status'.`,
+To view the test status, poll 'rpk cluster self-test status'. Once the tests end, the cached results will be available with 'rpk cluster self-test status'.
+
+Pass '--watch' to poll the status automatically and wait until the tests complete.`,
 		Args: cobra.ExactArgs(0),
 		Run: func(cmd *cobra.Command, _ []string) {
 			// Load config settings
@@ -96,6 +106,15 @@ To view the test status, poll 'rpk cluster self-test status'. Once the tests end
 			// Make HTTP POST request to leader that starts the actual test
 			tid, err := cl.StartSelfTest(cmd.Context(), onNodes, tests)
 			out.MaybeDie(err, "unable to start self test: %v", err)
+
+			// With --watch we poll the status until the tests finish
+			// instead of asking the user to poll manually.
+			if watch {
+				fmt.Printf("Redpanda self-test has started, test identifier: %v\n", tid)
+				err = watchSelfTest(cmd.Context(), cl, config.OutFormatter{Kind: "text"}, cmd.OutOrStdout(), selfTestWatchInterval)
+				out.MaybeDieErr(err)
+				return
+			}
 			fmt.Printf("Redpanda self-test has started, test identifier: %v, To check the status run:\n    rpk cluster self-test status\n", tid)
 		},
 	}
@@ -115,8 +134,41 @@ To view the test status, poll 'rpk cluster self-test status'. Once the tests end
 	cmd.Flags().BoolVar(&onlyDisk, "only-disk-test", false, "Runs only the disk benchmarks")
 	cmd.Flags().BoolVar(&onlyNetwork, "only-network-test", false, "Runs only network benchmarks")
 	cmd.Flags().BoolVar(&onlyCloud, "only-cloud-test", false, "Runs only cloud storage verification")
+	cmd.Flags().BoolVarP(&watch, "watch", "w", false, "Poll the self-test status and wait until the tests complete")
 	cmd.MarkFlagsMutuallyExclusive("only-disk-test", "only-network-test", "only-cloud-test")
 	return cmd
+}
+
+// selfTestStatusClient is the subset of the admin client used to poll
+// self-test status. It exists so watchSelfTest can be tested without a live
+// cluster.
+type selfTestStatusClient interface {
+	SelfTestStatus(context.Context) ([]rpadmin.SelfTestNodeReport, error)
+}
+
+// watchSelfTest polls the self-test status every interval, showing a spinner
+// with elapsed time while a test is still running. Once every node is idle it
+// stops the spinner and prints the final status. It backs the --watch flag of
+// 'rpk cluster self-test start'.
+func watchSelfTest(ctx context.Context, cl selfTestStatusClient, f config.OutFormatter, w io.Writer, interval time.Duration) error {
+	s := out.NewSpinner(ctx, "Running self-test", out.WithOutput(w), out.WithElapsedTime())
+	for {
+		reports, err := cl.SelfTestStatus(ctx)
+		if err != nil {
+			s.Fail("Self-test status query failed")
+			return fmt.Errorf("unable to query self-test status: %w", err)
+		}
+		if len(runningNodes(reports)) == 0 {
+			s.Success("Self-test complete")
+			return printSelfTestStatus(f, reports, w)
+		}
+		select {
+		case <-ctx.Done():
+			s.Stop()
+			return ctx.Err()
+		case <-time.After(interval):
+		}
+	}
 }
 
 // assembleTests creates types of pre-canned tests depending on user input
