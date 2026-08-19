@@ -11,12 +11,16 @@
 
 #pragma once
 
+#include "cluster_link/schema_registry_sync/scope.h"
 #include "cluster_link/schema_registry_sync/source_reader.h"
 #include "container/chunked_hash_map.h"
 #include "container/chunked_vector.h"
+#include "utils/prefix_logger.h"
 
 #include <seastar/core/abort_source.hh>
 #include <seastar/util/noncopyable_function.hh>
+
+#include <chrono>
 
 namespace cluster_link::schema_registry_sync {
 
@@ -27,10 +31,16 @@ namespace cluster_link::schema_registry_sync {
 /// The source reader is a per-call parameter rather than a borrow: it is the
 /// one dependency the owner swaps mid-tenure (a config change rebuilds it),
 /// so no stored pointer can outlive it.
+///
+/// Owns the probe's scan memory (cursor and denial-log limiter), so it must
+/// not outlive a task tenure or a link configuration; the owning task
+/// recreates it wherever either turns over.
 class discovery {
 public:
     using in_scope_fn
       = ss::noncopyable_function<bool(const ppsr::context_subject&)>;
+
+    discovery(prefix_logger* logger, ss::sstring link_name);
 
     /// The source (subject, version) nodes a discovery pass found, split by
     /// their soft-delete state at the source.
@@ -75,6 +85,25 @@ public:
       size_t parallelism,
       ss::abort_source&);
 
+    struct probe_result {
+        chunked_vector<ppsr::subject_version> found;
+        chunked_vector<ss::sstring> errors;
+        std::optional<source_error> unavailable;
+    };
+
+    /// Finds new versions of already-known subjects, which no subject
+    /// listing can see: probes source schema ids upward from `floor` (the
+    /// caller's inventory-derived position) or this instance's cursor,
+    /// whichever is higher, until the first absent id. Every in-scope
+    /// (subject, version) pair a resolved id backs lands in the result.
+    ss::future<probe_result> probe_new_ids(
+      source_reader& reader,
+      const chunked_hash_set<ppsr::context>& contexts,
+      const context_mapper& mapper,
+      const chunked_hash_map<ppsr::context, ppsr::schema_id>& floor,
+      const in_scope_fn& in_scope,
+      ss::abort_source&);
+
 private:
     ss::future<std::optional<chunked_vector<ppsr::schema_version>>>
     list_versions_once(
@@ -89,6 +118,21 @@ private:
       const ppsr::context_subject&,
       versions& result,
       ss::abort_source&);
+
+    prefix_logger* _logger;
+    ss::sstring _link_name;
+    // Per-source-context id-probe position: one past the highest id confirmed
+    // to exist at the source, so ticks do not re-walk ids that exist but
+    // yielded no import (out of scope, or fully soft-deleted at the source)
+    // and so never reach the caller's floor. Dies with the instance; misses
+    // are deliberately not recorded, so a hole that fills in later is still
+    // found.
+    chunked_hash_map<ppsr::context, ppsr::schema_id> _probe_cursor;
+    static constexpr auto probe_denial_log_window = std::chrono::minutes(5);
+    // Limits the probe-denial warning to one per window per link: the probe
+    // asks every tick, so an unlimited warn would repeat on every one, and a
+    // shard-global limiter would let one link's denial silence another's.
+    ss::logger::rate_limit _probe_denial_rate{probe_denial_log_window};
 };
 
 } // namespace cluster_link::schema_registry_sync

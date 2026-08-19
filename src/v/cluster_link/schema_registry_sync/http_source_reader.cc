@@ -28,6 +28,8 @@
 #include <seastar/core/semaphore.hh>
 
 #include <ada.h>
+#include <algorithm>
+#include <array>
 #include <charconv>
 #include <chrono>
 #include <system_error>
@@ -88,6 +90,43 @@ source_error to_source_error(rc::domain_error err) {
       },
       [](const auto&) { return source_error_kind::operation_failed; });
     return source_error{.kind = kind, .message = fmt::format("{}", err)};
+}
+
+// Whether the source refuses to serve this endpoint at all -- the caller
+// can then skip it and retry later instead of parking the link. 401: the
+// required reads park the link on it anyway. 405/406: method or media type
+// not served. 404: only a raw one; the documented miss (404/40403) is typed
+// as schema_id_not_found before this. 403 is mapped in
+// list_schema_id_subject_versions instead.
+bool is_endpoint_denied(const rc::domain_error& err) {
+    using enum boost::beast::http::status;
+    return ss::visit(
+      err,
+      [](const rc::http_call_error& call) {
+          return ss::visit(
+            call,
+            [](const rc::http_status_error& s) {
+                constexpr auto denied = std::array{
+                  unauthorized, method_not_allowed, not_acceptable, not_found};
+                return std::ranges::contains(denied, s.status);
+            },
+            [](const auto&) { return false; });
+      },
+      [](const auto&) { return false; });
+}
+
+bool is_forbidden(const rc::domain_error& err) {
+    return ss::visit(
+      err,
+      [](const rc::http_call_error& call) {
+          return ss::visit(
+            call,
+            [](const rc::http_status_error& s) {
+                return s.status == boost::beast::http::status::forbidden;
+            },
+            [](const auto&) { return false; });
+      },
+      [](const auto&) { return false; });
 }
 
 // Narrow the open-enum source mode to Redpanda's mode. READONLY_OVERRIDE is
@@ -329,6 +368,27 @@ http_source_reader::list_schema_id_subject_versions(
     auto res = co_await client.value()->get_schema_id_subject_versions(
       id, rtc, std::move(subject));
     if (!res.has_value()) {
+        // Not in to_source_error: this probe is the sync's only optional
+        // read; the shared mapping stays right for the required ones.
+        //
+        // 403: an ACL-enabled source answers a missing id -- the walk's
+        // routine end -- with the same 403 as a denial, by design. Both
+        // call for the same action (stop; the full sync covers what the
+        // walk cannot see), so it maps to the miss, not to a fault that
+        // would misreport every walk's end on such a source. The broker
+        // logs which one it was.
+        if (is_forbidden(res.error())) {
+            co_return std::unexpected(
+              source_error{
+                .kind = source_error_kind::schema_id_not_found,
+                .message = fmt::format("{}", res.error())});
+        }
+        if (is_endpoint_denied(res.error())) {
+            co_return std::unexpected(
+              source_error{
+                .kind = source_error_kind::endpoint_unsupported,
+                .message = fmt::format("{}", res.error())});
+        }
         co_return std::unexpected(to_source_error(std::move(res.error())));
     }
     co_return std::move(res.value());

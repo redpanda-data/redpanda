@@ -481,7 +481,90 @@ TEST(http_source_reader, auth_failure_maps_to_source_unavailable) {
     }
 }
 
-// HTTP 404 / error_code 40401 maps to subject_not_found, not operation_failed.
+// Not implementing (or not serving) the probe endpoint is reported apart
+// from a source that is down, because the caller can drop this one read and
+// keep syncing -- mapping it to source_unavailable would park a link whose
+// every other read works.
+TEST(http_source_reader, probe_endpoint_denial_is_distinct_from_a_down_source) {
+    struct tc {
+        bh::status status;
+        std::string_view body;
+    };
+    for (auto [status, body] : {
+           tc{bh::status::unauthorized, R"({"error_code": 40101})"},
+           // A 404 with no error body at all: nothing answered about the id.
+           tc{bh::status::not_found, "{}"},
+           // A source lacking the endpoint, as pandaproxy's own default 404
+           // handler answers: the bare status echoed into the body, which is
+           // no handler's verdict on the id.
+           tc{bh::status::not_found, R"({"error_code": 404})"},
+           // A handler answered, but about something other than the id: a
+           // source parsing the bare-context subject parameter as a subject
+           // lookup answers 40401 on every probe. Reading that as a miss
+           // would end the walk silently at the first id, every tick.
+           tc{bh::status::not_found, R"({"error_code": 40401})"},
+           tc{bh::status::method_not_allowed, "{}"},
+           // We ask for application/json; a source insisting on
+           // application/vnd.schemaregistry.v1+json refuses the endpoint just
+           // as squarely as one that does not implement it.
+           tc{bh::status::not_acceptable, "{}"},
+         }) {
+        auto reader = reader_over([status, body](mock_client& m) {
+            EXPECT_CALL(m, request_and_collect_response(_, _, _))
+              .WillOnce(respond(status, body));
+        });
+        ss::abort_source as;
+        auto res = reader
+                     .list_schema_id_subject_versions(
+                       pps::schema_id{7}, pps::default_context, as)
+                     .get();
+        reader.stop().get();
+
+        ASSERT_FALSE(res.has_value()) << "status=" << static_cast<int>(status);
+        EXPECT_EQ(
+          res.error().kind, srs::source_error_kind::endpoint_unsupported)
+          << "status=" << static_cast<int>(status);
+    }
+}
+
+// An ACL-enabled source answers a missing id -- the walk's routine end --
+// with the same 403 as a denial, by design. Both call for the same stop, so
+// 403 maps to the miss; a denial classification would misreport every
+// walk's end on such a source.
+TEST(http_source_reader, probe_forbidden_maps_to_schema_id_not_found) {
+    auto reader = reader_over([](mock_client& m) {
+        EXPECT_CALL(m, request_and_collect_response(_, _, _))
+          .WillOnce(respond(bh::status::forbidden, R"({"error_code": 40301})"));
+    });
+    ss::abort_source as;
+    auto res = reader
+                 .list_schema_id_subject_versions(
+                   pps::schema_id{7}, pps::default_context, as)
+                 .get();
+    reader.stop().get();
+
+    ASSERT_FALSE(res.has_value());
+    EXPECT_EQ(res.error().kind, srs::source_error_kind::schema_id_not_found);
+}
+
+// The same statuses on the sync's other reads keep parking the link: those
+// endpoints have no fallback, so there is nothing to degrade to.
+TEST(http_source_reader, auth_denial_elsewhere_still_parks) {
+    for (auto status : {bh::status::unauthorized, bh::status::forbidden}) {
+        auto reader = reader_over([status](mock_client& m) {
+            EXPECT_CALL(m, request_and_collect_response(_, _, _))
+              .WillOnce(respond(status, R"({"error_code": 40101})"));
+        });
+        ss::abort_source as;
+        auto res = reader.list_subjects(pps::default_context, as).get();
+        reader.stop().get();
+
+        ASSERT_FALSE(res.has_value()) << "status=" << static_cast<int>(status);
+        EXPECT_EQ(res.error().kind, srs::source_error_kind::source_unavailable)
+          << "status=" << static_cast<int>(status);
+    }
+}
+
 TEST(http_source_reader, not_found_maps_to_subject_not_found) {
     auto reader = reader_over([](mock_client& m) {
         EXPECT_CALL(m, request_and_collect_response(_, _, _))
@@ -501,9 +584,12 @@ TEST(http_source_reader, not_found_maps_to_subject_not_found) {
 }
 
 // A miss gets its own kind rather than the operation_failed catch-all, since
-// the probe hits unallocated ids on every tick. The kind is narrow on
-// purpose: only 404 *with* error_code 40403, so nothing else can read as
-// "nothing here" and stall discovery.
+// the probe hits unallocated ids on every tick. The kind is narrow on purpose:
+// only the documented 404/40403 reads as "nothing at this id". Every other
+// 404 degrades the endpoint instead (see
+// probe_endpoint_denial_is_distinct_from_a_down_source): reading one as a
+// miss would end the walk silently, and counting it would pin an error on
+// every tick.
 TEST(http_source_reader, schema_id_miss_is_distinct_from_failure) {
     struct tc {
         bh::status status;

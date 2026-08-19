@@ -42,6 +42,12 @@ enum class source_error_kind : uint8_t {
     /// (HTTP 404 / error_code 40403). The id probe expects this on every tick,
     /// so it must not be counted as a sync error.
     schema_id_not_found,
+    /// The source refuses or does not implement the requested endpoint, as
+    /// opposed to failing one call. The caller should skip whatever needed
+    /// it -- not treat the source as down or count an error -- but may ask
+    /// again later. Produced only by `list_schema_id_subject_versions`, the
+    /// one endpoint the sync can do without.
+    endpoint_unavailable,
 };
 
 struct source_error {

@@ -1161,7 +1161,8 @@ reconcile_stats mirroring_task::fold_reconcile_stats() {
 }
 
 std::unique_ptr<discovery> mirroring_task::make_discovery() {
-    return std::make_unique<discovery>();
+    return std::make_unique<discovery>(
+      &logger(), get_link()->get_config()->name);
 }
 
 ss::future<chunked_hash_set<ppsr::context_subject>>
