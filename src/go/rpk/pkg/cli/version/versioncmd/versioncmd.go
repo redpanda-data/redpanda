@@ -38,18 +38,20 @@ type redpandaVersion struct {
 type redpandaVersions []redpandaVersion
 
 func NewCommand(fs afero.Fs, p *config.Params) *cobra.Command {
+	var skipCluster bool
 	cmd := &cobra.Command{
 		Use:   "version",
 		Short: "Prints the current rpk and Redpanda version",
 		Long: `Prints the current rpk and Redpanda version.
 
-This command prints the current rpk version and allows you to list the Redpanda 
+This command prints the current rpk version and allows you to list the Redpanda
 version running on each node in your cluster.
 
 To list the Redpanda version of each node in your cluster you may pass the
 Admin API hosts using flags, profile, or environment variables.
 
-To get only the rpk version, use 'rpk --version'.`,
+To print only the rpk version without contacting a cluster, use the
+'--skip-cluster' flag or run 'rpk --version'.`,
 		Args: cobra.NoArgs,
 		Run: func(cmd *cobra.Command, _ []string) {
 			rv := rpkVersion{
@@ -67,6 +69,13 @@ To get only the rpk version, use 'rpk --version'.`,
 					printClusterVersions(&rows)
 				}
 			}()
+
+			// When --skip-cluster is set we only report the rpk
+			// version and do not reach out to a cluster.
+			if skipCluster {
+				printCV = false
+				return
+			}
 
 			p, err := p.LoadVirtualProfile(fs)
 			if err != nil {
@@ -102,6 +111,7 @@ To get only the rpk version, use 'rpk --version'.`,
 			}
 		},
 	}
+	cmd.Flags().BoolVar(&skipCluster, "skip-cluster", false, "Skip contacting the cluster and only print the rpk version")
 	return cmd
 }
 

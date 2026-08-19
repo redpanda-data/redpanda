@@ -1,4 +1,4 @@
-load("@rules_go//go:def.bzl", "go_library")
+load("@rules_go//go:def.bzl", "go_library", "go_test")
 
 go_library(
     name = "versioncmd",
@@ -13,5 +13,16 @@ go_library(
         "@com_github_spf13_afero//:afero",
         "@com_github_spf13_cobra//:cobra",
         "@org_uber_go_zap//:zap",
+    ],
+)
+
+go_test(
+    name = "versioncmd_test",
+    srcs = ["versioncmd_test.go"],
+    deps = [
+        ":versioncmd",
+        "//src/go/rpk/pkg/config",
+        "@com_github_spf13_afero//:afero",
+        "@com_github_stretchr_testify//require",
     ],
 )
