@@ -98,12 +98,17 @@ reconnect_transport::reconnect(clock_type::time_point connection_timeout) {
                              }
                          });
                    })
-            .handle_exception_type([connection_timeout_duration](
+            .handle_exception_type([this, connection_timeout_duration](
                                      const ss::named_semaphore_timed_out&) {
-                vlog(
-                  rpclog.trace,
-                  "timeout waiting for RPC reconnect semaphore. timeout "
-                  "duration: {}",
+                static thread_local ss::logger::rate_limit rate(
+                  std::chrono::seconds(30));
+                rpclog.log(
+                  ss::log_level::warn,
+                  rate,
+                  "timeout waiting for RPC reconnect semaphore of {} (waited "
+                  "{}): a connect attempt is holding it past this request's "
+                  "timeout",
+                  _transport->server_address(),
                   connection_timeout_duration);
                 return ss::make_ready_future<ret_t>(errc::connection_timeout);
             });
