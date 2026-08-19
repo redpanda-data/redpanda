@@ -103,6 +103,23 @@ redpanda_cc_gtest(
 )
 
 redpanda_cc_gtest(
+    name = "dns_recovery_test",
+    timeout = "short",
+    srcs = [
+        "dns_recovery_test.cc",
+    ],
+    deps = [
+        ":dns_test_utils",
+        "//src/v/base",
+        "//src/v/net",
+        "//src/v/test_utils:gtest",
+        "//src/v/utils:unresolved_address",
+        "@googletest//:gtest",
+        "@seastar",
+    ],
+)
+
+redpanda_cc_gtest(
     name = "dial_test",
     timeout = "short",
     srcs = [
