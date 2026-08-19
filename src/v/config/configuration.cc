@@ -2183,7 +2183,11 @@ configuration::configuration(ctor_key)
       "Optional API endpoint. - AWS: When blank, this is automatically "
       "generated using <<cloud_storage_region,region>> and "
       "<<cloud_storage_bucket,bucket>>. Otherwise, this uses the value "
-      "assigned. - GCP: Uses `storage.googleapis.com`.",
+      "assigned. - GCP: Uses `storage.googleapis.com`. The endpoint can "
+      "also point to any S3-compatible object storage service, for "
+      "example Amazon S3, or a compatible provider such as Backblaze "
+      "B2, Cloudflare R2, or MinIO, using a placeholder endpoint such "
+      "as `https://<host>:<port>`.",
       {.visibility = visibility::user, .gets_restored = gets_restored::no},
       std::nullopt,
       &validate_api_endpoint)
