@@ -26,6 +26,7 @@ go_library(
         "@com_github_spf13_cobra//:cobra",
         "@com_github_twmb_franz_go_pkg_kadm//:kadm",
         "@com_github_twmb_types//:types",
+        "@io_k8s_apimachinery//pkg/util/validation",
     ],
 )
 
