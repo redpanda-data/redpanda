@@ -66,6 +66,14 @@ health_monitor_frontend::get_cluster_data_disk_health() {
 /**
  * Gets cached or collects a node health report.
  */
+ss::future<health_pull_reply>
+health_monitor_frontend::handle_health_pull(health_pull_request req) {
+    return dispatch_to_backend(
+      [req = std::move(req)](health_monitor_backend& be) mutable {
+          return be.handle_health_pull(std::move(req));
+      });
+}
+
 ss::future<result<node_health_report_ptr>>
 health_monitor_frontend::get_current_node_health() {
     return dispatch_to_backend([](health_monitor_backend& be) mutable {
@@ -157,6 +165,13 @@ void health_monitor_frontend::disk_health_tick() {
 ss::future<bool> health_monitor_frontend::does_raft0_have_leader() {
     return dispatch_to_backend(
       [](health_monitor_backend& be) { return be.does_raft0_have_leader(); });
+}
+
+ss::future<> health_monitor_frontend::drop_health_cache(
+  std::chrono::milliseconds suppress_duration) {
+    return dispatch_to_backend([suppress_duration](health_monitor_backend& be) {
+        be.drop_health_cache(suppress_duration);
+    });
 }
 
 ss::future<> health_monitor_frontend::refresh_info() {

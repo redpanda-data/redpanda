@@ -122,6 +122,14 @@ class backend;
 class store;
 }; // namespace client_quota
 
+namespace health {
+struct diff_entry;
+class diff_store;
+struct node_health;
+struct versioned_report;
+class versioned_health_store;
+} // namespace health
+
 } // namespace cluster
 
 namespace seastar {

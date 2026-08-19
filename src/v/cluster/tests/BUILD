@@ -345,6 +345,24 @@ redpanda_cc_btest(
 )
 
 redpanda_cc_gtest(
+    name = "health_dissemination_test",
+    timeout = "short",
+    srcs = [
+        "health_dissemination_test.cc",
+    ],
+    deps = [
+        "//src/v/cluster",
+        "//src/v/cluster:health_monitor_types",
+        "//src/v/container:chunked_hash_map",
+        "//src/v/model",
+        "//src/v/serde",
+        "//src/v/test_utils:gtest",
+        "@googletest//:gtest",
+        "@seastar",
+    ],
+)
+
+redpanda_cc_gtest(
     name = "plugin_table_test",
     timeout = "short",
     srcs = [
@@ -1232,6 +1250,7 @@ redpanda_cc_bench(
     srcs = ["health_monitor_bench.cc"],
     deps = [
         "//src/v/cluster:health_monitor_types",
+        "//src/v/serde",
         "@seastar",
         "@seastar//:benchmark",
     ],
