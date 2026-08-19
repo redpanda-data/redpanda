@@ -94,6 +94,20 @@ public:
     // immediately.
     void release();
 
+    // Release the ticket but mark the next waiter as poisoned.
+    //
+    // Signals that this request never reached raft (e.g. it failed during L0
+    // upload or epoch fencing). The next waiter, and transitively the rest of
+    // this producer's queued requests, must not be admitted ahead of this
+    // request's (lower) sequence, so they observe `poisoned()` and fail in
+    // order instead. A ticket dropped without an explicit `release()` abandons
+    // by default.
+    void abandon();
+
+    // Whether a predecessor abandoned ahead of this ticket. Meaningful once
+    // `redeem()` has resolved.
+    bool poisoned() const;
+
 private:
     explicit producer_ticket(std::unique_ptr<impl> impl);
     friend class producer_queue;

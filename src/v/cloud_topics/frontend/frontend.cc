@@ -769,6 +769,20 @@ ss::future<result<raft::replicate_result>> do_upload_and_replicate(
     } else {
         co_await ticket.redeem();
     }
+    // A lower-sequence request from this producer failed before reaching
+    // rm_stm. Fail retriably so the client retries the whole run in order
+    // rather than this request leapfrogging the dropped lower sequence into
+    // rm_stm as an unknown producer. The ticket destructor cascades the poison
+    // to our successor.
+    if (ticket.poisoned()) {
+        vlog(
+          cd_log.debug,
+          "Producer {} request poisoned by an earlier failed request for ntp "
+          "{}; failing in order",
+          batch_id.pid,
+          ntp);
+        co_return default_errc;
+    }
     // Now that our producer order is resolved, we can fence epochs
     // we must resolve producer order first to prevent races where a
     // request waits on a previous request in the producer queue, but
