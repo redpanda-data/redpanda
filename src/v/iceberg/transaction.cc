@@ -11,6 +11,7 @@
 
 #include "iceberg/merge_append_action.h"
 #include "iceberg/remove_snapshots_action.h"
+#include "iceberg/rename_columns_action.h"
 #include "iceberg/schema.h"
 #include "iceberg/table_update_applier.h"
 #include "iceberg/update_partition_spec_action.h"
@@ -89,6 +90,13 @@ ss::future<transaction::txn_outcome> transaction::merge_append(
       std::move(snapshot_props),
       std::move(tag_name),
       tag_expiration_ms);
+    co_return co_await apply(std::move(a));
+}
+
+ss::future<transaction::txn_outcome> transaction::rename_columns(
+  chunked_vector<rename_columns_action::rename_entry> renames) {
+    auto a = std::make_unique<rename_columns_action>(
+      table_, std::move(renames));
     co_return co_await apply(std::move(a));
 }
 

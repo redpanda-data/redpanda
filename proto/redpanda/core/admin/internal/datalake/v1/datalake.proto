@@ -48,6 +48,16 @@ service DatalakeService {
             authz: SUPERUSER
         };
     }
+
+    // Migrates Iceberg table schemas for the v25.3 upgrade by renaming
+    // columns that have incompatible types. Supports dry-run mode to
+    // preview changes without applying them.
+    rpc MigrateIcebergSchema(MigrateIcebergSchemaRequest)
+        returns (MigrateIcebergSchemaResponse) {
+        option (pbgen.rpc) = {
+            authz: SUPERUSER
+        };
+    }
 }
 
 message GetCoordinatorStateRequest {
@@ -131,3 +141,41 @@ message DescribeCatalogRequest {}
 // Currently empty. In the future, may include additional catalog
 // information such as configuration details or capabilities.
 message DescribeCatalogResponse {}
+
+message TopicMigration {
+    string topic = 1;
+    // The iceberg_mode the topic was using before it was disabled for the
+    // upgrade. Required for user-schema column detection. If omitted, only
+    // redpanda struct columns are migrated.
+    optional string iceberg_mode = 2;
+}
+
+enum MigrationStrategy {
+    MIGRATION_STRATEGY_UNSPECIFIED = 0;
+    MIGRATION_STRATEGY_RENAME = 1;
+}
+
+message MigrateIcebergSchemaRequest {
+    repeated TopicMigration topics = 1;
+    bool dry_run = 2;
+    MigrationStrategy strategy = 3;
+}
+
+message ColumnRename {
+    string column_path = 1;
+    string old_name = 2;
+    string new_name = 3;
+    string reason = 4;
+}
+
+message TableMigrationResult {
+    string topic = 1;
+    string table_name = 2;
+    bool is_dlq = 3;
+    repeated ColumnRename renames = 4;
+    string error = 5;
+}
+
+message MigrateIcebergSchemaResponse {
+    repeated TableMigrationResult results = 1;
+}

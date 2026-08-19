@@ -1,6 +1,27 @@
 load("//bazel:build.bzl", "redpanda_cc_library")
 
 redpanda_cc_library(
+    name = "schema_migration_detector",
+    srcs = [
+        "schema_migration_detector.cc",
+    ],
+    hdrs = [
+        "schema_migration_detector.h",
+    ],
+    implementation_deps = [
+        ":table_definition",
+    ],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//src/v/container:chunked_vector",
+        "//src/v/iceberg:datatypes",
+        "//src/v/iceberg:schema",
+        "@fmt",
+        "@seastar",
+    ],
+)
+
+redpanda_cc_library(
     name = "catalog_schema_manager",
     srcs = [
         "catalog_schema_manager.cc",
