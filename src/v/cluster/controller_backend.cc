@@ -518,31 +518,25 @@ controller_backend::calculate_learner_initial_offset(
         return std::nullopt;
     }
 
-    if (!p->cloud_data_available()) {
-        vlog(clusterlog.trace, "no cloud data available for: {}", p->ntp());
-        return std::nullopt;
+    const auto& ntp_cfg = p->log()->config();
+    if (ntp_cfg.is_tiered_cloud()) {
+        return calculate_learner_initial_offset_cloud_topics(policy, p);
     }
-
-    if (p->get_cloud_storage_mode() != cluster::cloud_storage_mode::full) {
+    if (ntp_cfg.cloud_topic_enabled()) {
+        // storage.mode=cloud partitions keep only aggressively truncated
+        // placeholders locally, moves are metadata-sized already
         vlog(
           clusterlog.trace,
-          "cloud storage not fully enabled for: {}",
+          "no learner start offset for cloud-mode topic: {}",
           p->ntp());
         return std::nullopt;
     }
+    return calculate_learner_initial_offset_archival(policy, p);
+}
 
-    if (
-      config::shard_local_cfg().cloud_storage_enable_segment_uploads()
-      == false) {
-        vlog(clusterlog.trace, "segment uploads are paused");
-        return std::nullopt;
-    }
-
-    if (p->archival_meta_stm() == nullptr) {
-        vlog(clusterlog.trace, "no archival_meta_stm for {}", p->ntp());
-        return std::nullopt;
-    }
-
+std::optional<model::offset>
+controller_backend::calculate_move_retention_offset(
+  reconfiguration_policy policy, const ss::lw_shared_ptr<partition>& p) const {
     auto log = p->log();
 
     /**
@@ -617,9 +611,40 @@ controller_backend::calculate_learner_initial_offset(
           model::timestamp::now().value() - initial_retention_ms->count());
     }
 
-    auto retention_offset = log->retention_offset(
+    return log->retention_offset(
       storage::gc_config(
         retention_timestamp_threshold, initial_retention_bytes));
+}
+
+std::optional<model::offset>
+controller_backend::calculate_learner_initial_offset_archival(
+  reconfiguration_policy policy, const ss::lw_shared_ptr<partition>& p) const {
+    if (!p->cloud_data_available()) {
+        vlog(clusterlog.trace, "no cloud data available for: {}", p->ntp());
+        return std::nullopt;
+    }
+
+    if (p->get_cloud_storage_mode() != cluster::cloud_storage_mode::full) {
+        vlog(
+          clusterlog.trace,
+          "cloud storage not fully enabled for: {}",
+          p->ntp());
+        return std::nullopt;
+    }
+
+    if (
+      config::shard_local_cfg().cloud_storage_enable_segment_uploads()
+      == false) {
+        vlog(clusterlog.trace, "segment uploads are paused");
+        return std::nullopt;
+    }
+
+    if (p->archival_meta_stm() == nullptr) {
+        vlog(clusterlog.trace, "no archival_meta_stm for {}", p->ntp());
+        return std::nullopt;
+    }
+
+    auto retention_offset = calculate_move_retention_offset(policy, p);
 
     if (!retention_offset) {
         return std::nullopt;
@@ -658,6 +683,43 @@ controller_backend::calculate_learner_initial_offset(
       *retention_offset,
       archival_safe_removable,
       p->archival_meta_stm()->get_last_clean_at(),
+      max_removable_local_log_offset);
+
+    return model::next_offset(
+      std::min(max_removable_local_log_offset, *retention_offset));
+}
+
+std::optional<model::offset>
+controller_backend::calculate_learner_initial_offset_cloud_topics(
+  reconfiguration_policy policy, const ss::lw_shared_ptr<partition>& p) const {
+    /**
+     * For tiered_cloud partitions everything at or below the max removable
+     * local log offset (the last level-one reconciled offset) is durable in
+     * the cloud and readable through the L1 read path on any replica. It
+     * bounds the learner start offset the same way the cloud recoverable
+     * offset bounds it for archival tiered storage.
+     */
+    auto max_removable_local_log_offset = p->max_removable_local_log_offset();
+    if (max_removable_local_log_offset == model::offset::min()) {
+        vlog(
+          clusterlog.trace,
+          "[{}] nothing reconciled to level one yet, no learner start offset",
+          p->ntp());
+        return std::nullopt;
+    }
+
+    auto retention_offset = calculate_move_retention_offset(policy, p);
+
+    if (!retention_offset) {
+        return std::nullopt;
+    }
+
+    vlog(
+      clusterlog.info,
+      "[{}] calculated retention offset: {}, max_removable_local_log_offset "
+      "(level one reconciled): {}",
+      p->ntp(),
+      *retention_offset,
       max_removable_local_log_offset);
 
     return model::next_offset(

@@ -387,6 +387,22 @@ private:
       reconfiguration_policy policy,
       const ss::lw_shared_ptr<partition>& partition) const;
 
+    std::optional<model::offset> calculate_learner_initial_offset_archival(
+      reconfiguration_policy policy,
+      const ss::lw_shared_ptr<partition>& partition) const;
+
+    std::optional<model::offset> calculate_learner_initial_offset_cloud_topics(
+      reconfiguration_policy policy,
+      const ss::lw_shared_ptr<partition>& partition) const;
+
+    /// Resolves the retention target offset for a partition move, honoring
+    /// the reconfiguration policy and the initial/local retention
+    /// properties. std::nullopt means the move must deliver the full local
+    /// log.
+    std::optional<model::offset> calculate_move_retention_offset(
+      reconfiguration_policy policy,
+      const ss::lw_shared_ptr<partition>& partition) const;
+
     ss::sharded<topic_table>& _topics;
     shard_placement_table& _shard_placement;
     ss::sharded<shard_table>& _shard_table;
