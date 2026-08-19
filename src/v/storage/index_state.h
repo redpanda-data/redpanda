@@ -132,7 +132,7 @@ private:
    1 byte  - non_data_timestamps
  */
 struct index_state
-  : serde::envelope<index_state, serde::version<11>, serde::compat_version<4>> {
+  : serde::envelope<index_state, serde::version<12>, serde::compat_version<4>> {
     static constexpr auto monotonic_timestamps_version = 5;
     static constexpr auto broker_timestamp_version = 6;
     static constexpr auto num_compactible_records_version = 7;
@@ -143,6 +143,7 @@ struct index_state
     static constexpr auto may_have_transaction_control_batches_version = 10;
     static constexpr auto may_have_transaction_data_or_fence_batches_version
       = 11;
+    static constexpr auto running_max_timestamps_version = 12;
 
     static index_state
     make_empty_index(model::offset base_offset, offset_delta_time with_offset);
@@ -198,6 +199,16 @@ struct index_state
     // flag indicating whether the maximum timestamp on the batches
     // of this segment are monontonically increasing.
     bool batch_timestamps_are_monotonic{true};
+
+    // Whether the relative time column holds a running maximum over the
+    // segment's data batches rather than each indexed batch's own maximum.
+    //
+    // A running maximum never decreases, so the binary search in
+    // 'time_lower_bound' is sound however out of order the batch timestamps
+    // are, and a time seek does not need 'batch_timestamps_are_monotonic'.
+    // Indices written before this field carry per-batch maxima, which are only
+    // sorted when that flag says so.
+    bool running_max_timestamps{false};
 
     // flag indicating whether the relative time index has been offset
     offset_delta_time with_offset{false};

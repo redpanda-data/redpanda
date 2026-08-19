@@ -2457,26 +2457,39 @@ struct batch_size_accumulator {
         //                  target---v
         //     |++++++++++++++[+++++++]X          |
         //
-        *base_timestamp = b.header().first_timestamp;
+        // Only data batches may contribute to the range's timestamp bounds.
+        const bool user_data = b.header().type
+                               == model::record_batch_type::raft_data;
         if (boundary == boundary_type::inclusive) {
             if (b.last_offset() > target) {
-                *max_timestamp = std::min(
-                  *max_timestamp, b.header().max_timestamp);
                 co_return ss::stop_iteration::yes;
             }
             *result_size_bytes += model::packed_record_batch_header_size
                                   + b.data().size_bytes();
-            if (b.header().last_offset() == target) {
-                *max_timestamp = b.header().max_timestamp;
+            if (user_data) {
+                *max_timestamp = std::max(
+                  *max_timestamp, model::batch_max_timestamp(b.header()));
             }
             co_return ss::stop_iteration::no;
         } else {
             if (b.base_offset() >= target) {
+                // The first batch at or after the range's start, and so the
+                // only visited batch inside the range - everything before it
+                // sits below the range and must not describe where the range
+                // begins. Where this batch is not data the seeded segment bound
+                // stands, which under-reports rather than naming a time from
+                // outside the range.
+                if (user_data) {
+                    *base_timestamp = b.header().first_timestamp;
+                }
                 co_return ss::stop_iteration::yes;
             }
             *result_size_bytes += model::packed_record_batch_header_size
                                   + b.data().size_bytes();
-            *max_timestamp = b.header().max_timestamp;
+            if (user_data) {
+                *max_timestamp = std::max(
+                  *max_timestamp, model::batch_max_timestamp(b.header()));
+            }
             co_return ss::stop_iteration::no;
         }
     }
@@ -2502,8 +2515,16 @@ auto disk_log_impl::get_file_offset(
         .filepos = 0,
       });
     size_t size_bytes{index_entry.filepos};
-    model::timestamp base_timestamp = index_entry.timestamp;
-    model::timestamp max_timestamp = model::timestamp::max();
+    // Seed from the segment's own first data timestamp, not the index entry's.
+    // The entry's time column holds a running maximum over everything before
+    // it, which is a bound rather than a time near this offset, so a scan
+    // window holding no data batch would leave that maximum standing as the
+    // range's base - and it can exceed the range's own maximum, which is not a
+    // describable range at all. The segment's base is a genuine lower bound for
+    // any range inside it, and under-reporting a base is safe: it only stops a
+    // timequery selecting the segment early, which 'max_timestamp' governs.
+    model::timestamp base_timestamp = s->index().base_timestamp();
+    model::timestamp max_timestamp = model::timestamp::missing();
     details::batch_size_accumulator acc{
       .result_size_bytes = &size_bytes,
       .target = target,
@@ -2542,6 +2563,24 @@ auto disk_log_impl::get_file_offset(
           std::current_exception());
         throw;
     }
+
+    // The scan starts at an index entry, so batches between the segment's
+    // start and that entry are never visited and cannot contribute. That is
+    // fine while timestamps rise, but the largest one may sit in the unscanned
+    // part, and a range whose max_timestamp under-reports makes
+    // partition_manifest::timequery pass over the segment holding the first
+    // matching record.
+    //
+    // Take the bound the index already carries for everything up to the entry:
+    // with a running-max time column that is exactly the prefix maximum, and
+    // without one fall back to the segment's own data-only maximum. Either may
+    // reach past the range, which is safe - considering a segment that holds no
+    // match only costs a scan, while skipping one that does is a wrong answer.
+    const auto& index = s->index();
+    const auto prefix_max = index.has_running_max_timestamps()
+                              ? index_entry.timestamp
+                              : index.max_timestamp();
+    max_timestamp = std::max(max_timestamp, prefix_max);
 
     co_return file_offset_t{
       .position = size_bytes,
@@ -3188,15 +3227,17 @@ disk_log_impl::make_reader(timequery_config config) {
               std::optional<segment_index::entry> index_entry = std::nullopt;
 
               // The index (and hence, binary search) is used only if the
-              // timestamps on the batches are monotonically increasing.
-              if (segment->index().batch_timestamps_are_monotonic()) {
+              // timestamps on the batches are monotonically increasing, or if
+              // we have tracked its running maximum.
+              if (segment->index().time_index_is_sorted()) {
                   index_entry = segment->index().find_nearest(cfg.time);
                   if (index_entry) {
                       vlog(
                         stlog.debug,
-                        "Batch timestamps have monotonically increasing "
-                        "timestamps; used segment index to find first batch "
-                        "before timestamp {}: offset={} with ts={}",
+                        "Time index is sorted (running_max={}); used "
+                        "segment index to find first batch before timestamp "
+                        "{}: offset={} with ts={}",
+                        segment->index().has_running_max_timestamps(),
                         cfg.time,
                         index_entry->offset,
                         index_entry->timestamp);

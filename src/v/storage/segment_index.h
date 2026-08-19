@@ -215,6 +215,20 @@ public:
     bool batch_timestamps_are_monotonic() const {
         return _state.batch_timestamps_are_monotonic;
     }
+
+    /// True when the time column holds a running maximum over the segment's
+    /// data batches, rather than each indexed batch's own maximum.
+    bool has_running_max_timestamps() const {
+        return _state.running_max_timestamps;
+    }
+
+    /// Whether the time column is non-decreasing, which is what the binary
+    /// search behind 'find_nearest(model::timestamp)' requires. True either
+    /// because the column holds a running maximum, which cannot decrease, or
+    /// because the batches happened to arrive in monotonic order.
+    bool time_index_is_sorted() const {
+        return has_running_max_timestamps() || batch_timestamps_are_monotonic();
+    }
     bool non_data_timestamps() const { return _state.non_data_timestamps; }
 
     /// this method is used in conjuction with
