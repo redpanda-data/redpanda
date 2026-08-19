@@ -66,6 +66,12 @@ public:
         return ss::get_units(_sem, 1, as);
     }
 
+    /// Waits for the mutex until `timeout`, failing the returned future
+    /// with `ss::named_semaphore_timed_out` if it is not acquired by then.
+    ss::future<units> get_units(time_point timeout) noexcept {
+        return ss::get_units(_sem, 1, timeout);
+    }
+
     std::optional<units> try_get_units() noexcept {
         return ss::try_get_units(_sem, 1);
     }
