@@ -305,6 +305,27 @@ func TestAdminAPICheckFlagEnabled(t *testing.T) {
 	require.NotContains(t, output, ":.ctx1:")
 }
 
+func TestAdminAPICheckSkippedForCloudProfile(t *testing.T) {
+	fs := afero.NewMemMapFs()
+	cfgBody := `current_profile: test
+profiles:
+    - name: test
+      from_cloud: true
+      cloud_cluster:
+        cluster_id: test123
+        cluster_type: TYPE_DEDICATED
+      admin_api: {}
+`
+	require.NoError(t, afero.WriteFile(fs, "/tmp/rpk.yaml", []byte(cfgBody), 0o644))
+	p := &config.Params{ConfigFlag: "/tmp/rpk.yaml"}
+	profile, err := p.LoadVirtualProfile(fs)
+	require.NoError(t, err)
+
+	err = srcontext.IsContextSupported(context.Background(), fs, profile, false)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "admin API is not available on cloud clusters")
+}
+
 func TestAdminAPICheckFlagDisabled(t *testing.T) {
 	admin := fakeAdminAPI(t, map[string]any{
 		"schema_registry_enable_qualified_subjects": false,
