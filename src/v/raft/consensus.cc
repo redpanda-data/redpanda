@@ -820,6 +820,83 @@ consensus::linearizable_barrier(model::timeout_clock::time_point deadline) {
     co_return ret_t(_commit_index);
 }
 
+void consensus::nudge_follower(model::node_id target) {
+    const auto debounce
+      = config::shard_local_cfg().raft_follower_nudge_debounce_ms();
+    if (!debounce.has_value()) {
+        return;
+    }
+    if (!is_elected_leader() || _bg.is_closed()) {
+        return;
+    }
+    const auto target_vnode = config().find_by_node_id(target);
+    if (!target_vnode) {
+        return;
+    }
+    auto it = _fstates.find(*target_vnode);
+    if (it == _fstates.end()) {
+        return;
+    }
+    auto& f_meta = it->second;
+    /**
+     * A recovering follower is not up to date with the leader's log, so a
+     * bare metadata push does not help it; a follower with inflight appends
+     * is receiving the current metadata via the replicate path already.
+     */
+    if (f_meta.is_recovering || f_meta.has_inflight_appends()) {
+        return;
+    }
+    const auto now = clock_type::now();
+    if (now < f_meta.next_follower_nudge) {
+        return;
+    }
+    const auto m = meta();
+    if (f_meta.last_sent_protocol_meta == m) {
+        return;
+    }
+    f_meta.next_follower_nudge = now + debounce.value();
+    f_meta.last_sent_protocol_meta = m;
+    const auto seq = next_follower_sequence(*target_vnode);
+    update_node_append_timestamp(*target_vnode);
+    _probe->follower_nudge();
+    vlog(_ctxlog.trace, "Sending follower nudge to {}", *target_vnode);
+
+    /**
+     * Track the request as an inflight append for its whole flight, like
+     * heartbeats and replicate rounds do: the heartbeat manager and
+     * subsequent nudges then treat this follower as already contacted (at
+     * most one nudge is pending per follower), and the reply participates in
+     * the same accounting as any other append.
+     */
+    ssx::spawn_with_gate(
+      _bg,
+      [this,
+       target = *target_vnode,
+       m,
+       seq,
+       guard = track_append_inflight(*target_vnode)]() mutable {
+          append_entries_request req(
+            _self, target, m, {}, 0, flush_after_append::no);
+          return _client_protocol
+            .append_entries(
+              target.id(),
+              std::move(req),
+              rpc::client_opts(_replicate_append_timeout))
+            .then(
+              [this,
+               id = target.id(),
+               seq,
+               dirty_offset = m.dirty_offset,
+               guard = std::move(guard)](result<append_entries_reply> reply) {
+                  process_append_entries_reply(id, reply, seq, dirty_offset);
+              })
+            .handle_exception([this, target](const std::exception_ptr& e) {
+                vlog(
+                  _ctxlog.debug, "follower nudge to {} failed: {}", target, e);
+            });
+      });
+}
+
 ss::future<result<replicate_result>>
 consensus::chain_stages(replicate_stages stages) {
     return stages.request_enqueued.then_wrapped(

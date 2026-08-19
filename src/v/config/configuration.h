@@ -163,6 +163,8 @@ struct configuration final : public config_store {
     bounded_property<std::chrono::milliseconds> raft_heartbeat_interval_ms;
     bounded_property<std::chrono::milliseconds> raft_heartbeat_timeout_ms;
     property<size_t> raft_heartbeat_disconnect_failures;
+    bounded_property<std::optional<std::chrono::milliseconds>>
+      raft_follower_nudge_debounce_ms;
     bounded_property<std::optional<size_t>> raft_max_recovery_memory;
     property<bool> raft_enable_lw_heartbeat;
     bounded_property<size_t> raft_recovery_concurrency_per_shard;
@@ -201,6 +203,8 @@ struct configuration final : public config_store {
     property<int16_t> metadata_dissemination_retries;
     property<std::chrono::milliseconds> tx_timeout_delay_ms;
     property<std::chrono::milliseconds> fetch_reads_debounce_timeout;
+    bounded_property<std::chrono::milliseconds>
+      kafka_fetch_follower_catchup_wait_ms;
     property<std::chrono::milliseconds> kafka_fetch_request_timeout_ms;
     development_feature_property<bool>
       enable_listoffsets_historical_leader_epoch;

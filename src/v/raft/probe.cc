@@ -162,6 +162,14 @@ void probe::setup_metrics(const model::ntp& ntp) {
           sm::description("Number of full heartbeats sent by the leader"),
           labels),
         sm::make_counter(
+          "follower_nudge_requests",
+          [this] { return _follower_nudge_requests; },
+          sm::description(
+            "Number of out of band metadata pushes sent by the "
+            "leader to expedite a follower's view of the "
+            "leader's committed and visible offsets"),
+          labels),
+        sm::make_counter(
           "offset_translator_inconsistency_errors",
           [this] { return _offset_translator_inconsistency_error; },
           sm::description(

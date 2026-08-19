@@ -156,6 +156,20 @@ void replicated_partition_probe::setup_internal_metrics(const model::ntp& ntp) {
             "Total number of bytes fetched from follower (not all might be "
             "returned to the client)"),
           labels),
+        sm::make_counter(
+          "follower_fetch_waits_total",
+          [this] { return _follower_fetch_waits; },
+          sm::description(
+            "Total number of follower fetches that waited for the follower's "
+            "available-to-read offset to catch up to the fetch offset"),
+          labels),
+        sm::make_counter(
+          "follower_fetch_wait_timeouts_total",
+          [this] { return _follower_fetch_wait_timeouts; },
+          sm::description(
+            "Total number of follower fetch catch-up waits that timed out "
+            "and returned offset_not_available"),
+          labels),
         sm::make_total_bytes(
           "cloud_storage_segments_metadata_bytes",
           [this] {
