@@ -86,7 +86,6 @@ model::record_batch_header parse_header(Parser& parser) {
       .producer_epoch = producer_epoch,
       .base_sequence = base_sequence,
       .record_count = record_count};
-    hdr.ctx.owner_shard = ss::this_shard_id();
     return hdr;
 }
 

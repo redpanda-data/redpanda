@@ -77,7 +77,6 @@ record_batch_header batch_builder::build_header() {
                       : timestamp_type::create_time);
     record_batch_header::context ctx;
     ctx.term = _term;
-    ctx.owner_shard = ss::this_shard_id();
     return {
       .header_crc = 0, // set later in reset_size_checksum_metadata
       .size_bytes = static_cast<int32_t>(

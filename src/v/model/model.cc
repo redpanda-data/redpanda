@@ -147,12 +147,12 @@ fmt::iterator record_batch_attributes::format_to(fmt::iterator it) const {
 }
 
 fmt::iterator record_batch_header::format_to(fmt::iterator it) const {
-    it = fmt::format_to(
+    return fmt::format_to(
       it,
       "{{header_crc:{}, size_bytes:{}, base_offset:{}, type:{}, crc:{}, "
       "attrs:{}, last_offset_delta:{}, first_timestamp:{}, "
       "max_timestamp:{}, producer_id:{}, producer_epoch:{}, "
-      "base_sequence:{}, record_count:{}, ctx:{{term:{}, owner_shard:",
+      "base_sequence:{}, record_count:{}, ctx:{{term:{}}}}}",
       header_crc,
       size_bytes,
       base_offset,
@@ -167,12 +167,6 @@ fmt::iterator record_batch_header::format_to(fmt::iterator it) const {
       base_sequence,
       record_count,
       ctx.term);
-    if (ctx.owner_shard) {
-        it = fmt::format_to(it, "{}}}}}", *ctx.owner_shard);
-    } else {
-        it = fmt::format_to(it, "nullopt}}}}");
-    }
-    return it;
 }
 
 fmt::iterator record_batch::format_to(fmt::iterator it) const {

@@ -111,8 +111,7 @@ struct linear_int_kv_batch_generator {
         }
         rs.clear();
         // TODO: expose term setting
-        header.ctx = model::record_batch_header::context(
-          model::term_id(0), ss::this_shard_id());
+        header.ctx = model::record_batch_header::context(model::term_id(0));
         header.size_bytes = static_cast<int32_t>(
           model::packed_record_batch_header_size + body.size_bytes());
         auto batch = model::record_batch(

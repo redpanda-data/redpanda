@@ -485,9 +485,8 @@ struct record_batch_header
     struct context
       : serde::envelope<context, serde::version<0>, serde::compat_version<0>> {
         context() noexcept = default;
-        context(model::term_id t, ss::shard_id i)
-          : term(t)
-          , owner_shard(i) {}
+        explicit context(model::term_id t)
+          : term(t) {}
 
         /*
          * term isn't part of the upstream kafka batch format, but we use it
@@ -511,20 +510,8 @@ struct record_batch_header
          * end-to-end test works.
          */
         model::term_id term;
-        std::optional<ss::shard_id> owner_shard;
 
-        void serde_write(iobuf& out) const {
-            // serialize with serde a serde-only type
-            using serde::write;
-            write(out, term);
-        }
-
-        void serde_read(iobuf_parser& in, const serde::header& h) {
-            // deserialize with serde a serde-only type
-            using serde::read_nested;
-            term = read_nested<model::term_id>(in, h._bytes_left_limit);
-            owner_shard = ss::this_shard_id();
-        }
+        auto serde_fields() { return std::tie(term); }
 
         friend bool operator==(
           const record_batch_header::context&,
@@ -587,11 +574,7 @@ struct record_batch_header
     offset last_offset() const {
         return base_offset + offset(last_offset_delta);
     }
-    record_batch_header copy() const {
-        record_batch_header h = *this;
-        h.ctx.owner_shard = ss::this_shard_id();
-        return h;
-    }
+    record_batch_header copy() const { return *this; }
     bool operator==(const record_batch_header& other) const {
         return header_crc == other.header_crc && size_bytes == other.size_bytes
                && base_offset == other.base_offset && crc == other.crc

@@ -105,8 +105,7 @@ model::record_batch_header record_batch_builder::build_header() const {
       .producer_epoch = _producer_epoch,
       .base_sequence = -1,
       .record_count = _offset_delta,
-      .ctx = model::record_batch_header::context(
-        model::term_id(0), ss::this_shard_id())};
+      .ctx = model::record_batch_header::context(model::term_id(0))};
     if (_is_control_type) {
         header.attrs.set_control_type();
     }
