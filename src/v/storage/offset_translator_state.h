@@ -91,6 +91,16 @@ public:
     /// changed.
     bool prefix_truncate(model::offset);
 
+    /// Reconciles the loaded map against the separately persisted highest known
+    /// offset. Drops all entries above `max(persisted hko, translation range
+    /// start)`, since they may describe log content that was truncated and
+    /// rewritten after the highest known offset was written.
+    ///
+    /// Returns the offset up to which the remaining state is trustworthy (from
+    /// which the caller must re-read the log), along with whether the map
+    /// changed.
+    std::pair<model::offset, bool> reconcile_with_checkpoint(model::offset);
+
     iobuf serialize_map() const;
     static offset_translator_state
     from_serialized_map(model::ntp ntp, iobuf buf);
