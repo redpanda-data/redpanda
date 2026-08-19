@@ -11,6 +11,14 @@ GOCMD=go
 GOLANGCILINTCMD=golangci-lint
 GOFUMPTCMD=gofumpt
 
+# Codegen plugin versions for the internal metastore proto bindings. Keep
+# PROTOC_GEN_GO_VERSION in sync with google.golang.org/protobuf and
+# PROTOC_GEN_CONNECT_GO_VERSION with connectrpc.com/connect in go.mod, so
+# regenerated output stays byte-stable.
+PROTOC_GEN_GO_VERSION := v1.36.11
+PROTOC_GEN_CONNECT_GO_VERSION := v1.19.1
+METASTORE_PROTO := proto/redpanda/core/admin/internal/cloud_topics/v1/metastore.proto
+
 BAZEL_GAZELLE_CMD := run //:gazelle
 ifeq ($(shell uname),Darwin)
     BAZELCMD := bazelisk
@@ -78,6 +86,15 @@ bazel_generate_build: install_bazelisk
 
 bazel_tidy: install_bazelisk
 	@$(BAZELCMD) mod tidy
+
+generate-metastore-proto: ## Regenerate Go/Connect bindings for the internal Cloud Topics metastore proto.
+	@bin=$$(mktemp -d); \
+	GOBIN=$$bin $(GOCMD) install google.golang.org/protobuf/cmd/protoc-gen-go@$(PROTOC_GEN_GO_VERSION); \
+	GOBIN=$$bin $(GOCMD) install connectrpc.com/connect/cmd/protoc-gen-connect-go@$(PROTOC_GEN_CONNECT_GO_VERSION); \
+	cd ../../.. && PATH=$$bin:$$PATH buf generate \
+		--config '{"version":"v2","modules":[{"path":".","includes":["proto"]}]}' \
+		--template buf.gen.metastore.yaml \
+		--path $(METASTORE_PROTO)
 
 check_diff:
 	git diff --exit-code
