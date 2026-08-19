@@ -165,6 +165,10 @@ ss::future<inventory> scan_destination_inventory(
         if (!src_ctx.has_value()) {
             continue;
         }
+        // Soft-deleted nodes count: the id is allocated at the source either
+        // way, so the probe must not be sent back to re-walk it.
+        auto& max_id = inv.max_id[*src_ctx];
+        max_id = std::max(max_id, sv.id);
         auto node = ppsr::subject_version{
           ppsr::context_subject{*src_ctx, sv.sub.sub}, sv.version};
         if (sv.deleted == ppsr::is_deleted::no) {
@@ -207,6 +211,9 @@ void mirroring_task::update_config(const model::metadata& link_metadata) {
 void mirroring_task::reset_sync_state() {
     _status = model::schema_registry_sync_status{};
     _destination_inventory = inventory{};
+    // Recreated with the state it complements: the discovery's probe cursor
+    // must not outlive the tenure.
+    _discovery = make_discovery();
     _reconcile_stats = reconcile_stats{};
     _mapper = context_mapper{};
     _last_full_sync.reset();
@@ -1199,8 +1206,22 @@ ss::future<task::state_transition> mirroring_task::http_fallback_tail_sync(
         co_return make_unavailable(listing.unavailable->message);
     }
 
-    if (listing.subjects.empty()) {
-        // The common case; costs the listings above and nothing else.
+    // Second leg: a new version of a known subject leaves the listing above
+    // unchanged, so only the id counter reveals it. Hits land directly as
+    // (subject, version) nodes -- no version listing needed. The floor is
+    // the highest id the link already holds, per context.
+    auto probe = co_await _discovery->probe_new_ids(
+      *_reader, contexts, _mapper, _destination_inventory.max_id, in_scope, as);
+    for (auto& error : probe.errors) {
+        record_error(error);
+    }
+    if (probe.unavailable.has_value()) {
+        co_return make_unavailable(probe.unavailable->message);
+    }
+    const auto probed_nodes = probe.found.size();
+
+    if (listing.subjects.empty() && probe.found.empty()) {
+        // The common case; costs the listings and the probe misses above.
         co_return make_active();
     }
 
@@ -1214,6 +1235,9 @@ ss::future<task::state_transition> mirroring_task::http_fallback_tail_sync(
         co_return make_unavailable(versions.unavailable->message);
     }
     auto discovered = std::move(versions.discovered);
+    for (auto& node : probe.found) {
+        discovered.active.insert(std::move(node));
+    }
 
     // Same diff the full sync uses. Not redundant here: listing-leg nodes are
     // new by construction, but probe hits can name nodes the destination
@@ -1264,9 +1288,10 @@ ss::future<task::state_transition> mirroring_task::http_fallback_tail_sync(
 
     vlog(
       logger().info,
-      "Schema Registry tail sync (HTTP): {} new subjects, imported {} "
-      "versions, {} errors",
+      "Schema Registry tail sync (HTTP): {} new subjects, {} versions found "
+      "by id probe, imported {} versions, {} errors",
       listing.subjects.size(),
+      probed_nodes,
       stats.versions_changed,
       stats.errors);
 
@@ -1295,6 +1320,13 @@ mirroring_task::run_impl(ss::abort_source& as) {
     // so rebuild the reader before this run reads from the source.
     if (config_changed) {
         co_await reset_reader();
+        // Recreate the discovery: its probe cursor is scan progress under
+        // the previous scope, and the walk only moves up, so a widened
+        // filter would never revisit ids the old filter rejected. Here
+        // rather than in update_config: it suspends inside its walk, and
+        // swapping it from another reactor task could free state it is
+        // working on.
+        _discovery = make_discovery();
     }
 
     _status.current_sync = model::schema_registry_current_sync{

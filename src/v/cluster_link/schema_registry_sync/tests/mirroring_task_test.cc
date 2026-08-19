@@ -31,6 +31,7 @@
 #include <gmock/gmock.h>
 
 #include <array>
+#include <limits>
 
 using namespace std::chrono_literals;
 
@@ -1868,9 +1869,9 @@ TEST_F(mirroring_task_test, failed_full_sync_is_not_followed_by_a_tail_tick) {
 // into
 // task-owned state (the retained inventory, the live stats, the reconcile,
 // the park policy), and those seams only exist with the task around them. The
-// discovery legs' own corner cases -- failure classification and the
-// active/soft-deleted partition -- are unit-tested directly in
-// discovery_test.cc.
+// discovery legs' own corner cases -- failure classification, the
+// active/soft-deleted partition, the probe's cursor-vs-floor walk -- are
+// unit-tested directly in discovery_test.cc.
 
 // A subject registered after the full sync is imported by a tail tick. The
 // fixture's full_sync_interval is 1h, so nothing but a tail tick can have done
@@ -2136,6 +2137,302 @@ TEST_F(mirroring_task_test, http_tail_takes_over_when_the_feed_dies) {
     EXPECT_EQ(_source_state.reads(a, 1), 1);
     auto status = wait_for_sync_status([](const auto&) { return true; }).get();
     ASSERT_TRUE(status.has_value());
+    EXPECT_EQ(status->totals_since_task_start.errors, 0);
+}
+
+// A new version of an already-known subject is invisible to the subject
+// listing -- the name has not changed -- so only the id probe can find it. The
+// fixture's full_sync_interval is 1h, so a tail tick must have done it.
+TEST_F(mirroring_task_test, http_tail_probe_imports_new_version) {
+    auto orders = ppsr::context_subject::unqualified("orders-value");
+    _source_state.add_with_id(orders, 1, 1);
+
+    disable_tail_feed();
+    lead_schema_registry();
+    fixture()->upsert_link(get_default_metadata()).get();
+
+    ASSERT_TRUE(wait_for_sync_status([](const auto& s) {
+                    return s.last_full_sync.has_value()
+                           && !s.current_sync.has_value();
+                })
+                  .get()
+                  .has_value());
+
+    // Same subject, next version, next id. The listing leg cannot see this.
+    _source_state.add_with_id(orders, 2, 2);
+
+    ASSERT_TRUE(wait_for_sync_status([](const auto& s) {
+                    return s.totals_since_task_start.subject_versions_changed
+                           == 2;
+                })
+                  .get()
+                  .has_value());
+
+    EXPECT_EQ(_registry.get_all().size(), 2);
+    auto status = wait_for_sync_status([](const auto&) { return true; }).get();
+    ASSERT_TRUE(status.has_value());
+    // A probe miss is the routine answer, never a counted error.
+    EXPECT_EQ(status->totals_since_task_start.errors, 0);
+    EXPECT_EQ(status->last_full_sync->subject_versions_changed, 1);
+}
+
+// An in-scope context the destination holds nothing for has no entry in either
+// id map, and a default-constructed schema_id is the type's minimum rather than
+// zero, so the walk has to be clamped to the lowest id a registry allocates.
+// Here the filter selects a subject the source has not registered, so nothing
+// is ever imported and the context stays entry-less across ticks.
+TEST_F(mirroring_task_test, http_tail_probe_starts_at_the_first_id) {
+    _source_state.add(ppsr::context_subject::unqualified("other-value"), 1);
+
+    auto metadata = get_default_metadata();
+    auto* api = metadata.configuration.schema_registry_sync_cfg.api_mode();
+    api->filter.subjects.push_back("orders-value");
+
+    disable_tail_feed();
+    lead_schema_registry();
+    fixture()->upsert_link(std::move(metadata)).get();
+
+    ASSERT_TRUE(wait_for_sync_status([](const auto& s) {
+                    return s.last_full_sync.has_value()
+                           && !s.current_sync.has_value();
+                })
+                  .get()
+                  .has_value());
+
+    // Wait for the probe itself rather than for elapsed ticks, so the negative
+    // assertion below cannot pass by no tick having run.
+    ASSERT_TRUE(
+      fixture()
+        ->wait_for_report_to_match(
+          wait_interval,
+          50ms,
+          [this](const model::cluster_link_task_status_report&) {
+              return _source_state.probes(1) > 0;
+          })
+        .get());
+
+    // Nothing below id 1 was ever asked for -- INT32_MIN + 1 is what indexing
+    // the absent entry would have produced.
+    EXPECT_EQ(_source_state.probes(std::numeric_limits<int32_t>::min() + 1), 0);
+
+    // A miss at the frontier is the routine answer, not a counted error.
+    auto status = wait_for_sync_status([](const auto& s) {
+                      return s.last_full_sync.has_value();
+                  }).get();
+    ASSERT_TRUE(status.has_value());
+    EXPECT_EQ(status->totals_since_task_start.errors, 0);
+}
+
+// The probe stops at the first absent id, so a hole ends the walk short and
+// the version beyond it waits for the full sync, which imports by subject and
+// lifts the floor over the hole. Deliberate: paying extra probes every tick to
+// cover a rare hole costs more than the hole does. Here the full-sync interval
+// is 1h, so only the tail behaviour shows.
+// The walk starts one past the highest id the link holds, so ids already
+// replicated are never probed again. Without that floor every tick would
+// re-walk the id space from 1 -- still correct, but linear in the registry,
+// which is the cost this whole feature exists to avoid.
+TEST_F(mirroring_task_test, http_tail_probe_starts_above_what_we_hold) {
+    auto orders = ppsr::context_subject::unqualified("orders-value");
+    _source_state.add_with_id(orders, 1, 1);
+    _source_state.add_with_id(orders, 2, 2);
+    _source_state.add_with_id(orders, 3, 3);
+
+    disable_tail_feed();
+    lead_schema_registry();
+    fixture()->upsert_link(get_default_metadata()).get();
+
+    ASSERT_TRUE(wait_for_sync_status([](const auto& s) {
+                    return s.last_full_sync.has_value()
+                           && !s.current_sync.has_value();
+                })
+                  .get()
+                  .has_value());
+    ASSERT_EQ(_registry.get_all().size(), 3);
+
+    // Wait for the frontier probe, so the three below cannot pass vacuously.
+    ASSERT_TRUE(
+      wait_for_source([this] { return _source_state.probes(4) > 0; }).get());
+
+    EXPECT_EQ(_source_state.probes(1), 0);
+    EXPECT_EQ(_source_state.probes(2), 0);
+    EXPECT_EQ(_source_state.probes(3), 0);
+}
+
+// A source that refuses the probe endpoint must not park the link: the
+// subject-listing leg keeps replicating new subjects, the refusal is not a
+// counted error, and the probe keeps asking each tick -- the refusal can be
+// lifted server-side (an ACL grant) with nothing changing on the link, and
+// tail discovery of new versions then resumes on its own.
+TEST_F(
+  mirroring_task_test, http_tail_probe_denial_degrades_instead_of_parking) {
+    auto orders = ppsr::context_subject::unqualified("orders-value");
+    _source_state.add_with_id(orders, 1, 1);
+    // Every probe is refused, whichever id the walk starts from.
+    for (int32_t id = 1; id <= 8; ++id) {
+        _source_state.schema_id_errors.emplace(
+          ppsr::schema_id{id},
+          srs::source_error{
+            .kind = srs::source_error_kind::endpoint_unsupported,
+            .message = "no describe on the registry"});
+    }
+
+    disable_tail_feed();
+    lead_schema_registry();
+    fixture()->upsert_link(get_default_metadata()).get();
+
+    ASSERT_TRUE(wait_for_sync_status([](const auto& s) {
+                    return s.last_full_sync.has_value()
+                           && !s.current_sync.has_value();
+                })
+                  .get()
+                  .has_value());
+
+    // A new subject still lands -- the listing leg is untouched.
+    _source_state.add_with_id(
+      ppsr::context_subject::unqualified("payments-value"), 1, 2);
+    ASSERT_TRUE(wait_for_sync_status([](const auto& s) {
+                    return s.totals_since_task_start.subject_versions_changed
+                           == 2;
+                })
+                  .get()
+                  .has_value());
+
+    // Asking twice is the point, so wait for the second probe, not the clock.
+    ASSERT_TRUE(
+      wait_for_source([this] { return _source_state.probes(3) > 1; }).get());
+
+    EXPECT_TRUE(wait_for_task_state(model::task_state::active).get());
+    auto status = wait_for_sync_status([](const auto&) { return true; }).get();
+    ASSERT_TRUE(status.has_value());
+    EXPECT_EQ(status->totals_since_task_start.errors, 0);
+    // Still asking: the denial is retried every tick, not latched.
+    const auto probes_while_denied = _source_state.probes(3);
+    EXPECT_GT(probes_while_denied, 1);
+
+    // The operator grants the ACL at the source: nothing changes on the link,
+    // yet the probe must pick up the next registered version by itself.
+    _source_state.schema_id_errors.clear();
+    _source_state.add_with_id(orders, 2, 3);
+
+    ASSERT_TRUE(wait_for_sync_status([](const auto& s) {
+                    return s.totals_since_task_start.subject_versions_changed
+                           == 3;
+                })
+                  .get()
+                  .has_value());
+    EXPECT_EQ(_registry.get_all().size(), 3);
+}
+
+TEST_F(mirroring_task_test, http_tail_probe_stops_at_a_hole) {
+    auto orders = ppsr::context_subject::unqualified("orders-value");
+    _source_state.add_with_id(orders, 1, 1);
+
+    disable_tail_feed();
+    lead_schema_registry();
+    fixture()->upsert_link(get_default_metadata()).get();
+
+    ASSERT_TRUE(wait_for_sync_status([](const auto& s) {
+                    return s.last_full_sync.has_value()
+                           && !s.current_sync.has_value();
+                })
+                  .get()
+                  .has_value());
+
+    // Nothing at id 2, so the walk ends there; version 2 sits at id 3.
+    _source_state.add_with_id(orders, 2, 3);
+
+    ASSERT_TRUE(wait_for_further_runs(3).get());
+
+    EXPECT_EQ(_registry.get_all().size(), 1);
+    auto status = wait_for_sync_status([](const auto&) { return true; }).get();
+    ASSERT_TRUE(status.has_value());
+    EXPECT_EQ(status->totals_since_task_start.subject_versions_changed, 1);
+    // The miss is the routine answer, never a counted error.
+    EXPECT_EQ(status->totals_since_task_start.errors, 0);
+
+    // Filling the hole lets the same walk continue, proving it stopped rather
+    // than gave up on the context.
+    _source_state.add_with_id(
+      ppsr::context_subject::unqualified("filler-value"), 1, 2);
+
+    ASSERT_TRUE(wait_for_sync_status([](const auto& s) {
+                    return s.totals_since_task_start.subject_versions_changed
+                           == 3;
+                })
+                  .get()
+                  .has_value());
+    EXPECT_EQ(_registry.get_all().size(), 3);
+}
+
+// An id whose every subject is out of scope must be skipped without stalling
+// the probe: the scan cursor advances on the id existing, not on an import
+// landing. The in-scope version sits above the rejected one, so it is only
+// reachable if the probe got past it -- and if the cursor tracked imports
+// instead, the tick would re-walk that stretch every time.
+TEST_F(mirroring_task_test, http_tail_probe_skips_out_of_scope_id) {
+    auto orders = ppsr::context_subject::unqualified("orders-value");
+    _source_state.add_with_id(orders, 1, 1);
+
+    auto metadata = get_default_metadata();
+    metadata.configuration.schema_registry_sync_cfg.api_mode()
+      ->filter.subjects.push_back("orders-value");
+
+    disable_tail_feed();
+    lead_schema_registry();
+    fixture()->upsert_link(std::move(metadata)).get();
+
+    ASSERT_TRUE(wait_for_sync_status([](const auto& s) {
+                    return s.last_full_sync.has_value()
+                           && !s.current_sync.has_value();
+                })
+                  .get()
+                  .has_value());
+
+    // Id 2 belongs to an excluded subject; id 3 is the in-scope one.
+    _source_state.add_with_id(
+      ppsr::context_subject::unqualified("payments-value"), 1, 2);
+    _source_state.add_with_id(orders, 2, 3);
+
+    ASSERT_TRUE(wait_for_sync_status([](const auto& s) {
+                    return s.totals_since_task_start.subject_versions_changed
+                           == 2;
+                })
+                  .get()
+                  .has_value());
+
+    const auto& all = _registry.get_all();
+    ASSERT_EQ(all.size(), 2);
+    EXPECT_EQ(index_of(all, "payments-value"), -1);
+    auto status = wait_for_sync_status([](const auto&) { return true; }).get();
+    ASSERT_TRUE(status.has_value());
+    EXPECT_EQ(status->totals_since_task_start.errors, 0);
+}
+
+// The steady state: every tick probes a window of absent ids and must report
+// nothing at all -- no imports, and no errors from the misses, which arrive on
+// every tick by design.
+TEST_F(mirroring_task_test, http_tail_probe_empty_window_is_silent) {
+    _source_state.add_with_id(
+      ppsr::context_subject::unqualified("orders-value"), 1, 1);
+
+    disable_tail_feed();
+    lead_schema_registry();
+    fixture()->upsert_link(get_default_metadata()).get();
+
+    ASSERT_TRUE(wait_for_sync_status([](const auto& s) {
+                    return s.last_full_sync.has_value()
+                           && !s.current_sync.has_value();
+                })
+                  .get()
+                  .has_value());
+
+    ASSERT_TRUE(wait_for_further_runs(3).get());
+
+    EXPECT_EQ(_registry.get_all().size(), 1);
+    auto status = wait_for_sync_status([](const auto&) { return true; }).get();
+    ASSERT_TRUE(status.has_value());
+    EXPECT_EQ(status->totals_since_task_start.subject_versions_changed, 1);
     EXPECT_EQ(status->totals_since_task_start.errors, 0);
 }
 

@@ -36,6 +36,11 @@ struct inventory {
     chunked_hash_set<ppsr::subject_version> active;
     /// Non-deleted and soft-deleted nodes; a superset of `active`.
     chunked_hash_set<ppsr::subject_version> all;
+    /// Highest schema id held per source context, over the nodes above; one
+    /// past it is the id probe's floor. Falls when nodes are purged, unlike
+    /// the destination's id allocator, which any writer raises and nothing
+    /// lowers.
+    chunked_hash_map<ppsr::context, ppsr::schema_id> max_id;
 };
 
 /// Scans the destination registry for every in-scope (subject, version) node.
@@ -99,7 +104,8 @@ protected:
 private:
     bool leads_schema_registry_partition() const;
 
-    /// Builds the HTTP tail's read side.
+    /// Builds the HTTP tail's read side; called wherever its probe cursor
+    /// must die (task construction, a config change, a tenure reset).
     std::unique_ptr<discovery> make_discovery();
 
     /// Rebuilds the source and tail readers from the current API-mode config,
@@ -195,11 +201,11 @@ private:
 
     /// The tail tick for a source whose `_schemas` feed is not armed:
     /// discovers what the destination lacks over the HTTP API alone
-    /// (discovery's subject-listing diff) and imports it. Deliberately
-    /// partial -- new versions of known subjects, deletions, and mode and
-    /// compatibility changes wait for the full sync -- and never touches
-    /// `_last_full_sync`, so a tail tick cannot postpone or masquerade as a
-    /// full scan.
+    /// (discovery's subject-listing diff and schema-id probe) and imports
+    /// it. Deliberately partial -- deletions, mode and compatibility
+    /// changes, and registrations reusing an existing schema's id wait for
+    /// the full sync -- and never touches `_last_full_sync`, so a tail tick
+    /// cannot postpone or masquerade as a full scan.
     ss::future<state_transition> http_fallback_tail_sync(
       ss::abort_source&,
       const chunked_hash_set<ppsr::context>& contexts,
@@ -373,7 +379,8 @@ private:
     tail_reader_factory* _tail_factory;
     std::unique_ptr<tail_reader> _tail;
     // Read side of the HTTP fallback for tail ticks whose feed is not
-    // armed.
+    // armed. Recreated on a config change and on losing leadership: its
+    // probe cursor must not outlive either, and recreating beats notifying.
     std::unique_ptr<discovery> _discovery;
     // Serializes stopping and replacing _reader/_tail. stop() (readers-first,
     // while run_impl is still live) and reset_reader() (run by run_impl on a
