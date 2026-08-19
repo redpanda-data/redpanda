@@ -25,7 +25,10 @@
 #include <seastar/core/gate.hh>
 #include <seastar/core/loop.hh>
 #include <seastar/core/lowres_clock.hh>
+#include <seastar/core/timer.hh>
 #include <seastar/coroutine/as_future.hh>
+
+#include <chrono>
 
 namespace cloud_topics::l0 {
 
@@ -93,7 +96,12 @@ public:
     base_pipeline()
       : _root_rtc(_as)
       , _logger(cd_log, _root_rtc, static_cast<Derived*>(this)->pipeline_name())
-      , _stages(max_pipeline_stages) {}
+      , _stages(max_pipeline_stages) {
+        _expiry_timer.set_callback([this] {
+            remove_timed_out_requests();
+            arm_expiry_timer();
+        });
+    }
     ~base_pipeline() = default;
     base_pipeline(const base_pipeline<Request, Derived, Clock>&) = delete;
     base_pipeline&
@@ -158,12 +166,14 @@ public:
     basic_retry_chain_node<Clock>& get_root_rtc() noexcept { return _root_rtc; }
 
     void shutdown() {
+        _expiry_timer.cancel();
         _as.request_abort_ex(
           std::make_exception_ptr(pipeline_abort_requested()));
         remove_requests_for_shutdown();
     }
 
     ss::future<> stop() {
+        _expiry_timer.cancel();
         if (!_as.abort_requested()) {
             _as.request_abort_ex(
               std::make_exception_ptr(pipeline_abort_requested()));
@@ -228,6 +238,23 @@ protected:
           "expired");
     }
 
+    /// (Re)arm the periodic sweep that reaps expired requests. Reaping is
+    /// otherwise only opportunistic -- it happens when a downstream stage pulls
+    /// the next batch -- so a request that has blown its deadline can sit in
+    /// the queue long past that deadline (until the Kafka client gives up and
+    /// drops the connection) when the pipeline is saturated and no pull is
+    /// happening. Sweeping on a fixed cadence bounds that overrun to the
+    /// deadline plus one interval, so the fetch returns close to fetch.max.wait
+    /// as Kafka expects. Call this whenever a request is enqueued; the timer
+    /// re-arms itself while requests remain and stays idle once the queue
+    /// drains.
+    void arm_expiry_timer() {
+        if (stopped() || _pending.empty() || _expiry_timer.armed()) {
+            return;
+        }
+        _expiry_timer.arm(expiry_reap_interval);
+    }
+
     /// Remove every pending request and resolve with shutdown error.
     void remove_requests_for_shutdown() {
         remove_requests(
@@ -288,6 +315,10 @@ protected:
     }
 
 private:
+    // Cadence of the expired-request sweep. Bounds how far past its deadline a
+    // read can linger in the queue before it is resolved with errc::timeout.
+    static constexpr std::chrono::milliseconds expiry_reap_interval{1000};
+
     intrusive_request_list<Request> _pending;
     ss::gate _gate;
 
@@ -297,5 +328,6 @@ private:
 
     event_filter<Clock>::event_filter_list _filters;
     pipeline_stage_container _stages;
+    ss::timer<Clock> _expiry_timer;
 };
 } // namespace cloud_topics::l0

@@ -27,6 +27,7 @@
 
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/loop.hh>
+#include <seastar/core/lowres_clock.hh>
 #include <seastar/core/sleep.hh>
 #include <seastar/coroutine/as_future.hh>
 
@@ -34,6 +35,7 @@
 #include <boost/lexical_cast.hpp>
 #include <boost/range/irange.hpp>
 
+#include <algorithm>
 #include <exception>
 #include <iterator>
 #include <utility>
@@ -97,6 +99,21 @@ ErrT throw_if_not_timeout(const std::exception_ptr& e, ErrT on_timeout) {
     } catch (...) {
         throw;
     }
+}
+
+// Clamp the client-lease acquisition timeout to the caller's own deadline.
+// The read path threads its (short) fetch deadline in through the retry chain,
+// but the lease timeout defaults to 15 minutes -- so a download would keep
+// waiting for a client long after the Kafka client had timed out the fetch and
+// stopped listening. Never wait for a client longer than the request that
+// wants it will itself live.
+ss::lowres_clock::duration bounded_lease_timeout(
+  ss::lowres_clock::duration lease_timeout, const retry_chain_node& fib) {
+    auto deadline = fib.get_deadline();
+    if (deadline == ss::lowres_clock::time_point::min()) {
+        return lease_timeout;
+    }
+    return std::min(lease_timeout, deadline - ss::lowres_clock::now());
 }
 
 } // namespace
@@ -349,7 +366,7 @@ ss::future<download_result> remote::download_stream(
                   *bucket_parts,
                   gid,
                   fib.root_abort_source(),
-                  _lease_timeout(),
+                  bounded_lease_timeout(_lease_timeout(), fib),
                   fib()));
           }();
         if (fut.failed()) {
@@ -491,7 +508,7 @@ remote::download_object(download_request download_request, group_id gid) {
             *bucket_parts,
             gid,
             fib.root_abort_source(),
-            _lease_timeout(),
+            bounded_lease_timeout(_lease_timeout(), fib),
             fib()));
         if (fut.failed()) {
             co_return throw_if_not_timeout(

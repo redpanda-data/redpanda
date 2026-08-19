@@ -225,6 +225,18 @@ private:
 
     void populate_client_pool(upstream_registry::handle& up);
 
+    /// admit() a request into the shard's admission control, giving up if
+    /// `deadline` passes first. admit() itself only observes an abort source,
+    /// not a deadline, so without this a request that has already blown its
+    /// deadline keeps sitting in the reservation queue and, when a slot frees,
+    /// claims it ahead of a live request. A deadline drop-out is reported as a
+    /// timed_out_error so the callers' timeout handling picks it up (the
+    /// reservation waiter itself only knows how to raise a bare abort).
+    ss::future<> admit_before_deadline(
+      cloud_io::group_id gid,
+      ss::abort_source& as,
+      std::optional<ss::lowres_clock::time_point> deadline);
+
     /// Return [0, 100] normalized number of clients currently in use by this
     /// pool (leased locally or lent to other shards) .
     size_t normalized_num_clients_in_use() const;
