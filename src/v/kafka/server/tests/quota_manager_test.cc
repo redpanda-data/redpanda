@@ -148,11 +148,6 @@ SEASTAR_THREAD_TEST_CASE(quota_manager_fetch_throttling) {
 SEASTAR_THREAD_TEST_CASE(quota_manager_fetch_stress_test) {
     fixture f;
 
-    set_config([](config::configuration& conf) {
-        conf.max_kafka_throttle_delay_ms.set_value(
-          std::chrono::milliseconds::max());
-    }).get();
-
     auto default_values = entity_value{
       .consumer_byte_rate = 100,
     };
@@ -271,14 +266,17 @@ SEASTAR_THREAD_TEST_CASE(update_test) {
         f.quota_store.local().set_quota(franz_go_key, *franz_go_values);
         f.quota_store.local().set_quota(not_franz_go_key, *not_franz_go_values);
 
-        // Wait for the quota update to propagate
-        ss::sleep(std::chrono::milliseconds(1)).get();
+        // update_client_quotas() applies store changes to the token buckets
+        // from a background fiber
+        RPTEST_REQUIRE_EVENTUALLY(5s, [&buckets_map, &client_id] {
+            auto it = buckets_map->find(k_group_name{client_id});
+            return it != buckets_map->end()
+                   && it->second->tp_fetch_rate.has_value()
+                   && it->second->tp_fetch_rate->rate() == 4098;
+        });
 
-        // Check the rate has been updated
         auto it = buckets_map->find(k_group_name{client_id});
         BOOST_REQUIRE(it != buckets_map->end());
-        BOOST_REQUIRE(it->second->tp_fetch_rate.has_value());
-        BOOST_CHECK_EQUAL(it->second->tp_fetch_rate->rate(), 4098);
 
         // Check produce is the same bucket
         BOOST_REQUIRE(it->second->tp_produce_rate.has_value());
@@ -317,13 +315,14 @@ SEASTAR_THREAD_TEST_CASE(update_test) {
         franz_go_values->producer_byte_rate = std::nullopt;
         f.quota_store.local().set_quota(franz_go_key, *franz_go_values);
 
-        // Wait for the quota update to propagate
-        ss::sleep(std::chrono::milliseconds(1)).get();
+        RPTEST_REQUIRE_EVENTUALLY(5s, [&buckets_map, &client_id] {
+            auto it = buckets_map->find(k_group_name{client_id});
+            return it != buckets_map->end()
+                   && !it->second->tp_produce_rate.has_value();
+        });
 
-        // Check the produce rate has been updated on the group
         auto it = buckets_map->find(k_group_name{client_id});
         BOOST_REQUIRE(it != buckets_map->end());
-        BOOST_CHECK(!it->second->tp_produce_rate.has_value());
 
         // Check fetch is the same bucket
         BOOST_REQUIRE(it->second->tp_fetch_rate.has_value());
@@ -361,14 +360,12 @@ SEASTAR_THREAD_TEST_CASE(update_test) {
         auto value = entity_value{.consumer_byte_rate = 16384};
         f.quota_store.local().set_quota(key, value);
 
-        // Wait for the quota update to propagate
-        ss::sleep(std::chrono::milliseconds(1)).get();
-
-        // Check the rate has been updated
-        auto it = buckets_map->find(k_client_id{client_id});
-        BOOST_REQUIRE(it != buckets_map->end());
-        BOOST_REQUIRE(it->second->tp_fetch_rate.has_value());
-        BOOST_CHECK_EQUAL(it->second->tp_fetch_rate->rate(), 16384);
+        RPTEST_REQUIRE_EVENTUALLY(5s, [&buckets_map, &client_id] {
+            auto it = buckets_map->find(k_client_id{client_id});
+            return it != buckets_map->end()
+                   && it->second->tp_fetch_rate.has_value()
+                   && it->second->tp_fetch_rate->rate() == 16384;
+        });
     }
 }
 
@@ -553,30 +550,47 @@ SEASTAR_THREAD_TEST_CASE(test_increasing_specificity) {
             BOOST_REQUIRE(pm_rate.has_value());
             BOOST_REQUIRE_EQUAL(pm_rate->rate(), max_rate.n_mutations);
 
-            // Requesting double the quota should end up with 1s throttling time
-            delays throttle = make_records(
-                                now,
-                                {2 * max_rate.produce_bytes,
-                                 2 * max_rate.consume_bytes,
-                                 2 * max_rate.n_mutations})
-                                .get();
+            // Requesting double the quota should end up with 1s throttling
+            // time. A quota update replaces a bucket whose rate changed and
+            // discards what was recorded into it, so each measurement records
+            // 2x the quota again on every attempt.
+            auto& qm = f.sqm.local();
 
-            // Spin until the correct throttling is returned.
-            {
-                auto wait_until_throttle = [now, &make_records, &throttle] {
-                    return tests::cooperative_spin_wait_with_timeout(
-                      5s,
-                      [now, &make_records, &throttle](
-                        this auto) -> ss::future<bool> {
-                          throttle = co_await make_records(now, zero_bytes);
-                          co_return throttle.produce_delay > 0s
-                            && throttle.consume_delay > 0s
-                            && throttle.pm_delay > 0s;
-                      });
-                };
-                wait_until_throttle().get();
-            }
+            quota_manager::clock::duration produce_delay{};
+            RPTEST_REQUIRE_EVENTUALLY(
+              5s,
+              [&qm, &produce_delay, now, max_rate](
+                this auto) -> ss::future<bool> {
+                  produce_delay = co_await qm.record_produce_tp_and_throttle(
+                    user, cid, 2 * max_rate.produce_bytes, now);
+                  co_return produce_delay > 0s;
+              });
 
+            quota_manager::clock::duration consume_delay{};
+            RPTEST_REQUIRE_EVENTUALLY(
+              5s,
+              [&qm, &consume_delay, now, max_rate](
+                this auto) -> ss::future<bool> {
+                  co_await qm.record_fetch_tp(
+                    user, cid, 2 * max_rate.consume_bytes, now);
+                  consume_delay = co_await qm.throttle_fetch_tp(user, cid, now);
+                  co_return consume_delay > 0s;
+              });
+
+            // partition mutations report the deficit of the preceding call, so
+            // a second call is needed to read back what the first recorded
+            std::chrono::milliseconds pm_delay{};
+            RPTEST_REQUIRE_EVENTUALLY(
+              5s,
+              [&qm, &pm_delay, now, max_rate](this auto) -> ss::future<bool> {
+                  co_await qm.record_partition_mutations(
+                    user, cid, 2 * max_rate.n_mutations, now);
+                  pm_delay = co_await qm.record_partition_mutations(
+                    user, cid, 0, now);
+                  co_return pm_delay > 0ms;
+              });
+
+            const delays throttle{produce_delay, consume_delay, pm_delay};
             BOOST_REQUIRE_EQUAL(throttle, one_sec);
         }
     }
@@ -762,14 +776,15 @@ SEASTAR_THREAD_TEST_CASE(record_fetch_tp_alone_does_not_register_probe) {
 }
 
 // After GC expires the local map entry the per-entity probe is destroyed
-// and the metric series is deregistered. A stale timestamp is passed so
-// last_seen_ms is already past the expire threshold (now - 10 * full_window)
-// the first time GC fires.
+// and the metric series is deregistered. GC expires an entry once last_seen_ms
+// is older than now - 10 * full_window, so the probe is first registered under
+// a 1s window (10s of slack, GC cannot remove it while we assert it exists) and
+// the window is then shrunk to make that same entry immediately eligible.
 SEASTAR_THREAD_TEST_CASE(per_entity_probe_deregistered_on_gc) {
     set_config([](config::configuration& conf) {
         conf.kafka_per_entity_quota_metrics.set_value(true);
         conf.quota_manager_gc_sec.set_value(std::chrono::milliseconds{10});
-        conf.default_window_sec.set_value(std::chrono::milliseconds{1});
+        conf.default_window_sec.set_value(std::chrono::milliseconds{1000});
         conf.default_num_windows.set_value(static_cast<int16_t>(1));
     }).get();
 
@@ -779,16 +794,13 @@ SEASTAR_THREAD_TEST_CASE(per_entity_probe_deregistered_on_gc) {
     f.quota_store.local().set_quota(default_key, default_values);
 
     auto& qm = f.sqm.local();
-    // 1 s in the past puts last_seen_ms well beyond expire_threshold
-    // (clock::now() - 10 * 1ms = clock::now() - 10ms).
-    const auto stale_now = quota_manager::clock::now() - 1s;
 
     quota_manager::clock::duration delay;
     tests::cooperative_spin_wait_with_timeout(
       5s,
-      [stale_now, &qm, &delay](this auto) -> ss::future<bool> {
+      [&qm, &delay](this auto) -> ss::future<bool> {
           delay = co_await qm.record_produce_tp_and_throttle(
-            user, cid, 10000, stale_now);
+            user, cid, 10000, quota_manager::clock::now());
           co_return delay > quota_manager::clock::duration::zero();
       })
       .get();
@@ -796,8 +808,12 @@ SEASTAR_THREAD_TEST_CASE(per_entity_probe_deregistered_on_gc) {
     BOOST_REQUIRE(
       has_entity_throttle_metric("client_id", "franz-go", "produce_quota"));
 
-    // No more quota calls - last_seen_ms stays stale. GC fires at ~10ms
-    // intervals; the entry is immediately eligible and the probe is destroyed.
+    // full_window drops to 1ms, putting last_seen_ms past the expire threshold.
+    // Nothing refreshes it, so the next GC tick destroys the probe.
+    set_config([](config::configuration& conf) {
+        conf.default_window_sec.set_value(std::chrono::milliseconds{1});
+    }).get();
+
     tests::cooperative_spin_wait_with_timeout(
       2s,
       [](this auto) -> ss::future<bool> {
@@ -810,7 +826,10 @@ SEASTAR_THREAD_TEST_CASE(per_entity_probe_deregistered_on_gc) {
       !has_entity_throttle_metric("client_id", "franz-go", "produce_quota"));
 
     set_config([](config::configuration& conf) {
-        conf.kafka_per_entity_quota_metrics.set_value(false);
+        conf.kafka_per_entity_quota_metrics.reset();
+        conf.quota_manager_gc_sec.reset();
+        conf.default_window_sec.reset();
+        conf.default_num_windows.reset();
     }).get();
 }
 
