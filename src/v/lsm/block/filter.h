@@ -14,6 +14,7 @@
 #include "lsm/block/contents.h"
 #include "lsm/core/internal/keys.h"
 
+#include <seastar/core/future.hh>
 #include <seastar/core/shared_ptr.hh>
 #include <seastar/core/sstring.hh>
 
@@ -52,19 +53,61 @@ private:
 };
 
 // A reader for a filter block in an SST.
+//
+// The filter is read lazily to bound resident memory: a deep-level SST's filter
+// is O(GiB), so holding it all (one per open reader) doesn't scale. open()
+// retains only the per-region offset array and a per-region CRC array (together
+// ~0.4% of the file); each key_may_match reads just the covering ~filter_period
+// region from the file on demand.
+//
+// open() streams the whole block once to validate its CRC, and in that same
+// pass computes a CRC over each region. The per-region CRCs are retained and
+// checked on every lazy read, so a bit that rots on the (cache) disk after open
+// is caught rather than silently turned into a bloom false negative -- the
+// integrity of a lazily-read region is verified against a checksum established
+// over bytes the whole-block CRC just proved intact.
 class filter_reader {
 public:
-    explicit filter_reader(ss::lw_shared_ptr<contents>);
+    /// Open a filter over the filter block content at
+    /// [content_offset, content_offset + content_size) in `file`, immediately
+    /// followed by the block trailer (a compression-type byte and the
+    /// whole-block CRC that open() validates). Retains the region offset array
+    /// and a per-region CRC array. `file` must outlive the returned reader.
+    static ss::future<filter_reader> open(
+      io::random_access_file_reader* file,
+      uint64_t content_offset,
+      uint64_t content_size);
 
     // Check if it's possible that the user's key exists in the block at this
-    // offset within the SST.
-    bool key_may_match(uint64_t block_offset, internal::key_view key);
+    // offset within the SST. Reads the covering filter region from the file and
+    // verifies it against the region CRC retained at open; throws
+    // corruption_exception on a mismatch.
+    ss::future<bool>
+    key_may_match(uint64_t block_offset, internal::key_view key);
 
 private:
-    ss::lw_shared_ptr<contents> _contents;
-    size_t _offset; // The offset at which the data ends
-    size_t _num;
+    filter_reader(
+      io::random_access_file_reader* file,
+      uint64_t content_offset,
+      contents tail,
+      uint32_t offsets_start,
+      size_t num,
+      uint8_t base_lg,
+      chunked_vector<uint32_t> region_crcs);
+
+    io::random_access_file_reader* _file;
+    // File offset of the start of the filter block content.
+    uint64_t _content_offset;
+    // The retained tail of the filter block: the per-region offset array
+    // followed by the (offsets_start, base_lg) trailer. Region byte ranges
+    // (positions within the content) are read from here.
+    contents _tail;
+    uint32_t _offsets_start; // Content position where the offset array begins.
+    size_t _num;             // Number of filter regions.
     uint8_t _base_lg;
+    // CRC32C of each region's bytes, computed at open over the validated block.
+    // Indexed by the same region ordinal as the offset array.
+    chunked_vector<uint32_t> _region_crcs;
 };
 
 } // namespace lsm::block
