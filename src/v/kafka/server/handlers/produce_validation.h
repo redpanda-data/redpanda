@@ -33,6 +33,10 @@ namespace kafka {
 struct error_code_and_msg {
     error_code err;
     ss::sstring msg;
+    /// Index within the batch of the record that caused the rejection, when
+    /// the failure can be attributed to a single record. Reported to clients
+    /// as RecordErrors[].BatchIndex in produce responses at v8+ (KIP-467).
+    std::optional<int32_t> batch_index;
 };
 
 struct validation_args {

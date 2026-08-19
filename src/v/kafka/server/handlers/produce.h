@@ -20,7 +20,7 @@ produce_scheduling_group_provider(const connection_context&);
 using produce_handler = two_phase_handler<
   produce_api,
   0,
-  7,
+  9,
   default_estimate_adaptor,
   produce_scheduling_group_provider,
   latency_hist::yes>;

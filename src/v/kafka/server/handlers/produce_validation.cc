@@ -165,10 +165,11 @@ void maybe_set_max_timestamp(
     }
 }
 
-// Iterate over all records in the batch, invoking `f()` on each.
-// Invoking this function shows that iteration over the records within the batch
-// is possible (i.e format validation). For corrupted batches, an
-// `INVALID_RECORD` error code and message are returned.
+// Iterate over all records in the batch, invoking `f(batch_index, metadata)`
+// on each. Invoking this function shows that iteration over the records within
+// the batch is possible (i.e format validation). For corrupted batches, an
+// `INVALID_RECORD` error code and message are returned, along with the index
+// of the record that failed to parse.
 template<typename Func>
 std::optional<error_code_and_msg> iterate_over_records(
   const model::record_batch& b, Func&& f, bool is_strict_validation = false) {
@@ -176,8 +177,15 @@ std::optional<error_code_and_msg> iterate_over_records(
       !b.compressed(),
       "Cannot iterate over records within a compressed batch.");
 
+    int32_t batch_index = 0;
     try {
-        b.for_each_record_metadata(std::forward<Func>(f), is_strict_validation);
+        b.for_each_record_metadata(
+          [&](model::record_metadata r) {
+              auto stop = f(batch_index, std::move(r));
+              ++batch_index;
+              return stop;
+          },
+          is_strict_validation);
     } catch (const std::exception& e) {
         vlog(
           klog.error,
@@ -185,8 +193,21 @@ std::optional<error_code_and_msg> iterate_over_records(
           "{}",
           b.header(),
           e.what());
+        // The throw comes from parsing the record at `batch_index`, unless
+        // every record parsed and the batch has trailing bytes, in which case
+        // no single record is to blame.
+        const auto blamed_record = batch_index < b.record_count();
+        // Deliberately not `e.what()`: from produce v8 on this message goes
+        // back to the client as a protocol string, and these exceptions carry
+        // broker-internal detail, including a multi-line seastar backtrace.
         return error_code_and_msg{
-          .err = error_code::invalid_record, .msg = e.what()};
+          .err = error_code::invalid_record,
+          .msg = blamed_record
+                   ? ssx::sformat(
+                       "Record at index {} could not be parsed", batch_index)
+                   : ss::sstring("Batch records could not be parsed"),
+          .batch_index = blamed_record ? std::make_optional(batch_index)
+                                       : std::nullopt};
     }
 
     return std::nullopt;
@@ -199,11 +220,12 @@ std::expected<model::timestamp, error_code_and_msg>
 compute_max_timestamp(const model::record_batch& b) {
     int64_t max_timestamp_delta = 0;
 
-    auto res = iterate_over_records(b, [&](model::record_metadata r) mutable {
-        max_timestamp_delta = std::max(
-          r.timestamp_delta(), max_timestamp_delta);
-        return ss::stop_iteration::no;
-    });
+    auto res = iterate_over_records(
+      b, [&](int32_t, model::record_metadata r) mutable {
+          max_timestamp_delta = std::max(
+            r.timestamp_delta(), max_timestamp_delta);
+          return ss::stop_iteration::no;
+      });
 
     if (res.has_value()) {
         return std::unexpected(res.value());
@@ -233,7 +255,7 @@ validate_records_and_compute_max_timestamp(
     int64_t max_timestamp = -1;
     auto iterable_res = iterate_over_records(
       iterable_batch_ref,
-      [&](model::record_metadata r) mutable {
+      [&](int32_t batch_index, model::record_metadata r) mutable {
           auto timestamp = model::timestamp{
             b.header().first_timestamp() + r.timestamp_delta()};
           auto offset = b.base_offset() + model::offset_delta(r.offset_delta());
@@ -248,8 +270,13 @@ validate_records_and_compute_max_timestamp(
             ntp);
           max_timestamp = std::max(timestamp(), max_timestamp);
 
-          return res.has_value() ? ss::stop_iteration::yes
-                                 : ss::stop_iteration::no;
+          if (!res.has_value()) {
+              return ss::stop_iteration::no;
+          }
+          // Validation stops at the first offending record, so this is the
+          // only index reported to the client (KIP-467).
+          res->batch_index = batch_index;
+          return ss::stop_iteration::yes;
       },
       is_strict_validation);
 

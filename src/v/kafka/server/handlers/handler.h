@@ -61,6 +61,15 @@ struct handler_template {
     static constexpr bool has_latency_histogram = LatencyHistogram
                                                   == latency_hist::yes;
 
+    // A handler may support a subset of the versions its schemata define, but
+    // never a version outside them: there would be no encoder or decoder for
+    // it, and api_versions would advertise it to clients regardless.
+    static_assert(
+      min_supported >= api::min_valid && max_supported <= api::max_valid,
+      "Handler supports an API version its schemata do not define. Bump "
+      "validVersions in the corresponding <api>_{request,response}.json "
+      "first.");
+
     static HandleRetType handle(request_context, ss::smp_service_group);
 
     /**
