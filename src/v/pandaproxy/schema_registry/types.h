@@ -665,6 +665,7 @@ struct subject_version {
 struct subject_version_deleted {
     context_subject sub;
     schema_version version;
+    schema_id id;
     is_deleted deleted{is_deleted::no};
 
     friend bool operator==(
