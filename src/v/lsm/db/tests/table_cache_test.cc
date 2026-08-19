@@ -87,6 +87,30 @@ TEST_F(TableCacheTest, MaxEntries) {
     cache.close().get();
 }
 
+TEST_F(TableCacheTest, IndexBoundedUnderChurn) {
+    auto cache = make_table_cache();
+
+    // Opened only once, so it ends up on the ghost queue.
+    auto [victim, victim_size] = make_sst();
+    cache.create_iterator(victim, victim_size).get();
+
+    // Churn distinct files through the main queue.
+    for (size_t i = 0; i < default_max_entries * 20; ++i) {
+        auto [h, size] = make_sst();
+        // Open enough times to be promoted instead of ghosted.
+        for (int touch = 0; touch < 3; ++touch) {
+            cache.create_iterator(h, size).get();
+        }
+    }
+
+    tests::drain_task_queue().get();
+    // Grows with the number of files opened if main-queue evictees are not
+    // reclaimed.
+    EXPECT_LE(cache.statistics().open_file_handles, default_max_entries)
+      << cache.statistics();
+    cache.close().get();
+}
+
 TEST_F(TableCacheTest, MaxEntriesWithOpenIterators) {
     auto cache = make_table_cache();
     std::map<lsm::internal::file_handle, size_t> files;
