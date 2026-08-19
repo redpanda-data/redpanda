@@ -124,11 +124,6 @@ model::record_batch_header batch_header_from_disk_iobuf(iobuf b) {
 
 model::record_batch_header
 batch_header_from_disk_buf(std::span<const char> data) {
-    vassert(
-      data.size() == model::packed_record_batch_header_size,
-      "disk headers must be of static size {}, but got {}",
-      model::packed_record_batch_header_size,
-      data.size());
     buffer_parser parser(data);
     return parse_header(parser);
 }
