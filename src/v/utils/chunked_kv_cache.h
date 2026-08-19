@@ -122,9 +122,18 @@ template<typename Key, typename Value, typename Hash, typename EqualTo>
 struct chunked_kv_cache<Key, Value, Hash, EqualTo>::evict {
     chunked_kv_cache& kv_c;
 
-    bool operator()(cached_value& e) noexcept {
-        e.value = nullptr;
-        kv_c._ghost_fifo.push_back(e);
+    bool operator()(cached_value& e, s3_fifo::evict_source source) noexcept {
+        switch (source) {
+        case s3_fifo::evict_source::small_queue:
+            e.value = nullptr;
+            kv_c._ghost_fifo.push_back(e);
+            break;
+        case s3_fifo::evict_source::main_queue:
+            // The entry has left the cache entirely; erasing it from the index
+            // destroys it, which the cache allows for main-queue evictees.
+            kv_c._map.erase(e.key);
+            break;
+        }
         return true;
     }
 };
@@ -142,12 +151,16 @@ bool chunked_kv_cache<Key, Value, Hash, EqualTo>::try_insert(
             return false;
         }
 
+        // The evictor may erase other keys from _map re-entrantly; iterators
+        // must not be used across this call.
         _cache.insert(*e_it->second);
         return true;
     }
 
     auto& entry = *e_it->second;
     if (entry.hook.evicted()) {
+        // Main-queue evictees are removed from the index at eviction time, so
+        // an evicted entry that is still indexed must be on the ghost fifo.
         entry.value = std::move(val);
         _ghost_fifo.erase(_ghost_fifo.iterator_to(entry));
         _cache.insert(entry);
@@ -184,7 +197,7 @@ void chunked_kv_cache<Key, Value, Hash, EqualTo>::gc_ghost_fifo() {
         auto& entry = *it;
         if (_cache.ghost_queue_contains(entry)) {
             // The ghost queue is in fifo-order so any entry that comes after an
-            // entry that hasn't been evicted will also not be evicted.
+            // entry that hasn't been removed will also be in the queue still.
             return;
         }
 

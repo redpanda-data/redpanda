@@ -43,12 +43,15 @@ public:
         utils::s3_fifo::cache_hook hook;
         bool may_evict{true};
         bool evicted{false};
+        std::optional<utils::s3_fifo::evict_source> evicted_from{};
     };
 
     struct evict {
-        bool operator()(entry& e) noexcept {
+        bool
+        operator()(entry& e, utils::s3_fifo::evict_source source) noexcept {
             if (e.may_evict) {
                 e.evicted = true;
+                e.evicted_from = source;
                 return true;
             }
             return false;
@@ -245,6 +248,7 @@ TEST_F(CacheTest, EvictMain) {
     // e0 is first evicted
     cache->evict();
     EXPECT_TRUE(e0.evicted);
+    EXPECT_EQ(e0.evicted_from, utils::s3_fifo::evict_source::main_queue);
     EXPECT_FALSE(e1.evicted);
     EXPECT_EQ(cache->stat().main_queue_size, 1);
     EXPECT_EQ(cache->stat().small_queue_size, 0);
@@ -397,6 +401,7 @@ TEST_F(CacheTest, EvictSmall) {
     // e0 is first evicted
     cache->evict();
     EXPECT_TRUE(e0.evicted);
+    EXPECT_EQ(e0.evicted_from, utils::s3_fifo::evict_source::small_queue);
     EXPECT_TRUE(cache->ghost_queue_contains(e0));
     EXPECT_FALSE(e1.evicted);
     EXPECT_FALSE(e2.evicted);

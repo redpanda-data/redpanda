@@ -68,7 +68,7 @@
  * Next we'll define an instance of the cache to hold objects of type entry.
  *
  *     struct evict {
- *         bool operator()(entry& e) noexcept {
+ *         bool operator()(entry& e, evict_source) noexcept {
  *             e.address.clear();
  *             e.description.clear();
  *             free(e.image);
@@ -127,7 +127,11 @@
  *
  * Because the cache may evict random entries, the application should consider
  * periodically removing evicted items from the index. However, it is generally
- * desired to not remove items that remain on the ghost queue. The application
+ * desired to not remove items that remain on the ghost queue. The eviction
+ * function is told which queue an entry is evicted from, and only entries
+ * evicted from the small queue are placed on the ghost queue. An entry evicted
+ * from the main queue has left the cache entirely, so the eviction function
+ * may remove it from the index (destroying it) right away. The application
  * can query ghost queue membership using:
  *
  *     if (entry.hook.evicted()) {
@@ -180,6 +184,10 @@ namespace testing_details {
 class cache_hook_accessor;
 }; // namespace testing_details
 
+/// The queue an entry is being evicted from; see \ref cache_evictor for the
+/// lifetime implications.
+enum class evict_source : uint8_t { small_queue, main_queue };
+
 /**
  * Specifies that a callable type can be used as a cache eviction function.
  *
@@ -189,17 +197,27 @@ class cache_hook_accessor;
  * The function is passed a reference to a cache entry that is a candidate for
  * eviction from the cache. If the candidate entry should be evicted then the
  * function should return true, in which case the entry will be fully removed
- * from the cache. If the function returns false then the entry is not evicted
- * and the cache and entry's cache hook will not be modified.
+ * from the cache. If the function returns false then the entry is not evicted;
+ * a declined main-queue candidate is unlinked for the duration of the call and
+ * restored to its position afterwards, otherwise the cache and the entry's
+ * cache hook are not modified.
+ *
+ * The function is also passed the queue the entry is being evicted from. An
+ * entry evicted from the small queue is placed on the ghost queue after the
+ * function returns, so the function must leave the entry valid and should
+ * retain its index bookkeeping for rehydration. An entry evicted from the
+ * main queue leaves the cache entirely and is already unlinked when the
+ * function is invoked, so on approval the function may destroy the entry,
+ * e.g. by erasing it from the application's index.
  *
  * When an entry is selected for eviction the function may perform additional
  * operations specific to the application. For example, the function may release
  * memory or other resources associated with the entry.
  */
 template<typename F, typename E>
-concept cache_evictor = requires(F func, E& entry) {
-    requires noexcept(func(entry));
-    { func(entry) } -> std::same_as<bool>;
+concept cache_evictor = requires(F func, E& entry, evict_source source) {
+    requires noexcept(func(entry, source));
+    { func(entry, source) } -> std::same_as<bool>;
 };
 
 /**
@@ -283,7 +301,7 @@ public:
      *     struct entry { std::unique_ptr<int> ptr; }
      *
      *     struct evict {
-     *         bool operator()(entry& e) {
+     *         bool operator()(entry& e, evict_source) noexcept {
      *             e.ptr = nullptr;
      *             return true;
      *         }
@@ -330,7 +348,9 @@ private:
  */
 struct default_cache_evictor {
     /// Returns true.
-    bool operator()(auto&& /*entry*/) noexcept { return true; }
+    bool operator()(auto&& /*entry*/, evict_source /*source*/) noexcept {
+        return true;
+    }
 };
 
 /**
@@ -623,7 +643,7 @@ bool cache<T, Hook, Evictor, Cost>::evict_small() noexcept {
                 }
             }
 
-        } else if (evict_(entry)) {
+        } else if (evict_(entry, evict_source::small_queue)) {
             // evict from small queue
             it = small_fifo_.erase(it);
             const auto cost = cost_(entry);
@@ -659,14 +679,19 @@ bool cache<T, Hook, Evictor, Cost>::evict_main() noexcept {
             it = main_fifo_.erase(it);
             main_fifo_.push_back(entry);
 
-        } else if (evict_(entry)) {
-            // evict from main queue
-            it = main_fifo_.erase(it);
-            main_queue_size_ -= cost_(entry);
-            return true;
-
         } else {
-            ++it;
+            // The evictor may destroy the entry on approval, so read the
+            // cost and unlink before invoking it.
+            const auto cost = cost_(entry);
+            auto next = main_fifo_.erase(it);
+            if (evict_(entry, evict_source::main_queue)) {
+                // evict from main queue
+                main_queue_size_ -= cost;
+                return true;
+            }
+            // the entry declined eviction; restore its position
+            main_fifo_.insert(next, entry);
+            it = next;
         }
     }
     return false;
