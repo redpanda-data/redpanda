@@ -134,6 +134,7 @@ Follow the guidelines provided in `proto/redpanda/README.md` for basic Protobuf 
 
 Check that these guidelines are followed for new code.
 
+- Write [scalable code](docs/writing-scalable-and-high-performance-code.md).
 - Do not declare new `operator<<(ostream& os, type)` overloads, instead prefer to use a `format_to` member function inside `type` as described in
 src/v/base/format_to.h.
 - Prefer using latest C++ features (C++23).
@@ -158,6 +159,11 @@ src/v/base/format_to.h.
 - Do not call the `get_exception` method on a future within a logging or
   assertion statement (e.g. `vlog(..., fut.get_exception(), ...)`). Instead,
   assign the return value of `get_exception` in a variable and pass the variable.
+
+### Coroutines
+
+Follow [coroutines best practices](docs/writing-high-performance-coroutine-code.md) when using
+coroutines.
 
 #### Lambda coroutines, coroutine argument capture, and deducing this
 
