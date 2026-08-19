@@ -30,6 +30,7 @@
 #include "raft/consensus_utils.h"
 #include "raft/fundamental.h"
 #include "ssx/async-clear.h"
+#include "storage/offset_translator_state.h"
 
 #include <seastar/core/lowres_clock.hh>
 #include <seastar/core/shared_ptr.hh>
@@ -116,6 +117,12 @@ ss::future<consensus_ptr> partition_manager::manage(
   std::optional<partition_bootstrap_params> bootstrap_params) {
     auto remote_label = topic_cfg ? topic_cfg->properties.remote_label
                                   : std::nullopt;
+    // Captured before remote_label is moved into the path provider below;
+    // names the SOURCE cluster whose staging prefix a restore should scope to.
+    std::optional<model::cluster_uuid> source_cluster
+      = remote_label.has_value()
+          ? std::make_optional(remote_label->cluster_uuid)
+          : std::nullopt;
     auto remote_topic_namespace_override
       = topic_cfg ? topic_cfg->properties.remote_topic_namespace_override
                   : std::nullopt;
@@ -184,9 +191,9 @@ ss::future<consensus_ptr> partition_manager::manage(
         cloud_storage::remote_path_provider path_provider(
           std::move(remote_label), std::move(remote_topic_namespace_override));
         auto dl_result = co_await maybe_download_log(
-          ntp_cfg, rtp, path_provider);
+          ntp_cfg, rtp, path_provider, source_cluster);
 
-        auto& [logs_recovered, clean_download, min_offset, max_offset, manifest, ot_state]
+        auto& [logs_recovered, clean_download, min_offset, max_offset, manifest, ot_state, staged_last_term, staged_gaps, canonical_max_offset]
           = dl_result;
         if (logs_recovered) {
             vlog(
@@ -206,7 +213,9 @@ ss::future<consensus_ptr> partition_manager::manage(
                 manifest.disable_permanently();
             }
 
-            if (min_offset == max_offset && min_offset == model::offset{0}) {
+            if (
+              min_offset == max_offset && min_offset == model::offset{0}
+              && !staged_last_term.has_value()) {
                 // Here two cases are possible:
                 // - Recover failed and we didn't download anything.
                 //   In this case we need to create empty partition and disable
@@ -227,6 +236,44 @@ ss::future<consensus_ptr> partition_manager::manage(
                     co_await archival_metadata_stm::make_snapshot(
                       ntp_cfg, manifest, max_offset);
                 }
+            } else if (!manifest.last_segment().has_value()) {
+                // The recovered range came entirely from the staging tier:
+                // the canonical manifest is empty (partition younger than the
+                // segment upload interval at wipe time). Bootstrap raft over
+                // the materialized staged log. There is no archival state to
+                // seed — the archiver rebuilds the canonical tier from the
+                // log start.
+                vassert(
+                  staged_last_term.has_value(),
+                  "{} recovered data without canonical manifest or staged "
+                  "tail",
+                  ntp_cfg.ntp());
+                auto staged_ot_state
+                  = ss::make_lw_shared<storage::offset_translator_state>(
+                    ntp_cfg.ntp(), model::offset{-1}, 0);
+                for (const auto& [gap_base, gap_last] : staged_gaps) {
+                    staged_ot_state->add_gap(gap_base, gap_last);
+                }
+                vlog(
+                  clusterlog.info,
+                  "Bootstrap on-disk state for staged-only partition {}. "
+                  "Group: {}, Min offset: {}, Max offset: {}, Last included "
+                  "term: {}, translator gaps: {}",
+                  ntp_cfg.ntp(),
+                  group,
+                  min_offset,
+                  max_offset,
+                  staged_last_term.value(),
+                  staged_gaps.size());
+                co_await raft::details::bootstrap_pre_existing_partition(
+                  _storage,
+                  ntp_cfg,
+                  group,
+                  min_offset,
+                  max_offset,
+                  staged_last_term.value(),
+                  initial_nodes,
+                  staged_ot_state);
             } else {
                 // Manifest is not empty since we were able to recover some
                 // data.
@@ -263,6 +310,12 @@ ss::future<consensus_ptr> partition_manager::manage(
                 dl_result.ot_state->add_absolute_delta(
                   model::next_offset(manifest.get_last_offset()),
                   manifest.last_segment()->delta_offset_end);
+                // Gaps contributed by the staged tail sit above the manifest
+                // end; append them after the absolute delta is in place so
+                // cumulative deltas stay correct.
+                for (const auto& [gap_base, gap_last] : staged_gaps) {
+                    dl_result.ot_state->add_gap(gap_base, gap_last);
+                }
 
                 co_await raft::details::bootstrap_pre_existing_partition(
                   _storage,
@@ -285,16 +338,22 @@ ss::future<consensus_ptr> partition_manager::manage(
                 it belongs to the old cluster. We're using last uploaded
                 offset to set up the snapshot.
                 */
-                if (max_offset != model::offset(0)) {
+                // The archival snapshot may only claim canonically
+                // uploaded offsets: a staged-tail extension of max_offset is
+                // NOT in the canonical tier and must be re-uploaded by the
+                // archiver after restore.
+                auto canonical_max = canonical_max_offset.value_or(max_offset);
+                if (canonical_max != model::offset(0)) {
                     vlog(
                       clusterlog.info,
                       "Creating snapshot for {} partition, "
-                      "min_offset: {}, max_offset: {}",
+                      "min_offset: {}, max_offset: {}, canonical max: {}",
                       ntp_cfg.ntp(),
                       min_offset,
-                      max_offset);
+                      max_offset,
+                      canonical_max);
                     co_await archival_metadata_stm::make_snapshot(
-                      ntp_cfg, manifest, model::prev_offset(max_offset));
+                      ntp_cfg, manifest, model::prev_offset(canonical_max));
                 }
             }
         }
@@ -364,7 +423,8 @@ ss::future<cloud_storage::log_recovery_result>
 partition_manager::maybe_download_log(
   storage::ntp_config& ntp_cfg,
   std::optional<remote_topic_properties> rtp,
-  cloud_storage::remote_path_provider& path_provider) {
+  cloud_storage::remote_path_provider& path_provider,
+  std::optional<model::cluster_uuid> source_cluster) {
     if (!rtp.has_value() || !_partition_recovery_mgr.local_is_initialized()) {
         vlog(
           clusterlog.debug,
@@ -374,8 +434,19 @@ partition_manager::maybe_download_log(
         co_return cloud_storage::log_recovery_result{};
     }
 
-    // TODO: implement a recovery primitive for cloud topics.
     if (ntp_cfg.cloud_topic_enabled()) {
+        // Cloud-engine topics (storage.mode cloud / tiered_cloud) have no
+        // v1 manifest recovery primitive. Their local raft log can still
+        // be rebuilt from the staging tier, bounding restore RPO by the
+        // staging interval; ctp_stm recovers CT state by reading the
+        // restored log, and the reconciler resumes from its restored
+        // watermark (the log is a superset of it).
+        if (
+          config::shard_local_cfg().tiered_storage_staging_recovery_enabled()) {
+            co_return co_await _partition_recovery_mgr.local()
+              .recover_staged_only(
+                ntp_cfg, rtp->remote_revision, source_cluster);
+        }
         co_return cloud_storage::log_recovery_result{};
     }
 

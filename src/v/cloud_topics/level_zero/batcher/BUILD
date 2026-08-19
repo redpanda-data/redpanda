@@ -37,9 +37,11 @@ redpanda_cc_library(
     name = "batcher",
     srcs = [
         "batcher.cc",
+        "secondary_fanout.cc",
     ],
     hdrs = [
         "batcher.h",
+        "secondary_fanout.h",
     ],
     implementation_deps = [
         ":aggregator",
@@ -49,6 +51,7 @@ redpanda_cc_library(
         "//src/v/cloud_topics:object_utils",
         "//src/v/cloud_topics/level_zero/common:extent_meta",
         "//src/v/cloud_topics/level_zero/pipeline:serializer",
+        "//src/v/ssx:future_util",
         "//src/v/ssx:sformat",
         "//src/v/utils:human",
     ],
@@ -56,6 +59,8 @@ redpanda_cc_library(
         "//src/v/base",
         "//src/v/bytes",
         "//src/v/bytes:iobuf",
+        "//src/v/cloud_io:remote_api",
+        "//src/v/cloud_storage_clients",
         "//src/v/cloud_topics:cluster_services_interface",
         "//src/v/cloud_topics:types",
         "//src/v/cloud_topics/level_zero/cluster_services_impl",
@@ -65,6 +70,7 @@ redpanda_cc_library(
         "//src/v/cloud_topics/level_zero/pipeline:write_pipeline",
         "//src/v/cloud_topics/level_zero/pipeline:write_request",
         "//src/v/config",
+        "//src/v/metrics",
         "//src/v/model",
         "//src/v/ssx:semaphore",
         "//src/v/utils:retry_chain_node",

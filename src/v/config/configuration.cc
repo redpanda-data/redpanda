@@ -2381,6 +2381,164 @@ configuration::configuration(ctor_key)
       "not set, or null, metadata will be updated after each segment upload.",
       {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
       60s)
+  , tiered_storage_staging_enabled(
+      *this,
+      "tiered_storage_staging_enabled",
+      "Enable asynchronous dual-write staging uploads: committed data is "
+      "continuously uploaded to object storage as offset-stamped staging "
+      "objects, off the produce ack path, bounding whole-cluster-restore RPO "
+      "by the staging interval instead of the segment upload cadence.",
+      {.needs_restart = needs_restart::no, .visibility = visibility::user},
+      false)
+  , tiered_storage_staging_upload_interval_ms(
+      *this,
+      "tiered_storage_staging_upload_interval_ms",
+      "Interval between staging upload rounds. Each round coalesces "
+      "committed-but-unstaged data across all local leader partitions into "
+      "one staging object per shard.",
+      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
+      250ms)
+  , tiered_storage_staging_max_bytes_per_round(
+      *this,
+      "tiered_storage_staging_max_bytes_per_round",
+      "Upper bound on the payload size of a single staging round; partitions "
+      "deferred by the budget are staged in immediately following rounds.",
+      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
+      32_MiB)
+  , tiered_storage_staging_secondary_bucket(
+      *this,
+      "tiered_storage_staging_secondary_bucket",
+      "Optional secondary bucket receiving an asynchronous copy of every "
+      "staging object (DSN parameters such as ?region= are supported). "
+      "Secondary upload failures never affect produces or the primary "
+      "staging path; missed objects are retried from a bounded queue.",
+      {.needs_restart = needs_restart::no, .visibility = visibility::user},
+      std::nullopt)
+  , cloud_topics_secondary_provider(
+      *this,
+      "cloud_topics_secondary_provider",
+      "Cloud provider of the secondary bucket receiving asynchronous copies "
+      "of Cloud Topics (tiered storage v2) L0 objects: aws, gcp, or azure. "
+      "aws and gcp use the S3 protocol (gcp via the storage.googleapis.com "
+      "interoperability endpoint with HMAC keys); azure uses Azure Blob "
+      "Storage (access key = storage account name, secret key = shared key).",
+      {.needs_restart = needs_restart::yes, .visibility = visibility::user},
+      std::nullopt)
+  , cloud_topics_secondary_bucket(
+      *this,
+      "cloud_topics_secondary_bucket",
+      "Secondary bucket (or Azure container) for cross-cloud dual-write of "
+      "Cloud Topics L0 objects. Uploads to it are strictly asynchronous and "
+      "never gate produce acknowledgements: a bounded per-shard queue "
+      "retries failures and drops (with a counter) on overflow.",
+      {.needs_restart = needs_restart::yes, .visibility = visibility::user},
+      std::nullopt)
+  , cloud_topics_secondary_endpoint(
+      *this,
+      "cloud_topics_secondary_endpoint",
+      "Endpoint override for the secondary dual-write target, e.g. "
+      "storage.googleapis.com for GCS interoperability mode.",
+      {.needs_restart = needs_restart::yes, .visibility = visibility::user},
+      std::nullopt)
+  , cloud_topics_secondary_region(
+      *this,
+      "cloud_topics_secondary_region",
+      "Region of the secondary dual-write target.",
+      {.needs_restart = needs_restart::yes, .visibility = visibility::user},
+      std::nullopt)
+  , cloud_topics_secondary_access_key(
+      *this,
+      "cloud_topics_secondary_access_key",
+      "Static access key for the secondary dual-write target (GCS HMAC "
+      "access id for gcp; storage account name for azure).",
+      {.needs_restart = needs_restart::yes, .visibility = visibility::user},
+      std::nullopt)
+  , cloud_topics_secondary_secret_key(
+      *this,
+      "cloud_topics_secondary_secret_key",
+      "Static secret key for the secondary dual-write target (GCS HMAC "
+      "secret for gcp; shared key for azure).",
+      {.needs_restart = needs_restart::yes,
+       .visibility = visibility::user,
+       .secret = is_secret::yes},
+      std::nullopt)
+  , tiered_storage_staging_recovery_enabled(
+      *this,
+      "tiered_storage_staging_recovery_enabled",
+      "During topic recovery / whole-cluster restore, replay the staged tail "
+      "from staging objects above the last canonical (tiered-storage) offset "
+      "of each partition, bounding restore RPO by the staging interval. Only "
+      "batches strictly above the canonical end are applied (safe for "
+      "compacted topics).",
+      {.needs_restart = needs_restart::no, .visibility = visibility::user},
+      true)
+  , tiered_storage_staging_reconcile_interval_ms(
+      *this,
+      "tiered_storage_staging_reconcile_interval_ms",
+      "Interval of the staging anti-entropy sweep: each shard lists its own "
+      "staging prefix in the primary and secondary buckets and re-uploads "
+      "objects missing from the secondary (covers retry-queue losses across "
+      "restarts). 0 disables the sweep.",
+      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
+      60s)
+  , tiered_storage_staging_retention_ms(
+      *this,
+      "tiered_storage_staging_retention_ms",
+      "Age after which a staging object is eligible for garbage collection. "
+      "Staging objects are transient (redundant once the canonical tier "
+      "covers their offsets), so this only needs to exceed the worst-case "
+      "tiering lag plus the desired restore RPO window. 0 disables GC.",
+      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
+      1h)
+  , cloud_storage_secondary_bucket(
+      *this,
+      "cloud_storage_secondary_bucket",
+      "Optional full-tier disaster-recovery mirror bucket. When set, every "
+      "object written to cloud_storage_bucket (cluster metadata, partition "
+      "manifests, segments, controller snapshots) is asynchronously copied to "
+      "this bucket using the same cloud credentials; DSN parameters "
+      "(bucket?region=...) route a cross-region secondary. A replacement "
+      "cluster can then whole-cluster-restore by pointing cloud_storage_bucket "
+      "at this bucket. Mirror writes are best-effort and never block or fail a "
+      "primary upload. For cross-CLOUD DR of Cloud Topics data, see the "
+      "cloud_topics_secondary_* (L0 fan-out) properties instead.",
+      {.needs_restart = needs_restart::no, .visibility = visibility::user},
+      std::nullopt)
+  , tiered_storage_trim_to_staged_enabled(
+      *this,
+      "tiered_storage_trim_to_staged_enabled",
+      "When enabled (with tiered_storage_staging_enabled), cloud-engine local "
+      "eviction trims down to the staged offset instead of retaining the full "
+      "local retention target: staging provides the durable copy, so local "
+      "disk becomes a write buffer + hot cache sized for throughput, not "
+      "retention. The staging floor still prevents evicting not-yet-staged "
+      "data.",
+      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
+      false)
+  , cloud_topics_secondary_full_mirror(
+      *this,
+      "cloud_topics_secondary_full_mirror",
+      "When enabled (with cloud_topics_secondary_* set), the cross-cloud "
+      "secondary receives a FULL disaster-recovery mirror -- cluster "
+      "metadata, partition manifests, and segments, not just Cloud Topics L0 "
+      "objects -- so a replacement cluster can whole-cluster-restore from the "
+      "other cloud by pointing cloud_storage_bucket at it. Mirror writes are "
+      "best-effort and never block a primary upload. When off, the secondary "
+      "carries L0 data only (via the fan-out).",
+      {.needs_restart = needs_restart::yes, .visibility = visibility::user},
+      false)
+  , cloud_topics_secondary_full_mirror_backfill_interval_ms(
+      *this,
+      "cloud_topics_secondary_full_mirror_backfill_interval_ms",
+      "Interval of the cross-cloud full-mirror back-fill sweep. When "
+      "cloud_topics_secondary_full_mirror is enabled, each sweep re-lists the "
+      "primary bucket and re-mirrors any object missing from (or "
+      "size-mismatched in) the secondary across ALL prefixes, converging the "
+      "secondary to a complete copy even if the mirror was enabled after "
+      "cluster genesis or dropped objects on transient failure. Runs on shard "
+      "0; best-effort, never blocks a primary upload. 0 disables the sweep.",
+      {.needs_restart = needs_restart::no, .visibility = visibility::user},
+      0ms)
   , cloud_storage_readreplica_manifest_sync_timeout_ms(
       *this,
       "cloud_storage_readreplica_manifest_sync_timeout_ms",

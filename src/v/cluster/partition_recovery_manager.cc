@@ -42,6 +42,9 @@ using namespace std::chrono_literals;
 
 static constexpr ss::lowres_clock::duration download_timeout = 300s;
 static constexpr ss::lowres_clock::duration initial_backoff = 200ms;
+// The staging catalog walk touches every object under staging/ — its total
+// budget must scale far past a single download's.
+static constexpr ss::lowres_clock::duration catalog_build_timeout = 1800s;
 
 /// Partition that we're trying to fetch from S3 is missing
 class missing_partition_exception final : public std::exception {
@@ -89,6 +92,8 @@ ss::future<log_recovery_result> partition_recovery_manager::download_log(
           ntp_cfg.ntp());
         co_return log_recovery_result{};
     }
+    const archival::staging_recovery_catalog* staging_catalog
+      = co_await get_staging_catalog();
     partition_downloader downloader(
       ntp_cfg,
       path_provider,
@@ -98,7 +103,8 @@ ss::future<log_recovery_result> partition_recovery_manager::download_log(
       _bucket,
       _gate,
       _root,
-      _as);
+      _as,
+      staging_catalog);
     auto result = co_await downloader.maybe_download_log();
     retry_chain_node fib{_as, download_timeout, initial_backoff};
     if (co_await is_topic_recovery_active()) {
@@ -111,6 +117,64 @@ ss::future<log_recovery_result> partition_recovery_manager::download_log(
           _remote.local(), _bucket, ntp_cfg, result.logs_recovered, fib);
     }
     co_return result;
+}
+
+ss::future<cloud_storage::log_recovery_result>
+partition_recovery_manager::recover_staged_only(
+  const storage::ntp_config& ntp_cfg,
+  model::initial_revision_id remote_revision,
+  std::optional<model::cluster_uuid> source_cluster) {
+    cloud_storage::log_recovery_result result{};
+    const auto* catalog = co_await get_staging_catalog(source_cluster);
+    if (catalog == nullptr) {
+        co_return result;
+    }
+    retry_chain_node fib(_as, download_timeout, initial_backoff);
+    auto prefix = std::filesystem::path(ntp_cfg.work_directory());
+    co_await ss::recursive_touch_directory(prefix.string());
+    auto tail = co_await archival::materialize_staged_tail(
+      _remote.local(),
+      _bucket,
+      *catalog,
+      ntp_cfg.ntp(),
+      remote_revision,
+      model::offset{-1},
+      prefix,
+      fib);
+    if (tail.batches_applied > 0) {
+        result.logs_recovered = true;
+        result.clean_download = true;
+        result.min_offset = model::offset{0};
+        result.max_offset = tail.max_offset;
+        result.staged_last_term = tail.last_term;
+        result.staged_gaps = std::move(tail.translator_gaps);
+        vlog(
+          cst_log.info,
+          "staged-only recovery for cloud-engine partition {}: rebuilt "
+          "[0,{}] from the staging tier ({} batches)",
+          ntp_cfg.ntp(),
+          result.max_offset,
+          tail.batches_applied);
+    }
+    co_return result;
+}
+
+ss::future<const archival::staging_recovery_catalog*>
+partition_recovery_manager::get_staging_catalog(
+  std::optional<model::cluster_uuid> source_cluster) {
+    if (!config::shard_local_cfg().tiered_storage_staging_recovery_enabled()) {
+        co_return nullptr;
+    }
+    auto units = co_await _staging_catalog_mutex.get_units();
+    if (!_staging_catalog.has_value()) {
+        retry_chain_node fib(_as, catalog_build_timeout, initial_backoff);
+        _staging_catalog = co_await archival::staging_recovery_catalog::build(
+          _remote.local(), _bucket, fib, source_cluster);
+    }
+    if (_staging_catalog->empty()) {
+        co_return nullptr;
+    }
+    co_return &_staging_catalog.value();
 }
 
 ss::future<bool> partition_recovery_manager::is_topic_recovery_active() const {
@@ -147,7 +211,8 @@ partition_downloader::partition_downloader(
   cloud_storage_clients::bucket_name bucket,
   ss::gate& gate_root,
   retry_chain_node& parent,
-  model::opt_abort_source_t as)
+  model::opt_abort_source_t as,
+  const archival::staging_recovery_catalog* staging_catalog)
   : _ntpc(ntpc)
   , _remote_path_provider(path_provider)
   , _bucket(std::move(bucket))
@@ -160,7 +225,8 @@ partition_downloader::partition_downloader(
       cst_log,
       _rtcnode,
       ssx::sformat("[{}, rev: {}]", ntpc.ntp().path(), ntpc.get_revision()))
-  , _as(as) {}
+  , _as(as)
+  , _staging_catalog(staging_catalog) {}
 
 ss::future<log_recovery_result> partition_downloader::maybe_download_log() {
     vlog(_ctxlog.debug, "Check conditions for S3 recovery for {}", _ntpc);
@@ -319,7 +385,9 @@ ss::future<log_recovery_result> partition_downloader::download_log() {
       "Partition manifest used for recovery: {}",
       mat.partition_manifest);
     if (mat.partition_manifest.size() == 0) {
-        // If the downloaded manifest doesn't have any segments
+        // No canonical segments were ever uploaded (e.g. the topic is
+        // younger than the segment upload interval) — the staged tail may
+        // still hold everything. Replay it from the log start.
         log_recovery_result result{
           .logs_recovered = true,
           .clean_download = true,
@@ -328,6 +396,24 @@ ss::future<log_recovery_result> partition_downloader::download_log() {
           .manifest = std::move(mat.partition_manifest),
           .ot_state = nullptr,
         };
+        if (_staging_catalog != nullptr) {
+            co_await ss::recursive_touch_directory(prefix.string());
+            auto tail = co_await archival::materialize_staged_tail(
+              *_remote,
+              _bucket,
+              *_staging_catalog,
+              _ntpc.ntp(),
+              _remote_revision_id,
+              model::offset{-1},
+              prefix,
+              _rtcnode);
+            if (tail.batches_applied > 0) {
+                result.min_offset = model::offset{0};
+                result.max_offset = tail.max_offset;
+                result.staged_last_term = tail.last_term;
+                result.staged_gaps = std::move(tail.translator_gaps);
+            }
+        }
         co_return result;
     }
     download_part part;
@@ -365,6 +451,58 @@ ss::future<log_recovery_result> partition_downloader::download_log() {
           prefix,
           r.duration);
     }
+    std::optional<model::term_id> staged_last_term;
+    std::vector<std::pair<model::offset, model::offset>> staged_gaps;
+    std::optional<model::offset> staged_canonical_max;
+    if (_staging_catalog != nullptr) {
+        // The staged tail chains from the last locally recovered offset, or
+        // from the canonical manifest tip when nothing was downloaded —
+        // shallow recovery is the DEFAULT for tiered-storage topics, and
+        // without this every byte above the last uploaded segment would be
+        // silently dropped on restore (RPO = segment upload interval
+        // instead of the staging interval).
+        auto downloaded = part.range.max_offset != model::offset::min();
+        auto last_canonical = downloaded
+                                ? part.range.max_offset
+                                : mat.partition_manifest.get_last_offset();
+        if (_staging_catalog->skipped_downloads() > 0) {
+            vlog(
+              _ctxlog.error,
+              "staged-tail replay for {} is running from an INCOMPLETE "
+              "catalog ({} staging objects unreadable) — restored offsets "
+              "may stop short of the last staged offset",
+              _ntpc.ntp(),
+              _staging_catalog->skipped_downloads());
+        }
+        if (!downloaded) {
+            co_await ss::recursive_touch_directory(part.part_prefix.string());
+        }
+        auto tail = co_await archival::materialize_staged_tail(
+          *_remote,
+          _bucket,
+          *_staging_catalog,
+          _ntpc.ntp(),
+          _remote_revision_id,
+          last_canonical,
+          part.part_prefix,
+          _rtcnode);
+        if (tail.batches_applied > 0) {
+            staged_last_term = tail.last_term;
+            staged_gaps = std::move(tail.translator_gaps);
+            if (downloaded) {
+                staged_canonical_max = part.range.max_offset;
+            } else {
+                // Mirror upstream shallow recovery, which bootstraps at
+                // next(manifest tip): the local log now begins there and
+                // the archival snapshot may claim exactly the manifest.
+                part.range.min_offset = model::next_offset(last_canonical);
+                staged_canonical_max = model::next_offset(last_canonical);
+            }
+            part.range.max_offset = tail.max_offset;
+            part.num_files++;
+        }
+    }
+
     // Move parts to final destinations
     if (part.num_files > 0) {
         co_await move_parts(part);
@@ -377,6 +515,9 @@ ss::future<log_recovery_result> partition_downloader::download_log() {
       .max_offset = part.range.max_offset,
       .manifest = std::move(mat.partition_manifest),
       .ot_state = part.ot_state,
+      .staged_last_term = staged_last_term,
+      .staged_gaps = std::move(staged_gaps),
+      .canonical_max_offset = staged_canonical_max,
     };
     co_return result;
 }

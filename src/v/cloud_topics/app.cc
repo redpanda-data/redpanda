@@ -10,6 +10,10 @@
 
 #include "cloud_topics/app.h"
 
+#include "cloud_io/remote.h"
+#include "cloud_storage_clients/client_pool.h"
+#include "cloud_storage_clients/configuration.h"
+#include "cloud_storage_clients/upstream_registry.h"
 #include "cloud_topics/cluster_services.h"
 #include "cloud_topics/data_plane_api.h"
 #include "cloud_topics/data_plane_impl.h"
@@ -45,6 +49,62 @@ app::app(ss::sstring logger_name)
 
 app::~app() = default;
 
+namespace {
+
+/// Builds the client configuration for the cross-cloud secondary dual-write
+/// target from cluster config, or nullopt when not configured. aws and gcp
+/// use the S3 protocol (gcp via its interoperability endpoint with HMAC
+/// keys); azure uses the ABS client (access key = storage account name,
+/// secret key = shared key).
+ss::future<std::optional<cloud_storage_clients::client_configuration>>
+make_secondary_client_configuration() {
+    auto& cfg = config::shard_local_cfg();
+    const auto bucket = cfg.cloud_topics_secondary_bucket();
+    const auto provider = cfg.cloud_topics_secondary_provider();
+    if (!bucket.has_value() || !provider.has_value()) {
+        co_return std::nullopt;
+    }
+    const auto access = cfg.cloud_topics_secondary_access_key();
+    const auto secret = cfg.cloud_topics_secondary_secret_key();
+    if (!access.has_value() || !secret.has_value()) {
+        vlog(
+          cd_log.error,
+          "cloud_topics_secondary_bucket is set but "
+          "cloud_topics_secondary_access_key/secret_key are missing; "
+          "secondary dual-write stays disabled");
+        co_return std::nullopt;
+    }
+    if (*provider == "azure") {
+        auto abs = co_await cloud_storage_clients::abs_configuration::
+          make_configuration(
+            model::cloud_credentials_source::config_file,
+            cloud_roles::private_key_str(*secret),
+            cloud_roles::storage_account(*access),
+            {});
+        abs.probe_detail_suffix = "-secondary";
+        co_return cloud_storage_clients::client_configuration(std::move(abs));
+    }
+    cloud_storage_clients::default_overrides overrides;
+    if (const auto ep = cfg.cloud_topics_secondary_endpoint(); ep.has_value()) {
+        overrides.endpoint = cloud_storage_clients::endpoint_url(*ep);
+    }
+    auto s3
+      = co_await cloud_storage_clients::s3_configuration::make_configuration(
+        model::cloud_credentials_source::config_file,
+        cloud_roles::public_key_str(*access),
+        cloud_roles::private_key_str(*secret),
+        cloud_roles::aws_region_name(
+          cfg.cloud_topics_secondary_region().value_or("us-east-1")),
+        cloud_storage_clients::bucket_name(*bucket),
+        cloud_storage_clients::s3_url_style::virtual_host,
+        /*node_is_in_fips_mode=*/false,
+        overrides);
+    s3.probe_detail_suffix = "-secondary";
+    co_return cloud_storage_clients::client_configuration(std::move(s3));
+}
+
+} // namespace
+
 ss::future<> app::construct(
   model::node_id self,
   cluster::controller* controller,
@@ -58,13 +118,105 @@ ss::future<> app::construct(
   ss::sharded<storage::api>* storage,
   bool skip_flush_loop,
   bool skip_level_zero_gc) {
+    ss::sharded<cloud_io::remote>* secondary_remote_ptr = nullptr;
+    std::optional<cloud_storage_clients::bucket_name> secondary_bucket;
+    std::exception_ptr secondary_error;
+    // The secondary chain is managed OUTSIDE the service container: a
+    // failure mid-construction must never leave half-registered services
+    // for shutdown to trip over, and a misconfigured secondary must never
+    // take the broker down — it logs and stays disabled.
+    try {
+        auto secondary_conf = co_await make_secondary_client_configuration();
+        if (secondary_conf.has_value()) {
+            co_await _secondary_upstreams.start(*secondary_conf);
+            co_await _secondary_upstreams.invoke_on_all(
+              &cloud_storage_clients::upstream_registry::start);
+            co_await _secondary_upstreams.invoke_on_all(
+              &cloud_storage_clients::upstream_registry::start_evictor,
+              /*interval=*/std::chrono::seconds(30),
+              /*max_idle_time=*/std::chrono::seconds(300));
+            co_await _secondary_clients.start(
+              ss::sharded_parameter(
+                [this] { return std::ref(_secondary_upstreams.local()); }),
+              size_t{8},
+              *secondary_conf,
+              cloud_io::admission_control_config{},
+              cloud_storage_clients::client_pool_overdraft_policy::
+                borrow_if_empty);
+            co_await _secondary_clients.invoke_on_all(
+              [](cloud_storage_clients::client_pool& p) { return p.start(); });
+            co_await _secondary_remote.start(
+              std::ref(_secondary_clients),
+              *secondary_conf,
+              model::cloud_credentials_source::config_file,
+              ss::default_scheduling_group());
+            co_await _secondary_remote.invoke_on_all(&cloud_io::remote::start);
+            secondary_bucket = cloud_storage_clients::bucket_name(
+              *config::shard_local_cfg().cloud_topics_secondary_bucket());
+            if (
+              config::shard_local_cfg().cloud_topics_secondary_full_mirror()) {
+                // Full DR mirror: the primary cloud_io remote mirrors ALL
+                // uploads to the cross-cloud secondary; the L0-only fan-out is
+                // redundant so it is left unwired (secondary_remote_ptr null).
+                auto b = *secondary_bucket;
+                co_await remote->invoke_on_all([this, b](cloud_io::remote& r) {
+                    r.set_tiered_storage_mirror(_secondary_remote.local(), b);
+                });
+                vlog(
+                  cd_log.info,
+                  "cross-cloud FULL DR mirror enabled to {}",
+                  *secondary_bucket);
+                vlog(
+                  cd_log.warn,
+                  "cross-cloud FULL DR mirror: the inline mirror does NOT "
+                  "back-fill objects written before it was enabled -- enable "
+                  "it from cluster genesis, or set "
+                  "cloud_topics_secondary_full_mirror_backfill_interval_ms > 0 "
+                  "to run a periodic sweep that re-mirrors missing objects and "
+                  "converges the secondary to a complete copy. Restore "
+                  "readiness requires the "
+                  "cloud_io:tiered_storage_mirror:errors_total "
+                  "metric to be zero");
+            } else {
+                secondary_remote_ptr = &_secondary_remote;
+            }
+            vlog(
+              cd_log.info,
+              "cloud topics cross-cloud secondary dual-write enabled: "
+              "provider={} bucket={}",
+              *config::shard_local_cfg().cloud_topics_secondary_provider(),
+              *secondary_bucket);
+        }
+    } catch (...) {
+        secondary_error = std::current_exception();
+    }
+    if (secondary_error) {
+        vlog(
+          cd_log.error,
+          "cross-cloud secondary dual-write disabled, construction failed: "
+          "{}",
+          secondary_error);
+        secondary_remote_ptr = nullptr;
+        secondary_bucket.reset();
+        if (_secondary_remote.local_is_initialized()) {
+            co_await _secondary_remote.stop();
+        }
+        if (_secondary_clients.local_is_initialized()) {
+            co_await _secondary_clients.stop();
+        }
+        if (_secondary_upstreams.local_is_initialized()) {
+            co_await _secondary_upstreams.stop();
+        }
+    }
     data_plane = co_await make_data_plane(
       ssx::sformat("{}::data_plane", _logger_name),
       remote,
       cloud_cache,
       bucket,
       storage,
-      &controller->get_cluster_epoch_generator());
+      &controller->get_cluster_epoch_generator(),
+      secondary_remote_ptr,
+      secondary_bucket);
 
     // Touch the L1 staging directory before L1 i/o starts.
     co_await ss::recursive_touch_directory(
@@ -407,8 +559,26 @@ ss::future<> app::cleanup_tmp_files() {
 }
 
 ss::future<> app::stop() {
+    // Container services (reconciler, L1 consumers) must stop before the
+    // data plane they write into; the secondary remote/pool stop last so
+    // the fan-out inside the data plane can drain into it.
     ssx::sharded_service_container::shutdown();
-    co_await data_plane->stop();
+    if (data_plane) {
+        // construct() may never have run if application startup failed
+        // early; stop() is still invoked on the shutdown path.
+        co_await data_plane->stop();
+    }
+    if (_secondary_remote.local_is_initialized()) {
+        co_await _secondary_remote.invoke_on_all(
+          &cloud_io::remote::request_stop);
+        co_await _secondary_remote.stop();
+    }
+    if (_secondary_clients.local_is_initialized()) {
+        co_await _secondary_clients.stop();
+    }
+    if (_secondary_upstreams.local_is_initialized()) {
+        co_await _secondary_upstreams.stop();
+    }
 }
 
 ss::sharded<l1::leader_router>* app::get_sharded_l1_metastore_router() {

@@ -43,6 +43,9 @@ ss::future<std::unique_ptr<data_plane_api>> make_data_plane(
   cloud_storage_clients::bucket_name bucket,
   seastar::sharded<storage::api>* log_manager,
   seastar::sharded<cluster::cluster_epoch_service<ss::lowres_clock>>*
-    cluster_services);
+    cluster_services,
+  seastar::sharded<cloud_io::remote>* secondary_remote = nullptr,
+  std::optional<cloud_storage_clients::bucket_name> secondary_bucket
+  = std::nullopt);
 
 } // namespace cloud_topics

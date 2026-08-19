@@ -88,7 +88,12 @@ public:
 
     raft::stm_initial_recovery_policy
     get_initial_recovery_policy() const final {
-        return raft::stm_initial_recovery_policy::skip_to_end;
+        // read_everything, not skip_to_end: on whole-cluster restore the
+        // translated watermark must be rebuilt by replaying the
+        // datalake_translation_state batches in the (staged-tail-restored)
+        // log. skip_to_end resumes at the log end and silently drops the
+        // acked-but-not-yet-translated window from the Iceberg table.
+        return raft::stm_initial_recovery_policy::read_everything;
     }
 
 private:

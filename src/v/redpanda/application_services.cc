@@ -21,6 +21,7 @@
 #include "cluster/archival/archiver_manager.h"
 #include "cluster/archival/ntp_archiver_service.h"
 #include "cluster/archival/purger.h"
+#include "cluster/archival/staging_uploader.h"
 #include "cluster/archival/upload_controller.h"
 #include "cluster/archival/upload_housekeeping_service.h"
 #include "cluster/cloud_metadata/offsets_lookup.h"
@@ -438,6 +439,16 @@ void application::wire_up_redpanda_services(
                     return nullptr;
                 }
             }))
+          .get();
+    }
+
+    if (archival_storage_enabled() && bucket_name.has_value()) {
+        construct_service(
+          _staging_uploader,
+          std::ref(cloud_storage_api),
+          std::ref(partition_manager),
+          std::ref(storage),
+          bucket_name.value())
           .get();
     }
 

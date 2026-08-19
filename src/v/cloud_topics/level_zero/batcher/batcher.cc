@@ -14,6 +14,7 @@
 #include "cloud_io/remote_api.h"
 #include "cloud_topics/errc.h"
 #include "cloud_topics/level_zero/batcher/aggregator.h"
+#include "cloud_topics/level_zero/batcher/secondary_fanout.h"
 #include "cloud_topics/logger.h"
 #include "cloud_topics/object_utils.h"
 #include "cloud_topics/types.h"
@@ -35,10 +36,12 @@ batcher<Clock>::batcher(
   write_pipeline<Clock>::stage stage,
   cloud_storage_clients::bucket_name bucket,
   cloud_io::remote_api<Clock>& remote_api,
-  cloud_topics::cluster_services* cluster_services)
+  cloud_topics::cluster_services* cluster_services,
+  secondary_fanout<Clock>* fanout)
   : _cluster_services(cluster_services)
   , _remote(remote_api)
   , _bucket(std::move(bucket))
+  , _fanout(fanout)
   , _upload_timeout(
       config::shard_local_cfg().cloud_storage_segment_upload_timeout_ms.bind())
   , _upload_backoff_interval(
@@ -87,6 +90,11 @@ batcher<Clock>::upload_object(object_id id, iobuf payload) {
 
         auto path = object_path_factory::level_zero_path(id);
 
+        std::optional<iobuf> secondary_copy;
+        if (_fanout != nullptr) {
+            secondary_copy = payload.share(0, payload.size_bytes());
+        }
+
         micro_probe probe;
 
         cloud_io::basic_transfer_details<Clock> td{
@@ -110,6 +118,13 @@ batcher<Clock>::upload_object(object_id id, iobuf payload) {
 
         _stage.register_micro_probe(probe);
 
+        if (
+          _fanout != nullptr && secondary_copy.has_value()
+          && upl_result == cloud_io::upload_result::success) {
+            _fanout->enqueue(
+              cloud_storage_clients::object_key(path),
+              std::move(*secondary_copy));
+        }
         switch (upl_result) {
         case cloud_io::upload_result::success:
             break;

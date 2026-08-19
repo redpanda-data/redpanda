@@ -97,6 +97,7 @@ redpanda_cc_library(
         "//src/v/cloud_roles:types",
         "//src/v/cloud_storage_clients",
         "//src/v/config",
+        "//src/v/metrics",
         "//src/v/container:chunked_vector",
         "//src/v/model",
         "//src/v/utils:lazy_abort_source",
