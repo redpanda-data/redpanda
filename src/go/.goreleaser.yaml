@@ -1,6 +1,6 @@
 project_name: rpk
 builds:
-  # rpk-windows-and-linux is deprecated; will be replaced by rpk-windows, rpk-linux, rpk-linux-microsoft-go
+  # rpk-windows-and-linux is deprecated; will be replaced by rpk-windows, rpk-linux, rpk-linux-fips
   - id: rpk-windows-and-linux
     dir: ./rpk/
     main: ./cmd/rpk
@@ -18,7 +18,10 @@ builds:
     goarch:
       - amd64
       - arm64
-  - id: rpk-linux-microsoft-go
+  # Native Go FIPS 140-3 build: GOFIPS140=certified compiles the newest
+  # CMVP-certified Go Cryptographic Module into a static binary with FIPS
+  # mode on by default. Resolved module version: `go version -m`.
+  - id: rpk-linux-fips
     dir: ./rpk/
     main: ./cmd/rpk
     binary: rpk
@@ -28,7 +31,8 @@ builds:
       - -X github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/version.buildTime={{.Date}}
       - -X github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/container/containerutil.tag={{.Tag}}
     env:
-      - 'CGO_ENABLED={{ if index .Env "CGO_ENABLED" }}{{ .Env.CGO_ENABLED }}{{ else }}0{{ end }}'
+      - CGO_ENABLED=0
+      - GOFIPS140=certified
     tags:
       - fips
     goos:
