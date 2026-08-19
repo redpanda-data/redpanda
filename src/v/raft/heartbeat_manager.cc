@@ -354,6 +354,7 @@ void heartbeat_manager::process_reply(
              */
             if (
               r.error() == rpc::errc::client_request_timeout
+              || r.error() == rpc::errc::connection_timeout
               || r.error() == errc::timeout) {
                 consensus->update_heartbeat_status(
                   req_meta.follower_vnode, false);
