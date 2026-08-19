@@ -171,6 +171,7 @@ redpanda_cc_gtest(
         "//src/v/lsm/core/internal:iterator",
         "//src/v/lsm/core/internal:keys",
         "//src/v/lsm/core/internal:options",
+        "//src/v/lsm/core/internal/tests:throwing_iterator",
         "//src/v/lsm/db:iter",
         "//src/v/lsm/db:memtable",
         "//src/v/test_utils:gtest",
