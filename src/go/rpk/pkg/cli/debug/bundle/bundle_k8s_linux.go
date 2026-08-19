@@ -96,7 +96,10 @@ func executeK8SBundle(ctx context.Context, bp bundleParams) error {
 	// We use the K8S to discover the cluster's admin API addresses and collect
 	// logs and k8s resources. First we check if we have enough permissions
 	// before kicking the steps.
-	var adminAddresses []string
+	var (
+		adminAddresses []string
+		selfAddress    string
+	)
 	if err := checkK8sPermissions(ctx, bp.namespace); err != nil {
 		errs = multierror.Append(
 			errs,
@@ -108,7 +111,7 @@ func executeK8SBundle(ctx context.Context, bp bundleParams) error {
 			saveK8SLogs(ctx, ps, bp.namespace, bp.logsSince, bp.logsLimitBytes, bp.labelSelector),
 		}...)
 
-		adminAddresses, err = adminAddressesFromK8S(ctx, bp.namespace)
+		adminAddresses, selfAddress, err = adminAddressesFromK8S(ctx, bp.namespace)
 		if err != nil {
 			zap.L().Sugar().Warnf("unable to get admin API addresses from the k8s API: %v", err)
 		}
@@ -129,6 +132,7 @@ func executeK8SBundle(ctx context.Context, bp bundleParams) error {
 		saveClusterAdminAPICalls(ctx, ps, bp.fs, bp.p, adminAddresses, bp.partitions, bp.connectionLimit),
 		saveSingleAdminAPICalls(ctx, ps, bp.fs, bp.p, adminAddresses, bp.cpuProfilerWait),
 		saveMetricsAPICalls(ctx, ps, bp.fs, bp.p, adminAddresses, bp.metricsInterval, bp.metricsSampleCount),
+		saveSelfIdentification(ctx, ps, bp.fs, bp.p, selfAddress),
 	}...)
 
 	for _, s := range steps {
@@ -273,18 +277,19 @@ func checkK8sPermissions(ctx context.Context, namespace string) error {
 }
 
 // adminAddressesFromK8S returns the admin API host:port list by querying the
-// K8S Api.
-func adminAddressesFromK8S(ctx context.Context, namespace string) ([]string, error) {
+// K8S Api. It also returns the address of the local pod (self) by matching
+// os.Hostname() against pod hostnames, or empty string if no match is found.
+func adminAddressesFromK8S(ctx context.Context, namespace string) (addrs []string, selfAddr string, err error) {
 	// This is intended to run only in a k8s cluster:
 	cl, err := k8sClientset()
 	if err != nil {
-		return nil, fmt.Errorf("unable to create kubernetes client: %v", err)
+		return nil, "", fmt.Errorf("unable to create kubernetes client: %v", err)
 	}
 
 	var svc k8score.Service
 	services, err := cl.CoreV1().Services(namespace).List(ctx, metav1.ListOptions{})
 	if err != nil {
-		return nil, fmt.Errorf("unable to list services: %v", err)
+		return nil, "", fmt.Errorf("unable to list services: %v", err)
 	}
 	// To get the service name we use the service that have None as ClusterIP
 	// this is the case in both our helm deployment and k8s operator.
@@ -300,10 +305,11 @@ func adminAddressesFromK8S(ctx context.Context, namespace string) ([]string, err
 		LabelSelector: labels.SelectorFromSet(svc.Spec.Selector).String(),
 	})
 	if err != nil {
-		return nil, fmt.Errorf("unable to list pods in the service %q: %v", svc.Name, err)
+		return nil, "", fmt.Errorf("unable to list pods in the service %q: %v", svc.Name, err)
 	}
 
 	clusterDomain := getClusterDomain(ctx)
+	myHostname, _ := os.Hostname()
 	// Get the admin addresses from ContainerPort.
 	var adminAddresses []string
 	for _, p := range pods.Items {
@@ -312,15 +318,18 @@ func adminAddressesFromK8S(ctx context.Context, namespace string) ([]string, err
 				fqdn := fmt.Sprintf("%v.%v.%v.svc.%v", p.Spec.Hostname, svc.Name, p.Namespace, clusterDomain)
 				a := fmt.Sprintf("%v:%v", fqdn, port.ContainerPort)
 				adminAddresses = append(adminAddresses, a)
+				if p.Spec.Hostname == myHostname {
+					selfAddr = a
+				}
 			}
 		}
 	}
 
 	if len(adminAddresses) == 0 {
-		return nil, fmt.Errorf("could not find any exposed 'admin' container port for the pods in the %q namespace", namespace)
+		return nil, "", fmt.Errorf("could not find any exposed 'admin' container port for the pods in the %q namespace", namespace)
 	}
 
-	return adminAddresses, nil
+	return adminAddresses, selfAddr, nil
 }
 
 // getClusterDomain returns Kubernetes cluster domain, default to
@@ -575,6 +584,65 @@ func saveMetricsAPICalls(ctx context.Context, ps *stepParams, fs afero.Fs, p *co
 			rerrs = multierror.Append(rerrs, errs)
 		}
 		return rerrs.ErrorOrNil()
+	}
+}
+
+// saveSelfIdentification writes an admin/self.json file to the bundle
+// identifying which node the bundle was collected on. It uses the K8s-
+// discovered self address if available, falling back to localhost.
+func saveSelfIdentification(ctx context.Context, ps *stepParams, fs afero.Fs, p *config.RpkProfile, selfAddress string) step {
+	return func() error {
+		hostname, _ := os.Hostname()
+
+		type selfInfo struct {
+			Hostname    string          `json:"hostname"`
+			SelfAddress string          `json:"self_address,omitempty"`
+			NodeConfig  json.RawMessage `json:"node_config,omitempty"`
+		}
+		info := selfInfo{
+			Hostname:    hostname,
+			SelfAddress: selfAddress,
+		}
+
+		// Use the K8s-discovered self address if available, otherwise
+		// fall back to localhost.
+		adminAddr := selfAddress
+		if adminAddr == "" {
+			adminPort := strconv.Itoa(config.DefaultAdminPort)
+			adminAddr = net.JoinHostPort("127.0.0.1", adminPort)
+		}
+		lp := &config.RpkProfile{
+			KafkaAPI: config.RpkKafkaAPI{
+				SASL: p.KafkaAPI.SASL,
+			},
+			AdminAPI: config.RpkAdminAPI{
+				Addresses: []string{adminAddr},
+				TLS:       p.AdminAPI.TLS,
+			},
+		}
+		cl, err := adminapi.NewClient(ctx, fs, lp)
+		if err != nil {
+			zap.L().Sugar().Warnf("unable to create admin client for self-identification: %v", err)
+		} else {
+			raw, err := cl.RawNodeConfig(ctx)
+			if err != nil {
+				zap.L().Sugar().Warnf("unable to get node config for self-identification: %v", err)
+			} else {
+				rawJSON, err := json.Marshal(raw)
+				if err != nil {
+					zap.L().Sugar().Warnf("unable to marshal node config for self-identification: %v", err)
+				} else {
+					info.NodeConfig = rawJSON
+				}
+			}
+		}
+
+		// Write even if node_config is nil — hostname alone is useful.
+		b, err := json.Marshal(info)
+		if err != nil {
+			return fmt.Errorf("unable to marshal self-identification info: %v", err)
+		}
+		return writeFileToZip(ps, "admin/self.json", b)
 	}
 }
 
