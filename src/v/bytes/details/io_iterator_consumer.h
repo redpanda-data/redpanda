@@ -84,7 +84,7 @@ public:
     template<
       typename T,
       typename = std::enable_if_t<std::is_trivially_copyable_v<T>, T>>
-    T consume_type() {
+    [[gnu::always_inline]] T consume_type() {
         constexpr size_t sz = sizeof(T);
         T obj;
         char* dst = reinterpret_cast<char*>(&obj); // NOLINT
@@ -116,30 +116,40 @@ public:
     /// takes a Consumer object and iteraters over the chunks in oder, from
     /// the given buffer index position. Use a stop_iteration::yes for early
     /// exit;
-    size_t consume(const size_t n, Consumer&& f) {
-        size_t i = 0;
-        while (i < n) {
-            if (_frag == _frag_end) {
-                return i;
-            }
-            const size_t bytes_left = segment_bytes_left();
-            if (bytes_left == 0) {
-                // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic)
-                if (++_frag != _frag_end) {
-                    _frag_index = _frag->get();
-                    // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic)
-                    _frag_index_end = _frag->get() + _frag->size();
-                }
-                continue;
-            }
-            const size_t step = std::min(n - i, bytes_left);
-            const ss::stop_iteration stop = f(_frag_index, step);
-            i += step;
+    [[gnu::always_inline]] size_t consume(const size_t n, Consumer&& f) {
+        size_t consumed = 0;
+        // (otherwise identical) fast path: clang fails to optimize for this
+        // through various layers of APIs and the below so we hand unroll it.
+        if (likely(n > 0 && _frag != _frag_end && segment_bytes_left() >= n)) {
+            f(_frag_index, n);
+            consumed = n;
             // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic)
-            _frag_index += step;
-            _bytes_consumed += step;
-            if (stop == ss::stop_iteration::yes) {
-                break;
+            _frag_index += n;
+            _bytes_consumed += n;
+        } else {
+            while (consumed < n) {
+                if (_frag == _frag_end) {
+                    return consumed;
+                }
+                const size_t bytes_left = segment_bytes_left();
+                if (bytes_left == 0) {
+                    // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic)
+                    if (++_frag != _frag_end) {
+                        _frag_index = _frag->get();
+                        // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic)
+                        _frag_index_end = _frag->get() + _frag->size();
+                    }
+                    continue;
+                }
+                const size_t step = std::min(n - consumed, bytes_left);
+                const ss::stop_iteration stop = f(_frag_index, step);
+                consumed += step;
+                // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic)
+                _frag_index += step;
+                _bytes_consumed += step;
+                if (stop == ss::stop_iteration::yes) {
+                    break;
+                }
             }
         }
 
@@ -155,7 +165,7 @@ public:
             }
         }
 
-        return i;
+        return consumed;
     }
     size_t bytes_consumed() const { return _bytes_consumed; }
     // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic)

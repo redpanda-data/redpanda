@@ -107,7 +107,7 @@ public:
     bool read_bool() { return bool(consume_type<int8_t>()); }
 
     template<typename T>
-    T consume_type() {
+    [[gnu::always_inline]] T consume_type() {
         return _in.consume_type<T>();
     }
 
