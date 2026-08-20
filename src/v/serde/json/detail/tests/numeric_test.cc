@@ -104,6 +104,13 @@ constexpr auto test_numerics = std::to_array<test_case>(
    test_case::valid("123.123", 123.123),
    test_case::valid("-123.123", -123.123),
 
+   // Leading zeros in the fraction must not consume the significand digit
+   // budget.
+   test_case::valid("0.000000000000000001234567", 1.234567e-18),
+   test_case::valid("-0.000000000000000001234567", -1.234567e-18),
+   test_case::valid("0.00000000000000000012345", 1.2345e-19),
+   test_case::valid("0.0001014244919119499", 0.0001014244919119499),
+
    // Large values
    test_case::valid(
      "9223372036854775807",

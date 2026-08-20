@@ -163,8 +163,12 @@ size_t numeric_parser::advance(ss::temporary_buffer<char>& buf, result& err) {
                 if (_significand_digits < 17) {
                     _double_acc = _double_acc * 10
                                   + static_cast<unsigned>(buf[pos] - '0');
-                    _significand_digits += 1;
                     --_exp_frac;
+                    // Leading zeros carry no precision; only digits with a
+                    // nonzero prefix count against the significand budget.
+                    if (_double_acc > 0) {
+                        _significand_digits += 1;
+                    }
                 }
                 pos += 1;
                 continue;
