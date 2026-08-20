@@ -276,6 +276,59 @@ void leader_balancer::check_unregister_leadership_change_notification() {
     }
 }
 
+// Each balance tick rebuilds indexes, fetches health reports, and runs the
+// strategy — avoid this work when leadership is already balanced by sleeping
+// until a change actually occurs.
+void leader_balancer::enter_idle() {
+    if (should_stop_balance() || _timer.armed()) {
+        return;
+    }
+
+    if (!_idle_leadership_notify_handle) {
+        _idle_leadership_notify_handle
+          = _leaders.register_leadership_change_notification(
+            [this](const model::ntp&, model::term_id, model::node_id) {
+                schedule_sooner(idle_wakeup_debounce_delay);
+            });
+    }
+
+    // Recheck sooner if there is transient state that will expire and
+    // potentially reveal new balancing opportunities:
+    //  - muted groups: once unmuted the strategy may find moves it missed
+    //  - muted nodes: stale heartbeats may recover
+    clock_type::duration timeout{_idle_timeout()};
+
+    if (!_muted.empty()) {
+        auto soonest = std::ranges::min_element(
+          _muted, {}, [](const auto& p) { return p.second; });
+        timeout = std::min(
+          timeout, std::chrono::abs(soonest->second - clock_type::now()));
+    }
+
+    auto now = raft::clock_type::now();
+    auto has_muted_nodes = std::ranges::any_of(
+      _raft0->get_follower_metrics(), [&](const auto& f) {
+          return now - f.last_heartbeat > _node_mute_timeout();
+      });
+    if (has_muted_nodes) {
+        timeout = std::min(timeout, clock_type::duration{_node_mute_timeout()});
+    }
+
+    vlog(
+      clusterlog.info,
+      "leader balancer entering idle, next tick in {} s",
+      timeout / 1s);
+    _timer.arm(timeout);
+}
+
+void leader_balancer::exit_idle() {
+    if (_idle_leadership_notify_handle) {
+        _leaders.unregister_leadership_change_notification(
+          *_idle_leadership_notify_handle);
+        _idle_leadership_notify_handle.reset();
+    }
+}
+
 ss::future<> leader_balancer::start() {
     if (config::node().recovery_mode_enabled()) {
         vlog(
@@ -297,6 +350,17 @@ ss::future<> leader_balancer::start() {
       = _members.register_maintenance_state_change_notification(
         std::bind_front(
           std::mem_fn(&leader_balancer::on_maintenance_change), this));
+
+    _members_updated_notify_handle
+      = _members.register_members_updated_notification(
+        [this](model::node_id id, model::membership_state state) {
+            vlog(
+              clusterlog.trace,
+              "node {} membership changed to {}, scheduling balance",
+              id,
+              state);
+            schedule_sooner(node_status_changed_delay);
+        });
 
     _topic_deltas_handle = _topics.register_topic_delta_notification(
       std::bind_front(
@@ -328,8 +392,11 @@ ss::future<> leader_balancer::stop() {
     vlog(clusterlog.info, "Stopping Leader Balancer...");
     _leaders.unregister_leadership_change_notification(
       _raft0->ntp(), _leader_notify_handle);
+    exit_idle();
     _members.unregister_maintenance_state_change_notification(
       _maintenance_state_notify_handle);
+    _members.unregister_members_updated_notification(
+      _members_updated_notify_handle);
     _topics.unregister_topic_delta_notification(_topic_deltas_handle);
     _health_monitor.unregister_node_callback(_health_monitor_handle);
     _timer.cancel();
@@ -416,6 +483,8 @@ void leader_balancer::trigger_balance() {
     // reset the flag.
     _throttled = false;
 
+    exit_idle();
+
     ssx::spawn_with_gate(_gate, [this] { return balance_fiber(); });
 }
 
@@ -434,8 +503,21 @@ ss::future<> leader_balancer::balance_fiber() {
             _pending_notifies -= notifies;
 
             if (stop && _pending_notifies == 0) {
-                if (!should_stop_balance() && !_timer.armed()) {
-                    _timer.arm(_idle_timeout());
+                if (_in_flight_changes.empty()) {
+                    enter_idle();
+                } else {
+                    // Still have in-flight changes that may unmute groups
+                    // for further balancing. Wait for the last one to
+                    // expire, then re-evaluate with everything drained.
+                    if (!_timer.armed()) {
+                        auto max_exp = std::ranges::max_element(
+                          _in_flight_changes, {}, [](const auto& p) {
+                              return p.second.expires;
+                          });
+                        _timer.arm(
+                          std::chrono::abs(
+                            max_exp->second.expires - clock_type::now()));
+                    }
                 }
                 break;
             }

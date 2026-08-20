@@ -3545,9 +3545,11 @@ configuration::configuration(ctor_key)
   , leader_balancer_idle_timeout(
       *this,
       "leader_balancer_idle_timeout",
-      "Leadership rebalancing idle timeout.",
+      "Leadership rebalancing idle timeout. Acts as a safety-net fallback; "
+      "the balancer is primarily woken by leadership and membership change "
+      "notifications.",
       {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
-      2min)
+      1h)
   , leader_balancer_mute_timeout(
       *this,
       "leader_balancer_mute_timeout",
