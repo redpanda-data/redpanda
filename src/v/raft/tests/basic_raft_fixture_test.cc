@@ -1211,3 +1211,119 @@ TEST_F_CORO(raft_fixture, test_leadership_blocked_replicas_can_elect_leader) {
     auto leader = co_await wait_for_leader(60s);
     ASSERT_NE_CORO(leader, blocked_follower);
 }
+
+namespace {
+/**
+ * Builds the request a leader sends as a full heartbeat: no batches and no
+ * request to flush, exactly as raft::service::make_append_entries_request does.
+ * The log metadata describes the recipient's own log end, so the request is
+ * accepted and takes the empty-batch path of consensus::do_append_entries.
+ */
+append_entries_request
+make_full_heartbeat(const consensus& to, vnode from, model::offset commit) {
+    return {
+      from,
+      to.self(),
+      protocol_metadata{
+        .group = to.group(),
+        .commit_index = commit,
+        .term = to.term(),
+        .prev_log_index = to.dirty_offset(),
+        .prev_log_term = to.get_term(to.dirty_offset()),
+        .last_visible_index = to.dirty_offset(),
+        .dirty_offset = to.dirty_offset(),
+      },
+      {},
+      0,
+      flush_after_append::no};
+}
+} // namespace
+
+/**
+ * A follower may only commit what it has flushed, so a leader commit index that
+ * arrives while the follower's log tail is still unflushed gets clamped away.
+ * The follower's own flush has to finish the job, because the leader stops
+ * sending full heartbeats as soon as that flush is reported back
+ * (heartbeat_manager::needs_full_heartbeat) and lightweight heartbeats carry no
+ * commit index at all.
+ *
+ * The two events must commute: whichever of "was told the leader's commit
+ * index" and "flushed its own tail" happens second has to leave the follower
+ * committed. One follower is driven in each order.
+ *
+ * EXPECT rather than ASSERT throughout, so that the process wide config changed
+ * by disable_background_flushing() is always restored; an early co_return would
+ * leak it into every later test in the binary.
+ */
+TEST_F_CORO(raft_fixture, follower_commit_index_converges_on_own_flush) {
+    co_await create_simple_group(3);
+    auto leader_id = co_await wait_for_leader(10s);
+    auto leader = node(leader_id).raft();
+
+    /**
+     * With background flushing off, an explicit refresh_commit_index() is the
+     * only thing that can move any replica's flushed offset, which puts the
+     * interleaving under the test's control rather than the scheduler's. It
+     * also pins the leader's own commit index, so the heartbeats it keeps
+     * sending carry a stale commit index and cannot repair a follower behind
+     * our back.
+     */
+    co_await disable_background_flushing();
+
+    auto result = co_await leader->replicate(
+      make_batches({{"k_1", "v_1"}, {"k_2", "v_2"}}),
+      replicate_options(consistency_level::leader_ack));
+    EXPECT_TRUE(result.has_value());
+    const auto target = result.value().last_offset;
+
+    co_await tests::cooperative_spin_wait_with_timeout(10s, [this, target] {
+        return std::all_of(
+          nodes().begin(), nodes().end(), [target](const auto& p) {
+              return p.second->raft()->dirty_offset() == target;
+          });
+    });
+
+    std::vector<model::node_id> followers;
+    for (const auto& [id, _] : nodes()) {
+        if (id != leader_id) {
+            followers.push_back(id);
+        }
+    }
+    EXPECT_EQ(followers.size(), 2u);
+
+    // case 1: told the commit index first, flushed second. The order that
+    // leaves the follower stuck.
+    {
+        auto victim = node(followers[0]).raft();
+        EXPECT_LT(victim->flushed_offset(), target);
+
+        auto reply = co_await victim->append_entries(
+          make_full_heartbeat(*victim, leader->self(), target));
+        // a rejected request would make the rest of the case vacuous
+        EXPECT_EQ(reply.result, reply_result::success);
+        // clamped to the unflushed offset, and the leader's value dropped
+        EXPECT_LT(victim->committed_offset(), target);
+
+        co_await victim->refresh_commit_index();
+        EXPECT_EQ(victim->flushed_offset(), target);
+        EXPECT_EQ(victim->committed_offset(), target)
+          << "commit index did not converge after the follower's own flush";
+    }
+
+    // case 2: the same two events the other way round
+    {
+        auto victim = node(followers[1]).raft();
+        EXPECT_LT(victim->flushed_offset(), target);
+
+        co_await victim->refresh_commit_index();
+        EXPECT_EQ(victim->flushed_offset(), target);
+
+        auto reply = co_await victim->append_entries(
+          make_full_heartbeat(*victim, leader->self(), target));
+        EXPECT_EQ(reply.result, reply_result::success);
+        EXPECT_EQ(victim->committed_offset(), target)
+          << "commit index did not converge when the flush came first";
+    }
+
+    co_await reset_background_flushing();
+}
