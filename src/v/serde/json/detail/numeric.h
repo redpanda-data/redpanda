@@ -113,7 +113,11 @@ private:
     bool _as_double{false};
     double _double_acc{0.0};
 
-    int _exp_frac = 0;
+    /// Decimal exponent of the accumulated significand relative to the
+    /// written digits: negative while consuming fraction digits, positive
+    /// when integer digits beyond the significand capacity are dropped and
+    /// accounted for in the scale instead.
+    int _exp_adjust = 0;
     int _max_exp = 0;
 
     bool _exp_negative{false};

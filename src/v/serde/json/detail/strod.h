@@ -27,6 +27,8 @@
 
 #include "serde/json/detail/pow10.h"
 
+#include <limits>
+
 namespace serde::json::detail {
 
 inline double strod_fast_path(double significand, int exp) {
@@ -40,7 +42,12 @@ inline double strod_fast_path(double significand, int exp) {
 }
 
 inline double strtod_normal_precision(double d, int p) {
-    if (p < -308) {
+    if (p > 308) {
+        // Guaranteed overflow: p can only exceed 308 when the integer part
+        // alone has hundreds of digits, so the significand is non-zero.
+        // Callers reject values above double max.
+        return std::numeric_limits<double>::infinity();
+    } else if (p < -308) {
         // Prevent expSum < -308, making Pow10(p) = 0
         d = strod_fast_path(d, -308);
         d = strod_fast_path(d, p + 308);

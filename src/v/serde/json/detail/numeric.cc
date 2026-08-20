@@ -29,6 +29,12 @@
 
 namespace serde::json::detail {
 
+namespace {
+// Bound on |_exp_adjust| so the exponent arithmetic below cannot overflow
+// int. Reaching it takes a number with 10^8 digits; such input is rejected.
+constexpr int max_exp_adjust = 100'000'000;
+} // namespace
+
 size_t numeric_parser::advance(ss::temporary_buffer<char>& buf, result& err) {
     size_t pos = 0;
 
@@ -93,9 +99,15 @@ size_t numeric_parser::advance(ss::temporary_buffer<char>& buf, result& err) {
 
         case state::decimals_as_double:
             if (buf[pos] >= '0' && buf[pos] <= '9') {
-                _double_acc = _double_acc * 10
-                              + static_cast<unsigned>(buf[pos] - '0');
-                _significand_digits += 1;
+                // The significand is saturated (18-19 digits, more than a
+                // double can represent). Account for further integer digits
+                // in the scale instead to preserve the magnitude.
+                if (_exp_adjust >= max_exp_adjust) {
+                    err = result::invalid_json_string;
+                    _state = state::finished_with_error;
+                    return pos;
+                }
+                _exp_adjust += 1;
                 pos += 1;
                 continue;
             } else {
@@ -126,6 +138,8 @@ size_t numeric_parser::advance(ss::temporary_buffer<char>& buf, result& err) {
                 err = result::done;
                 if (_as_double) {
                     _state = state::finished_with_double;
+                    _double_acc = strtod_normal_precision(
+                      _double_acc, _exp_adjust);
                     if (_double_acc > std::numeric_limits<double>::max()) {
                         err = result::invalid_json_string;
                         _state = state::finished_with_error;
@@ -161,9 +175,14 @@ size_t numeric_parser::advance(ss::temporary_buffer<char>& buf, result& err) {
         case state::fractional_part:
             if (buf[pos] >= '0' && buf[pos] <= '9') {
                 if (_significand_digits < 17) {
+                    if (_exp_adjust <= -max_exp_adjust) {
+                        err = result::invalid_json_string;
+                        _state = state::finished_with_error;
+                        return pos;
+                    }
                     _double_acc = _double_acc * 10
                                   + static_cast<unsigned>(buf[pos] - '0');
-                    --_exp_frac;
+                    --_exp_adjust;
                     // Leading zeros carry no precision; only digits with a
                     // nonzero prefix count against the significand budget.
                     if (_double_acc > 0) {
@@ -181,7 +200,7 @@ size_t numeric_parser::advance(ss::temporary_buffer<char>& buf, result& err) {
                 _state = state::finished_with_double;
 
                 _double_acc = strtod_normal_precision(
-                  _double_acc, _exp_frac + _exp * (_exp_negative ? -1 : 1));
+                  _double_acc, _exp_adjust + _exp * (_exp_negative ? -1 : 1));
                 if (_double_acc > std::numeric_limits<double>::max()) {
                     err = result::invalid_json_string;
                     _state = state::finished_with_error;
@@ -203,13 +222,20 @@ size_t numeric_parser::advance(ss::temporary_buffer<char>& buf, result& err) {
             if (buf[pos] == '-') {
                 pos += 1;
                 _exp_negative = true;
-                _max_exp = (_exp_frac + 2147483639) / 10;
+                if (_exp_adjust > 0) {
+                    // Once the explicit exponent cancels the dropped integer
+                    // digits and another ~400 decimal places, the value is
+                    // guaranteed to underflow to zero.
+                    _max_exp = _exp_adjust + 400;
+                } else {
+                    _max_exp = (_exp_adjust + 2147483639) / 10;
+                }
             } else {
                 if (buf[pos] == '+') {
                     pos += 1;
                 }
 
-                _max_exp = 308 - _exp_frac;
+                _max_exp = 308 - _exp_adjust;
             }
             _state = state::exponent_first_digit;
             continue;
@@ -253,7 +279,7 @@ size_t numeric_parser::advance(ss::temporary_buffer<char>& buf, result& err) {
                 _state = state::finished_with_double;
 
                 _double_acc = strtod_normal_precision(
-                  _double_acc, _exp_frac + _exp * (_exp_negative ? -1 : 1));
+                  _double_acc, _exp_adjust + _exp * (_exp_negative ? -1 : 1));
                 if (_double_acc > std::numeric_limits<double>::max()) {
                     err = result::invalid_json_string;
                     _state = state::finished_with_error;

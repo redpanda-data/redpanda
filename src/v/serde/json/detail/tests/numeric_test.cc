@@ -512,3 +512,62 @@ TEST(numeric_parse, test_numeric_1E309) {
     test_parse_numeric_whole(
       test_case{input, numeric_parser::result::invalid_json_string, 310});
 }
+
+TEST(numeric_parse, test_numeric_big_integer_negative_exponent) {
+    // '1' followed by 309 '0', scaled back into range by the exponent.
+
+    std::string input = "1";
+    input.append(309, '0');
+    input.append("e-400");
+
+    test_parse_numeric_whole(test_case::valid(input, 1e-91));
+    test_parse_numeric_piecewise(test_case::valid(input, 1e-91));
+}
+
+TEST(numeric_parse, test_numeric_big_integer_exact_cancel) {
+    // '1' followed by 400 '0' with exponent -400 is exactly 1.
+
+    std::string input = "1";
+    input.append(400, '0');
+    input.append("e-400");
+
+    test_parse_numeric_whole(test_case::valid(input, 1.0));
+    test_parse_numeric_piecewise(test_case::valid(input, 1.0));
+}
+
+TEST(numeric_parse, test_numeric_big_integer_with_fraction) {
+    // The fraction after a saturated integer part carries no precision but
+    // must not disturb the magnitude.
+
+    std::string input = "1";
+    input.append(29, '0');
+    input.append(".5");
+
+    test_parse_numeric_whole(test_case::valid(input, 1e29));
+    test_parse_numeric_piecewise(test_case::valid(input, 1e29));
+}
+
+TEST(numeric_parse, test_numeric_big_integer_underflow) {
+    std::string input = "9";
+    input.append(444, '0');
+    input.append("e-617");
+
+    test_parse_numeric_whole(test_case::valid(input, 9e-173));
+
+    input = "1";
+    input.append(309, '0');
+    input.append("e-2000000000");
+
+    test_parse_numeric_whole(test_case::valid(input, 0.0));
+}
+
+TEST(numeric_parse, test_numeric_big_integer_overflow_with_fraction) {
+    // '1' followed by 400 '0' is too big for a double even with the ".5".
+
+    std::string input = "1";
+    input.append(400, '0');
+    input.append(".5,");
+
+    test_parse_numeric_whole(
+      test_case{input, numeric_parser::result::invalid_json_string, 403});
+}
