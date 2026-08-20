@@ -2,7 +2,7 @@
 # This build is a translation of Seastar's official cmake-based build.
 #
 
-load("@bazel_skylib//rules:common_settings.bzl", "bool_flag", "int_flag")
+load("@bazel_skylib//rules:common_settings.bzl", "bool_flag", "int_flag", "string_flag")
 load("@protobuf//bazel:cc_proto_library.bzl", "cc_proto_library")
 load("@rules_cc//cc:cc_binary.bzl", "cc_binary")
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
@@ -61,9 +61,16 @@ bool_flag(
     build_setting_default = False,
 )
 
-bool_flag(
+# Defines SEASTAR_SHUFFLE_TASK_QUEUE; "auto" enables it when the
+# @seastar//:debug flag is true.
+string_flag(
     name = "shuffle_task_queue",
-    build_setting_default = False,
+    build_setting_default = "auto",
+    values = [
+        "auto",
+        "true",
+        "false",
+    ],
 )
 
 int_flag(
@@ -152,6 +159,14 @@ config_setting(
     name = "with_shuffle_task_queue",
     flag_values = {
         ":shuffle_task_queue": "true",
+    },
+)
+
+config_setting(
+    name = "with_shuffle_task_queue_auto",
+    flag_values = {
+        ":debug": "true",
+        ":shuffle_task_queue": "auto",
     },
 )
 
@@ -652,6 +667,7 @@ cc_library(
         "//conditions:default": [],
     }) + select({
         ":with_shuffle_task_queue": ["SEASTAR_SHUFFLE_TASK_QUEUE"],
+        ":with_shuffle_task_queue_auto": ["SEASTAR_SHUFFLE_TASK_QUEUE"],
         "//conditions:default": [],
     }) + select({
         ":use_stack_guards": ["SEASTAR_THREAD_STACK_GUARDS"],
