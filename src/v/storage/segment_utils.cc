@@ -526,6 +526,8 @@ model::record_batch_reader create_segment_full_reader(
     auto lease = std::make_unique<lock_manager::lease>(
       segment_set(std::move(set)));
     lease->locks.push_back(std::move(h));
+    // Note, `log_reader` aborts the process upon detecting a corrupt segment
+    // rather than returning an error to the caller. See handle_corrupt_segment.
     return model::make_record_batch_reader<log_reader>(
       std::move(lease), reader_cfg, pb, nullptr);
 }

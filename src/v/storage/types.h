@@ -385,6 +385,14 @@ struct truncate_prefix_config {
     fmt::iterator format_to(fmt::iterator it) const;
 };
 
+/// What a reader does upon detecting a corrupt segment.
+/// Normal behavior is to abort the broker to avoid propagating invalid state.
+/// Tests set throw_exception to test the detection pathway.
+enum class corrupt_segment_action {
+    abort_process,
+    throw_exception,
+};
+
 /**
  * Log reader configuration. Operates on Raft offsets.
  *
@@ -507,6 +515,10 @@ struct local_log_reader_config {
 
     // Timeout for segment range lock acquisition
     std::optional<ss::semaphore::clock::time_point> read_lock_deadline{};
+
+    // Test seam. Leave at the default outside tests.
+    corrupt_segment_action on_corrupt_segment{
+      corrupt_segment_action::abort_process};
 
     fmt::iterator format_to(fmt::iterator it) const;
 

@@ -833,6 +833,26 @@ redpanda_cc_gtest(
 )
 
 redpanda_cc_gtest(
+    name = "log_reader_gap_test",
+    timeout = "short",
+    srcs = [
+        "log_reader_gap_test.cc",
+    ],
+    deps = [
+        "//src/v/bytes:iobuf",
+        "//src/v/model",
+        "//src/v/storage",
+        "//src/v/storage:record_batch_builder",
+        "//src/v/storage:record_batch_utils",
+        "//src/v/storage:segment_appender",
+        "//src/v/storage/tests:disk_log_builder",
+        "//src/v/test_utils:gtest",
+        "@googletest//:gtest",
+        "@seastar",
+    ],
+)
+
+redpanda_cc_gtest(
     name = "file_sanitizer_test",
     timeout = "short",
     srcs = [

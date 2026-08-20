@@ -85,6 +85,10 @@ public:
     // user partitions and allowing only metadata operations.
     property<bool> recovery_mode_enabled;
 
+    // If true, abort the process when a log read detects a corrupt segment.
+    // Defaults to true. See the property description.
+    property<bool> storage_abort_on_corrupt_segment;
+
     // Path to the configuration file for low level storage failure injection.
     property<std::optional<std::filesystem::path>>
       storage_failure_injection_config_path;
