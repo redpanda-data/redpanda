@@ -251,7 +251,7 @@ source_topic_syncer::run_impl(ss::abort_source& as) {
     // cluster and ensure we support it
     auto version_res
       = co_await negotiate_api_version<kafka::describe_configs_api>(
-        cluster, as);
+        cluster, as, controller_id.value());
     if (!version_res.has_value()) {
         vlog(logger().warn, "{}", version_res.error());
         co_return state_transition{

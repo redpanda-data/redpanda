@@ -34,7 +34,8 @@
 namespace cluster_link {
 namespace schema_registry_sync {
 class source_reader_factory;
-}
+class tail_reader_factory;
+} // namespace schema_registry_sync
 namespace replication {
 class data_source;
 class data_sink;
@@ -263,6 +264,8 @@ private:
     std::unique_ptr<schema::registry> _schema_registry_dest;
     std::unique_ptr<schema_registry_sync::source_reader_factory>
       _source_reader_factory;
+    std::unique_ptr<schema_registry_sync::tail_reader_factory>
+      _tail_reader_factory;
     std::unique_ptr<manager> _manager;
     std::vector<ss::deferred_action<ss::noncopyable_function<void()>>>
       _notification_cleanups;

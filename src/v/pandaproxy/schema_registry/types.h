@@ -266,6 +266,12 @@ struct context_subject {
 
 inline const context_subject invalid_subject{default_context, subject{""}};
 
+/// The registry-wide mode/config target. In `_schemas` keys it is a CONFIG or
+/// MODE record whose subject is ":.__GLOBAL:" (a null subject is the default
+/// context's target); it is never context-remapped.
+inline const context_subject global_mode_config_target{
+  global_context, subject{""}};
+
 /// Validate that a context_subject does not use reserved names (__GLOBAL,
 /// __EMPTY). Throws exception with error_code::subject_invalid if invalid.
 /// \param is_config_or_mode If true, allows .__GLOBAL context (used by
@@ -659,6 +665,7 @@ struct subject_version {
 struct subject_version_deleted {
     context_subject sub;
     schema_version version;
+    schema_id id;
     is_deleted deleted{is_deleted::no};
 
     friend bool operator==(

@@ -13,6 +13,7 @@
 
 #include "cluster_link/schema_registry_sync/reconciler.h"
 #include "cluster_link/schema_registry_sync/source_reader.h"
+#include "cluster_link/schema_registry_sync/tail_reader.h"
 #include "container/chunked_hash_map.h"
 #include "container/chunked_vector.h"
 #include "pandaproxy/schema_registry/error.h"
@@ -24,9 +25,12 @@
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/coroutine.hh>
 #include <seastar/core/future.hh>
+#include <seastar/core/shared_future.hh>
 #include <seastar/util/noncopyable_function.hh>
 
+#include <deque>
 #include <memory>
+#include <ranges>
 #include <vector>
 
 // Test fakes and helpers shared by the reconciler unit tests
@@ -98,6 +102,20 @@ inline int index_of(
     return -1;
 }
 
+// The stored schema for one (subject, version) node, or nullptr.
+inline const ppsr::stored_schema* find_stored(
+  const std::vector<ppsr::stored_schema>& all,
+  const ppsr::context_subject& sub,
+  int32_t version) {
+    for (const auto& s : all) {
+        if (
+          s.schema.sub() == sub && s.version == ppsr::schema_version{version}) {
+            return &s;
+        }
+    }
+    return nullptr;
+}
+
 inline ppsr::subject_version
 key(const ppsr::context_subject& sub, int32_t version) {
     return ppsr::subject_version{sub, ppsr::schema_version{version}};
@@ -115,13 +133,40 @@ struct fake_source_state {
     bool reports_deleted_flag = true;
     std::optional<srs::source_error> list_contexts_error;
     std::optional<srs::source_error> list_subjects_error;
+    // Forces list_subjects to fail for specific contexts only, letting a test
+    // inject a per-context listing failure while other contexts keep listing.
+    chunked_hash_map<ppsr::context, srs::source_error> list_subjects_errors;
     // Forces list_subject_versions to fail for specific subjects, letting a
     // test inject a per-subject enumeration failure (e.g. operation_failed)
     // without taking down the whole listing.
     chunked_hash_map<ppsr::context_subject, srs::source_error>
       list_versions_errors;
+    // Forces list_schema_id_subject_versions to fail for specific ids: a real
+    // probe failure, as opposed to the miss an unallocated id yields anyway.
+    chunked_hash_map<ppsr::schema_id, srs::source_error> schema_id_errors;
+    // Like schema_id_errors, but only for the live-only ask
+    // (include_deleted::no), letting a test fail the split's follow-up
+    // request while the existence ask succeeded.
+    chunked_hash_map<ppsr::schema_id, srs::source_error> schema_id_live_errors;
+    // Whether list_schema_id_subject_versions honors include_deleted.
+    // True models Confluent: soft-deleted pairs included under ::yes, and
+    // the live-only ask answers a fully soft-deleted id with a miss. False
+    // models Redpanda, which ignores the parameter: live pairs only, and
+    // existence decided independently of it.
+    bool honors_include_deleted{true};
+    // list_schema_id_subject_versions call count, keyed by probed id.
+    chunked_hash_map<ppsr::schema_id, uint32_t> schema_id_probe_counts;
+    // list_subjects call count: every run lists each in-scope context, so a
+    // test can wait for runs to advance instead of sleeping for ticks.
+    uint32_t subject_listings{0};
     // read_subject_version call count, keyed by (subject, version).
     chunked_hash_map<ppsr::subject_version, uint32_t> read_counts;
+    // Total list_subject_versions calls, so a test can assert a sync did no
+    // source discovery at all.
+    size_t list_versions_calls{0};
+    // Total list_contexts calls, so a test can assert a tail tick did not
+    // re-read the source's contexts when its batch reported none.
+    size_t list_contexts_calls{0};
     // Forces read_subject_version to fail for specific (subject, version)
     // nodes, letting a test inject a mid-run source fault (e.g.
     // source_unavailable).
@@ -185,6 +230,23 @@ struct fake_source_state {
         schemas.push_back(std::move(s));
     }
 
+    // Places a subject version at an exact schema id, so an id-probe test can
+    // build a specific id layout (holes, out-of-scope ids). `add` allocates ids
+    // from a global counter instead, which cannot express one.
+    void add_with_id(
+      const ppsr::context_subject& sub,
+      int32_t version,
+      int32_t id,
+      ppsr::is_deleted deleted = ppsr::is_deleted::no) {
+        auto s = make_schema(
+          sub,
+          version,
+          fmt::format("{{\"v\":{},\"id\":{}}}", version, id),
+          deleted);
+        s.id = ppsr::schema_id{id};
+        schemas.push_back(std::move(s));
+    }
+
     void add_with_refs(
       const ppsr::context_subject& sub,
       int32_t version,
@@ -195,6 +257,31 @@ struct fake_source_state {
           fmt::format("{{\"v\":{}}}", version),
           std::move(refs),
           next_id()));
+    }
+
+    // Soft-deletes one version at the source, as DELETE
+    // /subjects/{sub}/versions/{v} does: the version keeps existing but drops
+    // out of the active listing.
+    void soft_delete(const ppsr::context_subject& sub, int32_t version) {
+        for (auto& stored : schemas) {
+            if (
+              stored.schema.sub() == sub
+              && stored.version == ppsr::schema_version{version}) {
+                stored.deleted = ppsr::is_deleted::yes;
+            }
+        }
+    }
+
+    // Drops every version of `sub`, as a source-side hard delete of the whole
+    // subject does: its listings then report it absent.
+    void remove_subject(const ppsr::context_subject& sub) {
+        schemas = schemas
+                  | std::views::filter(
+                    [&sub](const ppsr::stored_schema& stored) {
+                        return stored.schema.sub() != sub;
+                    })
+                  | std::views::as_rvalue
+                  | std::ranges::to<chunked_vector<ppsr::stored_schema>>();
     }
 
     // A globally-unique schema id, matching SR's per-context id namespace where
@@ -208,6 +295,11 @@ struct fake_source_state {
           ppsr::subject_version{sub, ppsr::schema_version{version}});
         return it == read_counts.end() ? 0 : it->second;
     }
+
+    uint32_t probes(int32_t id) const {
+        auto it = schema_id_probe_counts.find(ppsr::schema_id{id});
+        return it == schema_id_probe_counts.end() ? 0 : it->second;
+    }
 };
 
 class fake_source_reader final : public srs::source_reader {
@@ -217,6 +309,7 @@ public:
 
     ss::future<srs::source_result<chunked_vector<ppsr::context>>>
     list_contexts(ss::abort_source&) override {
+        ++_state->list_contexts_calls;
         if (_state->list_contexts_error.has_value()) {
             co_return std::unexpected(*_state->list_contexts_error);
         }
@@ -225,8 +318,14 @@ public:
 
     ss::future<srs::source_result<chunked_vector<ppsr::context_subject>>>
     list_subjects(ppsr::context ctx, ss::abort_source&) override {
+        ++_state->subject_listings;
         if (_state->list_subjects_error.has_value()) {
             co_return std::unexpected(*_state->list_subjects_error);
+        }
+        if (
+          auto it = _state->list_subjects_errors.find(ctx);
+          it != _state->list_subjects_errors.end()) {
+            co_return std::unexpected(it->second);
         }
         chunked_hash_set<ppsr::context_subject> seen;
         chunked_vector<ppsr::context_subject> subjects;
@@ -246,6 +345,7 @@ public:
       ppsr::context_subject sub,
       ppsr::include_deleted include_deleted,
       ss::abort_source&) override {
+        ++_state->list_versions_calls;
         if (
           auto it = _state->list_versions_errors.find(sub);
           it != _state->list_versions_errors.end()) {
@@ -276,6 +376,59 @@ public:
                 .message = "subject not found (fully soft-deleted)"});
         }
         co_return versions;
+    }
+
+    ss::future<srs::source_result<chunked_vector<ppsr::subject_version>>>
+    list_schema_id_subject_versions(
+      ppsr::schema_id id,
+      ppsr::context ctx,
+      ppsr::include_deleted include_deleted,
+      ss::abort_source&) override {
+        ++_state->schema_id_probe_counts[id];
+        if (
+          auto it = _state->schema_id_errors.find(id);
+          it != _state->schema_id_errors.end()) {
+            co_return std::unexpected(it->second);
+        }
+        if (include_deleted == ppsr::include_deleted::no) {
+            if (
+              auto it = _state->schema_id_live_errors.find(id);
+              it != _state->schema_id_live_errors.end()) {
+                co_return std::unexpected(it->second);
+            }
+        }
+        // See fake_source_state::honors_include_deleted for the two source
+        // models this serves.
+        const bool honored = _state->honors_include_deleted
+                             && include_deleted == ppsr::include_deleted::yes;
+        bool id_resolves = false;
+        chunked_vector<ppsr::subject_version> pairs;
+        for (const auto& s : _state->schemas) {
+            if (s.id != id || s.schema.sub().ctx != ctx) {
+                continue;
+            }
+            id_resolves = true;
+            if (s.deleted == ppsr::is_deleted::no || honored) {
+                pairs.push_back(
+                  ppsr::subject_version{s.schema.sub(), s.version});
+            }
+        }
+        // A source honoring the parameter has no live view of a fully
+        // soft-deleted id: the live-only ask misses rather than answering
+        // an empty list.
+        if (
+          _state->honors_include_deleted
+          && include_deleted == ppsr::include_deleted::no && id_resolves
+          && pairs.empty()) {
+            id_resolves = false;
+        }
+        if (!id_resolves) {
+            co_return std::unexpected(
+              srs::source_error{
+                .kind = srs::source_error_kind::schema_id_not_found,
+                .message = fmt::format("schema id not found: {}", id())});
+        }
+        co_return pairs;
     }
 
     ss::future<srs::source_result<ppsr::source_schema_read>>
@@ -368,6 +521,127 @@ public:
 
 private:
     fake_source_state* _state;
+};
+
+// Scripted tail reader: `batches` are handed to successive polls, so a test
+// stages the changes a tick should see. An exhausted queue polls empty, which
+// is what an idle source does.
+struct fake_tail_state {
+    // Makes arm() throw rather than report unavailable, which the tail_reader
+    // contract forbids -- so a reader that breaks it must not take the full
+    // sync down with it.
+    bool arm_throws{false};
+    // What arm() reports; `unavailable` models a source without `_schemas`
+    // over the Kafka API, routing tail ticks to the HTTP fallback.
+    srs::tail_availability arm_result{srs::tail_availability::available};
+    bool armed{false};
+    std::optional<srs::source_error> poll_error;
+    std::deque<srs::tail_batch> batches;
+    size_t arms{0};
+    size_t polls{0};
+    /// Batches the task handed back for a later tick to replay.
+    size_t rewinds{0};
+    /// The batch the last poll reported, which a rewind puts back.
+    std::optional<srs::tail_batch> replayable;
+    /// Reported by every poll instead of draining `batches`, so a state the
+    /// batch induces holds rather than lasting a single tick -- which a test
+    /// would otherwise have one tail interval to observe.
+    std::optional<srs::tail_batch> sticky;
+    // While unresolved, parks poll() and with it the whole tail tick, so a test
+    // can observe the in-progress sync's reported type. Resolve it to let the
+    // tick proceed; polls after that are not delayed.
+    std::unique_ptr<ss::shared_promise<>> poll_gate;
+
+    void open_poll_gate() {
+        poll_gate = std::make_unique<ss::shared_promise<>>();
+    }
+
+    /// Element-wise because a tail_batch is move-only.
+    static srs::tail_batch copy_of(const srs::tail_batch& batch) {
+        srs::tail_batch copy;
+        for (const auto& subject : batch.subjects) {
+            copy.subjects.insert(subject);
+        }
+        for (const auto& target : batch.mode_configs) {
+            copy.mode_configs.insert(target);
+        }
+        for (const auto& ctx : batch.contexts) {
+            copy.contexts.insert(ctx);
+        }
+        copy.truncated = batch.truncated;
+        return copy;
+    }
+
+    /// Keeps what a poll reported, as a real reader's position does, so a
+    /// rewind can hand it back.
+    void keep_for_rewind(const srs::tail_batch& batch) {
+        replayable = copy_of(batch);
+    }
+    void release_poll_gate() { poll_gate->set_value(); }
+};
+
+class fake_tail_reader final : public srs::tail_reader {
+public:
+    explicit fake_tail_reader(fake_tail_state* state)
+      : _state(state) {}
+
+    ss::future<srs::tail_availability> arm(ss::abort_source&) override {
+        ++_state->arms;
+        if (_state->arm_throws) {
+            throw std::runtime_error("tail arm failed");
+        }
+        _state->armed = _state->arm_result == srs::tail_availability::available;
+        co_return _state->arm_result;
+    }
+
+    bool armed() const override { return _state->armed; }
+
+    ss::future<srs::source_result<srs::tail_batch>>
+    poll(ss::abort_source&) override {
+        ++_state->polls;
+        if (_state->poll_gate) {
+            co_await _state->poll_gate->get_shared_future();
+        }
+        if (_state->poll_error.has_value()) {
+            co_return std::unexpected(*_state->poll_error);
+        }
+        if (_state->sticky.has_value()) {
+            co_return fake_tail_state::copy_of(*_state->sticky);
+        }
+        if (_state->batches.empty()) {
+            co_return srs::tail_batch{};
+        }
+        auto batch = std::move(_state->batches.front());
+        _state->batches.pop_front();
+        _state->keep_for_rewind(batch);
+        co_return batch;
+    }
+
+    ss::future<> rewind() override {
+        ++_state->rewinds;
+        // Puts the batch back at the front, as a real reader's position does.
+        if (_state->replayable.has_value()) {
+            _state->batches.push_front(std::move(*_state->replayable));
+            _state->replayable.reset();
+        }
+        co_return;
+    }
+
+private:
+    fake_tail_state* _state;
+};
+
+class fake_tail_reader_factory final : public srs::tail_reader_factory {
+public:
+    explicit fake_tail_reader_factory(fake_tail_state* state)
+      : _state(state) {}
+
+    std::unique_ptr<srs::tail_reader> create(cluster_link::link*) override {
+        return std::make_unique<fake_tail_reader>(_state);
+    }
+
+private:
+    fake_tail_state* _state;
 };
 
 // Holds the pieces a standalone reconcile test needs: a source state + reader,
@@ -503,6 +777,26 @@ public:
 
 protected:
     schema::registry* _inner;
+};
+
+// Counts destination inventory scans, so a test can assert a sync did not scan
+// at all rather than inferring it from the counters a scan would leave
+// unchanged. list_subject_versions over the whole in-scope set is what a scan
+// is (see scan_destination_inventory).
+class scan_counting_registry final : public delegating_registry {
+public:
+    using delegating_registry::delegating_registry;
+
+    ss::future<chunked_vector<ppsr::subject_version_deleted>>
+    list_subject_versions(
+      ss::noncopyable_function<bool(const ppsr::context_subject&)> filter,
+      ppsr::include_deleted inc) const override {
+        ++scans;
+        return delegating_registry::list_subject_versions(
+          std::move(filter), inc);
+    }
+
+    mutable size_t scans{0};
 };
 
 // Wraps a destination registry, suspending `import_schema` on an abortable wait
