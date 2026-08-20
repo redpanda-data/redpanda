@@ -1468,6 +1468,7 @@ redpanda_cc_library(
         "//src/v/base",
         "//src/v/model",
         "//src/v/raft",
+        "//src/v/ssx:mutex",
         "//src/v/storage",
         "@seastar",
     ],

@@ -1372,15 +1372,15 @@ FIXTURE_TEST(
     app.partition_manager
       .invoke_on(
         *stopped_shard,
-        [stopped_ntp](cluster::partition_manager& mgr) {
+        [stopped_ntp](
+          this auto, cluster::partition_manager& mgr) -> ss::future<> {
             auto partition = mgr.get(stopped_ntp);
             auto stm = partition->raft()
                          ->stm_manager()
-                         ->get<cluster::log_eviction_stm>();
+                         ->template get<cluster::log_eviction_stm>();
             using accessor = cluster::testing::log_eviction_stm_accessor;
-            accessor::request_abort(*stm);
-            accessor::break_has_pending_truncation(*stm);
-            return accessor::close_gate(*stm);
+            co_await stm->stop_bg_fiber();
+            co_await accessor::close_gate(*stm);
         })
       .get();
 
@@ -1442,7 +1442,6 @@ FIXTURE_TEST(
                          ->get<cluster::log_eviction_stm>();
             using accessor = cluster::testing::log_eviction_stm_accessor;
             accessor::reset_gate(*stm);
-            accessor::reset_abort_source(*stm);
         })
       .get();
 }

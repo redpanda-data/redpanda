@@ -565,6 +565,9 @@ ss::future<> partition::start(
     }
 
     // Run stm background fibers if needed.
+    if (_log_eviction_stm) {
+        co_await _log_eviction_stm->sync_bg_fiber_to_mode();
+    }
     if (auto ctp = _raft->stm_manager()->get<cloud_topics::ctp_stm>(); ctp) {
         co_await ctp->sync_bg_fiber_to_mode();
     }
@@ -1855,6 +1858,9 @@ ss::future<> partition::apply_partition_storage_mode() {
         co_await restart_archiver(true);
     }
 
+    if (_log_eviction_stm) {
+        co_await _log_eviction_stm->sync_bg_fiber_to_mode();
+    }
     if (auto ctp = _raft->stm_manager()->get<cloud_topics::ctp_stm>(); ctp) {
         co_await ctp->sync_bg_fiber_to_mode();
     }

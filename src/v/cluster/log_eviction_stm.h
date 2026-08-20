@@ -16,6 +16,7 @@
 #include "model/fundamental.h"
 #include "raft/fwd.h"
 #include "raft/persisted_stm.h"
+#include "ssx/mutex.h"
 #include "storage/kvstore.h"
 
 #include <seastar/core/abort_source.hh>
@@ -46,9 +47,45 @@ namespace testing {
 class log_eviction_stm_accessor;
 } // namespace testing
 
+class log_eviction_stm;
+
+/// Manages log_eviction_stm's background fibers: handle_log_eviction_events()
+/// and monitor_log_eviction().
+class log_eviction_bg_worker {
+public:
+    explicit log_eviction_bg_worker(log_eviction_stm& stm)
+      : _stm(stm) {}
+
+    /// Spawn the fibers; a no-op when they are already running.
+    ss::future<> start();
+
+    /// Stop the fibers and wait for them to exit; a no-op when not running.
+    ss::future<> stop();
+
+    bool is_running() const { return _fibers.has_value(); }
+
+    void notify_pending_truncation() { _has_pending_truncation.signal(); }
+
+private:
+    friend class testing::log_eviction_stm_accessor;
+
+    ss::future<> monitor_log_eviction();
+    ss::future<> handle_log_eviction_events();
+
+    log_eviction_stm& _stm;
+    ss::abort_source _as;
+    // Should be signaled every time a pending truncation may have appeared.
+    ss::condition_variable _has_pending_truncation;
+    // Present while the fibers run, resolves when both have exited.
+    std::optional<ss::future<>> _fibers;
+    // Serializes start()/stop() transitions.
+    ssx::mutex _lock{"log_eviction_bg_worker"};
+};
+
 class log_eviction_stm
   : public raft::persisted_stm<raft::kvstore_backed_stm_snapshot> {
     friend class testing::log_eviction_stm_accessor;
+    friend class log_eviction_bg_worker;
 
 public:
     static constexpr std::string_view name = "log_eviction_stm";
@@ -56,7 +93,17 @@ public:
     using offset_result = result<model::offset, std::error_code>;
     log_eviction_stm(raft::consensus*, ss::logger&, storage::kvstore&);
 
-    ss::future<> start() override;
+    /// Start or stop the background eviction fibers to match the partition's
+    /// current storage mode.  Must not be run before _raft->log()->config()
+    /// has been populated with partition_mode from partition_properties_stm.
+    /// Called by partition::start() and
+    /// partition::apply_partition_storage_mode().
+    ss::future<> sync_bg_fiber_to_mode();
+
+    /// Stop the background work fibers. Called from stop() because
+    /// partition_manager::do_shutdown() tears down stms prior to calling
+    /// partition::stop().
+    ss::future<> stop_bg_fiber();
 
     ss::future<> stop() override;
 
@@ -128,15 +175,13 @@ protected:
     ss::future<raft::stm_snapshot>
     take_local_snapshot(ssx::semaphore_units apply_units) override;
 
-    virtual ss::future<model::offset> storage_eviction_event();
+    virtual ss::future<model::offset> storage_eviction_event(ss::abort_source&);
 
 private:
     using base_t = raft::persisted_stm<raft::kvstore_backed_stm_snapshot>;
     void increment_start_offset(model::offset);
     bool should_process_evict(model::offset);
 
-    ss::future<> monitor_log_eviction();
-    ss::future<> handle_log_eviction_events();
     ss::future<> do_apply(const model::record_batch&) final;
     ss::future<> apply_raft_snapshot(const iobuf&) final;
 
@@ -146,8 +191,6 @@ private:
       std::optional<std::reference_wrapper<ss::abort_source>> as);
 
 private:
-    ss::abort_source _as;
-
     // Offset we are able to truncate based on local retention policy, as
     // signaled by the storage layer. This value is not maintained via the
     // persisted_stm and may be different across replicas.
@@ -158,11 +201,10 @@ private:
     // replica.
     model::offset _delete_records_eviction_offset;
 
-    // Should be signaled every time either of the above offsets are updated.
-    ss::condition_variable _has_pending_truncation;
-
     // Kafka offset of the last `prefix_truncate_record` applied to this stm.
     kafka::offset _cached_kafka_start_offset_override;
+
+    log_eviction_bg_worker _bg_worker;
 
     ss::gate& gate() { return _gate; }
 };
@@ -179,16 +221,8 @@ public:
 
     static void reset_gate(log_eviction_stm& stm) { stm.gate() = ss::gate{}; }
 
-    static void request_abort(log_eviction_stm& stm) {
-        stm._as.request_abort();
-    }
-
-    static void reset_abort_source(log_eviction_stm& stm) {
-        stm._as = ss::abort_source{};
-    }
-
-    static void break_has_pending_truncation(log_eviction_stm& stm) {
-        stm._has_pending_truncation.broken();
+    static bool bg_fiber_running(const log_eviction_stm& stm) {
+        return stm._bg_worker.is_running();
     }
 };
 

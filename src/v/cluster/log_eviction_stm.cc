@@ -18,6 +18,8 @@
 #include "serde/envelope.h"
 #include "ssx/future-util.h"
 
+#include <seastar/core/when_all.hh>
+
 namespace cluster {
 
 struct snapshot_data
@@ -35,29 +37,59 @@ struct snapshot_data
 
 log_eviction_stm::log_eviction_stm(
   raft::consensus* raft, ss::logger& logger, storage::kvstore& kvstore)
-  : base_t("log_eviction_stm.snapshot", logger, raft, kvstore) {}
+  : base_t("log_eviction_stm.snapshot", logger, raft, kvstore)
+  , _bg_worker(*this) {}
 
-ss::future<> log_eviction_stm::start() {
-    ssx::spawn_with_gate(_gate, [this] { return monitor_log_eviction(); });
-    ssx::spawn_with_gate(
-      _gate, [this] { return handle_log_eviction_events(); });
-    return base_t::start();
-}
+ss::future<> log_eviction_stm::stop_bg_fiber() { return _bg_worker.stop(); }
 
 ss::future<> log_eviction_stm::stop() {
-    _as.request_abort();
-    _has_pending_truncation.broken();
+    co_await stop_bg_fiber();
     co_await base_t::stop();
 }
 
-ss::future<> log_eviction_stm::handle_log_eviction_events() {
+ss::future<> log_eviction_stm::sync_bg_fiber_to_mode() {
+    // Storage-driven eviction only applies to partitions that are not cloud
+    // topics; on a cloud topic (in particular a migrated one, which retains
+    // this stm) local-log trimming is driven by the ctp_stm instead.
+    const bool should_run = !_raft->log()->config().cloud_topic_enabled()
+                            && !_gate.is_closed();
+    if (should_run) {
+        co_await _bg_worker.start();
+    } else {
+        co_await _bg_worker.stop();
+    }
+}
+
+ss::future<> log_eviction_bg_worker::start() {
+    auto units = co_await _lock.get_units();
+    if (_fibers.has_value()) {
+        co_return;
+    }
+    _fibers = ss::when_all_succeed(
+                monitor_log_eviction(), handle_log_eviction_events())
+                .discard_result();
+}
+
+ss::future<> log_eviction_bg_worker::stop() {
+    auto units = co_await _lock.get_units();
+    if (!_fibers.has_value()) {
+        co_return;
+    }
+    _as.request_abort();
+    _has_pending_truncation.signal();
+    co_await std::exchange(_fibers, std::nullopt).value();
+    // A fresh abort source so the fibers can be started again.
+    _as = ss::abort_source{};
+}
+
+ss::future<> log_eviction_bg_worker::handle_log_eviction_events() {
     static constexpr auto retry_backoff_time = 5s;
     /// This method is executed as a background fiber and it attempts to write
     /// snapshots as close to effective_start_offset as possible.
-    auto gh = _gate.hold();
+    auto gh = _stm.gate().hold();
 
     bool previous_iter_truncated_everything = true;
-    while (!_as.abort_requested() && !_gate.is_closed()) {
+    while (!_as.abort_requested() && !_stm.gate().is_closed()) {
         /// This background fiber can be woken-up via apply() when special
         /// batches are processed or by the storage layer when local
         /// eviction is triggered.
@@ -84,10 +116,10 @@ ss::future<> log_eviction_stm::handle_log_eviction_events() {
         }
 
         auto evict_until = std::max(
-          _delete_records_eviction_offset, _storage_eviction_offset);
+          _stm._delete_records_eviction_offset, _stm._storage_eviction_offset);
         try {
             previous_iter_truncated_everything
-              = co_await _raft->snapshot_and_truncate_log(evict_until);
+              = co_await _stm._raft->snapshot_and_truncate_log(evict_until);
         } catch (const ss::abort_requested_exception& ex) {
             // ignore abort requested exception, shutting down
             std::ignore = ex;
@@ -98,27 +130,28 @@ ss::future<> log_eviction_stm::handle_log_eviction_events() {
             std::ignore = ex;
         } catch (const std::exception& e) {
             vlog(
-              _log.error,
+              _stm._log.error,
               "Error occurred when attempting to write snapshot: {}",
               e);
         }
     }
 }
 
-ss::future<model::offset> log_eviction_stm::storage_eviction_event() {
-    return _raft->monitor_log_eviction(_as);
+ss::future<model::offset>
+log_eviction_stm::storage_eviction_event(ss::abort_source& as) {
+    return _raft->monitor_log_eviction(as);
 }
 
-ss::future<> log_eviction_stm::monitor_log_eviction() {
+ss::future<> log_eviction_bg_worker::monitor_log_eviction() {
     /// This method is executed as a background fiber and is listening for
     /// eviction events from the storage layer. These events will trigger a
     /// write snapshot, and the log will be prefix truncated.
-    auto gh = _gate.hold();
+    auto gh = _stm.gate().hold();
     while (!_as.abort_requested()) {
         try {
-            auto eviction_offset = co_await storage_eviction_event();
-            if (eviction_offset > _storage_eviction_offset) {
-                _storage_eviction_offset = eviction_offset;
+            auto eviction_offset = co_await _stm.storage_eviction_event(_as);
+            if (eviction_offset > _stm._storage_eviction_offset) {
+                _stm._storage_eviction_offset = eviction_offset;
                 _has_pending_truncation.signal();
             }
         } catch (const ss::abort_requested_exception&) {
@@ -126,7 +159,7 @@ ss::future<> log_eviction_stm::monitor_log_eviction() {
         } catch (const ss::gate_closed_exception&) {
             // ignore gate closed exception, shutting down
         } catch (const std::exception& e) {
-            vlog(_log.info, "Error handling log eviction - {}", e);
+            vlog(_stm._log.info, "Error handling log eviction - {}", e);
         }
     }
 }
@@ -337,7 +370,7 @@ ss::future<> log_eviction_stm::do_apply(const model::record_batch& batch) {
 
         /// Set the delete records offset.
         _delete_records_eviction_offset = truncate_offset;
-        _has_pending_truncation.signal();
+        _bg_worker.notify_pending_truncation();
     }
 }
 

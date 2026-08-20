@@ -19,11 +19,6 @@ public:
       raft::consensus* c, ss::logger& logger, storage::kvstore& kvs)
       : cluster::log_eviction_stm(c, logger, kvs) {}
 
-    ss::future<> stop() override {
-        p->set_exception(ss::abort_requested_exception());
-        return cluster::log_eviction_stm::stop();
-    }
-
     /**
      * The two following methods can be used to drive the eviction stms
      * storage eviction event processing loop. It works by overriding a method
@@ -35,11 +30,24 @@ public:
      * that the event loop will call storage_eviction_event() for the next
      * future.
      */
-    ss::future<model::offset> storage_eviction_event() override {
+    ss::future<model::offset>
+    storage_eviction_event(ss::abort_source& as) override {
         logger.info("eviction_stm waiting on storage event");
         vassert(!p.has_value(), "Cannot have value");
+        if (as.abort_requested()) {
+            return ss::make_exception_future<model::offset>(
+              ss::abort_requested_exception());
+        }
         p = ss::promise<model::offset>();
-        return p->get_future();
+        /// Use passed abort source so worker's stop() wakes a parked fiber
+        /// without test involvement.
+        auto sub = as.subscribe([this]() noexcept {
+            if (p.has_value()) {
+                p->set_exception(ss::abort_requested_exception());
+                p.reset();
+            }
+        });
+        return p->get_future().finally([sub = std::move(sub)] {});
     }
 
     void drive_eviction_loop(model::offset o) {
@@ -71,6 +79,11 @@ TEST_F(eviction_stm_fixture, test_eviction_stm_deadlock) {
           node->raft().get(), logger(), node->get_kvstore());
 
         node->start(std::move(stm_mgr_builder)).get();
+        node->raft()
+          ->stm_manager()
+          ->get<test_log_eviction_stm>()
+          ->sync_bg_fiber_to_mode()
+          .get();
     }
     std::vector<storage::offset_stats> offsets;
     for (auto i = 0; i < 5; ++i) {
@@ -124,4 +137,33 @@ TEST_F(eviction_stm_fixture, test_eviction_stm_deadlock) {
 
     next_start_offset = highest_term1_offset + model::offset(1);
     ASSERT_EQ(next_start_offset, eviction_stm->effective_start_offset());
+}
+
+TEST_F(eviction_stm_fixture, test_bg_worker_stops_on_cloud_transition) {
+    add_node(model::node_id(0), model::revision_id(0));
+    for (auto& [id, node] : nodes()) {
+        raft::state_machine_manager_builder stm_mgr_builder;
+        node->initialise(all_vnodes()).get();
+        stm_mgr_builder.create_stm<cluster::log_eviction_stm>(
+          node->raft().get(), logger(), node->get_kvstore());
+        node->start(std::move(stm_mgr_builder)).get();
+    }
+    auto& n = node(model::node_id(0));
+    auto stm = n.raft()->stm_manager()->get<cluster::log_eviction_stm>();
+    using accessor = cluster::testing::log_eviction_stm_accessor;
+
+    /// The fibers do not start with the stm; the partition starts them once
+    /// the durable storage mode has been fed into ntp_config.
+    ASSERT_FALSE(accessor::bg_fiber_running(*stm));
+
+    /// A partition that is not a cloud topic runs the eviction fibers.
+    stm->sync_bg_fiber_to_mode().get();
+    ASSERT_TRUE(accessor::bg_fiber_running(*stm));
+
+    /// Flipping the partition's storage mode to cloud stops the fibers on the
+    /// next sync, as the partition-mode-change path will do.
+    n.raft()->log()->set_partition_storage_mode(
+      model::redpanda_storage_mode::cloud);
+    stm->sync_bg_fiber_to_mode().get();
+    ASSERT_FALSE(accessor::bg_fiber_running(*stm));
 }
