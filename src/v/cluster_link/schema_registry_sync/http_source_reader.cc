@@ -29,9 +29,9 @@
 
 #include <ada.h>
 #include <algorithm>
-#include <array>
 #include <charconv>
 #include <chrono>
+#include <initializer_list>
 #include <system_error>
 #include <variant>
 
@@ -53,23 +53,20 @@ constexpr auto request_backoff = 100ms;
 // the source.
 constexpr size_t max_source_connections = 8;
 
-// Map a rest_client failure onto a source_error. A source that is unreachable
-// or rejecting every request is source_unavailable and parks the link; a 404 is
-// subject_not_found, or schema_id_not_found when it names an unresolved schema
-// id; any other terminal status is a per-item operation_failed.
-source_error to_source_error(rc::domain_error err) {
-    using enum boost::beast::http::status;
+// The mapping shared by every endpoint: a source that is unreachable or
+// aborted is source_unavailable; the documented misses the rest_client typed
+// are subject_not_found / schema_id_not_found; any other failure -- HTTP
+// statuses included -- is a per-item operation_failed. Statuses that mean
+// something more on a given endpoint are claimed by that endpoint's mapper
+// before delegating here.
+source_error map_common(rc::domain_error err) {
     auto kind = ss::visit(
       err,
       [](const rc::http_call_error& call) {
           return ss::visit(
             call,
-            [](const rc::http_status_error& s) {
-                // Auth failures are link-wide and deterministic, so back off
-                // rather than re-fail every subject in turn.
-                return s.status == unauthorized || s.status == forbidden
-                         ? source_error_kind::source_unavailable
-                         : source_error_kind::operation_failed;
+            [](const rc::http_status_error&) {
+                return source_error_kind::operation_failed;
             },
             // A permanent exception with no HTTP response: source unreachable.
             [](const ss::sstring&) {
@@ -92,41 +89,64 @@ source_error to_source_error(rc::domain_error err) {
     return source_error{.kind = kind, .message = fmt::format("{}", err)};
 }
 
-// Whether the source refuses to serve this endpoint at all -- the caller
-// can then skip it and retry later instead of parking the link. 401: the
-// required reads park the link on it anyway. 405/406: method or media type
-// not served. 404: only a raw one; the documented miss (404/40403) is typed
-// as schema_id_not_found before this. 403 is mapped in
-// list_schema_id_subject_versions instead.
-bool is_endpoint_denied(const rc::domain_error& err) {
-    using enum boost::beast::http::status;
+bool has_any_status(
+  const rc::domain_error& err,
+  std::initializer_list<boost::beast::http::status> statuses) {
     return ss::visit(
       err,
-      [](const rc::http_call_error& call) {
+      [&](const rc::http_call_error& call) {
           return ss::visit(
             call,
-            [](const rc::http_status_error& s) {
-                constexpr auto denied = std::array{
-                  unauthorized, method_not_allowed, not_acceptable, not_found};
-                return std::ranges::contains(denied, s.status);
+            [&](const rc::http_status_error& s) {
+                return std::ranges::contains(statuses, s.status);
             },
             [](const auto&) { return false; });
       },
       [](const auto&) { return false; });
 }
 
-bool is_forbidden(const rc::domain_error& err) {
-    return ss::visit(
-      err,
-      [](const rc::http_call_error& call) {
-          return ss::visit(
-            call,
-            [](const rc::http_status_error& s) {
-                return s.status == boost::beast::http::status::forbidden;
-            },
-            [](const auto&) { return false; });
-      },
-      [](const auto&) { return false; });
+// The mapper for the reads the sync cannot run without. Auth failures are
+// link-wide and deterministic, so back off rather than re-fail every subject
+// in turn.
+source_error map_required_error(rc::domain_error err) {
+    using enum boost::beast::http::status;
+    if (has_any_status(err, {unauthorized, forbidden})) {
+        return source_error{
+          .kind = source_error_kind::source_unavailable,
+          .message = fmt::format("{}", err)};
+    }
+    return map_common(std::move(err));
+}
+
+// The mapper for list_schema_id_subject_versions, the sync's only optional
+// read.
+//
+// 403: an ACL-enabled source answers a missing id with the same 403 as a
+// denial, by design -- the broker logs which one it was. Reported as its own
+// kind so it stays distinguishable from both a documented miss and a
+// link-wide auth failure; only the caller knows, per call, whether it ends
+// an id walk or counts as an ordinary failure.
+//
+// endpoint_unsupported: the source refuses to serve this endpoint at all --
+// the caller can then skip it and retry later instead of parking the link.
+// 401: the required reads park the link on it anyway. 405/406: method or
+// media type not served. 404: only a raw one; the documented miss
+// (404/40403) is typed as schema_id_not_found before this.
+source_error map_schema_id_versions_error(rc::domain_error err) {
+    using enum boost::beast::http::status;
+    if (has_any_status(err, {forbidden})) {
+        return source_error{
+          .kind = source_error_kind::forbidden,
+          .message = fmt::format("{}", err)};
+    }
+    if (
+      has_any_status(
+        err, {unauthorized, method_not_allowed, not_acceptable, not_found})) {
+        return source_error{
+          .kind = source_error_kind::endpoint_unsupported,
+          .message = fmt::format("{}", err)};
+    }
+    return map_common(std::move(err));
 }
 
 // Narrow the open-enum source mode to Redpanda's mode. READONLY_OVERRIDE is
@@ -305,7 +325,7 @@ http_source_reader::list_contexts(ss::abort_source& as) {
     // contexts are discovered. The default context is always present (".").
     auto res = co_await client.value()->list_contexts(rtc);
     if (!res.has_value()) {
-        co_return std::unexpected(to_source_error(std::move(res.error())));
+        co_return std::unexpected(map_required_error(std::move(res.error())));
     }
     co_return std::move(res.value());
 }
@@ -325,7 +345,7 @@ http_source_reader::list_subjects(ppsr::context ctx, ss::abort_source& as) {
     auto res = co_await client.value()->list_subjects(
       rtc, ppsr::include_deleted::yes, ctx);
     if (!res.has_value()) {
-        co_return std::unexpected(to_source_error(std::move(res.error())));
+        co_return std::unexpected(map_required_error(std::move(res.error())));
     }
     co_return std::move(res.value());
 }
@@ -343,7 +363,7 @@ http_source_reader::list_subject_versions(
     auto res = co_await client.value()->list_subject_versions(
       sub, rtc, include_deleted);
     if (!res.has_value()) {
-        co_return std::unexpected(to_source_error(std::move(res.error())));
+        co_return std::unexpected(map_required_error(std::move(res.error())));
     }
     co_return std::move(res.value());
 }
@@ -361,7 +381,8 @@ http_source_reader::list_schema_id_subject_versions(
     retry_chain_node rtc(as, request_timeout, request_backoff);
     // Ids are namespaced per context. The bare-context form (empty subject,
     // wire ":.dev:") names the context without constraining which subject
-    // carries the id -- that is what the probe is discovering. As with
+    // carries the id -- which subject carries it is what the caller is
+    // asking. As with
     // mode/config, the default context omits the parameter so a source
     // without context support is still served.
     auto subject = ctx == ppsr::default_context
@@ -371,27 +392,8 @@ http_source_reader::list_schema_id_subject_versions(
     auto res = co_await client.value()->get_schema_id_subject_versions(
       id, rtc, std::move(subject), include_deleted);
     if (!res.has_value()) {
-        // Not in to_source_error: this probe is the sync's only optional
-        // read; the shared mapping stays right for the required ones.
-        //
-        // 403: an ACL-enabled source answers a missing id with the same
-        // 403 as a denial, by design -- the broker logs which one it was.
-        // Reported as its own kind: the existence ask treats it as the
-        // walk's routine end, but it must never read as a miss to the
-        // live-only ask, whose miss feeds soft-delete classification.
-        if (is_forbidden(res.error())) {
-            co_return std::unexpected(
-              source_error{
-                .kind = source_error_kind::forbidden,
-                .message = fmt::format("{}", res.error())});
-        }
-        if (is_endpoint_denied(res.error())) {
-            co_return std::unexpected(
-              source_error{
-                .kind = source_error_kind::endpoint_unsupported,
-                .message = fmt::format("{}", res.error())});
-        }
-        co_return std::unexpected(to_source_error(std::move(res.error())));
+        co_return std::unexpected(
+          map_schema_id_versions_error(std::move(res.error())));
     }
     co_return std::move(res.value());
 }
@@ -412,7 +414,7 @@ http_source_reader::read_subject_version(
     auto res = co_await client.value()->get_schema_by_version(
       sub, version, rtc, ppsr::include_deleted::yes);
     if (!res.has_value()) {
-        co_return std::unexpected(to_source_error(std::move(res.error())));
+        co_return std::unexpected(map_required_error(std::move(res.error())));
     }
     // Carry the read through unchanged: the schema, any unsupported fields the
     // source served but Redpanda cannot store, and whether the source reported
@@ -439,7 +441,7 @@ http_source_reader::read_mode(ppsr::context_subject sub, ss::abort_source& as) {
         if (std::holds_alternative<rc::subject_mode_not_found>(res.error())) {
             co_return std::optional<ppsr::mode>{std::nullopt};
         }
-        co_return std::unexpected(to_source_error(std::move(res.error())));
+        co_return std::unexpected(map_required_error(std::move(res.error())));
     }
     auto narrowed = narrow_mode(res.value().mode);
     if (!narrowed.has_value()) {
@@ -471,7 +473,7 @@ ss::future<source_result<source_config_read>> http_source_reader::read_config(
         if (std::holds_alternative<rc::subject_config_not_found>(res.error())) {
             co_return source_config_read{.compatibility = std::nullopt};
         }
-        co_return std::unexpected(to_source_error(std::move(res.error())));
+        co_return std::unexpected(map_required_error(std::move(res.error())));
     }
     // A governance-only config (no compatibility level) is "no override"; its
     // unsupported fields still reach the policy. The Config API documents the
