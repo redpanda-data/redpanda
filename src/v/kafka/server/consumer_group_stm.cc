@@ -120,6 +120,38 @@ consumer_group_stm::get_group(const kafka::group_id& id) const {
     return nullptr;
 }
 
+ss::lw_shared_ptr<offset_store>
+consumer_group_stm::get_offsets(const kafka::group_id& id) const {
+    if (auto it = _offsets.find(id); it != _offsets.end()) {
+        return it->second;
+    }
+    return nullptr;
+}
+
+ss::lw_shared_ptr<offset_store>
+consumer_group_stm::get_or_create_offsets(const kafka::group_id& id) {
+    auto it = _offsets.find(id);
+    if (it == _offsets.end()) {
+        it = _offsets
+               .emplace(
+                 id,
+                 ss::make_lw_shared<offset_store>(
+                   id,
+                   config::shard_local_cfg(),
+                   _catchup_lock,
+                   std::make_unique<null_offset_writer>(),
+                   model::term_id{},
+                   std::make_unique<null_tx_coordinator_client>(),
+                   _feature_table,
+                   // The store outlives any group of its id, so no group's
+                   // death can stop it applying.
+                   [] { return false; },
+                   offset_store::role::applied))
+               .first;
+    }
+    return it->second;
+}
+
 consumer_group&
 consumer_group_stm::get_or_create_group(const kafka::group_id& id) {
     auto it = _groups.find(id);
@@ -129,13 +161,7 @@ consumer_group_stm::get_or_create_group(const kafka::group_id& id) {
                .emplace(
                  id,
                  ss::make_lw_shared<consumer_group>(
-                   id,
-                   config::shard_local_cfg(),
-                   _catchup_lock,
-                   std::make_unique<null_offset_writer>(),
-                   model::term_id{},
-                   std::make_unique<null_tx_coordinator_client>(),
-                   _feature_table))
+                   id, get_or_create_offsets(id)))
                .first;
     }
     return *it->second;
@@ -258,16 +284,15 @@ consumer_group_stm::apply_group_metadata(consumer_group_metadata_kv md) {
           it->second->offsets().has_transactions_in_progress());
     }
     vlog(cg_klog.debug, "[group: {}] dropping the group", md.key.group_id);
-    co_await detach_group(it)->stop();
-}
-
-ss::lw_shared_ptr<consumer_group>
-consumer_group_stm::detach_group(groups_map::iterator it) {
-    auto group = it->second;
-    group->mark_removed();
-    group->offsets().pre_shutdown();
+    it->second->mark_removed();
+    // The group's transactions go with it: nothing will apply their commit or
+    // abort once the group is gone, so a transaction left open would hold the
+    // compaction bound for the partition forever. The committed offsets stay:
+    // they are keyed by group id, not by the group, and the deletion that
+    // wrote this tombstone writes their tombstones too.
+    it->second->offsets().reset_tx_state(model::term_id{});
     _groups.erase(it);
-    return group;
+    co_return;
 }
 
 void consumer_group_stm::apply_member_metadata(
@@ -364,20 +389,26 @@ void consumer_group_stm::apply_current_member_assignment(
 
 void consumer_group_stm::apply_offset_metadata(
   offset_metadata_kv md, model::offset log_offset) {
-    auto it = _groups.find(md.key.group_id);
-    if (it == _groups.end()) {
-        // not owned here: a classic group's offsets, which the classic
-        // coordinator applies. Checked before the group block, which would
-        // otherwise warn about every blocked classic group's offsets.
+    // Not filtered by ownership: an offset record names no protocol, and a
+    // group's own records can replay after its offsets, which compaction
+    // makes routine because a group's metadata record is rewritten on every
+    // epoch bump while its offset records stay where they were written.
+    // Filtering on the group would discard the offsets of the very group that
+    // is about to be created.
+    if (
+      auto blocked = _group_blocks.find(md.key.group_id);
+      blocked != _group_blocks.end() && blocked->second.is_blocked) {
+        vlog(
+          cg_klog.trace,
+          "[group: {}] skipping offsets, group is blocked",
+          md.key.group_id);
         return;
     }
-    if (is_group_blocked_verbose(md.key.group_id, "offsets")) {
-        return;
-    }
+    auto offsets = get_or_create_offsets(md.key.group_id);
     model::topic_partition tp(md.key.topic, md.key.partition);
     if (md.value) {
         const auto expiry = md.value->expiry();
-        it->second->offsets().try_upsert_offset(
+        offsets->try_upsert_offset(
           tp,
           offset_store::offset_metadata{
             .log_offset = log_offset,
@@ -391,8 +422,14 @@ void consumer_group_stm::apply_offset_metadata(
             // offset from retention
             .non_reclaimable = false,
           });
-    } else {
-        it->second->offsets().erase_offset(tp);
+        return;
+    }
+    offsets->erase_offset(tp);
+    // The last of an id's offsets going away leaves nothing to hold, unless a
+    // group of that id is holding the store.
+    if (offsets->empty() && !_groups.contains(md.key.group_id)) {
+        offsets->pre_shutdown();
+        _offsets.erase(md.key.group_id);
     }
 }
 
@@ -544,9 +581,9 @@ ss::future<> consumer_group_stm::start() {
 
 ss::future<> consumer_group_stm::stop() {
     co_await raft::persisted_stm<>::stop();
-    for (const auto& [_, group] : _groups) {
-        group->offsets().pre_shutdown();
-        co_await group->stop();
+    for (const auto& [_, offsets] : _offsets) {
+        offsets->pre_shutdown();
+        co_await offsets->stop();
     }
 }
 

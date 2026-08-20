@@ -33,27 +33,9 @@ std::string_view to_string_view(consumer_group_state s) {
 }
 
 consumer_group::consumer_group(
-  kafka::group_id id,
-  config::configuration& conf,
-  ss::lw_shared_ptr<ss::rwlock> catchup_lock,
-  std::unique_ptr<offset_writer> writer,
-  model::term_id term,
-  std::unique_ptr<tx_coordinator_client> tx_coordinator,
-  ss::sharded<features::feature_table>& feature_table)
+  kafka::group_id id, ss::lw_shared_ptr<offset_store> offsets)
   : _id(std::move(id))
-  , _offset_store(
-      _id,
-      conf,
-      std::move(catchup_lock),
-      std::move(writer),
-      term,
-      std::move(tx_coordinator),
-      feature_table,
-      [this] { return _removed; },
-      // A consumer group is applied state on every replica of its partition:
-      // it neither expires transactions nor exports offset metrics, both of
-      // which belong to whichever replica is serving the group.
-      offset_store::role::applied) {}
+  , _offset_store(std::move(offsets)) {}
 
 void consumer_group::upsert_member(consumer_group_member member) {
     auto id = member.id;

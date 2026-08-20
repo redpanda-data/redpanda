@@ -14,16 +14,11 @@
 #include "config/configuration.h"
 #include "container/chunked_hash_map.h"
 #include "container/chunked_vector.h"
-#include "features/feature_table.h"
 #include "kafka/protocol/types.h"
 #include "kafka/server/group_metadata.h"
 #include "kafka/server/offset_store.h"
-#include "kafka/server/offset_writer.h"
-#include "kafka/server/tx_coordinator_client.h"
 #include "model/fundamental.h"
 
-#include <seastar/core/rwlock.hh>
-#include <seastar/core/sharded.hh>
 #include <seastar/core/shared_ptr.hh>
 
 #include <chrono>
@@ -125,16 +120,10 @@ public:
     using target_assignment_map
       = chunked_hash_map<kafka::member_id, member_partitions>;
 
-    /// Takes the offset writer and the transaction-coordinator client rather
-    /// than a partition, so the caller decides what the group writes through.
-    consumer_group(
-      kafka::group_id id,
-      config::configuration& conf,
-      ss::lw_shared_ptr<ss::rwlock> catchup_lock,
-      std::unique_ptr<offset_writer> writer,
-      model::term_id term,
-      std::unique_ptr<tx_coordinator_client> tx_coordinator,
-      ss::sharded<features::feature_table>& feature_table);
+    /// Takes the store its id's offsets live in rather than building one, so
+    /// the caller decides what the offsets write through and how long they
+    /// outlive the group.
+    consumer_group(kafka::group_id id, ss::lw_shared_ptr<offset_store> offsets);
 
     consumer_group(const consumer_group&) = delete;
     consumer_group& operator=(const consumer_group&) = delete;
@@ -164,9 +153,13 @@ public:
         return _target_assignment;
     }
 
-    /// The group's committed offsets and transaction state.
-    offset_store& offsets() { return _offset_store; }
-    const offset_store& offsets() const { return _offset_store; }
+    /// \brief The group's committed offsets and transaction state.
+    ///
+    /// Held rather than owned: a group id's offsets exist independently of the
+    /// group, before it is created and after it is deleted, so whoever applies
+    /// the records owns the store and hands the group a handle to it.
+    offset_store& offsets() { return *_offset_store; }
+    const offset_store& offsets() const { return *_offset_store; }
 
     /// \brief The group's lifecycle label, derived from the epochs.
     ///
@@ -222,7 +215,7 @@ public:
     /// offsets do not count against it; a conversion preserves them.
     bool deletable() const {
         return _members.empty()
-               && !_offset_store.has_transactions_in_progress();
+               && !_offset_store->has_transactions_in_progress();
     }
 
     /// Applying the group's tombstone. An offset commit that lands after this
@@ -232,9 +225,6 @@ public:
 
     bool removed() const { return _removed; }
 
-    /// Stops the offset state, which is expiring transactions on a timer.
-    ss::future<> stop() { return _offset_store.stop(); }
-
 private:
     kafka::group_id _id;
     kafka::group_epoch _epoch{0};
@@ -243,7 +233,7 @@ private:
     bool _removed{false};
     members_map _members;
     target_assignment_map _target_assignment;
-    offset_store _offset_store;
+    ss::lw_shared_ptr<offset_store> _offset_store;
 };
 
 } // namespace kafka

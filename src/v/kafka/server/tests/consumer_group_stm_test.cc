@@ -481,13 +481,51 @@ TEST_F_CORO(consumer_group_stm_fixture, offsets_apply_latest_wins) {
 
 TEST_F_CORO(consumer_group_stm_fixture, an_offset_does_not_create_a_group) {
     co_await start_cluster();
+    const auto tp = model::topic_partition(
+      model::topic("t"), model::partition_id(0));
 
     co_await replicate_records(offset_kv(test_group_id, "t", 0, 42));
     co_await wait_for_apply();
 
+    // the offsets are held whatever protocol owns the id, but they do not
+    // make a group of it
     for (auto& [_, stm] : _stms) {
-        // not owned here: a classic group's offsets
         ASSERT_TRUE_CORO(stm->get_group(test_group_id) == nullptr);
+        auto offsets = stm->get_offsets(test_group_id);
+        ASSERT_TRUE_CORO(offsets != nullptr);
+        ASSERT_EQ_CORO(offsets->offset(tp)->offset, model::offset(42));
+    }
+
+    // the last offset of an id no group holds leaves nothing behind
+    co_await replicate_records(offset_tombstone_kv(test_group_id, "t", 0));
+    co_await wait_for_apply();
+
+    for (auto& [_, stm] : _stms) {
+        ASSERT_TRUE_CORO(stm->get_offsets(test_group_id) == nullptr);
+    }
+}
+
+TEST_F_CORO(
+  consumer_group_stm_fixture, a_group_created_after_its_offsets_finds_them) {
+    co_await start_cluster();
+    const auto tp = model::topic_partition(
+      model::topic("t"), model::partition_id(0));
+
+    // The order compaction leaves behind: a group's metadata record is
+    // rewritten on every epoch bump, so it survives above offsets committed
+    // before the bump, and replay reaches those offsets before the group
+    // exists. Discarding them would lose committed offsets on every restart.
+    co_await replicate_records(offset_kv(test_group_id, "t", 0, 42));
+    co_await replicate_records(group_kv(test_group_id, 7));
+    co_await wait_for_apply();
+
+    for (auto& [_, stm] : _stms) {
+        auto group = stm->get_group(test_group_id);
+        ASSERT_TRUE_CORO(group != nullptr);
+        ASSERT_EQ_CORO(group->epoch(), kafka::group_epoch(7));
+        auto offset = group->offsets().offset(tp);
+        ASSERT_TRUE_CORO(offset.has_value());
+        ASSERT_EQ_CORO(offset->offset, model::offset(42));
     }
 }
 
@@ -583,13 +621,16 @@ TEST_F_CORO(consumer_group_stm_fixture, a_recreated_group_starts_clean) {
     co_await replicate_records(group_kv(test_group_id, 5));
     co_await wait_for_apply();
 
-    // the create after the tombstone is a new group, not the dropped one
+    // The create after the tombstone is a new group, not the dropped one:
+    // nothing of the old membership survives it. Its offsets do, because
+    // nothing tombstoned them, which is also what makes them survive the
+    // conversion of an empty group.
     for (auto& [_, stm] : _stms) {
         auto group = stm->get_group(test_group_id);
         ASSERT_TRUE_CORO(group != nullptr);
         ASSERT_EQ_CORO(group->epoch(), kafka::group_epoch(5));
         ASSERT_TRUE_CORO(group->members().empty());
-        ASSERT_FALSE_CORO(group->offsets().offset(tp).has_value());
+        ASSERT_EQ_CORO(group->offsets().offset(tp)->offset, model::offset(42));
     }
 }
 
@@ -707,14 +748,17 @@ TEST_F_CORO(consumer_group_stm_fixture, a_downgrade_batch_drops_the_group) {
     ASSERT_TRUE_CORO(
       leader->get_group(test_group_id)->offsets().offset(tp).has_value());
 
-    // committed offsets do not block the conversion; they stay on the log for
-    // the classic coordinator to recover
+    // committed offsets do not block the conversion; they stay for the
+    // classic coordinator to recover, which reads them from the log
     co_await replicate_records(
       group_tombstone_kv(test_group_id), classic_group_kv(test_group_id));
     co_await wait_for_apply();
 
     for (auto& [_, stm] : _stms) {
         ASSERT_TRUE_CORO(stm->get_group(test_group_id) == nullptr);
+        ASSERT_EQ_CORO(
+          stm->get_offsets(test_group_id)->offset(tp)->offset,
+          model::offset(42));
     }
 }
 
@@ -803,11 +847,13 @@ TEST_F_CORO(
     co_await replicate_records(
       member_tombstone_kv(full, "m2"), group_kv(full, 3));
 
-    // what dedup compaction leaves of it: the latest record per key, with the
-    // removed member's create and tombstone both gone
-    co_await replicate_records(group_kv(compacted, 3));
+    // What dedup compaction leaves of it: the latest record per key, each
+    // where it was written, with the removed member's create and tombstone
+    // both gone. The group's metadata record was rewritten last, so it lands
+    // above the offset that was committed before it.
     co_await replicate_records(member_kv(compacted, "m1", "new"));
     co_await replicate_records(offset_kv(compacted, "t", 0, 43));
+    co_await replicate_records(group_kv(compacted, 3));
     co_await wait_for_apply();
 
     for (auto& [_, stm] : _stms) {

@@ -91,7 +91,7 @@ struct consumer_group_test : seastar_test {
     }
 
     ss::future<> TearDownAsync() override {
-        co_await group.stop();
+        co_await offsets->stop();
         co_await feature_table.stop();
     }
 
@@ -100,14 +100,20 @@ struct consumer_group_test : seastar_test {
     ss::lw_shared_ptr<ss::rwlock> catchup_lock
       = ss::make_lw_shared<ss::rwlock>();
 
-    consumer_group group{
+    /// The group holds its offsets rather than owning them, so the store is
+    /// built here and outlives the group the way the state machine's does.
+    ss::lw_shared_ptr<offset_store> offsets = ss::make_lw_shared<offset_store>(
       test_group,
       config::shard_local_cfg(),
       catchup_lock,
       std::make_unique<unused_writer>(),
       model::term_id(1),
       std::make_unique<unused_tx_coordinator>(),
-      feature_table};
+      feature_table,
+      [] { return false; },
+      offset_store::role::applied);
+
+    consumer_group group{test_group, offsets};
 };
 
 TEST_F(consumer_group_test, a_new_group_is_empty) {

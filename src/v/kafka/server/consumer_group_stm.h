@@ -64,12 +64,26 @@ public:
     using groups_map
       = chunked_hash_map<kafka::group_id, ss::lw_shared_ptr<consumer_group>>;
 
+    /// The committed offsets of every group id on the partition, whichever
+    /// protocol owns it. Offset records carry nothing that says which
+    /// protocol wrote them, and a group's own records can replay after its
+    /// offsets, so ownership cannot decide whether to apply one.
+    using offsets_map
+      = chunked_hash_map<kafka::group_id, ss::lw_shared_ptr<offset_store>>;
+
     /// The group, or nullptr if this partition's log has not created one by
     /// that id. Only meaningful once the state machine is caught up: a leader
     /// serving reads gates on sync() first.
     ss::lw_shared_ptr<consumer_group> get_group(const kafka::group_id&) const;
 
     const groups_map& groups() const { return _groups; }
+
+    /// The offsets of a group id, or nullptr if none have been applied for it.
+    /// Held for ids this machine does not own, so that a group created after
+    /// its offsets finds them.
+    ss::lw_shared_ptr<offset_store> get_offsets(const kafka::group_id&) const;
+
+    const offsets_map& offsets() const { return _offsets; }
 
     /// The catch-up gate for leader-side reads: resolves true once this
     /// machine has applied everything committed by previous terms. Holds the
@@ -137,12 +151,11 @@ private:
     void apply_offset_metadata(offset_metadata_kv, model::offset log_offset);
 
     consumer_group& get_or_create_group(const kafka::group_id&);
-
-    /// Take the group out of the map and tear down what it registered. The
-    /// caller stops it, either awaiting the stop or running it under the gate.
-    ss::lw_shared_ptr<consumer_group> detach_group(groups_map::iterator);
+    ss::lw_shared_ptr<offset_store>
+    get_or_create_offsets(const kafka::group_id&);
 
     groups_map _groups;
+    offsets_map _offsets;
     group_block_info_map _group_blocks;
     /// Handed to every group's offset_store, which read-locks it around
     /// aborts. Never write-locked here: the classic loading gate it mirrors
