@@ -2,8 +2,12 @@ common --registry=https://bcr.bazel.build
 common --extra_toolchains=@current_llvm_toolchain//:all
 
 # Triple repo downloader retries to try working around github flakiness.
+# Cap the per-retry backoff: it doubles from 100ms on every attempt and is
+# uncapped by default, so 24 attempts would sleep for days against a host that
+# keeps returning 5xx.
 common --experimental_repository_downloader_retries=15
 common --http_connector_attempts=24
+common --http_connector_retry_max_timeout=15s
 
 # Multi-GB CAS uploads don't fit in the 60s default deadline: CORE-16940.
 build --remote_timeout=600
