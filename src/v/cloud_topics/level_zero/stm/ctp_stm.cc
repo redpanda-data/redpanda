@@ -76,13 +76,23 @@ ctp_stm::ctp_stm(ss::logger& logger, raft::consensus* raft)
   : raft::persisted_stm<>(name, logger, raft)
   , _lock(ss::semaphore::max_counter()) {}
 
-ss::future<> ctp_stm::start() {
-    ssx::spawn_with_gate(_gate, [this] { return prefix_truncate_bg(); });
-    return raft::persisted_stm<>::start();
+ss::future<> ctp_stm::stop_bg_fiber() { return _bg_worker.stop(); }
+
+ss::future<> ctp_stm::sync_bg_fiber_to_mode() {
+    // The prefix-truncation fiber drives local-log trimming for cloud topics
+    // only; on any other mode the local log is managed by the storage layer
+    // and log_eviction_stm, and the pre-installed ctp_stm stays inert.
+    const bool should_run = _raft->log()->config().cloud_topic_enabled()
+                            && !_gate.is_closed();
+    if (should_run) {
+        co_await _bg_worker.start();
+    } else {
+        co_await _bg_worker.stop();
+    }
 }
 
 ss::future<> ctp_stm::stop() {
-    _lro_advanced.broken();
+    co_await stop_bg_fiber();
     _as.request_abort();
     _epoch_update_lock.broken();
     _epoch_updated_cv.broken();
@@ -108,34 +118,55 @@ ss::future<> ctp_stm::stop() {
     co_await _lock.wait(ss::semaphore::max_counter());
 }
 
-ss::future<> ctp_stm::prefix_truncate_bg() {
+ss::future<> ctp_bg_worker::start() {
+    auto units = co_await _lock.get_units();
+    if (_fiber.has_value()) {
+        co_return;
+    }
+    _fiber = prefix_truncate_bg();
+}
+
+ss::future<> ctp_bg_worker::stop() {
+    auto units = co_await _lock.get_units();
+    if (!_fiber.has_value()) {
+        co_return;
+    }
+    _as.request_abort();
+    _lro_advanced.signal();
+    co_await std::exchange(_fiber, std::nullopt).value();
+    // A fresh abort source so the fiber can be started again.
+    _as = ss::abort_source{};
+}
+
+ss::future<> ctp_bg_worker::prefix_truncate_bg() {
     static constexpr auto retry_backoff_time = 5s;
     static constexpr auto min_truncate_period = 60s;
-    while (!_gate.is_closed()) {
+    auto gh = _stm._gate.hold();
+    while (!_as.abort_requested() && !_stm._gate.is_closed()) {
         // Compute the truncation target once per iteration. storage.mode=cloud
         // trims aggressively (the local log only holds placeholders);
         // storage.mode=tiered_cloud honors local retention plus the compaction
         // floor and so keeps more data locally.
-        const bool is_tiered = _raft->log()->config().is_tiered_cloud();
+        const bool is_tiered = _stm._raft->log()->config().is_tiered_cloud();
         model::offset target;
         if (is_tiered) {
-            target = co_await compute_local_retention_offset();
+            target = co_await _stm.compute_local_retention_offset();
         } else {
             // storage.mode=cloud keeps only placeholders locally; the
             // reconciled data lives in the cloud, so trim as aggressively as
             // the max collectible offset and any active readers allow.
-            target = max_removable_local_log_offset();
+            target = _stm.max_removable_local_log_offset();
         }
         vlog(
-          _log.trace,
+          _stm._log.trace,
           "Waiting for prefix-truncate target to advance past {}, current "
           "snapshot index: {}",
           target,
-          _raft->last_snapshot_index());
+          _stm._raft->last_snapshot_index());
         try {
             if (
-              _raft->last_snapshot_index() >= target && _active_readers.empty()
-              && !is_tiered) {
+              _stm._raft->last_snapshot_index() >= target
+              && _stm._active_readers.empty() && !is_tiered) {
                 // Only wait without a timeout if there are no active readers
                 // that could be holding us back. tiered_cloud always polls
                 // because its space-management offset is set without signalling
@@ -152,23 +183,23 @@ ss::future<> ctp_stm::prefix_truncate_bg() {
                 co_return;
             }
             vlog(
-              _log.error,
+              _stm._log.error,
               "error waiting for prefix-truncate target to advance in ctp stm "
               "background loop: {}",
               std::current_exception());
         }
-        auto snapshot_index = _raft->last_snapshot_index();
+        auto snapshot_index = _stm._raft->last_snapshot_index();
         vlog(
-          _log.trace,
+          _stm._log.trace,
           "Attempting to snapshot ctp at {}, last snapshot at {}",
           target,
-          _raft->last_snapshot_index());
+          _stm._raft->last_snapshot_index());
         try {
-            co_await _raft->snapshot_and_truncate_log(target);
+            co_await _stm._raft->snapshot_and_truncate_log(target);
         } catch (...) {
             auto ex = std::current_exception();
             vlogl(
-              _log,
+              _stm._log,
               ssx::is_shutdown_exception(ex) ? ss::log_level::debug
                                              : ss::log_level::error,
               "Error occurred when attempting to write snapshot: {}",
@@ -178,9 +209,13 @@ ss::future<> ctp_stm::prefix_truncate_bg() {
         // If we successfully truncated our log, then wait a bit before
         // truncating it again so if LRO is making lots of rapid but small
         // progress we aren't snapshotting too much.
-        if (_raft->last_snapshot_index() > snapshot_index) {
-            co_await ss::sleep_abortable<ss::lowres_clock>(
-              min_truncate_period, _as);
+        if (_stm._raft->last_snapshot_index() > snapshot_index) {
+            try {
+                co_await ss::sleep_abortable<ss::lowres_clock>(
+                  min_truncate_period, _as);
+            } catch (const ss::sleep_aborted&) {
+                co_return;
+            }
         }
     }
 }
@@ -342,7 +377,7 @@ void ctp_stm::apply_advance_reconciled_offset(model::record record) {
     auto lrlo = cmd.last_reconciled_log_offset;
     vlog(_log.debug, "New LRO value is {}, log offset {}", lro, lrlo);
     _state.advance_last_reconciled_offset(lro, lrlo);
-    _lro_advanced.signal();
+    _bg_worker.notify_lro_advanced();
 }
 
 void ctp_stm::apply_set_start_offset(model::record record) {
@@ -370,7 +405,7 @@ void ctp_stm::apply_set_min_allowed_local_threshold(model::record record) {
       record.release_value());
     vlog(_log.debug, "Applying set_min_allowed_local_threshold: {}", cmd.value);
     _state.set_min_allowed_local_threshold(cmd.value);
-    _lro_advanced.signal();
+    _bg_worker.notify_lro_advanced();
 }
 
 void ctp_stm::apply_placeholder(const model::record_batch& batch) {

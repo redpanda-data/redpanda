@@ -49,6 +49,38 @@ struct epoch_window_checker
     model::offset _latest_offset;
 };
 
+class ctp_stm;
+
+/// Manages ctp_stm's background fiber.
+class ctp_bg_worker {
+public:
+    explicit ctp_bg_worker(ctp_stm& stm)
+      : _stm(stm) {}
+
+    /// Spawn the fiber; a no-op when it is already running.
+    ss::future<> start();
+
+    /// Stop the fiber and wait for it to exit; a no-op when not running.
+    ss::future<> stop();
+
+    bool is_running() const { return _fiber.has_value(); }
+
+    void notify_lro_advanced() { _lro_advanced.signal(); }
+
+private:
+    ss::future<> prefix_truncate_bg();
+
+    ctp_stm& _stm;
+    ss::abort_source _as;
+    // Should be signaled every time the prefix-truncate target may have
+    // advanced.
+    ss::condition_variable _lro_advanced;
+    // Present while the fiber runs; resolves when it has exited.
+    std::optional<ss::future<>> _fiber;
+    // Serializes start()/stop() transitions.
+    ssx::mutex _lock{"ctp_bg_worker"};
+};
+
 /// The STM that tracks current cluster epoch and LRO.
 /// The goal is to guarantee that the cluster epoch is monotonic and
 /// to provide the smallest cluster epoch available through the
@@ -58,6 +90,7 @@ struct epoch_window_checker
 /// metadata batch to its in-memory state.
 class ctp_stm final : public raft::persisted_stm<> {
     friend class ctp_stm_api;
+    friend class ctp_bg_worker;
     friend struct ctp_stm_accessor; // for tests
 
     static constexpr auto sync_timeout = std::chrono::seconds(10);
@@ -65,8 +98,19 @@ class ctp_stm final : public raft::persisted_stm<> {
 public:
     static constexpr const char* name = "ctp_stm";
 
-    ss::future<> start() override;
     ss::future<> stop() override;
+
+    /// Start or stop the background prefix-truncation fiber to match the
+    /// partition's current storage mode.  Must not be run before
+    /// _raft->log()->config() has been populated with partition_mode from
+    /// partition_properties_stm. Called by partition::start() and
+    /// partition::apply_partition_storage_mode().
+    ss::future<> sync_bg_fiber_to_mode();
+
+    /// Stop the background work fiber. Called from stop() because
+    /// partition_manager::do_shutdown() tears down stms prior to calling
+    /// partition::stop().
+    ss::future<> stop_bg_fiber();
 
     ctp_stm(ss::logger&, raft::consensus*);
 
@@ -149,9 +193,6 @@ private:
     /// retention.bytes.
     storage::gc_config build_gc_config() const;
 
-    // The prefix truncation background loop
-    ss::future<> prefix_truncate_bg();
-
     /// Target log offset for the background prefix-truncate loop. Computed
     /// uniformly for all TSv2 partitions, compacted or not. The target
     /// combines:
@@ -189,9 +230,10 @@ private:
     // is purely idempotent in terms of operations applied.
     epoch_window_checker _epoch_checker;
 
-    // An abort source to stop the prefix truncation loop on stop.
-    ss::condition_variable _lro_advanced;
+    // Aborts in-flight sync and epoch-fence lock waiters on stop.
     ss::abort_source _as;
+
+    ctp_bg_worker _bg_worker{*this};
 
     // The last point that we truncated to, so we can skip writing a raft
     // snapshot if needed. This is volatile state (which is fine).

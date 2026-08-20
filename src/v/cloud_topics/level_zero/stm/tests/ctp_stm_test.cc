@@ -59,6 +59,10 @@ struct ctp_stm_accessor {
     ss::future<model::offset> compute_local_retention_offset(ctp_stm& stm) {
         return stm.compute_local_retention_offset();
     }
+
+    bool bg_fiber_running(const ctp_stm& stm) {
+        return stm._bg_worker.is_running();
+    }
 };
 } // namespace cloud_topics
 
@@ -66,7 +70,29 @@ class ctp_stm_fixture : public raft::stm_raft_fixture<ct::ctp_stm> {
 public:
     ss::future<> start() {
         enable_offset_translation();
+        // ctp_stm's prefix-truncate bg fiber only runs on cloud partitions;
+        // see ctp_stm::sync_bg_fiber_to_mode().
+        set_ntp_config_overrides(
+          storage::ntp_config::default_overrides{
+            .storage_mode = model::redpanda_storage_mode::cloud});
         co_await initialize_state_machines();
+        co_await sync_bg_fibers();
+    }
+
+    /// Start without the cloud storage mode: the pre-migration passenger
+    /// (ctp_stm pre-installed on a tiered/local partition).
+    ss::future<> start_as_passenger() {
+        enable_offset_translation();
+        co_await initialize_state_machines();
+        co_await sync_bg_fibers();
+    }
+
+    /// partition::start() starts the bg fiber after feeding
+    /// partition storage mode into _raft->log()->config()
+    ss::future<> sync_bg_fibers() {
+        for (auto& [id, node] : nodes()) {
+            co_await get_stm<0>(*node)->sync_bg_fiber_to_mode();
+        }
     }
 
     stm_shptrs_t create_stms(
@@ -1739,4 +1765,26 @@ TEST_F_CORO(
       kafka::offset_cast(kafka::offset{50}));
     ASSERT_EQ_CORO(
       co_await accessor.compute_local_retention_offset(*stm), expected);
+}
+
+TEST_F_CORO(ctp_stm_fixture, bg_fiber_follows_storage_mode) {
+    co_await start_as_passenger();
+    co_await wait_for_leader(raft::default_timeout());
+    auto& leader = node(*get_leader());
+    auto stm = get_stm<0>(leader);
+    ct::ctp_stm_accessor accessor;
+
+    /// The fiber doesn't start on its own
+    EXPECT_FALSE(accessor.bg_fiber_running(*stm));
+    co_await stm->sync_bg_fiber_to_mode();
+
+    /// The fiber doesn't run on a non-cloud partition
+    EXPECT_FALSE(accessor.bg_fiber_running(*stm));
+
+    /// Cutover advances the partition's storage mode to cloud; the next sync
+    /// starts the fiber.
+    leader.raft()->log()->set_partition_storage_mode(
+      model::redpanda_storage_mode::cloud);
+    co_await stm->sync_bg_fiber_to_mode();
+    EXPECT_TRUE(accessor.bg_fiber_running(*stm));
 }
