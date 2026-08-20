@@ -435,7 +435,13 @@ raft_node_instance::initialise(std::vector<raft::vnode> initial_nodes) {
       [this] { return storage::log_config(_base_directory, 8_MiB); },
       std::ref(_features));
     co_await _storage.invoke_on_all([](storage::api& a) { return a.start(); });
-    storage::ntp_config ntp_cfg(ntp(), _base_directory);
+    storage::ntp_config ntp_cfg(
+      ntp(),
+      _base_directory,
+      _ntp_config_overrides
+        ? std::make_unique<storage::ntp_config::default_overrides>(
+            *_ntp_config_overrides)
+        : nullptr);
 
     _underlying_log = co_await _storage.local().log_mgr().manage(
       std::move(ntp_cfg),
@@ -634,6 +640,10 @@ raft_node_instance& raft_fixture_base::add_node(
       _election_timeout.bind(),
       _heartbeat_interval.bind(),
       _with_offset_translation);
+
+    if (_ntp_config_overrides) {
+        instance->set_ntp_config_overrides(*_ntp_config_overrides);
+    }
 
     auto [it, success] = _nodes.emplace(id, std::move(instance));
     return *it->second;

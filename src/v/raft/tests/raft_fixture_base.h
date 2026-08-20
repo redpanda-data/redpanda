@@ -31,6 +31,7 @@
 #include "ssx/sformat.h"
 #include "storage/api.h"
 #include "storage/log.h"
+#include "storage/ntp_config.h"
 #include "test_utils/random_bytes.h"
 #include "utils/prefix_logger.h"
 
@@ -214,6 +215,10 @@ public:
 
     ss::sstring base_directory() const { return _base_directory; }
 
+    void set_ntp_config_overrides(storage::ntp_config::default_overrides o) {
+        _ntp_config_overrides = std::move(o);
+    }
+
     ss::sstring work_directory() const {
         return ssx::sformat(
           "{}/{}_{}", base_directory(), ntp().path(), _revision);
@@ -326,6 +331,7 @@ private:
     config::binding<std::chrono::milliseconds> _election_timeout;
     config::binding<std::chrono::milliseconds> _heartbeat_interval;
     bool _with_offset_translation;
+    std::optional<storage::ntp_config::default_overrides> _ntp_config_overrides;
     ss::sharded<fixture_group_manager> _group_manager;
     fixture_shard_manager _shard_manager{};
     service_t _service;
@@ -591,6 +597,10 @@ public:
 
     void enable_offset_translation() { _with_offset_translation = true; }
 
+    void set_ntp_config_overrides(storage::ntp_config::default_overrides o) {
+        _ntp_config_overrides = std::move(o);
+    }
+
     std::chrono::milliseconds get_election_timeout() const {
         return _election_timeout();
     }
@@ -627,6 +637,7 @@ private:
     config::mock_property<std::chrono::milliseconds> _election_timeout{500ms};
     config::mock_property<std::chrono::milliseconds> _heartbeat_interval{50ms};
     bool _with_offset_translation = false;
+    std::optional<storage::ntp_config::default_overrides> _ntp_config_overrides;
     std::filesystem::path _test_dir;
 };
 
