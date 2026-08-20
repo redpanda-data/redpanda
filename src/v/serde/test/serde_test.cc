@@ -1215,3 +1215,198 @@ SEASTAR_THREAD_TEST_CASE(pair_test) {
       {"one", 1}, {"two", 2}, {"three", 3}};
     BOOST_REQUIRE(serde_input(v) == v);
 }
+
+// ---------------------------------------------------------------------------
+// The scalar reader's bounds check against the end of the current serde scope.
+//
+// bytes_left_limit is the value bytes_left() is expected to have when the scope
+// ends, so a scalar read needs bytes_left() >= bytes_left_limit + sizeof(Type).
+// The tests below cover the case a size_t subtraction cannot: a preceding
+// variable-length read can leave bytes_left() *below* the limit, and
+// bytes_left() - bytes_left_limit wraps to near SIZE_MAX there, which is never
+// < sizeof(Type). The guard has to reject that, otherwise the read decodes
+// bytes belonging to the enclosing scope and every field after it comes from a
+// shifted offset.
+// ---------------------------------------------------------------------------
+
+namespace {
+
+iobuf filler(size_t n) {
+    iobuf b;
+    const ss::sstring s(n, 'x');
+    b.append(s.data(), s.size());
+    return b;
+}
+
+} // namespace
+
+SEASTAR_THREAD_TEST_CASE(scalar_read_scope_bounds) {
+    const auto read_int32 = [](size_t bytes_left, size_t bytes_left_limit) {
+        auto in = iobuf_parser{filler(bytes_left)};
+        int32_t v = 0;
+        serde::read_nested(in, v, bytes_left_limit);
+    };
+
+    // Scope has exactly enough room for the read.
+    BOOST_CHECK_NO_THROW(read_int32(8, 4));
+    // Scope is one byte short.
+    BOOST_CHECK_THROW(read_int32(8, 5), serde::serde_exception);
+    // Parser is already 4 bytes past the end of the scope. The read must be
+    // rejected rather than allowed to take bytes from the enclosing scope.
+    BOOST_CHECK_THROW(read_int32(4, 8), serde::serde_exception);
+}
+
+// A nested envelope with a hand-written reader that forwards its own
+// h._bytes_left_limit to its fields. This is the shape of ~40 production call
+// sites (security::acl_binding_filter::serde_read, raft/types.cc,
+// cluster/controller_snapshot.cc, ...) and effectively the only way a nonzero
+// limit reaches a field read: serde/rw/envelope.h hands generated
+// serde_fields() types the *incoming* limit, so a tree of generated types keeps
+// the limit at the 0 that read<T>() seeds.
+struct scope_underrun_inner
+  : serde::envelope<
+      scope_underrun_inner,
+      serde::version<0>,
+      serde::compat_version<0>> {
+    ss::sstring _str;
+    int32_t _n{0};
+
+    // Bytes added to _str's encoded length prefix beyond the string actually
+    // written, i.e. how far a reader of this encoding overruns. Not itself
+    // encoded; this is what a corrupt or version-skewed length prefix looks
+    // like on the wire.
+    serde::serde_size_t _lie{0};
+
+    void serde_write(iobuf& out) const {
+        serde::write<serde::serde_size_t>(
+          out, static_cast<serde::serde_size_t>(_str.size() + _lie));
+        out.append(_str.data(), _str.size());
+        serde::write(out, _n);
+    }
+
+    void serde_read(iobuf_parser& in, const serde::header& h) {
+        serde::read_nested(in, _str, h._bytes_left_limit);
+        serde::read_nested(in, _n, h._bytes_left_limit);
+    }
+};
+
+// The inner envelope is followed by 16 bytes of fields, so it does not end at
+// the end of the buffer and its h._bytes_left_limit is 16 rather than 0.
+struct scope_underrun_outer
+  : serde::envelope<
+      scope_underrun_outer,
+      serde::version<0>,
+      serde::compat_version<0>> {
+    scope_underrun_inner _inner;
+    int64_t _tail_a{0};
+    int64_t _tail_b{0};
+
+    auto serde_fields() { return std::tie(_inner, _tail_a, _tail_b); }
+};
+
+namespace {
+
+iobuf encode_scope_underrun() {
+    auto obj = scope_underrun_outer{};
+    obj._inner._str = "abcdefgh";
+    obj._inner._n = 0x0a0b0c0d;
+    obj._inner._lie = 8;
+    obj._tail_a = 0x1122334455667788;
+    obj._tail_b = static_cast<int64_t>(0x99aabbccddeeff00);
+    return serde::to_iobuf(std::move(obj));
+}
+
+} // namespace
+
+SEASTAR_THREAD_TEST_CASE(scope_underrun_via_string_overrun) {
+    // Byte accounting, with serde_size_t == uint16_t under SERDE_TEST:
+    //
+    //   outer header                     4
+    //   inner header                     4
+    //   inner: _str length prefix        2   says 16, 8 bytes follow
+    //   inner: _str data                 8
+    //   inner: _n                        4
+    //   outer: _tail_a, _tail_b         16
+    //
+    // Reading the inner header leaves bytes_left() == 30 and
+    // h._bytes_left_limit == 30 - 14 == 16: the inner scope ends there. The
+    // _str read consumes 16 bytes instead of 8 and ends at bytes_left() == 12,
+    // four bytes past the end of the inner scope. The _n read that follows is
+    // the one that has to reject the payload, and the one a subtracting guard
+    // admits: 12 - 16 is near SIZE_MAX, never < 4. Admitting it decodes _str as
+    // "abcdefgh\x0d\x0c\x0b\x0a\x88\x77\x66\x55", _n as 0x11223344 taken from
+    // _tail_a, _tail_a from _tail_b, and never reaches _tail_b.
+    BOOST_CHECK_THROW(
+      serde::from_iobuf<scope_underrun_outer>(encode_scope_underrun()),
+      serde::serde_exception);
+}
+
+// Same mechanism reached through a container: neither vector.h nor map.h
+// re-checks the invariant between elements, so an element that overruns the
+// scope end corrupts every element after it.
+struct scope_underrun_vec_inner
+  : serde::envelope<
+      scope_underrun_vec_inner,
+      serde::version<0>,
+      serde::compat_version<0>> {
+    std::vector<ss::sstring> _v;
+
+    // Added to element 0's encoded length prefix. See _lie above.
+    serde::serde_size_t _lie{0};
+
+    void serde_write(iobuf& out) const {
+        serde::write<serde::serde_size_t>(
+          out, static_cast<serde::serde_size_t>(_v.size()));
+        auto lie = _lie;
+        for (const auto& s : _v) {
+            serde::write<serde::serde_size_t>(
+              out, static_cast<serde::serde_size_t>(s.size() + lie));
+            out.append(s.data(), s.size());
+            lie = 0;
+        }
+    }
+
+    void serde_read(iobuf_parser& in, const serde::header& h) {
+        serde::read_nested(in, _v, h._bytes_left_limit);
+    }
+};
+
+struct scope_underrun_vec_outer
+  : serde::envelope<
+      scope_underrun_vec_outer,
+      serde::version<0>,
+      serde::compat_version<0>> {
+    scope_underrun_vec_inner _inner;
+    int64_t _tail_a{0};
+    int64_t _tail_b{0};
+
+    auto serde_fields() { return std::tie(_inner, _tail_a, _tail_b); }
+};
+
+namespace {
+
+iobuf encode_scope_underrun_vec() {
+    auto obj = scope_underrun_vec_outer{};
+    obj._inner._v = {"aaaa", "bbbb"};
+    obj._inner._lie = 12;
+    // The low bytes are what element 1's length prefix is decoded from once
+    // element 0 has overrun; keeping them zero makes the wrong decode complete
+    // instead of running off the end of the buffer.
+    obj._tail_a = 0x0000334455667788;
+    obj._tail_b = static_cast<int64_t>(0x99aabbccddeeff00);
+    return serde::to_iobuf(std::move(obj));
+}
+
+} // namespace
+
+SEASTAR_THREAD_TEST_CASE(scope_underrun_via_vector_element_overrun) {
+    // Element 0's length prefix says 16 where 4 bytes follow, so it swallows
+    // element 1 whole plus six bytes of _tail_a and leaves bytes_left() == 10
+    // against a limit of 16. Element 1's own length prefix is then read through
+    // the wrapped guard: it decoded as 0 from _tail_a's bytes, giving
+    // _v == {"aaaa\x04\x00bbbb\x88\x77\x66\x55\x44\x33", ""} and _tail_a taken
+    // from _tail_b. The read must be rejected instead.
+    BOOST_CHECK_THROW(
+      serde::from_iobuf<scope_underrun_vec_outer>(encode_scope_underrun_vec()),
+      serde::serde_exception);
+}

@@ -30,13 +30,20 @@ requires(std::is_scalar_v<std::decay_t<T>> && !serde_is_enum_v<std::decay_t<T>>)
   tag_t<read_tag>, iobuf_parser& in, T& t, const std::size_t bytes_left_limit) {
     using Type = std::decay_t<T>;
 
-    if (unlikely(in.bytes_left() - bytes_left_limit < sizeof(Type))) {
+    // bytes_left_limit is where bytes_left() is expected to be when the current
+    // serde scope ends. Comparing against limit + sizeof(Type), rather than
+    // subtracting the limit from bytes_left(), also rejects a parser that is
+    // already past the scope end: the subtraction wraps to near SIZE_MAX there
+    // and admits a read of bytes belonging to the enclosing scope. Limits
+    // derive from buffer sizes, so the addition cannot overflow.
+    if (unlikely(in.bytes_left() < bytes_left_limit + sizeof(Type))) {
         throw serde_exception(fmt_with_ctx(
           ssx::sformat,
-          "reading type {} of size {}: {} bytes left",
+          "reading type {} of size {}: {} bytes left, bytes_left_limit={}",
           type_str<Type>(),
           sizeof(Type),
-          in.bytes_left()));
+          in.bytes_left(),
+          bytes_left_limit));
     }
 
     if constexpr (sizeof(Type) == 1) {
