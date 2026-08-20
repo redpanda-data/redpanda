@@ -20,6 +20,8 @@
 #include "iceberg/values_bytes.h"
 #include "random/generators.h"
 
+#include <seastar/core/loop.hh>
+
 #include <iterator>
 #include <limits>
 
@@ -494,14 +496,46 @@ merge_append_action::merge_mfiles(
     size_t existing_rows = 0;
     size_t existing_files = 0;
     auto min_seq_num = ctx.seq_num;
-    for (const auto& mfile : to_merge) {
-        // Download the manifest file and collect the entries into the merged
-        // container.
-        auto mfile_res = co_await io_.download_manifest(mfile.manifest_path);
-        if (mfile_res.has_error()) {
-            co_return to_action_errc(mfile_res.error());
-        }
-        auto m = std::move(mfile_res).value();
+
+    // Download manifests in parallel, bounded to avoid monopolizing the
+    // shared cloud storage connection pool.
+    static constexpr size_t max_concurrent_manifest_downloads = 8;
+    struct manifest_download {
+        manifest m;
+        sequence_number seq_num;
+    };
+    chunked_vector<manifest_download> downloaded;
+    downloaded.reserve(to_merge.size());
+    std::optional<action::errc> dl_error;
+    co_await ss::max_concurrent_for_each(
+      to_merge,
+      max_concurrent_manifest_downloads,
+      [&](this auto, const manifest_file& mfile) -> ss::future<> {
+          if (dl_error) {
+              co_return;
+          }
+          auto res = co_await io_.download_manifest(mfile.manifest_path);
+          if (res.has_error()) {
+              dl_error = to_action_errc(res.error());
+              co_return;
+          }
+          downloaded.push_back({
+            .m = std::move(res).value(),
+            .seq_num = mfile.seq_number,
+          });
+      });
+    if (dl_error) {
+        co_return *dl_error;
+    }
+    vassert(
+      downloaded.size() == to_merge.size(),
+      "Expected {} downloaded manifests but got {}",
+      to_merge.size(),
+      downloaded.size());
+
+    // Process downloaded manifests serially.
+    for (auto& dl : downloaded) {
+        auto& m = dl.m;
         max_schema_id = std::max(max_schema_id, m.metadata.schema.schema_id);
         existing_files += m.entries.size();
         for (auto& e : m.entries) {
@@ -521,10 +555,9 @@ merge_append_action::merge_mfiles(
             // These entries refer to files committed prior to this action.
             if (e.status == manifest_entry_status::added) {
                 e.status = manifest_entry_status::existing;
-                e.sequence_number = e.sequence_number.value_or(
-                  mfile.seq_number);
+                e.sequence_number = e.sequence_number.value_or(dl.seq_num);
                 e.file_sequence_number = e.file_sequence_number.value_or(
-                  file_sequence_number{mfile.seq_number()});
+                  file_sequence_number{dl.seq_num()});
             }
             if (e.sequence_number.has_value()) {
                 min_seq_num = std::min(min_seq_num, e.sequence_number.value());
@@ -655,21 +688,44 @@ merge_append_action::pack_mlist_and_new_data(
           merged_bins.end(),
           std::back_inserter(new_mfiles));
 
-        // Merge the rest of the bins.
-        for (size_t i = 1; i < binned_mfiles.size(); i++) {
-            auto& bin = binned_mfiles[i];
-            if (bin.size() == 1) {
-                // The bin has only a single manifest so there's nothing to do,
-                // just add it as is.
-                new_mfiles.emplace_back(std::move(bin[0]));
-                continue;
-            }
-            auto merged_bin_res = co_await merge_mfiles(
-              std::move(bin), {}, std::nullopt, *pspec, ctx);
-            if (merged_bin_res.has_error()) {
-                co_return merged_bin_res.error();
-            }
-            new_mfiles.emplace_back(std::move(merged_bin_res.value()));
+        // Merge the rest of the bins in parallel. Each bin is an
+        // independent set of manifests that can be merged concurrently.
+        // Results are collected in a parallel vector to preserve bin order.
+        static constexpr size_t max_concurrent_bin_merges = 8;
+        auto remaining_bins = binned_mfiles.size() - 1;
+        chunked_vector<std::optional<manifest_file>> merged_results;
+        merged_results.reserve(remaining_bins);
+        for (size_t i = 0; i < remaining_bins; ++i) {
+            merged_results.emplace_back(std::nullopt);
+        }
+        std::optional<action::errc> bin_error;
+        auto indices = std::views::iota(size_t{0}, remaining_bins);
+        co_await ss::max_concurrent_for_each(
+          indices.begin(),
+          indices.end(),
+          max_concurrent_bin_merges,
+          [&](this auto, size_t i) -> ss::future<> {
+              auto& bin = binned_mfiles[i + 1];
+              if (bin.size() == 1) {
+                  merged_results[i] = std::move(bin[0]);
+                  co_return;
+              }
+              if (bin_error) {
+                  co_return;
+              }
+              auto merged_bin_res = co_await merge_mfiles(
+                std::move(bin), {}, std::nullopt, *pspec, ctx);
+              if (merged_bin_res.has_error()) {
+                  bin_error = merged_bin_res.error();
+                  co_return;
+              }
+              merged_results[i] = std::move(merged_bin_res.value());
+          });
+        if (bin_error) {
+            co_return *bin_error;
+        }
+        for (auto& mf : merged_results) {
+            new_mfiles.emplace_back(std::move(*mf));
         }
     }
     co_return new_mfiles;
