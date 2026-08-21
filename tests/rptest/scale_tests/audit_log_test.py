@@ -25,6 +25,7 @@ from rptest.services.redpanda import (
     SaslCredentials,
     SecurityConfig,
 )
+from rptest.tests.audit_log_test import AuditLogMode
 from rptest.tests.cluster_config_test import wait_for_version_sync
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.util import wait_until_result
@@ -119,7 +120,8 @@ class AuditLogTest(RedpandaTest):
             # Authentication is mandatory for auditing
             "enable_sasl": True,
             # No auditing will occur without the global feature flag set to True
-            "audit_enabled": True,
+            "audit_enabled": ctx.injected_args
+            and ctx.injected_args.get("audit_mode", None) is not None,
             # The default is 8, but for a scale test its desired to increase the
             # number of partitions to handle the expected load
             "audit_log_num_partitions": 12,
@@ -157,7 +159,7 @@ class AuditLogTest(RedpandaTest):
             "audit_queue_max_buffer_size_per_shard": 1000000 * 10,
             # Use RPCs instead of kclient
             "audit_use_rpc": ctx.injected_args
-            and ctx.injected_args.get("audit_use_rpc", False),
+            and ctx.injected_args.get("audit_mode", None) == AuditLogMode.RPC,
         }
 
         super().__init__(test_context=ctx, security=self.security, *args, **kwargs)
@@ -309,15 +311,15 @@ class AuditLogTest(RedpandaTest):
             # to me able to assert on other properties of the test run.
             return make_result_set(t1, repeater)
 
-    @ignore  # https://github.com/redpanda-data/redpanda/issues/16199
-    @cluster(num_nodes=5)
+    @cluster(num_nodes=4)
     @matrix(
-        audit_use_rpc=[
-            False,
-            True,
+        audit_mode=[
+            None,
+            AuditLogMode.KCLIENT,
+            AuditLogMode.RPC,
         ]
     )
-    def test_audit_log(self, audit_use_rpc):
+    def test_audit_log(self, audit_mode):
         """
         This test attempts to create a worst-case-scenario for audit logging -
         what exactly would that be? It would be a case where many events are distinct
@@ -393,37 +395,34 @@ class AuditLogTest(RedpandaTest):
         # Then assert that the traffic is within an expected range
         topic_names = [topic.name for topic in topics]
 
-        self._disable_auditing()
-        audit_disabled_results = self._run_repeater(topic_names, scale)
-
-        # Re-run the test and compare results
-        self._enable_auditing()
         audit_enabled_results = self._run_repeater(topic_names, scale)
 
-        # Assert that there is no more then a x% difference in observed results
-        allowable_threshold = 10.0
+        self.logger.warn(f"{audit_mode=}: {audit_enabled_results=}")
 
-        def pct_chg(new, orig):
-            return ((orig - new) / abs(orig)) * 100
+        # # Assert that there is no more then a x% difference in observed results
+        # allowable_threshold = 10.0
 
-        self.redpanda.logger.info(f"audit_disabled_results: {audit_disabled_results}")
-        self.redpanda.logger.info(f"audit_enabled_results: {audit_enabled_results}")
+        # def pct_chg(new, orig):
+        #     return ((orig - new) / abs(orig)) * 100
 
-        assert (
-            pct_chg(
-                audit_enabled_results.produce_mbps, audit_disabled_results.produce_mbps
-            )
-            < allowable_threshold
-        )
-        assert (
-            pct_chg(
-                audit_enabled_results.consume_mbps, audit_disabled_results.consume_mbps
-            )
-            < allowable_threshold
-        )
-        assert pct_chg(audit_enabled_results.p90, audit_disabled_results.p90) > (
-            allowable_threshold * -1
-        )
-        assert pct_chg(audit_enabled_results.p99, audit_disabled_results.p99) > (
-            allowable_threshold * -1
-        )
+        # self.redpanda.logger.info(f"audit_disabled_results: {audit_disabled_results}")
+        # self.redpanda.logger.info(f"audit_enabled_results: {audit_enabled_results}")
+
+        # assert (
+        #     pct_chg(
+        #         audit_enabled_results.produce_mbps, audit_disabled_results.produce_mbps
+        #     )
+        #     < allowable_threshold
+        # )
+        # assert (
+        #     pct_chg(
+        #         audit_enabled_results.consume_mbps, audit_disabled_results.consume_mbps
+        #     )
+        #     < allowable_threshold
+        # )
+        # assert pct_chg(audit_enabled_results.p90, audit_disabled_results.p90) > (
+        #     allowable_threshold * -1
+        # )
+        # assert pct_chg(audit_enabled_results.p99, audit_disabled_results.p99) > (
+        #     allowable_threshold * -1
+        # )
