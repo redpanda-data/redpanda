@@ -132,7 +132,7 @@ def _redpanda_cc_test(
       flaky: whether the test is flaky (value passed to bazel attribute of the same name)
     """
     common_args = [
-        "--blocked-reactor-notify-ms 2000000",
+        "--blocked-reactor-notify-ms 2000001",
         "--abort-on-seastar-bad-alloc",
         "--overprovisioned",
     ]
