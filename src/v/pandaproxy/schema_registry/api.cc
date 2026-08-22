@@ -259,6 +259,10 @@ ss::future<> api::start() {
     }
 }
 
+ss::future<> api::stop_clients() {
+    co_await _client.invoke_on_all(&kafka::client::client::stop);
+}
+
 ss::future<> api::stop() {
     vlog(srlog.debug, "Stopping schema registry API...");
     if (ss::this_shard_id() == 0 && _metrics_contributor_id.has_value()) {

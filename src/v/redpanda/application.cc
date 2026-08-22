@@ -183,6 +183,11 @@ void application::shutdown() {
             return cloud_io.invoke_on_all(&cloud_io::remote::request_stop);
         });
     }
+    // Shutdown schema registry clients before the datalake subsystems to
+    // ensure the datalake subsystems can shutdown quickly.
+    if (_schema_registry) {
+        _schema_registry->stop_clients().get();
+    }
     /**
      * Shutdown the datalake services before stopping all the partitions.
      * NOTE: translators may call into the coordinator via the coordinator
