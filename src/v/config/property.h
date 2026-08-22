@@ -194,6 +194,18 @@ public:
         }
     }
 
+    // See base_property::to_json_default: same serialization as to_json()
+    // above, but for _default instead of the live value.
+    void to_json_default(
+      json::Writer<json::StringBuffer>& w,
+      redact_secrets redact) const override {
+        if (is_secret() && redact == redact_secrets::yes) {
+            json::rjson_serialize(w, secret_placeholder);
+        } else {
+            json::rjson_serialize(w, _default);
+        }
+    }
+
     void set_value(std::any v) override {
         update_value(std::any_cast<value_type>(std::move(v)));
     }
@@ -1182,6 +1194,22 @@ concept Property = requires() {
 template<typename T>
 concept Array = detail::is_array<T>() && !reflection::is_std_optional<T>;
 
+// config::enterprise<P>'s restriction can be phrased over val_t (the
+// *unwrapped* element/inner type used for restriction checks), which is not
+// necessarily a type any property has ever needed to serialize before --
+// unlike T itself, which to_json()/to_json_default() already require to be
+// serializable for every property that compiles today.
+// config::sasl_mechanisms_override is one such restriction-only val_t with
+// no rjson_serialize overload. enterprise<P>::to_json_enterprise_restricted
+// uses this concept to check val_t before serializing it, so a type like
+// that reports enterprise_restriction_is_dynamic() instead of failing to
+// compile.
+template<typename T>
+concept json_serializable = requires(
+  json::Writer<json::StringBuffer>& w, const T& v) {
+    json::rjson_serialize(w, v);
+};
+
 } // namespace detail
 
 /**
@@ -1291,6 +1319,41 @@ public:
       , _restriction(std::move(restricted))
       , _sanctioned_value{sanctioned_value} {
         assert_no_sanctioned_conflict();
+    }
+
+    // See base_property::is_enterprise.
+    bool is_enterprise() const override { return true; }
+
+    // See base_property::to_json_enterprise_sanctioned/to_json_enterprise_restricted:
+    // exposes the same sanctioned/restricted values check_restricted() below
+    // already uses, for callers with no live property instance to ask.
+    void to_json_enterprise_sanctioned(
+      json::Writer<json::StringBuffer>& w) const override {
+        json::rjson_serialize(w, _sanctioned_value);
+    }
+
+    bool enterprise_restriction_is_dynamic() const override {
+        return std::holds_alternative<restrict_check_t>(_restriction);
+    }
+
+    void to_json_enterprise_restricted(
+      json::Writer<json::StringBuffer>& w) const override {
+        // Guarded on val_t (the element type) directly, not on
+        // val_container_t as a whole: the generic vector<T> serializer's
+        // body still calls rjson_serialize per element, so checking only
+        // the vector type would not catch a non-serializable element until
+        // that template's own instantiation -- one hard-error too late.
+        if constexpr (detail::json_serializable<val_t>) {
+            ss::visit(
+              _restriction,
+              [&w](const val_t& v) { json::rjson_serialize(w, v); },
+              [&w](const val_container_t& vals) {
+                  json::rjson_serialize(w, vals);
+              },
+              [&w](const restrict_check_t&) { w.Null(); });
+        } else {
+            w.Null();
+        }
     }
 
     // Needed because the following override shadows the rest of the overloads

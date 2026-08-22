@@ -252,6 +252,33 @@ public:
         }
     }
 
+    // See base_property::minimum_as_string/maximum_as_string: exposes the
+    // bound this property already enforces at runtime (via _bounds) as a
+    // JSON-embeddable string, for callers with no live property instance to
+    // ask. Serialized through rjson_serialize, the same as to_json_default()
+    // serializes the default value -- not fmt::to_string(), which for a
+    // std::chrono duration appends a unit suffix ("1ms") that top-level
+    // callers who json-decode this string (matching how enum_values and
+    // default_value are documented to work) would fail to parse.
+    std::optional<ss::sstring> minimum_as_string() const override {
+        if (!_bounds.min.has_value()) {
+            return std::nullopt;
+        }
+        json::StringBuffer buf;
+        json::Writer<json::StringBuffer> w(buf);
+        json::rjson_serialize(w, _bounds.min.value());
+        return ss::sstring(buf.GetString());
+    }
+    std::optional<ss::sstring> maximum_as_string() const override {
+        if (!_bounds.max.has_value()) {
+            return std::nullopt;
+        }
+        json::StringBuffer buf;
+        json::Writer<json::StringBuffer> w(buf);
+        json::rjson_serialize(w, _bounds.max.value());
+        return ss::sstring(buf.GetString());
+    }
+
 private:
     I clamp_with_bounds(I val) {
         if (detail::bounds_checking_disabled()) {

@@ -262,6 +262,51 @@ public:
     virtual std::optional<std::string_view> units_name() const = 0;
     virtual bool is_nullable() const = 0;
     virtual bool is_array() const = 0;
+
+    /// Serialize this property's *default* value (not its current value) to
+    /// JSON, the same way to_json() serializes the current value. Used by
+    /// util::generate_json_schema (redpanda/admin/cluster_config_schema_util.cc)
+    /// to describe a property's default without a live instance.
+    virtual void to_json_default(
+      json::Writer<json::StringBuffer>& w, redact_secrets /*redact*/) const {
+        w.Null();
+    }
+
+    /// Lower/upper bound as a formatted string, for properties with no
+    /// runtime-queryable bound (i.e. anything not wrapping bounded_property).
+    /// Overridden by bounded_property<T>.
+    virtual std::optional<ss::sstring> minimum_as_string() const {
+        return std::nullopt;
+    }
+    virtual std::optional<ss::sstring> maximum_as_string() const {
+        return std::nullopt;
+    }
+
+    /// True for a property wrapped in config::enterprise<>. Overridden there.
+    virtual bool is_enterprise() const { return false; }
+
+    /// The community/sanctioned value used when there is no valid license.
+    /// Only meaningful when is_enterprise() is true. Overridden by
+    /// config::enterprise<P>.
+    virtual void to_json_enterprise_sanctioned(
+      json::Writer<json::StringBuffer>& w) const {
+        w.Null();
+    }
+
+    /// The restricted value(s) that require a license -- a single value or
+    /// an array, matching whichever shape config::enterprise<P> was
+    /// constructed with. Null when enterprise_restriction_is_dynamic() is
+    /// true (the restriction is a predicate function, not a static value).
+    virtual void to_json_enterprise_restricted(
+      json::Writer<json::StringBuffer>& w) const {
+        w.Null();
+    }
+
+    /// True when this property's enterprise restriction is a predicate
+    /// function rather than a static value or list of values -- i.e.
+    /// to_json_enterprise_restricted() cannot describe it and will write
+    /// null even though is_enterprise() is true.
+    virtual bool enterprise_restriction_is_dynamic() const { return false; }
     /**
      * Example of correct syntax for this property. In most cases, this value
      * should be accepted by the config api (JSON API/YAML parser) as a valid

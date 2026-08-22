@@ -251,6 +251,39 @@
           "type": "array",
           "items": {"type": "string"},
           "description": "List of legacy names for the property.  Property may be set using these names, but will always appear in GET requests via its primary name."
+        },
+        "default_value": {
+          "type": "string",
+          "description": "Default value, in string-ized form. Named default_value, not default, because 'default' is a reserved word in the generated C++ struct.",
+          "nullable": true
+        },
+        "minimum": {
+          "type": "string",
+          "description": "Lower bound, in string-ized form, for a bounded numeric property",
+          "nullable": true
+        },
+        "maximum": {
+          "type": "string",
+          "description": "Upper bound, in string-ized form, for a bounded numeric property",
+          "nullable": true
+        },
+        "is_enterprise": {
+          "type": "boolean",
+          "description": "Whether this property is wrapped in config::enterprise<> (may require a license to set to a restricted value)"
+        },
+        "enterprise_sanctioned_value": {
+          "type": "string",
+          "description": "The community/sanctioned value used when there is no valid license, in string-ized (JSON-encoded) form. Only meaningful when is_enterprise is true.",
+          "nullable": true
+        },
+        "enterprise_restricted_value": {
+          "type": "string",
+          "description": "The value or array of values that require a license, in string-ized (JSON-encoded) form. Null when enterprise_restriction_is_dynamic is true (the restriction is a predicate function, not a static value).",
+          "nullable": true
+        },
+        "enterprise_restriction_is_dynamic": {
+          "type": "boolean",
+          "description": "True when is_enterprise is true but the restriction is a predicate function rather than a static value or list of values, so enterprise_restricted_value cannot describe it."
         }
       }
     }
