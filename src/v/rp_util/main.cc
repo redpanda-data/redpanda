@@ -46,30 +46,42 @@ int run_seastar(std::function<ss::future<int>()> main) {
     }
 }
 
+ss::future<int> print_schema(ss::json::json_return_type schema) {
+    if (!schema._body_writer) {
+        vassert(
+          !schema._res.empty(),
+          "expected string if there is no body writer");
+        std::cout << schema._res << "\n";
+        return ss::as_ready_future(0);
+    }
+    vassert(
+      schema._res.empty(),
+      "expected empty string result if there is a body writer, got: {}",
+      schema._res);
+    auto buf = std::make_unique<iobuf>();
+    return schema._body_writer(make_iobuf_ref_output_stream(*buf.get()))
+      .then([buf = std::move(buf)]() -> int {
+          for (const auto& chunk : *buf) {
+              std::cout << std::string_view{chunk.get(), chunk.size()};
+          }
+          std::cout << "\n";
+          return 0;
+      });
+}
+
 int print_cluster_config_schema() {
     return run_seastar([]() -> ss::future<int> {
         auto cfg = config::make_config();
-        auto schema = util::generate_json_schema(*cfg);
-        if (!schema._body_writer) {
-            vassert(
-              !schema._res.empty(),
-              "expected string if there is no body writer");
-            std::cout << schema._res << "\n";
-            return ss::as_ready_future(0);
-        }
-        vassert(
-          schema._res.empty(),
-          "expected empty string result if there is a body writer, got: {}",
-          schema._res);
-        auto buf = std::make_unique<iobuf>();
-        return schema._body_writer(make_iobuf_ref_output_stream(*buf.get()))
-          .then([buf = std::move(buf)]() -> int {
-              for (const auto& chunk : *buf) {
-                  std::cout << std::string_view{chunk.get(), chunk.size()};
-              }
-              std::cout << "\n";
-              return 0;
-          });
+        return print_schema(util::generate_json_schema(*cfg));
+    });
+}
+
+// Same mechanism as print_cluster_config_schema, for node (broker)
+// configuration.
+int print_node_config_schema() {
+    return run_seastar([]() -> ss::future<int> {
+        config::node_config nc;
+        return print_schema(util::generate_node_config_json_schema(nc));
     });
 }
 } // namespace
@@ -90,6 +102,7 @@ int main(int ac, char* av[]) {
     desc.add_options()
       ("help", "Allowed options")
       ("config_schema_json", "Generates JSON schema for cluster configuration")
+      ("node_config_schema_json", "Generates JSON schema for node (broker) configuration")
       ("version", "Redpanda core version for this utility");
     // clang-format on
 
@@ -101,6 +114,8 @@ int main(int ac, char* av[]) {
         std::cout << desc << "\n";
     } else if (vm.count("config_schema_json")) {
         return print_cluster_config_schema();
+    } else if (vm.count("node_config_schema_json")) {
+        return print_node_config_schema();
     } else if (vm.count("version")) {
         std::cout << redpanda_version() << "\n";
     } else {

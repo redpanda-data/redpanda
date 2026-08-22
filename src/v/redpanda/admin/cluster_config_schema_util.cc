@@ -128,3 +128,27 @@ util::generate_json_schema(const config::configuration& conf) {
       {ss::sstring("properties"), std::move(properties)}};
     return ss::json::stream_object(std::move(response));
 }
+
+// Same mechanism as generate_json_schema, for node (broker) configuration.
+// Factored out identically so downstream tools have one static, no-cluster
+// path for each scope they need, rather than only the cluster-scoped one.
+ss::json::json_return_type
+util::generate_node_config_json_schema(const config::node_config& conf) {
+    property_map properties;
+
+    conf.for_each([&properties](const config::base_property& p) {
+        if (p.is_hidden()) {
+            return;
+        }
+
+        auto [pm_i, inserted] = properties.emplace(
+          ss::sstring(p.name()),
+          ss::httpd::cluster_config_json::cluster_config_property_metadata());
+        vassert(inserted, "Emplace failed, duplicate property name?");
+        populate_property_metadata(pm_i->second, p);
+    });
+
+    std::map<ss::sstring, property_map> response = {
+      {ss::sstring("properties"), std::move(properties)}};
+    return ss::json::stream_object(std::move(response));
+}
