@@ -201,7 +201,7 @@ class RpCloudApiClient(object):
 
     @staticmethod
     def namespace_endpoint(uuid=None):
-        _e = "/v1beta2/resource-groups"
+        _e = "/v1/resource-groups"
         if uuid:
             _e += f"/{uuid}"
         return _e
@@ -220,7 +220,8 @@ class RpCloudApiClient(object):
             _e += f"/{id}"
         return _e
 
-    # delete for DEVPROD-2525
+    # TODO: DEVPROD-2525 - keep legacy endpoint for install pack version
+    # and prometheus credentials which have no public-api v1 equivalent
     @staticmethod
     def legacy_cluster_endpoint(id=None):
         _e = "/api/v1/clusters"
@@ -228,19 +229,16 @@ class RpCloudApiClient(object):
             _e += f"/{id}"
         return _e
 
-    # try converting to /v1beta2/networks again for DEVPROD-2525
     @staticmethod
     def network_endpoint(id=None):
-        _e = "/api/v1/networks"
+        _e = "/v1/networks"
         if id:
             _e += f"/{id}"
         return _e
 
     @staticmethod
     def network_peering_endpoint(id=None, peering_id=None):
-        # the network_peerings API has no public API replacement yet.
-        # revisit for DEVPROD-2525
-        _e = "/api/v1/networks"
+        _e = "/v1/networks"
         if id:
             _e += f"/{id}/network-peerings"
             if peering_id:
@@ -269,21 +267,20 @@ class RpCloudApiClient(object):
         )["resource_groups"]
 
     def list_networks(self, ns_uuid=None):
-        # get networks for a namespace
         _ret = self._http_get(
-            self.network_endpoint(), params=self._prepare_params(ns_uuid)
+            self.network_endpoint(),
+            base_url=self._config.public_api_url,
+            params=self._prepare_params(ns_uuid),
         )
-        # return it
-        return _ret
+        return _ret.get("networks", [])
 
-    # the network_peerings API has no public API replacement yet.
-    # revisit for DEVPROD-2525
     def list_network_peerings(self, network_id, ns_uuid=None):
         _ret = self._http_get(
             self.network_peering_endpoint(id=network_id),
+            base_url=self._config.public_api_url,
             params=self._prepare_params(ns_uuid=ns_uuid),
         )
-        return _ret
+        return _ret.get("network_peerings", [])
 
     def get_cluster(self, cluster_id: str):
         _cluster = self._http_get(
@@ -298,20 +295,24 @@ class RpCloudApiClient(object):
         )
         return _cluster["serverless_cluster"]
 
-    # delete for DEVPROD-2525
+    # TODO: DEVPROD-2525 - keep for install pack version and prometheus
+    # credentials which have no public-api v1 equivalent
     def get_legacy_cluster(self, cluster_id: str):
         _cluster = self._http_get(self.legacy_cluster_endpoint(id=cluster_id))
         return _cluster
 
-    # not porting this endpoint until DEVPROD-2525
     def get_network(self, network_id):
-        _network = self._http_get(self.network_endpoint(id=network_id))
-        return _network
+        _network = self._http_get(
+            self.network_endpoint(id=network_id),
+            base_url=self._config.public_api_url,
+        )
+        return _network.get("network", _network)
 
     def get_resource(self, resource_handle) -> Union[None, dict, str]:
         _r = None
+        base = self._config.public_api_url if resource_handle.startswith("/v1/") else None
         try:
-            _r = self._http_get(endpoint=resource_handle)
+            _r = self._http_get(endpoint=resource_handle, base_url=base)
             self._logger.debug(f"...resource requested with '{resource_handle}'")
         except Exception as e:
             self._logger.warning(f"# Warning failed to get resource: {e}")
@@ -327,8 +328,9 @@ class RpCloudApiClient(object):
 
     def delete_resource(self, resource_handle):
         _r = None
+        base = self._config.public_api_url if resource_handle.startswith("/v1/") else None
         try:
-            _r = self._http_delete(endpoint=resource_handle)
+            _r = self._http_delete(endpoint=resource_handle, base_url=base)
             self._logger.debug(f"...delete requested for '{resource_handle}'")
         except Exception as e:
             self._logger.warning(f"# Warning deletion failed: {e}")
