@@ -78,13 +78,12 @@ remote_partition::iterator remote_partition::get_or_materialize_segment(
       "Segment with base offset {} is already materialized",
       meta.base_offset);
 
-    _ts_probe.segment_materialized();
-
     vlog(
       _ctxlog.debug,
       "Materialized new segment for meta {} with path {}",
       meta,
       path);
+
     _ts_probe.segment_materialized();
 
     return new_iter;
