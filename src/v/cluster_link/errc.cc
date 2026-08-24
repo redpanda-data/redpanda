@@ -88,6 +88,9 @@ struct error_category final : public std::error_category {
             return "target schema registry context is not empty";
         case errc::link_sr_verification_failed:
             return "schema registry verification failed";
+        case errc::producer_id_exhausted:
+            return "the cluster's highest producer ID is too close to the "
+                   "int64 maximum to advance the ID allocator";
         }
 
         return "(unknown error code)";

@@ -59,6 +59,7 @@ void handle_error(cluster_link::errc err, ss::sstring info) {
     case cluster_link::errc::topic_mirrored_by_other_link:
         throw serde::pb::rpc::already_exists_exception(std::move(info));
     case cluster_link::errc::link_limit_reached:
+    case cluster_link::errc::producer_id_exhausted:
         throw serde::pb::rpc::resource_exhausted_exception(std::move(info));
     }
 }

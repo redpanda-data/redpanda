@@ -54,6 +54,7 @@ enum class errc : int {
     link_sr_unreachable,
     link_sr_target_not_empty,
     link_sr_verification_failed,
+    producer_id_exhausted,
 };
 
 std::error_code make_error_code(errc) noexcept;
