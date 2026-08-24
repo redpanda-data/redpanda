@@ -14,6 +14,8 @@
 namespace cluster_link {
 class link;
 class manager;
+class producer_id_barrier;
+class producer_id_barrier_impl;
 class service;
 class sr_preflight_checker;
 } // namespace cluster_link

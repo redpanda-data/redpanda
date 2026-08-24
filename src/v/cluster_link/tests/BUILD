@@ -33,6 +33,21 @@ redpanda_test_cc_library(
 )
 
 redpanda_cc_gtest(
+    name = "producer_id_barrier_test",
+    timeout = "short",
+    srcs = [
+        "producer_id_barrier_test.cc",
+    ],
+    deps = [
+        "//src/v/cluster_link:producer_id_barrier",
+        "//src/v/model",
+        "//src/v/test_utils:gtest",
+        "@googletest//:gtest",
+        "@seastar",
+    ],
+)
+
+redpanda_cc_gtest(
     name = "link_test",
     timeout = "short",
     srcs = [

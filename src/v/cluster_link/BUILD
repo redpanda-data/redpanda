@@ -38,6 +38,28 @@ redpanda_cc_library(
 )
 
 redpanda_cc_library(
+    name = "producer_id_barrier",
+    srcs = [
+        "producer_id_barrier.cc",
+    ],
+    hdrs = [
+        "producer_id_barrier.h",
+    ],
+    implementation_deps = [
+        ":logger",
+        "//src/v/ssx:future_util",
+    ],
+    visibility = ["//src/v/cluster_link:__subpackages__"],
+    deps = [
+        ":errc",
+        "//src/v/base",
+        "//src/v/model",
+        "//src/v/ssx:semaphore",
+        "@seastar",
+    ],
+)
+
+redpanda_cc_library(
     name = "utils",
     srcs = [
         "utils.cc",
