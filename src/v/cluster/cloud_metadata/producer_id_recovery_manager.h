@@ -29,9 +29,15 @@ public:
 
     ss::future<cloud_metadata::error_outcome> recover() const;
 
-private:
+    /// The maximum producer ID over all partitions of every broker. Note:
+    /// a default-constructed (0) result means either "the maximum really is
+    /// 0" or "no producer state found anywhere" — producer ID 0 is valid, so
+    /// callers that must not miss an existing producer cannot treat 0 as
+    /// "nothing to do".
     ss::future<result<model::producer_id, cloud_metadata::error_outcome>>
     get_cluster_highest_pid() const;
+
+private:
     ss::future<result<model::producer_id, cloud_metadata::error_outcome>>
     get_node_highest_pid(const model::broker&) const;
 
