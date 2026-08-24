@@ -124,13 +124,13 @@ ss::future<> link_status_reconciler::per_link_reconciler::try_finish_failover(
           topic_report.error());
         co_return;
     }
-    // A topic can be promoted if all the partitions leaders have been reported
-    // in the health report
-    // and each such leader has seen the link update revision that the
-    // controller has seen for the link. The link revision check guarantees that
-    // the partition leader has unblocked the kafka API for the mirror topic
-    // after the failing_over state. This is not a fool proof check but is a
-    // reasonable heuristic.
+    // A topic is ready for promotion once every partition leader has been
+    // reported in the health report at a link revision at least as new as
+    // the controller's. The revision check establishes that the broker
+    // applied the failing_over state — which *initiates* replicator shutdown
+    // — it does NOT prove replicators have stopped, and it does NOT mean
+    // Kafka writes were unblocked; writes stay blocked until failed_over is
+    // applied (see cluster/cluster_link/frontend.cc is_topic_mutable).
     auto maybe_rev = _registry.get_last_update_revision(_link_id);
     if (!maybe_rev.has_value()) {
         vlog(
