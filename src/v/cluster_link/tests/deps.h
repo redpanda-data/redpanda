@@ -15,6 +15,7 @@
 #include "cluster/cluster_link/table.h"
 #include "cluster/cluster_link/tests/utils.h"
 #include "cluster_link/manager.h"
+#include "cluster_link/producer_id_barrier.h"
 #include "cluster_link/replication/tests/deps_test_impl.h"
 #include "cluster_link/utils.h"
 #include "config/mock_property.h"
@@ -28,6 +29,7 @@
 #include "security/role.h"
 #include "security/role_store.h"
 
+#include <seastar/core/semaphore.hh>
 #include <seastar/util/defer.hh>
 
 using test_config_provider
@@ -97,6 +99,17 @@ public:
 private:
     ss::lowres_clock::duration _task_reconciler_interval;
     chunked_hash_map<model::name_t, link*> _links;
+};
+
+/// A producer-ID barrier that always succeeds, for fixtures that are not
+/// exercising failover promotion itself.
+class always_ok_pid_barrier final : public producer_id_barrier {
+public:
+    ss::future<result<::model::producer_id, errc>> advance() noexcept final {
+        ++calls;
+        co_return ::model::producer_id{0};
+    }
+    int calls{0};
 };
 
 class test_link_registry : public link_registry {
@@ -264,12 +277,19 @@ public:
 private:
     ss::future<::cluster::cluster_link::errc>
     apply_update(::model::record_batch&& batch) {
+        // The real table is only ever mutated by the controller STM's
+        // strictly sequential applies; its copy-modify-swap suspends and
+        // loses updates under concurrent callers, so serialize here to match
+        // the production contract.
+        auto units = co_await ss::get_units(_apply_units, 1);
         auto ec = co_await _table->apply_update(std::move(batch));
         vassert(
           ec.category() == cluster::cluster_link::error_category(),
           "Unexpected error category");
         co_return ::cluster::cluster_link::errc(ec.value());
     }
+
+    ss::semaphore _apply_units{1};
 
     cluster::cluster_link::table* _table;
     ::model::offset _last_offset{0};
@@ -817,6 +837,7 @@ private:
     test_kafka_rpc_client_service* _tkrcs{nullptr};
     fake_members_table_provider* _fmtp{nullptr};
     schema::fake_registry _fake_schema_registry;
+    always_ok_pid_barrier _pid_barrier;
     ss::sharded<manager> _manager;
     ss::sharded<features::feature_table> _feature_table;
     config::mock_property<int16_t> _default_topic_replication{1};

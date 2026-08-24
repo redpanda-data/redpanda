@@ -16,6 +16,7 @@ redpanda_test_cc_library(
         "//src/v/cluster:types",
         "//src/v/cluster/cluster_link/tests:test_lib",
         "//src/v/cluster_link:impl",
+        "//src/v/cluster_link:producer_id_barrier",
         "//src/v/cluster_link:utils",
         "//src/v/cluster_link/replication/tests:deps_test_impl",
         "//src/v/config",
@@ -42,6 +43,26 @@ redpanda_cc_gtest(
         "//src/v/cluster_link:producer_id_barrier",
         "//src/v/model",
         "//src/v/test_utils:gtest",
+        "@googletest//:gtest",
+        "@seastar",
+    ],
+)
+
+redpanda_cc_gtest(
+    name = "link_status_reconciler_test",
+    timeout = "short",
+    srcs = [
+        "link_status_reconciler_test.cc",
+    ],
+    deps = [
+        ":test_deps",
+        "//src/v/cluster:cluster_link_table",
+        "//src/v/cluster/cluster_link/tests:test_lib",
+        "//src/v/cluster_link:impl",
+        "//src/v/cluster_link:producer_id_barrier",
+        "//src/v/model",
+        "//src/v/test_utils:gtest",
+        "@abseil-cpp//absl/container:flat_hash_set",
         "@googletest//:gtest",
         "@seastar",
     ],

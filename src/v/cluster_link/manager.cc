@@ -93,6 +93,7 @@ manager::manager(
   std::unique_ptr<kafka_rpc_client_service> kafka_rpc_client_service,
   std::unique_ptr<members_table_provider> members_table_provider,
   std::unique_ptr<sr_preflight_checker> sr_preflight,
+  producer_id_barrier* pid_barrier,
   ss::sharded<features::feature_table>* feature_table,
   ss::lowres_clock::duration task_reconciler_interval,
   config::binding<int16_t> default_topic_replication,
@@ -112,6 +113,7 @@ manager::manager(
   , _kafka_rpc_client_service(std::move(kafka_rpc_client_service))
   , _members_table_provider(std::move(members_table_provider))
   , _sr_preflight(std::move(sr_preflight))
+  , _pid_barrier(pid_barrier)
   , _queue(
       scheduling_group,
       [](const std::exception_ptr& ex) {
@@ -1053,7 +1055,7 @@ ss::future<> manager::on_controller_leadership(::model::term_id term) {
     }
     if (!_link_status_reconciler) {
         _link_status_reconciler = std::make_unique<link_status_reconciler>(
-          _registry.get(), term);
+          _registry.get(), _pid_barrier, term);
         try {
             co_await _link_status_reconciler->start();
         } catch (const std::exception& e) {

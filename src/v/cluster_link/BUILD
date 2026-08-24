@@ -124,6 +124,7 @@ redpanda_cc_library(
         ":errc",
         ":fwd",
         ":logger",
+        ":producer_id_barrier",
         ":utils",
         "//src/v/base",
         "//src/v/cluster",
@@ -308,6 +309,7 @@ redpanda_cc_library(
     deps = [
         ":errc",
         ":fwd",
+        ":producer_id_barrier",
         ":shadow_link_rpc_gen",
         "//src/v/base",
         "//src/v/cluster",

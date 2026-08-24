@@ -31,6 +31,8 @@
 
 namespace cluster_link {
 
+class producer_id_barrier;
+
 /**
  * @brief Class used to manage cluster links
  *
@@ -59,6 +61,7 @@ public:
       std::unique_ptr<kafka_rpc_client_service> kafka_rpc_client_service,
       std::unique_ptr<members_table_provider> members_table_provider,
       std::unique_ptr<sr_preflight_checker> sr_preflight,
+      producer_id_barrier* pid_barrier,
       ss::sharded<features::feature_table>* feature_table,
       ss::lowres_clock::duration task_reconciler_interval,
       config::binding<int16_t> default_topic_replication,
@@ -249,6 +252,8 @@ private:
     std::unique_ptr<kafka_rpc_client_service> _kafka_rpc_client_service;
     std::unique_ptr<members_table_provider> _members_table_provider;
     std::unique_ptr<sr_preflight_checker> _sr_preflight;
+    // Owned by the service, which outlives the manager.
+    producer_id_barrier* _pid_barrier;
     ssx::work_queue _queue;
 
     chunked_vector<std::unique_ptr<task_factory>> _task_factories;

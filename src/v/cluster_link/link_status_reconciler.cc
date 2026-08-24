@@ -13,7 +13,10 @@
 
 #include "cluster_link/deps.h"
 #include "cluster_link/logger.h"
+#include "cluster_link/producer_id_barrier.h"
 #include "ssx/future-util.h"
+
+#include <seastar/coroutine/as_future.hh>
 
 static constexpr auto reconciliation_interval = std::chrono::seconds{1};
 static constexpr auto mutation_timeout = std::chrono::seconds{5};
@@ -56,7 +59,11 @@ void link_status_reconciler::reconcile() {
             _reconcilers.emplace(
               link_id,
               std::make_unique<per_link_reconciler>(
-                *_link_registry, link_id, _controller_term, _as));
+                *_link_registry,
+                *_pid_barrier,
+                link_id,
+                _controller_term,
+                _as));
         }
     }
     // find all links that no longer exist and remove their reconcilers
@@ -83,10 +90,12 @@ void link_status_reconciler::reconcile() {
 
 link_status_reconciler::per_link_reconciler::per_link_reconciler(
   link_registry& registry,
+  producer_id_barrier& pid_barrier,
   model::id_t link_id,
   ::model::term_id term,
   ss::abort_source& as)
   : _registry(registry)
+  , _pid_barrier(pid_barrier)
   , _link_id(link_id)
   , _term(term) {
     _as_sub = as.subscribe([this] noexcept { _as.request_abort(); });
@@ -104,10 +113,11 @@ ss::future<> link_status_reconciler::per_link_reconciler::stop() noexcept {
     co_await _gate.close();
 }
 
-ss::future<> link_status_reconciler::per_link_reconciler::try_finish_failover(
-  const ::model::topic& topic) noexcept {
+ss::future<bool>
+link_status_reconciler::per_link_reconciler::is_ready_for_promotion(
+  const ::model::topic& topic) {
     if (_as.abort_requested()) {
-        co_return;
+        co_return false;
     }
     vlog(
       cllog.trace,
@@ -122,7 +132,7 @@ ss::future<> link_status_reconciler::per_link_reconciler::try_finish_failover(
           _link_id,
           topic,
           topic_report.error());
-        co_return;
+        co_return false;
     }
     // A topic is ready for promotion once every partition leader has been
     // reported in the health report at a link revision at least as new as
@@ -137,7 +147,7 @@ ss::future<> link_status_reconciler::per_link_reconciler::try_finish_failover(
           cllog.warn,
           "[{}] Inconsistent state detected, link revision does not exist",
           _link_id);
-        co_return;
+        co_return false;
     }
     chunked_hash_set<::model::partition_id> valid_partitions;
     auto local_update_revision = maybe_rev.value();
@@ -161,9 +171,48 @@ ss::future<> link_status_reconciler::per_link_reconciler::try_finish_failover(
           topic,
           valid_partitions.size(),
           topic_report->total_partitions);
+        co_return false;
+    }
+    co_return true;
+}
+
+ss::future<> link_status_reconciler::per_link_reconciler::collect_if_ready(
+  const ::model::topic& topic, chunked_vector<::model::topic>& ready) {
+    // try_finish_failover's caller used to be a noexcept path with no
+    // exception handling; keep that contract by converting failures of the
+    // readiness check into a logged skip.
+    auto f = co_await ss::coroutine::as_future(is_ready_for_promotion(topic));
+    if (f.failed()) {
+        auto eptr = f.get_exception();
+        vlog(
+          cllog.info,
+          "[{}] Readiness check for topic {} failed: {}",
+          _link_id,
+          topic,
+          eptr);
         co_return;
     }
+    if (f.get()) {
+        ready.push_back(topic);
+    }
+}
 
+ss::future<>
+link_status_reconciler::per_link_reconciler::promote_to_failed_over(
+  const ::model::topic& topic) {
+    // Idempotent across reconciliation retries (and forward-compatible with
+    // a forced promotion racing this one): a topic that already reached
+    // failed_over is a no-op success.
+    const auto& md = _registry.find_link_by_id(_link_id);
+    if (!md) {
+        co_return;
+    }
+    auto it = md->state.mirror_topics.find(topic);
+    if (
+      it == md->state.mirror_topics.end()
+      || it->second.status == model::mirror_topic_status::failed_over) {
+        co_return;
+    }
     auto result = co_await _registry.update_mirror_topic_state(
       _link_id,
       {.topic = topic, .status = model::mirror_topic_status::failed_over},
@@ -171,11 +220,12 @@ ss::future<> link_status_reconciler::per_link_reconciler::try_finish_failover(
     if (result != cluster::cluster_link::errc::success) {
         vlog(
           cllog.warn,
-          "[{}] Failed to transition topic {} to  state {}, error: {}",
+          "[{}] Failed to transition topic {} to state {}, error: {}",
           _link_id,
           topic,
           model::mirror_topic_status::failed_over,
           result);
+        co_return;
     }
     vlog(
       cllog.debug,
@@ -183,6 +233,38 @@ ss::future<> link_status_reconciler::per_link_reconciler::try_finish_failover(
       _link_id,
       topic,
       model::mirror_topic_status::failed_over);
+}
+
+void link_status_reconciler::per_link_reconciler::log_barrier_error(
+  errc ec, size_t topics) const {
+    switch (ec) {
+    case errc::service_shutting_down:
+        vlog(
+          cllog.debug,
+          "[{}] Producer ID barrier aborted by shutdown, leaving {} topic(s) "
+          "in failing_over",
+          _link_id,
+          topics);
+        return;
+    case errc::producer_id_exhausted:
+        vlog(
+          cllog.error,
+          "[{}] Producer ID space is exhausted; {} topic(s) cannot complete "
+          "failover. Force the failover with `rpk shadow delete --force` if "
+          "the mirrored data must be writable regardless.",
+          _link_id,
+          topics);
+        return;
+    default:
+        vlog(
+          cllog.info,
+          "[{}] Producer ID barrier failed with {}, leaving {} topic(s) in "
+          "failing_over until the next reconciliation",
+          _link_id,
+          ec,
+          topics);
+        return;
+    }
 }
 
 ss::future<>
@@ -203,10 +285,51 @@ link_status_reconciler::per_link_reconciler::reconcile_status_changes() {
                 pending_failover_topics.push_back(topic);
             }
         }
+        // Phase 1 — which topics pass the leader-report readiness check.
+        // Safe to collect from concurrent fibers: single shard, no
+        // scheduling point in push_back.
+        chunked_vector<::model::topic> ready;
         co_await ss::max_concurrent_for_each(
-          pending_failover_topics, 8, [this](const auto& topic) {
-              return try_finish_failover(topic);
+          pending_failover_topics, 8, [this, &ready](const auto& topic) {
+              return collect_if_ready(topic, ready);
           });
+        if (!ready.empty()) {
+            // Phase 2 — ONE cluster-wide barrier for the whole batch.
+            // Running it per topic would issue an all-broker scan and an
+            // allocator quorum write per topic, up to 8 concurrently. Every
+            // topic in `ready` was declared ready before this scan began,
+            // which is the ordering the barrier requires. The barrier is
+            // what guarantees a producer connecting to a promoted topic
+            // cannot be handed a producer ID colliding with mirrored
+            // idempotency state. Known residual: readiness proves the
+            // leaders applied failing_over, not that replicators drained, so
+            // mirrored producer IDs landing after the scan are only covered
+            // by the barrier's fixed margin.
+            auto barrier = co_await _pid_barrier.advance();
+            if (_as.abort_requested()) {
+                // The barrier is not tied to this reconciler's lifetime and
+                // its RPCs can outlive a controller leadership change.
+                // update_mirror_topic_state routes to the current leader, so
+                // without this check a stepped-down reconciler would promote
+                // on the new leader's behalf.
+                vlog(
+                  cllog.debug,
+                  "[{}] Reconciler stopped during the producer ID barrier, "
+                  "leaving {} topic(s) in failing_over",
+                  _link_id,
+                  ready.size());
+                co_return;
+            }
+            if (barrier.has_error()) {
+                log_barrier_error(barrier.error(), ready.size());
+            } else {
+                // Phase 3 — promote the batch.
+                co_await ss::max_concurrent_for_each(
+                  ready, 8, [this](const auto& topic) {
+                      return promote_to_failed_over(topic);
+                  });
+            }
+        }
         co_await ss::sleep_abortable(reconciliation_interval, _as);
     }
 }

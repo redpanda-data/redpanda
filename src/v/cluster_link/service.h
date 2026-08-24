@@ -263,6 +263,9 @@ private:
     std::unique_ptr<schema::registry> _schema_registry_dest;
     std::unique_ptr<schema_registry_sync::source_reader_factory>
       _source_reader_factory;
+    // Owned here so it outlives the manager (whose reconciler holds a
+    // reference). Recreated on every manager start: shutdown() is one-way.
+    std::unique_ptr<producer_id_barrier_impl> _pid_barrier;
     std::unique_ptr<manager> _manager;
     std::vector<ss::deferred_action<ss::noncopyable_function<void()>>>
       _notification_cleanups;

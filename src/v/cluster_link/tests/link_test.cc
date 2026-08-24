@@ -151,6 +151,7 @@ protected:
     std::unique_ptr<fake_partition_manager_proxy> _partition_manager_proxy;
     ss::sharded<table> _table;
 
+    always_ok_pid_barrier _pid_barrier;
     std::unique_ptr<manager> _manager;
     schema::fake_registry _fake_schema_registry;
     config::mock_property<int16_t> _default_topic_replication{3};
@@ -219,6 +220,7 @@ public:
           std::make_unique<fake_members_table_provider>(),
           sr_preflight_checker::make_default(
             _fake_schema_registry, std::move(sr_prober)),
+          &_pid_barrier,
           nullptr,
           task_reconciler_interval,
           _default_topic_replication.bind(),
@@ -469,6 +471,7 @@ public:
           std::make_unique<fake_members_table_provider>(),
           sr_preflight_checker::make_default(
             _fake_schema_registry, std::make_unique<fake_source_sr_prober>()),
+          &_pid_barrier,
           nullptr,
           task_reconciler_interval,
           _default_topic_replication.bind(),

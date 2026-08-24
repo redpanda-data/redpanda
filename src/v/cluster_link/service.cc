@@ -11,6 +11,7 @@
 
 #include "cluster_link/service.h"
 
+#include "cluster/cloud_metadata/producer_id_recovery_manager.h"
 #include "cluster/cluster_link/frontend.h"
 #include "cluster/controller.h"
 #include "cluster/controller_stm.h"
@@ -26,6 +27,7 @@
 #include "cluster_link/logger.h"
 #include "cluster_link/manager.h"
 #include "cluster_link/model/types.h"
+#include "cluster_link/producer_id_barrier.h"
 #include "cluster_link/replication/deps.h"
 #include "cluster_link/replication/mux_remote_consumer.h"
 #include "cluster_link/replication/types.h"
@@ -1271,6 +1273,51 @@ ss::future<> service::do_handle_enable_shadow_link_change() {
     }
 }
 
+namespace {
+
+/**
+ * \brief Production lower edge of the producer-ID barrier: scan through the
+ * cloud-metadata recovery manager's cluster-wide sweep, reset through the ID
+ * allocator frontend.
+ */
+class recovery_scan_pid_barrier_ops final
+  : public producer_id_barrier_impl::ops {
+public:
+    recovery_scan_pid_barrier_ops(
+      ss::sharded<cluster::members_table>& members_table,
+      ss::sharded<::rpc::connection_cache>& connections,
+      ss::sharded<cluster::id_allocator_frontend>& id_allocator)
+      : _recovery(members_table, connections, id_allocator)
+      , _id_allocator(&id_allocator) {}
+
+    ss::future<result<::model::producer_id, errc>> scan_highest_pid() final {
+        // NB: recover()'s "no producer IDs found" early return must not be
+        // mirrored here — producer ID 0 is valid and indistinguishable from
+        // "none found", and the barrier must reset in both cases.
+        auto res = co_await _recovery.get_cluster_highest_pid();
+        if (res.has_error()) {
+            co_return errc::rpc_error;
+        }
+        co_return res.value();
+    }
+
+    ss::future<errc> reset_next_id(::model::producer_id pid) final {
+        auto reply = co_await _id_allocator->local().reset_next_id(
+          pid, reset_timeout);
+        if (reply.ec != cluster::errc::success) {
+            co_return errc::rpc_error;
+        }
+        co_return errc::success;
+    }
+
+private:
+    static constexpr auto reset_timeout = std::chrono::seconds{10};
+    cluster::cloud_metadata::producer_id_recovery_manager _recovery;
+    ss::sharded<cluster::id_allocator_frontend>* _id_allocator;
+};
+
+} // namespace
+
 ss::future<> service::maybe_start_manager() {
     if (_manager) {
         co_return;
@@ -1280,6 +1327,14 @@ ss::future<> service::maybe_start_manager() {
     // handed in for the Schema Registry preflight checks.
     _schema_registry_dest = schema::registry::make_default(
       _schema_registry_api);
+
+    // Recreated on every manager start: shutdown() aborts it permanently, so
+    // a barrier that survived a previous manager stop cannot be reused.
+    _pid_barrier = std::make_unique<producer_id_barrier_impl>(
+      std::make_unique<recovery_scan_pid_barrier_ops>(
+        _controller->get_members_table(),
+        *_connections,
+        *_id_allocator_frontend));
 
     _manager = std::make_unique<manager>(
       _self,
@@ -1306,6 +1361,7 @@ ss::future<> service::maybe_start_manager() {
       members_table_provider::make_default(&_controller->get_members_table()),
       sr_preflight_checker::make_default(
         *_schema_registry_dest, source_sr_prober::make_default()),
+      _pid_barrier.get(),
       &_controller->get_feature_table(),
       30s, // Temporary until we have a proper configuration for this
       config::shard_local_cfg().default_topic_replications.bind(),
@@ -1389,6 +1445,11 @@ ss::future<> service::maybe_stop_manager() {
         co_return;
     }
     unregister_notifications();
+    // Unblock reconciler fibers waiting inside the barrier before stopping
+    // the manager, which waits on those fibers' gates.
+    if (_pid_barrier) {
+        _pid_barrier->shutdown();
+    }
     auto mgr = std::exchange(_manager, nullptr);
     co_await mgr->stop();
 }

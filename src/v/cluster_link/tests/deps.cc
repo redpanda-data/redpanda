@@ -108,6 +108,7 @@ ss::future<> cluster_link_manager_test_fixture::wire_up_and_start(
           return sr_preflight_checker::make_default(
             _fake_schema_registry, std::make_unique<fake_source_sr_prober>());
       }),
+      &_pid_barrier,
       &_feature_table,
       1s,
       _default_topic_replication.bind(),
