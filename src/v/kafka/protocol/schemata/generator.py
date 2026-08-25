@@ -1558,6 +1558,10 @@ if ({{ cond }}) {
 {%- endmacro %}
 
 {% macro tag_decoder_impl(tag_definitions, obj = "") %}
+{%- set tf = "unknown_tags" %}
+{%- if obj != "" %}
+{%- set tf = obj + '.unknown_tags' %}
+{%- endif %}
 /// Tags decoding section
 auto num_tags = reader.read_unsigned_varint();
 while(num_tags-- > 0) {
@@ -1565,15 +1569,22 @@ while(num_tags-- > 0) {
     auto sz = reader.read_unsigned_varint(); // size
     switch(tag){
 {%- for tdef in tag_definitions %}
+{%- set e, cond = tdef.tagged_versions()._guard() %}
     case {{ tdef.tag() }}:
+{%- if e == tdef.tagged_versions().guard_enum.GUARD %}
+        if ({{ cond }}) {
+{{- field_decoder(tdef, (field_decoder, tag_decoder), obj) | indent | indent | indent }}
+        } else {
+            // The tag only carries this field from a later version: below
+            // it, preserve the payload as an unknown tag.
+            reader.consume_unknown_tag({{ tf }}, tag, sz);
+        }
+{%- else %}
 {{- field_decoder(tdef, (field_decoder, tag_decoder), obj) | indent | indent }}
+{%- endif %}
         break;
 {%- endfor %}
     default:
-{%- set tf = "unknown_tags" %}
-{%- if obj != "" %}
-{%- set tf = obj + '.unknown_tags' %}
-{%- endif %}
         reader.consume_unknown_tag({{ tf }}, tag, sz);
     }
 }
