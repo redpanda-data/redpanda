@@ -1534,7 +1534,7 @@ if ({{ cond }}) {
 });
 {%- else %}
 {%- if field.type().is_struct -%}
-{{- struct_serde(field.type(), methods, "v." ~ field.name) -}}
+{{- struct_serde(field.type(), methods, fname) -}}
 {%- else -%}
 {%- set decoder, named_type = field.decoder(flex) %}
 {%- if named_type == None %}
@@ -1619,7 +1619,7 @@ if (!{{ fname }}.empty()) {
     {{ vec }}.push_back({{ tdef.tag() }});
 }
 {%- elif tdef.type().is_struct  %}
-if ({{ fname }} != {{ tdef.type().name }}{}) {
+if ({{ fname }} != decltype({{ fname }}){}) {
     {{ vec }}.push_back({{ tdef.tag() }});
 }
 {%- elif tdef.default_value() != "" %}
@@ -1653,7 +1653,8 @@ for(uint32_t tag : to_encode) {
 {%- for tdef in tag_definitions %}
     case {{ tdef.tag() }}:
 {%- if tdef.type().is_struct -%}
-{{- struct_serde(tdef.type(), (field_encoder, tag_encoder), obj ~ "." ~ tdef.name, "rw") | indent | indent }}
+{%- set sname = (obj ~ "." ~ tdef.name) if obj else tdef.name %}
+{{- struct_serde(tdef.type(), (field_encoder, tag_encoder), sname, "rw") | indent | indent }}
 {%- else %}
 {{- field_encoder(tdef, (field_encoder, tag_encoder), obj, "rw") | indent | indent }}
 {%- endif %}
