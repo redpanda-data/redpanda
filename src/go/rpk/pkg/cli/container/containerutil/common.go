@@ -31,7 +31,7 @@ import (
 var (
 	tag               = "latest"
 	redpandaImageBase = "redpandadata/redpanda:" + tag
-	consoleImageBase  = "redpandadata/console:v3.10.0"
+	consoleImageBase  = "redpandadata/console:v3.11.0"
 )
 
 const (
