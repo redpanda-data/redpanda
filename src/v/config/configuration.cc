@@ -3963,7 +3963,9 @@ configuration::configuration(ctor_key)
       "Associated topic properties cannot be modified. * `redpanda`: Schema "
       "validation is enabled. Only Redpanda topic properties are accepted. * "
       "`compat`: Schema validation is enabled. Both Redpanda and compatible "
-      "topic properties are accepted.",
+      "topic properties are accepted. Enabling validation causes message "
+      "batches on configured topics to be decompressed for schema ID checks, "
+      "which can increase CPU load. Monitor CPU utilization after enabling.",
       meta{
         .needs_restart = needs_restart::no,
         .visibility = visibility::user,
