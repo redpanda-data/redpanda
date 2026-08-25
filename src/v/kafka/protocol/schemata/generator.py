@@ -262,6 +262,9 @@ path_type_map = {
                 "BaseOffset": ("model::offset", "int64"),
                 "LogAppendTimeMs": ("model::timestamp", "int64"),
                 "LogStartOffset": ("model::offset", "int64"),
+                "CurrentLeader": {
+                    "LeaderEpoch": ("kafka::leader_epoch", "int32"),
+                },
             },
         },
     },
@@ -549,6 +552,16 @@ struct_renames = {
 
     ("FetchResponseData", "Responses", "Partitions", "DivergingEpoch"):
         ("EpochEndOffset", "DivergingEpochEndOffset"),
+
+    # KIP-951: LeaderIdAndEpoch and NodeEndpoint are defined identically in
+    # both the fetch and produce responses, but generated structs share one
+    # flat namespace, so give each message its own type name.
+    ("ProduceResponseData", "Responses", "Partitions", "CurrentLeader"):
+        ("LeaderIdAndEpoch", "ProduceLeaderIdAndEpoch"),
+    ("ProduceResponseData", "NodeEndpoints"):
+        ("NodeEndpoint", "ProduceNodeEndpoint"),
+    ("FetchResponseData", "NodeEndpoints"):
+        ("NodeEndpoint", "FetchNodeEndpoint"),
 }
 
 # extra header per type name
@@ -730,6 +743,7 @@ STRUCT_TYPES = [
     "RoleNameFilter",
     "RedpandaRole",
     "RedpandaRoleMember",
+    "NodeEndpoint",
 ]
 
 # A list of StructTypes that are allowed to be not arrays in the schema.
@@ -760,7 +774,13 @@ TAGGED_WITH_FIELDS = []
 # respective types are correctly not prefixed with [].
 # They must not be treated as ArrayTypes
 # This list is the names after struct_renames have been applied.
-SINGULAR_STRUCT_TYPES = ["DivergingEpochEndOffset", "LeaderIdAndEpoch", "SnapshotId"]
+SINGULAR_STRUCT_TYPES = [
+    "DivergingEpochEndOffset",
+    "LeaderIdAndEpoch",
+    "ProduceLeaderIdAndEpoch",
+    "ReplicaState",
+    "SnapshotId",
+]
 
 SCALAR_TYPES = list(basic_type_map.keys())
 ENTITY_TYPES = list(entity_type_map.keys())
@@ -1534,7 +1554,7 @@ if ({{ cond }}) {
 });
 {%- else %}
 {%- if field.type().is_struct -%}
-{{- struct_serde(field.type(), methods, "v." ~ field.name) -}}
+{{- struct_serde(field.type(), methods, fname) -}}
 {%- else -%}
 {%- set decoder, named_type = field.decoder(flex) %}
 {%- if named_type == None %}
@@ -1558,6 +1578,10 @@ if ({{ cond }}) {
 {%- endmacro %}
 
 {% macro tag_decoder_impl(tag_definitions, obj = "") %}
+{%- set tf = "unknown_tags" %}
+{%- if obj != "" %}
+{%- set tf = obj + '.unknown_tags' %}
+{%- endif %}
 /// Tags decoding section
 auto num_tags = reader.read_unsigned_varint();
 while(num_tags-- > 0) {
@@ -1565,15 +1589,22 @@ while(num_tags-- > 0) {
     auto sz = reader.read_unsigned_varint(); // size
     switch(tag){
 {%- for tdef in tag_definitions %}
+{%- set e, cond = tdef.tagged_versions()._guard() %}
     case {{ tdef.tag() }}:
+{%- if e == tdef.tagged_versions().guard_enum.GUARD %}
+        if ({{ cond }}) {
+{{- field_decoder(tdef, (field_decoder, tag_decoder), obj) | indent | indent | indent }}
+        } else {
+            // The tag only carries this field from a later version: below
+            // it, preserve the payload as an unknown tag.
+            reader.consume_unknown_tag({{ tf }}, tag, sz);
+        }
+{%- else %}
 {{- field_decoder(tdef, (field_decoder, tag_decoder), obj) | indent | indent }}
+{%- endif %}
         break;
 {%- endfor %}
     default:
-{%- set tf = "unknown_tags" %}
-{%- if obj != "" %}
-{%- set tf = obj + '.unknown_tags' %}
-{%- endif %}
         reader.consume_unknown_tag({{ tf }}, tag, sz);
     }
 }
@@ -1608,7 +1639,7 @@ if (!{{ fname }}.empty()) {
     {{ vec }}.push_back({{ tdef.tag() }});
 }
 {%- elif tdef.type().is_struct  %}
-if ({{ fname }} != {{ tdef.type().name }}{}) {
+if ({{ fname }} != decltype({{ fname }}){}) {
     {{ vec }}.push_back({{ tdef.tag() }});
 }
 {%- elif tdef.default_value() != "" %}
@@ -1642,7 +1673,8 @@ for(uint32_t tag : to_encode) {
 {%- for tdef in tag_definitions %}
     case {{ tdef.tag() }}:
 {%- if tdef.type().is_struct -%}
-{{- struct_serde(tdef.type(), (field_encoder, tag_encoder), obj ~ "." ~ tdef.name, "rw") | indent | indent }}
+{%- set sname = (obj ~ "." ~ tdef.name) if obj else tdef.name %}
+{{- struct_serde(tdef.type(), (field_encoder, tag_encoder), sname, "rw") | indent | indent }}
 {%- else %}
 {{- field_encoder(tdef, (field_encoder, tag_encoder), obj, "rw") | indent | indent }}
 {%- endif %}
