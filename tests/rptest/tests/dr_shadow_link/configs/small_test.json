@@ -1,0 +1,24 @@
+{
+  "dr_config": {
+    "topics": {
+      "count": 1,
+      "partitions_per_topic": 3,
+      "replication_factor": 3,
+      "prefix": "test-"
+    },
+    "producers": {
+      "count": 1,
+      "msg_count_per_producer": 1000,
+      "msg_size": 1024,
+      "batch_size": 10,
+      "compression_type": "none"
+    },
+    "consumers": {
+      "count": 0
+    },
+    "verification": {
+      "max_lag_messages": 100,
+      "replication_timeout_sec": 30
+    }
+  }
+}
