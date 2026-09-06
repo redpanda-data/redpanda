@@ -8,6 +8,9 @@ redpanda_cc_library(
     hdrs = [
         "tls.h",
     ],
+    implementation_deps = [
+        "@openssl",
+    ],
     visibility = ["//visibility:public"],
     deps = [
         "//src/v/base",

@@ -18,10 +18,39 @@
 #include <seastar/util/later.hh>
 #include <seastar/util/log.hh>
 
+#include <openssl/x509.h>
+
 #include <array>
 namespace net {
 
 static ss::logger tlslog("net_tls");
+
+namespace {
+std::optional<ss::sstring> get_default_cert_location() {
+    auto default_cert_file = X509_get_default_cert_file();
+    if (default_cert_file == nullptr) {
+        return std::nullopt;
+    }
+    return ss::sstring(default_cert_file);
+}
+
+std::optional<std::filesystem::path> get_default_cert_directory() {
+    auto default_cert_dir = X509_get_default_cert_dir();
+    if (default_cert_dir == nullptr) {
+        return std::nullopt;
+    }
+    return std::filesystem::path(default_cert_dir);
+}
+
+bool is_within_directory(
+  const ss::sstring& file, const std::filesystem::path& dir) {
+    std::filesystem::path file_path(file);
+    auto [file_it, dir_it] = std::mismatch(
+      dir.begin(), dir.end(), file_path.begin(), file_path.end());
+
+    return dir_it == dir.end();
+}
+} // namespace
 
 ss::future<std::optional<ss::sstring>> find_ca_file() {
     // list of all possible ca-cert file locations on different linux distros
@@ -92,15 +121,41 @@ get_credentials_builder(credentials_configuration cfg) {
               return ss::now();
           });
     } else {
+        auto default_cert_location = get_default_cert_location();
+        vlog(
+          tlslog.trace,
+          "Default cert location: {}",
+          default_cert_location.value_or("<none>"));
+        auto default_cert_dir = get_default_cert_directory();
+        vlog(
+          tlslog.trace,
+          "Default cert directory: {}",
+          default_cert_dir.has_value() ? default_cert_dir->string()
+                                       : std::string("<none>"));
+
         auto ca_file = co_await find_ca_file();
-        if (ca_file) {
-            vlog(tlslog.info, "Found system CA trust file at {}", *ca_file);
+        vlog(tlslog.trace, "CA File location: {}", ca_file.value_or("<none>"));
+
+        if (!ca_file || ca_file == default_cert_location) {
+            // If the CA file is not found in the known locations or it matches
+            // what OpenSSL is using, then use the system trust
+            vlog(tlslog.info, "Using system trust");
+            co_await builder.set_system_trust();
+        } else if (
+          ca_file && default_cert_dir
+          && is_within_directory(*ca_file, *default_cert_dir)) {
+            vlog(
+              tlslog.info,
+              "Using system trust - ca file ({}) is within default cert "
+              "directory ({})",
+              *ca_file,
+              default_cert_dir->string());
+            co_await builder.set_system_trust();
+        } else {
+            // Here CA file exists and does not match what OpenSSL is using
+            vlog(tlslog.info, "Found CA trust file at {}", *ca_file);
             co_await builder.set_x509_trust_file(
               *ca_file, ss::tls::x509_crt_format::PEM);
-        } else {
-            vlog(
-              tlslog.info, "No system CA trust file found, using system trust");
-            co_await builder.set_system_trust();
         }
     }
 
