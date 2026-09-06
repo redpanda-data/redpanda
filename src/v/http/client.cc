@@ -403,11 +403,6 @@ bool client::response_stream::is_done() const {
     return _prefetch.empty() && _parser.is_done();
 }
 
-/// Return true if the header parsing is done
-bool client::response_stream::is_header_done() const {
-    return _parser.is_header_done();
-}
-
 /// Access response headers (should only be called if is_header_done() == true)
 const client::response_header& client::response_stream::get_headers() const {
     if (!is_header_done()) {
@@ -501,6 +496,13 @@ ss::future<iobuf> client::response_stream::recv_some() {
           auto bufseq = iobuf_to_constbufseq(_buffer);
           boost::beast::error_code ec;
           size_t noctets = _parser.put(bufseq, ec);
+          if (!_is_header_done && _parser.is_header_done()) {
+              _is_header_done = true;
+              vlog(
+                _ctxlog.trace,
+                "response headers done: {:u}",
+                static_cast<const client::response_header&>(_parser.get()));
+          }
           if (ec == boost::beast::http::error::need_more) {
               // The parser is in the eager mode. This means
               // that the data will be produced (iobuf_body::value_type::append
