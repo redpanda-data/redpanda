@@ -103,6 +103,7 @@ std::optional<cluster::leader_term> get_leader_term(
         if (previous == *config::node().node_id()) {
             auto idx = random_generators::global().get_int(replicas.size() - 1);
             leader_term->leader = replicas[idx];
+            leader_term->term = std::nullopt;
         }
     }
 
