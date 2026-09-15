@@ -9,6 +9,7 @@
 
 #include "cluster/config_frontend.h"
 #include "cluster/controller.h"
+#include "cluster/partition_leaders_table.h"
 #include "cluster/security_frontend.h"
 #include "cluster/topic_configuration.h"
 #include "container/chunked_vector.h"
@@ -658,5 +659,53 @@ FIXTURE_TEST(metadata_v12_unauthorized, metadata_fixture) {
           kafka::error_code::topic_authorization_failed);
         BOOST_REQUIRE_EQUAL(resp.data.topics[0].topic_id, topic_id);
         BOOST_REQUIRE(!resp.data.topics[0].name.has_value());
+    }
+}
+
+FIXTURE_TEST(metadata_leaderless_partition_random_leader, metadata_fixture) {
+    wait_for_controller_leadership().get();
+    const model::topic topic{"metadata_leaderless_partition"};
+    create_topic(topic, 1, 1);
+    const auto ntp = make_default_ntp(topic, model::partition_id{0});
+    wait_for_leader(ntp).get();
+
+    auto& leaders = app.controller->get_partition_leaders();
+    const auto term = leaders.local().get_leader_term(ntp)->term.value();
+
+    auto client = make_kafka_client().get();
+    auto deferred_close = ss::defer([&client] { client.stop().get(); });
+    client.connect().get();
+
+    // With no current leader and this node as the previous leader, the
+    // handler names a random replica. That guess must not be reported with
+    // the current term, or responses naming different leaders would share
+    // one leader epoch.
+    for (int attempt = 0;; ++attempt) {
+        leaders
+          .invoke_on_all([ntp, term](cluster::partition_leaders_table& t) {
+              return t.update_partition_leader(ntp, term, std::nullopt);
+          })
+          .get();
+        auto resp = client
+                      .dispatch(
+                        kafka::metadata_request{.data{
+                          .topics = {{{.name{topic}}}},
+                          .allow_auto_topic_creation = false,
+                          .include_cluster_authorized_operations = false,
+                          .include_topic_authorized_operations = false}},
+                        kafka::api_version{12})
+                      .get();
+        // A leadership update from raft may land before the response.
+        if (leaders.local().get_leader(ntp).has_value()) {
+            BOOST_REQUIRE_LT(attempt, 10);
+            continue;
+        }
+        BOOST_REQUIRE_EQUAL(resp.data.topics.size(), 1);
+        BOOST_REQUIRE_EQUAL(resp.data.topics[0].partitions.size(), 1);
+        const auto& p = resp.data.topics[0].partitions[0];
+        BOOST_CHECK_EQUAL(
+          p.error_code, kafka::error_code::leader_not_available);
+        BOOST_CHECK_EQUAL(p.leader_epoch, kafka::leader_epoch{0});
+        break;
     }
 }
