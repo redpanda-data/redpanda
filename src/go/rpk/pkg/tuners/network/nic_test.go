@@ -220,6 +220,27 @@ func Test_nic_GetIRQs(t *testing.T) {
 			},
 		},
 		{
+			name:       "ENA fast path IRQs should be sorted by queue number",
+			driverName: "ena",
+			irqProcFile: &procFileMock{
+				getIRQProcFileLinesMap: func() (map[int]string, error) {
+					return map[int]string{
+						288: "288:          0          0   PCI-MSI 65536-edge      ens5-Tx-Rx-1",
+						289: "289:          0          0   PCI-MSI 65537-edge      ens5-Tx-Rx-0",
+					}, nil
+				},
+			},
+			irqDeviceInfo: &deviceInfoMock{
+				getIRQs: func(string, string) ([]int, error) {
+					return []int{288, 289}, nil
+				},
+			},
+			want: []IrqInfoRes{
+				{Num: 289, ProcLine: "289:          0          0   PCI-MSI 65537-edge      ens5-Tx-Rx-0", QueueIndex: 0},
+				{Num: 288, ProcLine: "288:          0          0   PCI-MSI 65536-edge      ens5-Tx-Rx-1", QueueIndex: 1},
+			},
+		},
+		{
 			name: "Fdir fast path IRQs should be moved to the end of list",
 			irqProcFile: &procFileMock{
 				getIRQProcFileLinesMap: func() (map[int]string, error) {

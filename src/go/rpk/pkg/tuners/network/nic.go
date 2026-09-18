@@ -245,7 +245,7 @@ func (n *nic) GetIRQs() ([]IrqInfo, error) {
 }
 
 func intelIrqToQueueIdx(irq IrqInfo) int {
-	intelFastPathIrqPattern := regexp.MustCompile(`-TxRx-(\d+)`)
+	intelFastPathIrqPattern := regexp.MustCompile(`-Tx-?Rx-(\d+)`)
 	fdirPattern := regexp.MustCompile(`fdir-TxRx-\d+`)
 
 	intelFastPathMatch := intelFastPathIrqPattern.FindStringSubmatch(irq.ProcLine)
