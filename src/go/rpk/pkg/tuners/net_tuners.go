@@ -215,7 +215,8 @@ func (f *netTunersFactory) NewRxTxQueueCountTuner(interfaces []network.Nic, effe
 				return NewTuneError(err)
 			}
 
-			_, err = f.ethtool.SetChannels(nic.Name(), targetChannels)
+			err = f.executor.Execute(
+				commands.NewEthtoolSetChannelCmd(f.ethtool, nic.Name(), targetChannels))
 			if err != nil {
 				return NewTuneError(err)
 			}
