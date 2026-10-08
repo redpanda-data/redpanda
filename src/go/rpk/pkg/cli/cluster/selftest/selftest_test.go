@@ -11,14 +11,49 @@ package selftest
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"testing"
+	"time"
 
 	"github.com/redpanda-data/common-go/rpadmin"
 
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
 	"github.com/stretchr/testify/require"
 )
+
+// fakeSelfTestStatusClient returns each queued response in turn, repeating the
+// last one once exhausted, so watchSelfTest can be driven without a cluster.
+type fakeSelfTestStatusClient struct {
+	responses [][]rpadmin.SelfTestNodeReport
+	calls     int
+}
+
+func (f *fakeSelfTestStatusClient) SelfTestStatus(context.Context) ([]rpadmin.SelfTestNodeReport, error) {
+	r := f.responses[f.calls]
+	if f.calls < len(f.responses)-1 {
+		f.calls++
+	}
+	return r, nil
+}
+
+func TestWatchSelfTest(t *testing.T) {
+	cl := &fakeSelfTestStatusClient{
+		responses: [][]rpadmin.SelfTestNodeReport{
+			{{NodeID: 0, Status: "running", Stage: "disk"}},
+			{{NodeID: 0, Status: "idle", Stage: "idle"}},
+		},
+	}
+	var buf bytes.Buffer
+	err := watchSelfTest(context.Background(), cl, config.OutFormatter{Kind: "text"}, &buf, time.Millisecond)
+	require.NoError(t, err)
+
+	out := buf.String()
+	// A spinner reports progress while a node is still running; once every
+	// node is idle the spinner stops and the final status is printed.
+	require.Contains(t, out, "Running self-test")
+	require.Contains(t, out, "All nodes are idle with no cached test results")
+}
 
 func TestPrintSelfTestStatus(t *testing.T) {
 	f := config.OutFormatter{Kind: "text"}
