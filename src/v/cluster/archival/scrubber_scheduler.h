@@ -77,13 +77,16 @@ public:
         });
     }
 
+    /// Returns true if the next scheduled scrub is due. A small slack is
+    /// applied so a caller running on a periodic loop (e.g. the housekeeping
+    /// workflow) isn't forced to skip when it polls a few milliseconds early
+    /// — otherwise that miss costs a full cycle of that loop. In production
+    /// the per-partition scrub interval is on the order of hours, so the
+    /// slack never meaningfully widens the window.
     bool should_scrub() const {
-        if (_next_scrub_at == model::timestamp::missing()) {
-            return false;
-        }
-
-        const auto now_ts = model::to_timestamp(Clock::now());
-        return now_ts >= _next_scrub_at;
+        constexpr auto slack = std::chrono::milliseconds{500};
+        const auto until_next = until_next_scrub();
+        return until_next.has_value() && *until_next <= slack;
     }
 
     void pick_next_scrub_time() {
