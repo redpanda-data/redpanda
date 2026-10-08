@@ -69,6 +69,8 @@ std::string_view to_string_view(feature f) {
         return "cloud_storage_manifest_format_v2";
     case feature::force_partition_reconfiguration:
         return "force_partition_reconfiguration";
+    case feature::health_dissemination:
+        return "health_dissemination";
     case feature::delete_records:
         return "delete_records";
     case feature::raft_coordinated_recovery:

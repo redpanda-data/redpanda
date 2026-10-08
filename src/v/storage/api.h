@@ -89,11 +89,15 @@ public:
         _kvstore.reset();
     }
 
-    void set_node_uuid(const model::node_uuid& node_uuid) {
-        _node_uuid = node_uuid;
+    /// Stamp this shard's copy of the node identity. UUID and boot id are
+    /// always written together at bootstrap, so they share a setter.
+    void set_node_identity(model::node_uuid uuid, model::node_boot_id boot) {
+        _node_uuid = uuid;
+        _node_boot_id = boot;
     }
 
     model::node_uuid node_uuid() const { return _node_uuid; }
+    model::node_boot_id node_boot_id() const { return _node_boot_id; }
 
     void set_cluster_uuid(const model::cluster_uuid& cluster_uuid) {
         _cluster_uuid = cluster_uuid;
@@ -142,6 +146,12 @@ private:
     // directory. Should be generated once upon first starting up and
     // immediately persisted into `_kvstore`.
     model::node_uuid _node_uuid;
+
+    // Per-boot id, persisted in `_kvstore` and bumped on every startup.
+    // Stamped onto health reports so peers can distinguish a post-restart
+    // report from a pre-restart one when the in-memory health version
+    // counter has reset to 1.
+    model::node_boot_id _node_boot_id;
 
     std::optional<model::cluster_uuid> _cluster_uuid;
     ss::condition_variable _has_cluster_uuid_cond;

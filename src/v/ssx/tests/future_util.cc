@@ -10,9 +10,43 @@
 #include "ssx/future-util.h"
 
 #include <seastar/core/manual_clock.hh>
+#include <seastar/core/sleep.hh>
 #include <seastar/testing/thread_test_case.hh>
 
 using namespace std::chrono_literals;
+
+SEASTAR_THREAD_TEST_CASE(do_with_fwd_rvalue) {
+    // Rvalue: should be moved into managed storage.
+    std::vector<int> v = {1, 2, 3};
+    auto f = ssx::do_with_fwd(std::move(v), [](std::vector<int>& moved) {
+        BOOST_CHECK_EQUAL(moved.size(), 3);
+        return seastar::make_ready_future<>();
+    });
+    f.get();
+    // NOLINTNEXTLINE(bugprone-use-after-move) intentional: verify v was moved
+    BOOST_CHECK(v.empty());
+}
+
+SEASTAR_THREAD_TEST_CASE(do_with_fwd_lvalue) {
+    // Single lvalue: should be passed by reference, not copied.
+    int x = 42;
+    auto f = ssx::do_with_fwd(x, [](int& ref) {
+        ref = 99;
+        return seastar::make_ready_future<>();
+    });
+    f.get();
+    BOOST_CHECK_EQUAL(x, 99);
+}
+
+SEASTAR_THREAD_TEST_CASE(do_with_fwd_async) {
+    // Verify lvalue ref survives across a suspension point.
+    int x = 0;
+    auto f = ssx::do_with_fwd(x, [](int& ref) {
+        return seastar::sleep(1ms).then([&ref] { ref = 77; });
+    });
+    f.get();
+    BOOST_CHECK_EQUAL(x, 77);
+}
 
 SEASTAR_THREAD_TEST_CASE(with_timeout_abortable_test) {
     // future ready -> timeout

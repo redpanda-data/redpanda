@@ -311,6 +311,29 @@
             ]
         },
         {
+            "path": "/v1/debug/drop_health_cache",
+            "operations": [
+                {
+                    "method": "POST",
+                    "summary": "Drop this node's cached health data for remote nodes and refuse to repopulate it for the suppress window. Recovery hook for the wipe-then-node_id_override scenario where the new boot id is lower than what peers stored before the wipe. Operator must run on every peer within the window. Negative `suppress_ms` disables suppression immediately.",
+                    "type": "void",
+                    "nickname": "drop_health_cache",
+                    "produces": [
+                        "application/json"
+                    ],
+                    "parameters": [
+                        {
+                            "name": "suppress_ms",
+                            "in": "query",
+                            "required": false,
+                            "allowMultiple": false,
+                            "type": "long"
+                        }
+                    ]
+                }
+            ]
+        },
+        {
             "path": "/v1/debug/restart_service",
             "operations": [
                 {

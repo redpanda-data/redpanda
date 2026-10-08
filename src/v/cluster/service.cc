@@ -558,6 +558,18 @@ ss::future<get_node_health_reply> service::collect_node_health_report(
       });
 }
 
+ss::future<health_pull_reply>
+service::health_pull(health_pull_request req, rpc::streaming_context&) {
+    return ss::with_scheduling_group(
+      get_scheduling_group(), [this, req = std::move(req)]() mutable {
+          return do_health_pull(std::move(req));
+      });
+}
+
+ss::future<health_pull_reply> service::do_health_pull(health_pull_request req) {
+    co_return co_await _hm_frontend.local().handle_health_pull(std::move(req));
+}
+
 ss::future<get_cluster_health_reply> service::get_cluster_health_report(
   get_cluster_health_request req, rpc::streaming_context&) {
     return ss::with_scheduling_group(

@@ -37,7 +37,9 @@ struct local_state
   : serde::envelope<local_state, serde::version<3>, serde::compat_version<0>> {
     application_version redpanda_version;
     cluster_version logical_version{invalid_version};
-    std::chrono::milliseconds uptime;
+    // A real uptime is never negative, so this flags local_state that was
+    // default-constructed and never populated.
+    std::chrono::milliseconds uptime{-1};
 
     // Depending on how the operating system is configured, these may point
     // to the same state if the cache & data dirs share a drive.

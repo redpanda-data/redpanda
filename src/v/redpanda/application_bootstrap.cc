@@ -254,9 +254,27 @@ void application::bootstrap_from_kvstore() {
         node_uuid = u.value();
         node_uuid_is_new = true;
     }
+    // Read+bump+persist the node boot id, so peers can tell a post-restart
+    // health report apart from a pre-restart one even when the in-memory
+    // health version counter has reset to 1.
+    static const auto node_boot_id_key = bytes::from_string("node_boot_id");
+    auto kvs_boot_id = kvs.get(
+      storage::kvstore::key_space::controller, node_boot_id_key);
+    auto next_boot = kvs_boot_id ? serde::from_iobuf<model::node_boot_id>(
+                                     std::move(*kvs_boot_id))
+                                     + uint64_t{1}
+                                 : model::node_boot_id{1};
+    kvs
+      .persist_pre_start(
+        storage::kvstore::key_space::controller,
+        node_boot_id_key,
+        serde::to_iobuf(next_boot))
+      .get();
+    vlog(_log.info, "Node boot id: {}", next_boot);
+
     storage
-      .invoke_on_all([node_uuid](storage::api& storage) mutable {
-          storage.set_node_uuid(node_uuid);
+      .invoke_on_all([node_uuid, next_boot](storage::api& storage) {
+          storage.set_node_identity(node_uuid, next_boot);
       })
       .get();
 
