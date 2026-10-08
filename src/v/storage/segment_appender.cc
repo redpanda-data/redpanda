@@ -439,6 +439,7 @@ ss::future<> segment_appender::truncate(size_t n) {
       file_byte_offset(),
       n,
       *this);
+    _inactive_timer.cancel();
     return hard_flush()
       .then([this, n] { return do_truncation(n); })
       .then([this, n] {
@@ -461,12 +462,17 @@ ss::future<> segment_appender::truncate(size_t n) {
                 });
           }
           return f.then([this] { return hydrate_last_half_page(); });
+      })
+      .then([this] {
+          _inactive_timer.arm(
+            config::shard_local_cfg().segment_appender_flush_timeout_ms());
       });
 }
 
 ss::future<> segment_appender::close() {
     vassert(!_closed, "close() on closed segment: {}", *this);
     _closed = true;
+    _inactive_timer.cancel();
     return hard_flush()
       .then([this] { return do_truncation(_committed_offset); })
       .then([this] {
@@ -775,7 +781,6 @@ void segment_appender::dispatch_background_head_write() {
 
 ss::future<> segment_appender::flush() {
     ++_opts.shared_stats->flushes;
-    _inactive_timer.cancel();
 
     // dispatched write will drive flush completion
     if (_head && _head->bytes_pending()) {
@@ -816,7 +821,6 @@ ss::future<> segment_appender::flush() {
 }
 
 ss::future<> segment_appender::hard_flush() {
-    _inactive_timer.cancel();
     if (_head && _head->bytes_pending()) {
         dispatch_background_head_write();
     }

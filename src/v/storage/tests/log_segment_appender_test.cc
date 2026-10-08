@@ -15,7 +15,9 @@
 #include "storage/chunk_cache.h"
 #include "storage/segment_appender.h"
 #include "storage/storage_resources.h"
+#include "test_utils/async.h"
 #include "test_utils/random_bytes.h"
+#include "test_utils/scoped_config.h"
 
 #include <seastar/core/file.hh>
 #include <seastar/core/fstream.hh>
@@ -74,6 +76,8 @@ struct storage::segment_appender_test_accessor {
     }
     auto inflight_dispatched() { return sa._inflight_dispatched; }
     auto total_dispatched() { return sa._dispatched_writes; }
+    auto& head() { return sa._head; }
+    bool inactive_timer_armed() { return sa._inactive_timer.armed(); }
     auto info() {
         return segment_appender_info{
           .committed_offset = sa._committed_offset,
@@ -643,4 +647,117 @@ TEST(log_segment_appender_test, test_fallocate_size) {
     for (const size_t fallocate_size : {4096ul, 16_KiB, 32_MiB}) {
         run_test_fallocate_size(fallocate_size);
     }
+}
+
+/*
+ * The inactive timer is the reclaim path for an idle appender's head chunk:
+ * append, never flush; the timer must write back the pending bytes and
+ * return the chunk to the cache. Sibling of
+ * test_idle_chunk_reclaimed_after_flush.
+ */
+TEST(log_segment_appender_test, test_inactive_timer_reclaims_chunk_no_flush) {
+    scoped_config cfg;
+    cfg.get("segment_appender_flush_timeout_ms").set_value(10ms);
+
+    auto f = open_file("test_sa_inactive_timer_control.log");
+    storage::storage_resources resources(config::mock_binding<size_t>(32_MiB));
+    resources.start().get();
+    auto appender = make_segment_appender(f, resources);
+    auto close = ss::defer([&appender, &resources] {
+        appender.close().get();
+        resources.stop().get();
+    });
+
+    const auto data = make_random_data(1_KiB);
+    appender.append(data).get();
+
+    // premise: a sub-chunk append leaves pending bytes and the timer armed
+    ASSERT_TRUE(access(appender).head() != nullptr);
+    ASSERT_GT(access(appender).head()->bytes_pending(), 0);
+    ASSERT_TRUE(access(appender).inactive_timer_armed());
+
+    // allow 500 timeout periods for write-back and reclaim
+    RPTEST_REQUIRE_EVENTUALLY(
+      5s, [&] { return access(appender).head() == nullptr; });
+
+    // the pending bytes must be on disk
+    auto in = make_file_input_stream(f, 0);
+    iobuf result = read_iobuf_exactly(in, data.size_bytes()).get();
+    EXPECT_EQ(result, data);
+    in.close().get();
+}
+
+/*
+ * An appender idle after append+flush must also return its head chunk.
+ * flush() used to cancel the inactive timer and nothing re-armed it,
+ * leaving the chunk pinned until the next append or close. Control:
+ * test_inactive_timer_reclaims_chunk_no_flush.
+ */
+TEST(log_segment_appender_test, test_idle_chunk_reclaimed_after_flush) {
+    scoped_config cfg;
+    cfg.get("segment_appender_flush_timeout_ms").set_value(10ms);
+
+    auto f = open_file("test_sa_inactive_timer_after_flush.log");
+    storage::storage_resources resources(config::mock_binding<size_t>(32_MiB));
+    resources.start().get();
+    auto appender = make_segment_appender(f, resources);
+    auto close = ss::defer([&appender, &resources] {
+        appender.close().get();
+        resources.stop().get();
+    });
+
+    const auto data = make_random_data(1_KiB);
+    appender.append(data).get();
+    appender.flush().get();
+
+    // the head survives the flush (retained for future appends) unless the
+    // timer already reclaimed it
+    if (access(appender).head()) {
+        ASSERT_EQ(access(appender).head()->bytes_pending(), 0);
+    }
+    ASSERT_GT(access(appender).info().committed_offset, 0);
+
+    // the control needs ~2-3 timeout periods; allow 100
+    RPTEST_REQUIRE_EVENTUALLY(
+      1s, [&] { return access(appender).head() == nullptr; });
+}
+
+/*
+ * truncate() rehydrates and retains a head chunk; the timer must reclaim
+ * it once the appender goes idle, and a later append must rehydrate the
+ * truncated tail page.
+ */
+TEST(log_segment_appender_test, test_idle_chunk_reclaimed_after_truncate) {
+    scoped_config cfg;
+    cfg.get("segment_appender_flush_timeout_ms").set_value(10ms);
+
+    auto f = open_file("test_sa_inactive_timer_after_truncate.log");
+    storage::storage_resources resources(config::mock_binding<size_t>(32_MiB));
+    resources.start().get();
+    auto appender = make_segment_appender(f, resources);
+    auto close = ss::defer([&appender, &resources] {
+        appender.close().get();
+        resources.stop().get();
+    });
+
+    auto data = make_random_data(1_KiB);
+    appender.append(data).get();
+    appender.flush().get();
+    appender.truncate(512).get();
+
+    RPTEST_REQUIRE_EVENTUALLY(
+      1s, [&] { return access(appender).head() == nullptr; });
+
+    // the appender remains usable after the reclaim
+    auto more = make_random_data(256);
+    appender.append(more).get();
+    appender.flush().get();
+    ASSERT_EQ(appender.file_byte_offset(), 512 + 256);
+
+    iobuf expected = data.share(0, 512);
+    expected.append(more.share(0, more.size_bytes()));
+    auto in = make_file_input_stream(f, 0);
+    iobuf result = read_iobuf_exactly(in, expected.size_bytes()).get();
+    EXPECT_EQ(result, expected);
+    in.close().get();
 }

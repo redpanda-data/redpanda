@@ -343,6 +343,17 @@ private:
     ss::future<> maybe_advance_stable_offset();
     ss::future<> process_flush_ops(size_t);
 
+    /*
+     * Writes back pending head bytes and returns an idle head chunk to the
+     * chunk cache after segment_appender_flush_timeout_ms of inactivity.
+     *
+     * Invariant: never armed while an append(), truncate() or close() is in
+     * progress - each cancels it on entry, and only the completion of
+     * append() or truncate() re-arms it. It may fire while writes or flush()
+     * are in flight; the handler reclaims the chunk only when it can take
+     * every _concurrent_flushes unit (no writes in flight) and re-arms
+     * otherwise.
+     */
     ss::timer<ss::lowres_clock> _inactive_timer;
     void handle_inactive_timer();
 
