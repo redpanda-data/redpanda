@@ -527,11 +527,6 @@ ss::future<> segment::compaction_index_batch(const model::record_batch& b) {
 
 ss::future<append_result> segment::do_append(const model::record_batch& b) {
     check_segment_not_closed("append()");
-    vassert(
-      b.header().ctx.owner_shard,
-      "Shard not set when writing to: {} - header: {}",
-      *this,
-      b.header());
     if (unlikely(b.base_offset() > b.last_offset())) {
         return ss::make_exception_future<append_result>(std::runtime_error(
           fmt::format(

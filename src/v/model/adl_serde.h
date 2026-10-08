@@ -213,6 +213,6 @@ adl<model::record_batch_header>::parse_from(Parser& in) {
       .producer_epoch = producer_epoch,
       .base_sequence = base_sequence,
       .record_count = record_count,
-      .ctx = model::record_batch_header::context(term_id, ss::this_shard_id())};
+      .ctx = model::record_batch_header::context(term_id)};
 }
 } // namespace reflection

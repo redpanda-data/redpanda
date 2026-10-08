@@ -292,7 +292,6 @@ model::record_batch transformed_data::make_batch(
 
     model::record_batch_header header;
     header.type = record_batch_type::raft_data;
-    header.ctx.owner_shard = ss::this_shard_id();
     // mark the batch as created with broker time
     header.attrs.set_timestamp_type(model::timestamp_type::append_time);
     header.first_timestamp = timestamp;

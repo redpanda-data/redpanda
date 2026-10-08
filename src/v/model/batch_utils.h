@@ -40,7 +40,7 @@ make_placeholder_batch(offset start_offset, offset end_offset, term_id term) {
       .producer_epoch = -1,
       .base_sequence = -1,
       .record_count = static_cast<int32_t>(delta() + 1),
-      .ctx = model::record_batch_header::context(term, ss::this_shard_id())};
+      .ctx = model::record_batch_header::context(term)};
 
     model::record_batch batch(
       header, model::record_batch::compressed_records{});
