@@ -36,6 +36,22 @@
 
 using namespace std::chrono_literals; // NOLINT
 
+struct rpc_transport_test_accessor {
+    static size_t memory_available(const rpc::transport& t) {
+        return t._memory.available_units();
+    }
+    static size_t queue_size(const rpc::transport& t) {
+        return t._requests_queue.size();
+    }
+    static rpc::transport::sequence_t& next_seq(rpc::transport& t) {
+        return t._seq;
+    }
+    static rpc::transport::sequence_t& last_seq(rpc::transport& t) {
+        return t._last_seq;
+    }
+    static void dispatch(rpc::transport& t) { t.dispatch_send(); }
+};
+
 namespace rpc {
 
 template<typename Protocol>
@@ -63,6 +79,9 @@ public:
     const net::unresolved_address& server_address() const {
         return _transport->server_address();
     }
+
+    const rpc::transport& get_transport() const { return *_transport; }
+    rpc::transport& get_transport() { return *_transport; }
 
 private:
     ss::lw_shared_ptr<rpc::transport> _transport{nullptr};
@@ -668,6 +687,80 @@ FIXTURE_TEST(test_cleanup_on_timeout_before_sending, rpc_integration_fixture) {
     }
 
     ss::when_all_succeed(requests.begin(), requests.end()).get();
+}
+
+FIXTURE_TEST(
+  test_queued_timeout_retains_memory_units, rpc_integration_fixture) {
+    configure_server();
+    register_services();
+    start_server();
+
+    // Configure client with constrained max_queued_bytes memory budget.
+    constexpr size_t max_budget = 1024;
+    auto cfg = client_config();
+    cfg.max_queued_bytes = max_budget;
+    auto client = rpc::make_client<echo::echo_client_protocol>(cfg);
+    client.connect(model::no_timeout).get();
+    auto stop_client = ss::defer([&] { client.stop().get(); });
+
+    auto& tp = client.get_transport();
+    BOOST_REQUIRE_EQUAL(
+      rpc_transport_test_accessor::memory_available(tp), max_budget);
+    BOOST_REQUIRE_EQUAL(rpc_transport_test_accessor::queue_size(tp), 0);
+
+    // Force a sequence gap by setting _seq to 1 (while _last_seq is 0).
+    // When Request A is issued, it will receive sequence 2.
+    // transport::do_dispatch_send will observe 2 > (0 + 1) and
+    // deterministically hold Request A in _requests_queue without dispatching
+    // it to the socket.
+    rpc_transport_test_accessor::next_seq(tp) = rpc::transport::sequence_t(1);
+
+    const auto payload = random_generators::gen_alphanum_string(512);
+    auto f1 = client.echo(
+      echo::echo_req{.str = payload}, rpc::client_opts(rpc::clock_type::now()));
+
+    // Wait for Request A's response timeout to fire.
+    auto res1 = f1.get();
+    BOOST_REQUIRE(res1.has_error());
+    BOOST_REQUIRE_EQUAL(res1.error(), rpc::errc::client_request_timeout);
+
+    // CRITICAL INTERMEDIATE INVARIANT CHECK (before Request A is
+    // dispatched/drained):
+    // 1. Request A is still physically held in _requests_queue.
+    BOOST_REQUIRE_EQUAL(rpc_transport_test_accessor::queue_size(tp), 1);
+    // 2. Under the fixed implementation, memory units remain held in
+    // entry::memory_units. Under the pre-PR implementation, memory units were
+    // destroyed upon response timeout in f.finally(), prematurely restoring
+    // memory_available to max_budget.
+    auto available_mem = rpc_transport_test_accessor::memory_available(tp);
+    BOOST_REQUIRE_LT(available_mem, max_budget);
+
+    // While Request A remains queued, start Request B requiring more than
+    // available_mem. Request B must block waiting for memory units and cannot
+    // enter _requests_queue.
+    const auto payload2 = random_generators::gen_alphanum_string(600);
+    auto f2 = client.echo(
+      echo::echo_req{.str = payload2}, rpc::client_opts(rpc::no_timeout));
+
+    // Allow fibers to yield; Request B remains blocked on memory semaphore.
+    ss::sleep(20ms).get();
+    BOOST_REQUIRE_EQUAL(rpc_transport_test_accessor::queue_size(tp), 1);
+    BOOST_REQUIRE(!f2.available());
+
+    // Close the sequence gap by setting _last_seq to 1 and triggering dispatch.
+    // Request A (sequence 2) is dispatched and erased from _requests_queue,
+    // releasing its memory units and unblocking Request B.
+    rpc_transport_test_accessor::last_seq(tp) = rpc::transport::sequence_t(1);
+    rpc_transport_test_accessor::dispatch(tp);
+
+    auto res2 = f2.get();
+    BOOST_REQUIRE(res2.has_value());
+    BOOST_REQUIRE_EQUAL(res2.value().data.str, payload2);
+
+    // Final clean state: all entries drained, memory fully restored.
+    BOOST_REQUIRE_EQUAL(rpc_transport_test_accessor::queue_size(tp), 0);
+    BOOST_REQUIRE_EQUAL(
+      rpc_transport_test_accessor::memory_available(tp), max_budget);
 }
 
 FIXTURE_TEST(rpc_mixed_compression, rpc_integration_fixture) {
