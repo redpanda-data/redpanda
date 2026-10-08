@@ -2502,6 +2502,7 @@ redpanda_cc_library(
         "//src/v/ssx:rate_limited_function",
         "//src/v/ssx:semaphore",
         "//src/v/ssx:sformat",
+        "//src/v/ssx:single_fiber_executor",
         "//src/v/ssx:single_sharded",
         "//src/v/ssx:sleep_abortable",
         "//src/v/ssx:when_all",

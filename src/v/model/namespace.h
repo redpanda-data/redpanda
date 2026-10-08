@@ -76,10 +76,16 @@ inline const model::ntp schema_registry_internal_ntp(
   schema_registry_internal_tp.topic,
   schema_registry_internal_tp.partition);
 
+inline const model::topic_namespace
+  schema_registry_nt(model::kafka_namespace, schema_registry_internal_tp.topic);
+
 inline const model::ntp wasm_binaries_internal_ntp(
   model::kafka_internal_namespace,
   model::topic("wasm_binaries"),
   model::partition_id(0));
+
+inline const model::topic_namespace wasm_binaries_nt(
+  model::kafka_internal_namespace, wasm_binaries_internal_ntp.tp.topic);
 
 inline const model::topic
   transform_log_internal_topic("_redpanda.transform_logs");

@@ -54,7 +54,7 @@ public:
         _probe.setup_metrics();
         if (ss::this_shard_id() == 0) {
             _as = {};
-            _loop = do_topic_reconciliation_loop();
+            _loop = ensure_domains_topic();
         }
         co_return;
     }
@@ -118,18 +118,6 @@ public:
     }
 
 private:
-    ss::future<> do_topic_reconciliation_loop() {
-        while (!_as.abort_requested()) {
-            co_await ensure_domains_topic();
-
-            bool aborted = co_await loop_sleep(10min);
-            if (aborted) {
-                // If we were aborted, we exit the loop.
-                co_return;
-            }
-        }
-    }
-
     ss::future<> ensure_domains_topic() {
         auto backoff = make_exponential_backoff_policy<ss::lowres_clock>(
           1s, 10s);
@@ -137,13 +125,12 @@ private:
             if (
               _controller->get_topics_state().local().contains(
                 model::l1_metastore_nt)) {
-                if (co_await ensure_domains_replication_factor()) {
-                    break;
-                }
-            } else {
-                if (co_await create_domains_topic()) {
-                    break;
-                }
+                // Topic exists; the health_manager reconciles its replication
+                // factor alongside the other internal topics.
+                break;
+            }
+            if (co_await create_domains_topic()) {
+                break;
             }
             backoff.next_backoff();
             if (co_await loop_sleep(backoff.current_backoff_duration())) {
@@ -165,36 +152,6 @@ private:
         }
     }
 
-    ss::future<bool> ensure_domains_replication_factor() {
-        auto tp_ns = model::l1_metastore_nt;
-        auto rf = _controller->get_topics_state()
-                    .local()
-                    .get_topic_replication_factor(tp_ns);
-        if (!rf) {
-            vlog(cd_log.warn, "unable to find {} replication factor", tp_ns);
-            co_return false;
-        }
-        auto target_rf = cluster::replication_factor(
-          _controller->internal_topic_replication());
-        if (*rf != target_rf) {
-            vlog(
-              cd_log.info,
-              "updating {} replication factor to {}",
-              tp_ns,
-              target_rf);
-            cluster::topic_properties_update update{tp_ns};
-            update.custom_properties.replication_factor.op
-              = cluster::incremental_update_operation::set;
-            update.custom_properties.replication_factor.value = target_rf;
-            co_await update_topic(std::move(update));
-            co_return false;
-        } else {
-            vlog(
-              cd_log.trace, "replication factor for {} is already set", tp_ns);
-            co_return true;
-        }
-    }
-
     ss::future<bool>
     create_domains_topic(std::optional<int> num_partitions = std::nullopt) {
         auto tp_ns = model::l1_metastore_nt;
@@ -212,29 +169,6 @@ private:
           num_partitions.value_or(
             config::shard_local_cfg().cloud_topics_num_metastore_partitions()),
           topic_props);
-    }
-
-    ss::future<> update_topic(cluster::topic_properties_update update) {
-        cluster::errc ec{};
-        try {
-            auto res = co_await _controller->get_topics_frontend()
-                         .local()
-                         .update_topic_properties(
-                           {update},
-                           ss::lowres_clock::now()
-                             + config::shard_local_cfg()
-                                 .internal_rpc_request_timeout_ms());
-            vassert(res.size() == 1, "expected a single result");
-            ec = res[0].ec;
-        } catch (const std::exception& ex) {
-            vlog(
-              cd_log.warn, "unable to update topic {}: {}", update.tp_ns, ex);
-            co_return;
-        }
-        if (ec != cluster::errc::success) {
-            vlog(
-              cd_log.warn, "failed to update topic {}: {}", update.tp_ns, ec);
-        }
     }
 
     ss::future<bool> create_topic(
