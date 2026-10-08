@@ -29,6 +29,7 @@ public:
 
     bool valid() const override { return _current != nullptr; }
     ss::future<> seek_to_first() override {
+        invalidate();
         for (auto& child : _children) {
             co_await child->seek_to_first();
         }
@@ -36,6 +37,7 @@ public:
         _dir = direction::forward;
     }
     ss::future<> seek_to_last() override {
+        invalidate();
         for (auto& child : _children) {
             co_await child->seek_to_last();
         }
@@ -43,6 +45,7 @@ public:
         _dir = direction::backward;
     }
     ss::future<> seek(key_view target) override {
+        invalidate();
         for (auto& child : _children) {
             co_await child->seek(target);
         }
@@ -52,6 +55,10 @@ public:
 
     ss::future<> next() override {
         dassert(valid(), "next must be called on a valid iterator");
+        // Stash the current child before clearing _current so we can resume
+        // the forward step from the right position.
+        iterator* current = _current;
+        invalidate();
         // Ensure that all children are positioned after key().
         // If we are moving in the forward direction, it is already
         // true for all of the non-current_ children since current_ is
@@ -59,20 +66,22 @@ public:
         // we explicitly position the non-current_ children.
         if (_dir != direction::forward) {
             for (auto& child : _children) {
-                if (child.get() != _current) {
-                    co_await child->seek(key());
-                    if (child->valid() && key() == child->key()) {
+                if (child.get() != current) {
+                    co_await child->seek(current->key());
+                    if (child->valid() && current->key() == child->key()) {
                         co_await child->next();
                     }
                 }
             }
             _dir = direction::forward;
         }
-        co_await _current->next();
+        co_await current->next();
         find_smallest();
     }
     ss::future<> prev() override {
         dassert(valid(), "prev must be called on a valid iterator");
+        iterator* current = _current;
+        invalidate();
         // Ensure that all children are positioned after key().
         // If we are moving in the forward direction, it is already
         // true for all of the non-current_ children since current_ is
@@ -80,8 +89,8 @@ public:
         // we explicitly position the non-current_ children.
         if (_dir != direction::backward) {
             for (auto& child : _children) {
-                if (child.get() != _current) {
-                    co_await child->seek(key());
+                if (child.get() != current) {
+                    co_await child->seek(current->key());
                     if (child->valid()) {
                         // Child is at first entry >= key. Step back one to be <
                         // key().
@@ -95,7 +104,7 @@ public:
             }
             _dir = direction::backward;
         }
-        co_await _current->prev();
+        co_await current->prev();
         find_largest();
     }
     key_view key() override {
@@ -108,6 +117,9 @@ public:
     }
 
 private:
+    // Reset to !valid() so a thrown await doesn't leave stale state.
+    void invalidate() { _current = nullptr; }
+
     void find_smallest() {
         iterator* smallest = nullptr;
         for (auto& child : _children) {

@@ -9,6 +9,7 @@
 #include "lsm/core/internal/keys.h"
 #include "lsm/core/internal/merging_iterator.h"
 #include "lsm/core/internal/tests/iterator_test_harness.h"
+#include "lsm/core/internal/tests/throwing_iterator.h"
 
 #include <gmock/gmock-matchers.h>
 #include <gtest/gtest.h>
@@ -18,54 +19,7 @@ using ::testing::Pair;
 
 namespace {
 
-class simple_iterator : public lsm::internal::iterator {
-public:
-    explicit simple_iterator(std::map<lsm::internal::key, iobuf> data)
-      : _data(std::move(data)) {}
-
-    bool valid() const override { return _it != _data.end(); }
-
-    ss::future<> seek_to_first() override {
-        _it = _data.begin();
-        return ss::now();
-    }
-
-    ss::future<> seek_to_last() override {
-        _it = _data.empty() ? _data.end() : std::prev(_data.end());
-        return ss::now();
-    }
-
-    ss::future<> seek(lsm::internal::key_view target) override {
-        _it = _data.lower_bound(lsm::internal::key(target));
-        return ss::now();
-    }
-
-    ss::future<> next() override {
-        if (_it != _data.end()) {
-            ++_it;
-        }
-        return ss::now();
-    }
-
-    ss::future<> prev() override {
-        if (_it == _data.begin()) {
-            _it = _data.end();
-        } else if (_it != _data.end()) {
-            --_it;
-        } else if (!_data.empty()) {
-            _it = std::prev(_data.end());
-        }
-        return ss::now();
-    }
-
-    lsm::internal::key_view key() override { return _it->first; }
-
-    iobuf value() override { return _it->second.copy(); }
-
-private:
-    std::map<lsm::internal::key, iobuf> _data;
-    std::map<lsm::internal::key, iobuf>::iterator _it;
-};
+using lsm::internal::testing::throwing_iterator;
 
 class merging_iterator_factory {
 public:
@@ -73,7 +27,7 @@ public:
     make_iterator(std::map<lsm::internal::key, iobuf> map) {
         chunked_vector<std::unique_ptr<lsm::internal::iterator>> children;
         children.push_back(lsm::internal::iterator::create_empty());
-        children.push_back(std::make_unique<simple_iterator>(std::move(map)));
+        children.push_back(std::make_unique<throwing_iterator>(std::move(map)));
         children.push_back(lsm::internal::iterator::create_empty());
         return lsm::internal::create_merging_iterator(std::move(children));
     }
@@ -132,8 +86,8 @@ TEST(MergingIteratorTest, MergeTwoIterators) {
     auto data2 = make_test_data({{"b", "2"}, {"d", "4"}, {"f", "6"}});
 
     chunked_vector<std::unique_ptr<lsm::internal::iterator>> children;
-    children.push_back(std::make_unique<simple_iterator>(std::move(data1)));
-    children.push_back(std::make_unique<simple_iterator>(std::move(data2)));
+    children.push_back(std::make_unique<throwing_iterator>(std::move(data1)));
+    children.push_back(std::make_unique<throwing_iterator>(std::move(data2)));
     auto it = lsm::internal::create_merging_iterator(std::move(children));
 
     auto results = collect_all_pairs(it);
@@ -153,8 +107,8 @@ TEST(MergingIteratorTest, DuplicateKeys) {
     auto data2 = make_test_data({{"a", "10"}, {"b", "20"}, {"d", "40"}});
 
     chunked_vector<std::unique_ptr<lsm::internal::iterator>> children;
-    children.push_back(std::make_unique<simple_iterator>(std::move(data1)));
-    children.push_back(std::make_unique<simple_iterator>(std::move(data2)));
+    children.push_back(std::make_unique<throwing_iterator>(std::move(data1)));
+    children.push_back(std::make_unique<throwing_iterator>(std::move(data2)));
     auto it = lsm::internal::create_merging_iterator(std::move(children));
 
     // Verify that duplicates are yielded (should see "a" twice, "b" twice)
@@ -187,7 +141,7 @@ TEST(MergingIteratorTest, SingleChild) {
     auto data = make_test_data({{"a", "1"}, {"b", "2"}});
 
     chunked_vector<std::unique_ptr<lsm::internal::iterator>> children;
-    children.push_back(std::make_unique<simple_iterator>(std::move(data)));
+    children.push_back(std::make_unique<throwing_iterator>(std::move(data)));
     auto it = lsm::internal::create_merging_iterator(std::move(children));
 
     it->seek_to_first().get();
@@ -209,8 +163,8 @@ TEST(MergingIteratorTest, BackwardIteration) {
     auto data2 = make_test_data({{"b", "2"}, {"d", "4"}});
 
     chunked_vector<std::unique_ptr<lsm::internal::iterator>> children;
-    children.push_back(std::make_unique<simple_iterator>(std::move(data1)));
-    children.push_back(std::make_unique<simple_iterator>(std::move(data2)));
+    children.push_back(std::make_unique<throwing_iterator>(std::move(data1)));
+    children.push_back(std::make_unique<throwing_iterator>(std::move(data2)));
     auto it = lsm::internal::create_merging_iterator(std::move(children));
 
     auto results = collect_all_pairs_reverse(it);
@@ -218,4 +172,83 @@ TEST(MergingIteratorTest, BackwardIteration) {
       results,
       ElementsAre(
         Pair("d", "4"), Pair("c", "3"), Pair("b", "2"), Pair("a", "1")));
+}
+
+namespace {
+
+class MergingIteratorExceptionSafetyTest : public ::testing::Test {
+public:
+    void SetUp() override {
+        auto good_data = make_test_data({{"a", "1"}, {"c", "3"}, {"e", "5"}});
+        auto bad_data = make_test_data({{"b", "2"}, {"d", "4"}, {"f", "6"}});
+        auto bad_iter = std::make_unique<throwing_iterator>(
+          std::move(bad_data));
+        _bad = bad_iter.get();
+        chunked_vector<std::unique_ptr<lsm::internal::iterator>> children;
+        children.push_back(
+          std::make_unique<throwing_iterator>(std::move(good_data)));
+        children.push_back(std::move(bad_iter));
+        _it = lsm::internal::create_merging_iterator(std::move(children));
+    }
+
+protected:
+    throwing_iterator* _bad = nullptr;
+    std::unique_ptr<lsm::internal::iterator> _it;
+};
+
+} // namespace
+
+// After any thrown await in a mutating method, valid() must report false.
+TEST_F(MergingIteratorExceptionSafetyTest, SeekChildThrowLeavesInvalid) {
+    _it->seek_to_first().get();
+    ASSERT_TRUE(_it->valid());
+
+    _bad->fail_next();
+    auto target = lsm::internal::key::encode({.key = lsm::user_key_view("b")});
+    EXPECT_THROW(_it->seek(target).get(), std::runtime_error);
+    EXPECT_FALSE(_it->valid());
+}
+
+TEST_F(MergingIteratorExceptionSafetyTest, SeekToFirstChildThrowLeavesInvalid) {
+    _it->seek_to_first().get();
+    ASSERT_TRUE(_it->valid());
+
+    _bad->fail_next();
+    EXPECT_THROW(_it->seek_to_first().get(), std::runtime_error);
+    EXPECT_FALSE(_it->valid());
+}
+
+TEST_F(MergingIteratorExceptionSafetyTest, SeekToLastChildThrowLeavesInvalid) {
+    _it->seek_to_last().get();
+    ASSERT_TRUE(_it->valid());
+
+    _bad->fail_next();
+    EXPECT_THROW(_it->seek_to_last().get(), std::runtime_error);
+    EXPECT_FALSE(_it->valid());
+}
+
+TEST_F(MergingIteratorExceptionSafetyTest, NextChildThrowLeavesInvalid) {
+    _it->seek_to_first().get();
+    // Walk forward until _current points at the throwing child so its
+    // next() is the call that throws.
+    while (_it->valid() && _it->key().user_key()() != "b") {
+        _it->next().get();
+    }
+    ASSERT_TRUE(_it->valid());
+
+    _bad->fail_next();
+    EXPECT_THROW(_it->next().get(), std::runtime_error);
+    EXPECT_FALSE(_it->valid());
+}
+
+TEST_F(MergingIteratorExceptionSafetyTest, PrevChildThrowLeavesInvalid) {
+    _it->seek_to_last().get();
+    while (_it->valid() && _it->key().user_key()() != "f") {
+        _it->prev().get();
+    }
+    ASSERT_TRUE(_it->valid());
+
+    _bad->fail_next();
+    EXPECT_THROW(_it->prev().get(), std::runtime_error);
+    EXPECT_FALSE(_it->valid());
 }
