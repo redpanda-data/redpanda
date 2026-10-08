@@ -1,4 +1,4 @@
-load("//bazel:test.bzl", "redpanda_cc_btest", "redpanda_cc_gtest", "redpanda_test_cc_library")
+load("//bazel:test.bzl", "redpanda_cc_bench", "redpanda_cc_btest", "redpanda_cc_gtest", "redpanda_test_cc_library")
 
 redpanda_test_cc_library(
     name = "random",
@@ -285,5 +285,24 @@ redpanda_cc_gtest(
         "//src/v/model",
         "//src/v/test_utils:gtest",
         "@googletest//:gtest",
+    ],
+)
+
+redpanda_cc_bench(
+    name = "decompression_rpbench",
+    timeout = "long",
+    srcs = [
+        "decompression_bench.cc",
+    ],
+    test_regex = ".*zstd_r1_n16",
+    deps = [
+        "//src/v/bytes:iobuf",
+        "//src/v/container:chunked_vector",
+        "//src/v/model",
+        "//src/v/model:batch_compression",
+        "//src/v/random:generators",
+        "//src/v/storage:record_batch_builder",
+        "@seastar",
+        "@seastar//:benchmark",
     ],
 )
