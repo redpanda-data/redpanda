@@ -17,6 +17,7 @@ Redpanda is the most complete, Apache Kafka®-compatible streaming data platform
     - [Debian/Ubuntu](#debianubuntu)
     - [Fedora/RedHat/Amazon Linux](#fedoraredhatamazon-linux)
     - [macOS](#macos)
+    - [rpk binaries](#rpk-binaries)
     - [Other Linux environments](#other-linux-environments)
   - [Build manually](#build-manually)
   - [Release candidate builds](#release-candidate-builds)
@@ -54,11 +55,39 @@ sudo yum install redpanda
 
 ### macOS
 
-Download the `rpk` [binary here](https://github.com/redpanda-data/redpanda/releases). Docker is required on MacOS.
+Docker is required on MacOS.
 
 ```
 brew install redpanda-data/tap/redpanda && rpk container start
 ```
+
+### rpk binaries
+
+Prebuilt `rpk` binaries for Linux, macOS and Windows (amd64 and arm64) are
+published at `https://rpk.redpanda.com/<release>/rpk-<os>-<arch>.zip`, where
+`<release>` is a version tag such as `v26.2.4`, or `latest` for the newest
+stable release.
+
+```
+# latest stable release
+curl -LO https://rpk.redpanda.com/latest/rpk-linux-amd64.zip
+curl -LO https://rpk.redpanda.com/latest/rpk-darwin-arm64.zip
+curl -LO https://rpk.redpanda.com/latest/rpk-windows-amd64.zip
+
+# a specific release
+curl -LO https://rpk.redpanda.com/v26.2.4/rpk-linux-arm64.zip
+
+# SHA256 checksums (note: no `v` in the file name)
+curl -LO https://rpk.redpanda.com/v26.2.4/rpk_26.2.4_checksums.txt
+
+# SHA256 checksums for latest, without the version in the file name
+curl -LO https://rpk.redpanda.com/latest/rpk_checksums.txt
+```
+
+Available files per release: `rpk-linux-amd64.zip`, `rpk-linux-arm64.zip`,
+`rpk-darwin-amd64.zip`, `rpk-darwin-arm64.zip`, `rpk-windows-amd64.zip`,
+`rpk-windows-arm64.zip` and `rpk_<version>_checksums.txt`. `latest/` also
+carries the checksums as `rpk_checksums.txt`.
 
 ### Other Linux environments
 
@@ -76,7 +105,7 @@ For arm64:
 curl -LO https://vectorized-public.s3.us-west-2.amazonaws.com/releases/redpanda/25.2.7/redpanda-25.2.7-arm64.tar.gz
 ```
 
-Replace `25.2.7` with the version you want to download. See [Release Notes](https://github.com/redpanda-data/redpanda/releases) for available releases.
+Replace `25.2.7` with the version you want to download. See [Release Notes](https://docs.redpanda.com/streaming/current/reference/releases/redpanda/) for available releases.
 
 ## Build Manually
 
