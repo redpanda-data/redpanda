@@ -28,7 +28,7 @@ from ducktape.utils.util import wait_until
 
 from rptest.clients.admin.proto.redpanda.core.admin.v2 import shadow_link_pb2
 from rptest.clients.admin.proto.redpanda.core.common.v1 import tls_pb2
-from rptest.clients.rpk import RpkTool
+from rptest.clients.rpk import RPKACLInput, RpkTool
 from rptest.services.admin import Admin
 from rptest.services.cluster import TestContext, cluster
 from rptest.services.confluent_schema_registry import ConfluentSchemaRegistryService
@@ -45,6 +45,7 @@ from rptest.services.redpanda import (
 )
 from rptest.services.tls import Certificate, TLSCertManager
 from rptest.tests.cluster_linking_test_base import (
+    SCHEMA_REGISTRY_SYNC_TASK_NAME,
     ClusterLinkingTLSProvider,
     ShadowLinkTestBase,
 )
@@ -74,6 +75,7 @@ class SchemaRegistrySyncMixin:
     create_default_link_request: Any
     create_link_with_request: Any
     get_link: Any
+    update_link: Any
 
     # A layered diamond DAG (top -> mid -> leaf), like the reconciler
     # concurrent_stress unit test but larger: adjacent referrers share referents,
@@ -231,6 +233,7 @@ class SchemaRegistrySyncMixin:
         self,
         source_url: str | None = None,
         full_sync_interval_sec: int = 2,
+        tail_interval_sec: int = 2,
         source_filter_subjects: list[str] | None = None,
         source_filter_contexts: list[str] | None = None,
         exact_context_map: dict[str, str] | None = None,
@@ -253,7 +256,9 @@ class SchemaRegistrySyncMixin:
         )
         api = shadow_link_pb2.SchemaRegistrySyncOptions.ShadowSchemaRegistryApi(
             source_url=source_url,
-            tail_interval=google.protobuf.duration_pb2.Duration(seconds=2),
+            tail_interval=google.protobuf.duration_pb2.Duration(
+                seconds=tail_interval_sec
+            ),
             full_sync_interval=google.protobuf.duration_pb2.Duration(
                 seconds=full_sync_interval_sec
             ),
@@ -464,28 +469,91 @@ class SchemaRegistrySyncMixin:
         return link.status.schema_registry_sync_status
 
     def _observe_current_full_sync(self, timeout_sec: int = 60):
-        # While a sync runs, the status exposes current_sync; capture it during
-        # the first (longest-running) full sync of the seeded DAG and confirm it
-        # is a FULL sync. Tail sync is not implemented yet, so FULL is the only
-        # type produced -- this pins the reported sync_type regardless.
-        observed: dict[str, Any] = {}
-
-        def in_progress() -> bool:
+        # While a sync runs, the status exposes current_sync. Tail syncs publish
+        # one too, so poll until a FULL sync is caught in flight rather than
+        # asserting on whichever type happens to be sampled first.
+        def full_sync_in_progress() -> bool:
             sr = self._admin_sr_status()
-            if sr.HasField("current_sync"):
-                observed["sync_type"] = sr.current_sync.sync_type
-                return True
-            return False
+            return (
+                sr.HasField("current_sync")
+                and sr.current_sync.sync_type
+                == shadow_link_pb2.SCHEMA_REGISTRY_SYNC_TYPE_FULL
+            )
 
         wait_until(
-            in_progress,
+            full_sync_in_progress,
             timeout_sec=timeout_sec,
             backoff_sec=0.2,
-            err_msg="never observed a Schema Registry sync in progress",
+            err_msg="never observed a Schema Registry FULL sync in progress",
         )
-        assert (
-            observed["sync_type"] == shadow_link_pb2.SCHEMA_REGISTRY_SYNC_TYPE_FULL
-        ), observed
+
+    def _last_full_sync_finish_ns(self) -> int | None:
+        # When the last completed full sync finished, or None if none has.
+        sr = self._admin_sr_status()
+        if not sr.HasField("last_full_sync") or not sr.last_full_sync.HasField(
+            "finish_time"
+        ):
+            return None
+        return sr.last_full_sync.finish_time.ToNanoseconds()
+
+    def _sync_in_progress(self) -> bool:
+        return self._admin_sr_status().HasField("current_sync")
+
+    def _wait_no_sync_in_progress(self, timeout_sec: int = 60):
+        wait_until(
+            lambda: not self._sync_in_progress(),
+            timeout_sec=timeout_sec,
+            backoff_sec=1,
+            err_msg="a Schema Registry sync never finished",
+        )
+
+    def _wait_initial_full_sync_done(self, timeout_sec: int = 60):
+        # _wait_synced returns as soon as a schema is visible on the destination,
+        # but last_full_sync is only published after the purge, mode/config,
+        # context and re-scan legs that follow the import. Baselining before that
+        # lets the initial full sync land inside a _wait_tail_synced window and
+        # trip its no-full-sync assertion.
+        wait_until(
+            lambda: self._last_full_sync_finish_ns() is not None
+            and not self._sync_in_progress(),
+            timeout_sec=timeout_sec,
+            backoff_sec=1,
+            err_msg="the initial full sync did not finish",
+        )
+
+    def _wait_tail_synced(self, condition: Any, err_msg: str, timeout_sec: int = 60):
+        # Waits for `condition`, then asserts no full sync completed while
+        # waiting. With an hour-long full-sync interval that leaves the _schemas
+        # tail as the only way the change can have arrived, so this distinguishes
+        # tail propagation from "a full sync happened to pick it up".
+        before = self._last_full_sync_finish_ns()
+        wait_until(condition, timeout_sec=timeout_sec, backoff_sec=1, err_msg=err_msg)
+        # A full sync that delivered the change itself may not have published its
+        # finish time yet, which would read as no full sync having intervened, so
+        # let whatever is running finish before comparing.
+        self._wait_no_sync_in_progress(timeout_sec)
+        after = self._last_full_sync_finish_ns()
+        assert after == before, (
+            f"a full sync completed while waiting (finish {before} -> {after}), "
+            "so this change does not demonstrate tail propagation"
+        )
+
+    def _wait_full_synced(self, condition: Any, err_msg: str, timeout_sec: int = 120):
+        # Waits for `condition`, then asserts a full sync completed while waiting.
+        # Unlike _wait_tail_synced this attributes nothing: with a short full-sync
+        # interval one completes either way. It says only that the full-sync cycle
+        # is alive, so callers must pin attribution themselves.
+        before = self._last_full_sync_finish_ns()
+        wait_until(condition, timeout_sec=timeout_sec, backoff_sec=1, err_msg=err_msg)
+        # The full sync that delivered the change may not have published its
+        # finish time by the time the condition holds; same race as above, so
+        # again let whatever is running finish before comparing.
+        self._wait_no_sync_in_progress(timeout_sec)
+        after = self._last_full_sync_finish_ns()
+        assert after != before, (
+            f"no full sync completed while waiting (finish still {before}), so "
+            "this change does not demonstrate full-sync propagation"
+        )
 
     def _verify_counters(self, all_pairs: list[Pair]):
         expected_versions = len(all_pairs)
@@ -694,6 +762,145 @@ class SchemaRegistrySyncMixin:
         assert src.delete_subject_version(after, "2").status_code == 200
         assert src.delete_subject(whole).status_code == 200
         self._wait_delete_synced(src, dest, subjects)
+
+    def _test_schema_registry_api_sync_tail_latency(self):
+        # Incremental propagation: the link tails the source's _schemas topic
+        # over the Kafka API and re-reads only the targets its records name.
+        # The full-sync interval is an hour, so every change below has to arrive
+        # on a tail sync -- _wait_tail_synced asserts no full sync intervened.
+        src = self._make_source_client()
+        dest = SchemaRegistryRedpandaClient(self.target_cluster_service)
+
+        v_only = [{"name": "v", "type": "string"}]
+        seeded = "tail-seeded-value"
+        self._register(src, seeded, self._record("Seeded", v_only))
+
+        self._create_sr_link(full_sync_interval_sec=3600)
+        # The one full sync this test allows: everything after it is tail work.
+        self._wait_synced(src, dest, [(seeded, 1)])
+        # Wait for that sync to *finish*, not just to have imported the seed:
+        # every assertion below is relative to a completed full sync.
+        self._wait_initial_full_sync_done()
+
+        # Baseline the counters here, before any tail work: the initial full sync
+        # has already incremented them, so only a delta measured from this point
+        # can be attributed to a tail sync.
+        baseline = self._admin_sr_status().totals_since_task_start
+        baseline_versions = baseline.subject_versions_changed
+        baseline_configs = baseline.compatibility_configs_changed
+
+        # A new version of an already-synced subject.
+        self._register(
+            src,
+            seeded,
+            self._record(
+                "Seeded", v_only + [{"name": "e", "type": "long", "default": 0}]
+            ),
+        )
+        self._wait_tail_synced(
+            lambda: self._schema_view(dest, seeded, 2)
+            == self._schema_view(src, seeded, 2),
+            "a new version did not propagate on a tail sync",
+        )
+
+        # A brand-new subject: the tail must discover subjects the last full sync
+        # never enumerated, not just versions of known ones.
+        fresh = "tail-fresh-value"
+        self._register(src, fresh, self._record("Fresh", v_only))
+        self._wait_tail_synced(
+            lambda: self._schema_view(dest, fresh, 1)
+            == self._schema_view(src, fresh, 1),
+            "a new subject did not propagate on a tail sync",
+        )
+
+        # A subject-level compatibility override: a CONFIG record names its
+        # target, which is tracked separately from schema changes.
+        self._set_source_config(src, fresh, {"compatibility": "FULL"})
+        self._wait_tail_synced(
+            lambda: dest.get_config_subject(fresh).json().get("compatibilityLevel")
+            == "FULL",
+            "a compatibility override did not propagate on a tail sync",
+        )
+
+        # A source-side soft delete: the version keeps existing but leaves the
+        # active listing, and the destination must follow it into that state
+        # rather than losing the version outright.
+        assert src.delete_subject_version(seeded, "2").status_code == 200
+        self._wait_tail_synced(
+            lambda: self._version_state(dest, seeded)
+            == (frozenset({1}), frozenset({2})),
+            "a soft delete did not propagate on a tail sync",
+        )
+
+        # Counters and metrics must reflect tail work, not just full syncs, so
+        # everything here is a delta from the post-full-sync baseline.
+        before_totals = self._admin_sr_status().totals_since_task_start
+        versions_delta = before_totals.subject_versions_changed - baseline_versions
+        configs_delta = before_totals.compatibility_configs_changed - baseline_configs
+        self.logger.info(
+            "tail-driven counter deltas: "
+            f"subject_versions_changed={versions_delta} "
+            f"compatibility_configs_changed={configs_delta}"
+        )
+        # Exactly the three tail-driven version changes above -- the new version,
+        # the new subject, and the soft-delete re-import -- and exactly the one
+        # subject-level override. Exact, not lower bounds: refresh-by-key re-reads
+        # a named target and writes only what differs, so replaying a record
+        # counts nothing, and the hour-long full-sync interval means no full sync
+        # contributes either. Both hold for a Confluent source too: its
+        # global-config gap is a single change, already absorbed by the baseline.
+        assert (versions_delta, configs_delta) == (3, 1), (
+            "tail syncs did not count exactly their own changes: "
+            f"subject_versions_changed {before_totals.subject_versions_changed} - "
+            f"{baseline_versions} = {versions_delta} (want 3); "
+            "compatibility_configs_changed "
+            f"{before_totals.compatibility_configs_changed} - {baseline_configs} = "
+            f"{configs_delta} (want 1)"
+        )
+        for endpoint in (MetricsEndpoint.METRICS, MetricsEndpoint.PUBLIC_METRICS):
+            totals = self._sr_sync_metric_totals(endpoint)
+            assert totals is not None, f"no SR sync metrics on {endpoint}"
+            assert (
+                totals["subject_versions_changed"]
+                == before_totals.subject_versions_changed
+            ), f"{endpoint} disagrees with the admin API: {totals} vs {before_totals}"
+
+        # A source-side subject hard delete. It leaves the subject absent from
+        # the source, so the tail purges the destination copy -- while the
+        # untouched `seeded` subject must survive, since a tail sync may only
+        # purge the subjects its batch named.
+        assert src.delete_subject(fresh).status_code == 200
+        assert src.delete_subject(fresh, permanent=True).status_code == 200
+        self._wait_tail_synced(
+            lambda: self._version_state(dest, fresh) == (frozenset(), frozenset()),
+            "a subject delete did not propagate on a tail sync",
+        )
+        assert self._sr_versions(dest, seeded, deleted=True) == {1, 2}, (
+            "an unrelated subject was purged by a tail sync"
+        )
+        # The purge is tail work too, so the totals moved again.
+        self._wait_totals(
+            lambda t: t.subject_versions_changed
+            > before_totals.subject_versions_changed,
+            "the purge did not advance the subject-version counter",
+        )
+
+        # A whole source context, deleted the way the source requires: empty it,
+        # then DELETE /contexts. Nothing about that is a change to any subject,
+        # so only the CONTEXT record makes it observable to the tail.
+        prod = ":.prod:orders-value"
+        self._register(src, prod, self._record("Orders", v_only))
+        self._wait_tail_synced(
+            lambda: ".prod" in set(dest.get_contexts().json()),
+            "a new context did not materialize on a tail sync",
+        )
+        assert src.delete_subject(prod).status_code == 200
+        assert src.delete_subject(prod, permanent=True).status_code == 200
+        assert src.delete_context(".prod").status_code in (200, 204)
+        self._wait_tail_synced(
+            lambda: ".prod" not in set(dest.get_contexts().json()),
+            "a context delete did not propagate on a tail sync",
+        )
 
     def _test_schema_registry_api_sync_compatibility(self):
         # A subject-level compatibility override round-tripping through the
@@ -1085,9 +1292,9 @@ class SchemaRegistrySyncMixin:
 
         # Sever the destination cluster's egress to the source Schema Registry
         # (which listens on 8081): the running sync's list_contexts fails with
-        # source_unavailable, so the task records last_error_message and leaves
-        # _last_full_sync unadvanced -- it keeps retrying on the normal cadence,
-        # so recovery needs no config change, just the source coming back.
+        # source_unavailable, so the task records last_error_message and clears
+        # its full-sync timer -- it keeps retrying on the normal cadence, so
+        # recovery needs no config change, just the source coming back.
         with firewall_blocked(self.target_cluster_service.nodes, 8081):
             wait_until(
                 lambda: self._admin_sr_status().last_error_message != "",
@@ -1173,6 +1380,186 @@ class SchemaRegistrySyncMixin:
         # shutdown (the manager drained its work queue and gate before
         # aborting the tasks they were blocked on) until the 30s node-stop
         # timeout killed the node. Success here is simply a clean teardown.
+
+    def _test_schema_registry_api_sync_http_tail_propagates_without_full_sync(
+        self,
+    ):
+        # Pins HTTP-fallback propagation without full sync, end to end. The
+        # helper is only called from a harness that denies READ on `_schemas`,
+        # so the feed dies on its first fetch and every tail tick below runs
+        # through the HTTP fallback instead.
+        src = self._make_source_client()
+        dest = SchemaRegistryRedpandaClient(self.target_cluster_service)
+
+        # Seed one subject so the first (unavoidable) full sync has something to
+        # do and establishes the destination inventory the tail diffs against.
+        self._register(src, "seeded-value", self._leaf_schema(0))
+
+        # The whole point of this test: a full-sync interval far longer than the
+        # run, so anything that replicates below can only have come from a tail
+        # tick. Without this the test would also pass on a build whose tail tick
+        # is a no-op, and would validate nothing.
+        self._create_sr_link(full_sync_interval_sec=600, tail_interval_sec=1)
+        self._wait_synced(src, dest, [("seeded-value", 1)])
+
+        # _wait_synced returns mid-reconcile, while the full sync still has its
+        # purge, mode/config fan-out and closing rescan to do -- so wait for it to
+        # finish, or the poll below can still catch FULL.
+        def full_sync_done() -> bool:
+            sr = self._admin_sr_status()
+            return sr.HasField("last_full_sync") and not sr.HasField("current_sync")
+
+        wait_until(
+            full_sync_done,
+            timeout_sec=60,
+            backoff_sec=0.5,
+            err_msg="the first full sync never finished",
+        )
+
+        # An armed feed finishes an idle tail tick in microseconds, so catching
+        # current_sync mid-tick is a lottery; prove tail delivery by stability
+        # instead -- if last_full_sync never advances while the cases below
+        # land, nothing but tail ticks can have delivered them.
+        baseline = self._last_full_sync_finish_ns()
+        assert baseline is not None
+
+        # CASE 1 -- a new version of a subject the destination already has. The
+        # subject listing is unchanged (same name), so only the schema-id probe
+        # can find this.
+        self._register(src, "seeded-value", self._leaf_schema(0, evolve=True))
+        self._wait_synced(src, dest, [("seeded-value", 2)])
+
+        # CASE 2 -- a brand new subject. Found by the subject listing.
+        self._register(src, "fresh-value", self._leaf_schema(1))
+        self._wait_synced(src, dest, [("fresh-value", 1)])
+
+        # CASE 3 -- a new subject whose content duplicates an existing schema.
+        # The registry reuses the existing schema id rather than allocating one,
+        # so the probe cannot see it; only the subject listing can. This is the
+        # case that makes both tail legs necessary rather than one.
+        fresh_view = self._schema_view(src, "fresh-value", 1)
+        assert fresh_view is not None, "source lost fresh-value v1"
+        dup_id = self._register(src, "duplicate-value", self._leaf_schema(1))
+        assert dup_id == fresh_view["id"], (
+            "expected the duplicate registration to reuse the existing schema id; "
+            "without that this case does not exercise the listing-only path"
+        )
+        self._wait_synced(src, dest, [("duplicate-value", 1)])
+
+        # Everything above arrived on tail ticks: no full sync completed while
+        # the cases landed.
+        self._wait_no_sync_in_progress()
+        after = self._last_full_sync_finish_ns()
+        assert after == baseline, (
+            f"a full sync completed during the tail cases (finish {baseline} "
+            f"-> {after}), so this run does not demonstrate propagation "
+            "without a full sync"
+        )
+
+        # Tailing really was attempted and really was refused. Arming needs
+        # only DESCRIBE, so it succeeds; the DENY stops the fetch that follows.
+        dest_svc = self.target_cluster_service
+        assert dest_svc.search_log_any(
+            "Schema Registry topic tailing is configured to start at the end of _schemas"
+        ), "tailing never armed, so the refused fetch was never reached"
+        assert dest_svc.search_log_any(
+            "Schema Registry topic tailing stopped: fetching from source"
+        ), "the refused fetch did not stop tailing"
+
+        # The work above was the HTTP fallback's, not the feed's: the HTTP
+        # summary line is present and the feed's summary (which ends "tail
+        # sync:" without the "(HTTP)" marker) never appears.
+        assert dest_svc.search_log_any("Schema Registry tail sync (HTTP):"), (
+            "the HTTP fallback never reported doing the work"
+        )
+        assert not dest_svc.search_log_any("Schema Registry tail sync: "), (
+            "the feed did work despite _schemas being unreadable"
+        )
+
+        # Degraded, not broken: a dead tail is an availability change, so it is
+        # not counted as a sync error and the task keeps running.
+        sr = self._admin_sr_status()
+        self._log_counters("admin API", sr)
+        assert sr.totals_since_task_start.errors == 0, (
+            f"the refused tail was counted as a sync error: {sr}"
+        )
+        # One entry per broker shard, and only the _schemas/0 leader's shard runs
+        # the task, so the rest report NOT_RUNNING. What matters is that the shard
+        # that does run it is active and that none faulted.
+        sr_tasks = [
+            task
+            for task in self.get_link(LINK_NAME).status.task_statuses
+            if task.name == SCHEMA_REGISTRY_SYNC_TASK_NAME
+        ]
+        states = [(t.broker_id, t.shard, t.state, t.reason) for t in sr_tasks]
+        assert shadow_link_pb2.TASK_STATE_ACTIVE in [t.state for t in sr_tasks], (
+            f"no shard is running the Schema Registry sync task: {states}"
+        )
+        assert shadow_link_pb2.TASK_STATE_FAULTED not in [t.state for t in sr_tasks], (
+            f"the refused tail faulted the Schema Registry sync task: {states}"
+        )
+
+        # No negative delete case here: whether a tail tick propagates a soft
+        # delete depends on which tail is live -- the _schemas feed does (and
+        # its own tests pin that), the HTTP fallback never deletes (pinned by
+        # the mirroring_task unit tests) -- and this test cannot force the
+        # fallback path.
+
+    def _test_schema_registry_api_sync_http_filter_widening(self):
+        src = self._make_source_client()
+        dest = SchemaRegistryRedpandaClient(self.target_cluster_service)
+
+        # One in-scope subject; everything else registered later is outside the
+        # filter. Full sync far away, so replication below is tail-only.
+        self._register(src, "ours-value", self._leaf_schema(0))
+        self._create_sr_link(
+            full_sync_interval_sec=600,
+            tail_interval_sec=1,
+            source_filter_subjects=["ours-value"],
+        )
+        self._wait_synced(src, dest, [("ours-value", 1)])
+
+        # The source keeps allocating ids to subjects the filter rejects. The
+        # probe hits each of them (they exist), imports nothing, and must keep
+        # walking -- its cursor, not the floor, carries it past this stretch.
+        for i in range(3):
+            self._register(src, f"theirs-{i}-value", self._leaf_schema(10 + i))
+
+        # A new in-scope version lands ABOVE the foreign ids, so the only way
+        # tail can deliver it is by having walked past all of them.
+        self._register(src, "ours-value", self._leaf_schema(0, evolve=True))
+        self._wait_synced(src, dest, [("ours-value", 2)])
+        for i in range(3):
+            assert self._schema_view(dest, f"theirs-{i}-value", 1) is None, (
+                f"theirs-{i}-value replicated despite being outside the filter"
+            )
+
+        # Reconfigure: widen the filter so the foreign subjects are selected.
+        # The config change forces a full sync, which picks up their backlog by
+        # name -- their ids sit below the probe floor by now, so no walk could.
+        link = self.get_link(LINK_NAME)
+        api = (
+            link.configurations.schema_registry_sync_options.shadow_schema_registry_api
+        )
+        del api.source_filter.subjects[:]
+        api.source_filter.subjects.extend(
+            ["ours-value"] + [f"theirs-{i}-value" for i in range(3)]
+        )
+        self.update_link(
+            shadow_link=link,
+            update_mask=google.protobuf.field_mask_pb2.FieldMask(
+                paths=[
+                    "configurations.schema_registry_sync_options"
+                    ".shadow_schema_registry_api.source_filter"
+                ]
+            ),
+        )
+        self._wait_synced(src, dest, [(f"theirs-{i}-value", 1) for i in range(3)])
+
+        # And from here the formerly-foreign subjects are first-class tail
+        # citizens: a new version of one must arrive on a tail tick.
+        self._register(src, "theirs-0-value", self._leaf_schema(10, evolve=True))
+        self._wait_synced(src, dest, [("theirs-0-value", 2)])
 
     def _test_schema_registry_api_sync_survives_leadership_change(self):
         src = self._make_source_client()
@@ -1524,6 +1911,10 @@ class SchemaRegistrySyncE2ETest(ShadowLinkTestBase, SchemaRegistrySyncMixin):
         self._test_schema_registry_api_sync_soft_delete()
 
     @cluster(num_nodes=6)
+    def test_schema_registry_api_sync_tail_latency(self):
+        self._test_schema_registry_api_sync_tail_latency()
+
+    @cluster(num_nodes=6)
     def test_schema_registry_api_sync_compatibility(self):
         self._test_schema_registry_api_sync_compatibility()
 
@@ -1641,6 +2032,11 @@ class ConfluentSchemaRegistrySyncE2ETest(ShadowLinkTestBase, SchemaRegistrySyncM
     def test_schema_registry_api_sync_soft_delete(self):
         self._test_schema_registry_api_sync_soft_delete()
 
+    # The only coverage of tailing a Confluent-written _schemas topic.
+    @cluster(num_nodes=5)
+    def test_schema_registry_api_sync_tail_latency(self):
+        self._test_schema_registry_api_sync_tail_latency()
+
     @cluster(num_nodes=5)
     def test_schema_registry_api_sync_out_of_scope_reference(self):
         self._test_schema_registry_api_sync_out_of_scope_reference()
@@ -1688,6 +2084,165 @@ class ConfluentSchemaRegistrySyncE2ETest(ShadowLinkTestBase, SchemaRegistrySyncM
     @cluster(num_nodes=5)
     def test_schema_registry_api_sync_unsupported_config_fail(self):
         self._test_schema_registry_api_sync_unsupported_config_fail()
+
+
+class SchemaRegistrySyncUnreadableSchemasTest(
+    ShadowLinkTestBase, SchemaRegistrySyncMixin
+):
+    """A source whose `_schemas` topic the link principal may not READ: tailing
+    arms (metadata and ListOffsets need only DESCRIBE) and then dies on its
+    first fetch, so tail ticks fall back to discovery over the source's HTTP
+    API and changes keep arriving on the tail interval.
+
+    This is the realistic shape of the fallback. `_schemas` is an internal
+    topic, so a link granted only what topic shadowing documents will not be
+    able to read it -- and that must not force changes to wait for the next
+    full sync, count sync errors, or stop/fault the task.
+
+    Node budget: 3 (destination Redpanda) + 1 (source Redpanda) = 4. A
+    single-broker source is fine -- the SR `_schemas` topic is RF=1, as the
+    Confluent leaf already relies on."""
+
+    LINK_USER = "sr-sync-link-user"
+    LINK_PASSWORD = "sr-sync-link-password"
+    LINK_PRINCIPAL = f"User:{LINK_USER}"
+
+    def __init__(self, test_context: TestContext, *args: Any, **kwargs: Any):
+        source_sr_config = SchemaRegistryConfig()
+        source_sr_config.mode_mutability = True
+        # SASL on the source's Kafka listeners is what makes ACLs apply to the
+        # link at all. The source SR listener deliberately gets no authn method,
+        # so its HTTP API stays open and the full-sync path is untouched by the
+        # ACLs below: the subject here is the Kafka-side tail, not source-SR
+        # authentication (that is SchemaRegistrySyncAuthMixin's).
+        source_security = SecurityConfig()
+        source_security.enable_sasl = True
+        source_security.endpoint_authn_method = "sasl"
+        super().__init__(
+            test_context,
+            secondary_cluster_args=SecondaryClusterArgs(
+                num_brokers=1,
+                schema_registry_config=source_sr_config,
+                security=source_security,
+            ),
+            schema_registry_config=SchemaRegistryConfig(),
+            # last_full_sync resets when _schemas/0 leadership moves, and every
+            # assertion here is relative to it; same rationale as the E2E leaf.
+            extra_rp_conf={"enable_leader_balancer": False},
+            *args,
+            **kwargs,
+        )
+
+    def _make_source_client(self) -> SchemaRegistryRedpandaClient:
+        return SchemaRegistryRedpandaClient(self.source_cluster_service)
+
+    def _maybe_apply_source_kafka_credentials(
+        self, client_options: "shadow_link_pb2.ShadowLinkClientOptions"
+    ) -> None:
+        # The link authenticates as the restricted principal, not as the
+        # superuser: a superuser bypasses the authorizer entirely, so the DENY
+        # below would never be consulted.
+        client_options.authentication_configuration.scram_configuration.CopyFrom(
+            shadow_link_pb2.ScramConfig(
+                username=self.LINK_USER,
+                password=self.LINK_PASSWORD,
+                scram_mechanism=shadow_link_pb2.SCRAM_MECHANISM_SCRAM_SHA_256,
+            )
+        )
+
+    def _create_link_principal(self) -> None:
+        # Everything the link could ask of the source Kafka. Whether it may read
+        # the Schema Registry's own topic is left to the two helpers below.
+        rpk = RpkTool(self.source_cluster_service)
+        rpk.sasl_create_user(self.LINK_USER, self.LINK_PASSWORD)
+        rpk.sasl_allow_principal(self.LINK_PRINCIPAL, ["all"], "topic", "*")
+        rpk.sasl_allow_principal(self.LINK_PRINCIPAL, ["all"], "group", "*")
+        rpk.acl_create_allow_cluster(self.LINK_USER, "all")
+
+    def _deny_schemas_read(self) -> None:
+        # A DENY beats any ALLOW, and scoping it to READ leaves DESCRIBE granted,
+        # so metadata and ListOffsets still answer and only the fetch is refused
+        # -- what an operator who never granted the internal topic actually hits.
+        RpkTool(self.source_cluster_service).sasl_deny_principal(
+            self.LINK_PRINCIPAL, ["read"], "topic", "_schemas"
+        )
+
+    def _allow_schemas_read(self) -> None:
+        RpkTool(self.source_cluster_service).acl_delete(
+            RPKACLInput(
+                deny_principal=[self.LINK_PRINCIPAL],
+                topic=["_schemas"],
+                operation=["read"],
+            )
+        )
+
+    @cluster(num_nodes=4)
+    def test_tailing_resumes_after_a_transient_acl_loss(self):
+        src = self._make_source_client()
+        dest = SchemaRegistryRedpandaClient(self.target_cluster_service)
+
+        self._create_link_principal()
+
+        v_only = [{"name": "v", "type": "string"}]
+        seeded = "recovering-seeded-value"
+        self._register(src, seeded, self._record("Seeded", v_only))
+
+        # An hour-long full-sync interval leaves the tail as the only way anything
+        # below can arrive, so no assertion here can be met by a full scan.
+        self._create_sr_link(full_sync_interval_sec=3600)
+        self._wait_synced(src, dest, [(seeded, 1)])
+        self._wait_initial_full_sync_done()
+
+        self._deny_schemas_read()
+        dest_svc = self.target_cluster_service
+        wait_until(
+            lambda: dest_svc.search_log_any(
+                "Schema Registry topic tailing stopped: fetching from source"
+            ),
+            timeout_sec=60,
+            backoff_sec=1,
+            err_msg="losing READ on _schemas did not stop tailing",
+        )
+
+        # Written while the tail is down, as a change API-based tailing cannot
+        # deliver: the HTTP fallback's listing leg would happily carry a new
+        # subject, but a config override only travels through the feed (or a
+        # full sync, an hour away). Recovering it proves the feed resumed
+        # from its own progress rather than the log end.
+        self._set_source_config(src, seeded, {"compatibility": "FULL"})
+
+        self._allow_schemas_read()
+        self._wait_tail_synced(
+            lambda: dest.get_config_subject(seeded).json().get("compatibilityLevel")
+            == "FULL",
+            "the tail did not resume and carry what was written while it was down",
+            # Resuming waits out the reader's re-arm backoff, then a tail tick.
+            timeout_sec=180,
+        )
+
+        sr = self._admin_sr_status()
+        self._log_counters("admin API", sr)
+        assert sr.totals_since_task_start.errors == 0, (
+            f"the interrupted tail was counted as a sync error: {sr}"
+        )
+
+    # The mixin's HTTP-tail tests run here against the path they name: with
+    # READ on `_schemas` denied the feed dies on its first fetch, so every
+    # tail tick below is the HTTP fallback -- including the probe-cursor walk
+    # past out-of-scope ids that filter widening exercises.
+    @cluster(num_nodes=4)
+    def test_http_tail_propagates_without_full_sync_with_unreadable_schemas_topic(
+        self,
+    ):
+        self._create_link_principal()
+        self._deny_schemas_read()
+        self._test_schema_registry_api_sync_http_tail_propagates_without_full_sync()
+
+    @cluster(num_nodes=4)
+    def test_http_filter_widening_with_unreadable_schemas_topic(self):
+        self._create_link_principal()
+        self._deny_schemas_read()
+        self._test_schema_registry_api_sync_http_filter_widening()
 
 
 class _CredentialedSRClient(SchemaRegistryRedpandaClient):

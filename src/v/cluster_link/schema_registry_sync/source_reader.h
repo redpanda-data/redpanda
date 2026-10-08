@@ -38,6 +38,23 @@ enum class source_error_kind : uint8_t {
     source_unavailable,
     /// The subject does not exist in the source (HTTP 404).
     subject_not_found,
+    /// The numeric schema id does not resolve in the searched source context
+    /// (HTTP 404 / error_code 40403). The id probe expects this on every tick,
+    /// so it must not be counted as a sync error.
+    schema_id_not_found,
+    /// The source refuses or does not implement the requested endpoint, as
+    /// opposed to failing one call. The caller should skip whatever needed
+    /// it -- not treat the source as down or count an error -- but may ask
+    /// again later. Produced only by `list_schema_id_subject_versions`, the
+    /// one endpoint the sync can do without.
+    endpoint_unsupported,
+    /// The source answered this read with 403. Produced only by
+    /// `list_schema_id_subject_versions`: an ACL-enabled source deliberately
+    /// answers a missing id with the same 403 as a denial, so on the
+    /// existence ask this is the routine end of the walk -- but it is NOT a
+    /// miss, so it must never feed classification (a miss on the live-only
+    /// ask means "no live view"; a 403 means nothing of the sort).
+    forbidden,
 };
 
 struct source_error {
@@ -60,8 +77,7 @@ struct source_config_read {
 ///
 /// Reads are split into discovery (list subjects/versions) and fetch (read a
 /// specific schema) so the sync can decide what to import before pulling
-/// schema bodies. Production currently uses an unavailable reader (the real
-/// HTTP-backed implementation is not wired yet); tests inject a fake.
+/// schema bodies. Production uses the HTTP-backed reader; tests inject a fake.
 class source_reader {
 public:
     source_reader() = default;
@@ -80,6 +96,30 @@ public:
     virtual ss::future<source_result<chunked_vector<ppsr::schema_version>>>
     list_subject_versions(
       ppsr::context_subject, ppsr::include_deleted, ss::abort_source&) = 0;
+
+    /// Lists every (subject, version) pair in the given context backed by the
+    /// given numeric schema id -- tail sync's discovery probe. The result is
+    /// not narrowed by the link's scope (the caller applies `in_scope`), and
+    /// the pairs are unordered. An id the source never allocated (or
+    /// hard-deleted) yields `schema_id_not_found`.
+    ///
+    /// include_deleted::yes asks the source to include soft-deleted pairs
+    /// and, on a source honoring it, to answer a fully soft-deleted id with
+    /// its pairs rather than a miss; a source ignoring the parameter
+    /// (Redpanda) reports the live pairs only and answers a fully
+    /// soft-deleted id with an empty list -- either way only existence tells
+    /// the probe whether the id space is exhausted.
+    ///
+    /// Under include_deleted::no a miss carries meaning beyond "never
+    /// allocated": a source honoring the parameter has no live view of a
+    /// fully soft-deleted id, so its live-only ask misses for an id whose
+    /// existence the ::yes ask just proved. Implementations must map only a
+    /// genuine not-found onto schema_id_not_found here -- the probe reads
+    /// that miss as "every pair is soft-deleted".
+    virtual ss::future<source_result<chunked_vector<ppsr::subject_version>>>
+    list_schema_id_subject_versions(
+      ppsr::schema_id, ppsr::context, ppsr::include_deleted, ss::abort_source&)
+      = 0;
 
     /// Reads a specific subject version's schema. The reconcile engine's
     /// schema-body fetch path: called for every node it discovers and imports.

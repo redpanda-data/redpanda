@@ -228,16 +228,18 @@ public:
     /// Prefer std::nullopt or the bare-context form.
     ///
     /// Returned subjects are context-qualified for a non-default context. The
-    /// pairs are UNORDERED (the endpoint does not guarantee an order); sort
-    /// client-side if you need determinism. Soft-deleted pairs are excluded:
-    /// the `deleted`, `offset`, and `limit` query parameters are unimplemented
-    /// because Redpanda's server ignores them here (it always returns the live
-    /// pairs in a single unpaginated response).
+    /// pairs are UNORDERED; sort client-side if you need determinism.
+    /// include_deleted::yes sends `deleted=true`: a source honoring it
+    /// includes soft-deleted pairs and treats a fully soft-deleted id as a
+    /// hit, while Redpanda ignores the parameter and returns only the live
+    /// pairs. `offset` and `limit` stay unimplemented because the result is
+    /// unordered and Redpanda answers unpaginated.
     ss::future<std::expected<chunked_vector<subject_version>, domain_error>>
     get_schema_id_subject_versions(
       schema_id id,
       retry_chain_node& rtc,
-      std::optional<context_subject> subject = std::nullopt);
+      std::optional<context_subject> subject = std::nullopt,
+      include_deleted inc = include_deleted::no);
 
     /// Stops the transport and drains in-flight requests. Must be called before
     /// destroying the client.

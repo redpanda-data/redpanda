@@ -560,7 +560,7 @@ sharded_store::list_subject_versions(
                 continue;
             }
             for (const auto& v : versions.assume_value()) {
-                out.push_back({sub, v.version, v.deleted});
+                out.push_back({sub, v.version, v.id, v.deleted});
             }
         }
         return out;

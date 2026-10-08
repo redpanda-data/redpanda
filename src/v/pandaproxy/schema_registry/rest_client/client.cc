@@ -608,15 +608,14 @@ client::get_schema_by_version(
 
 ss::future<std::expected<chunked_vector<subject_version>, domain_error>>
 client::get_schema_id_subject_versions(
-  schema_id id, retry_chain_node& rtc, std::optional<context_subject> subject) {
+  schema_id id,
+  retry_chain_node& rtc,
+  std::optional<context_subject> subject,
+  include_deleted inc) {
     auto gate = maybe_gate();
     if (!gate.has_value()) {
         co_return std::unexpected(std::move(gate.error()));
     }
-    // TODO: deleted/offset/limit are unimplemented. Redpanda's server ignores
-    // them on this endpoint (it always returns the live pairs unpaginated), and
-    // the report notes pagination here is unstable because the result is
-    // unordered.
     auto request = http::request_builder{}
                      .method(boost::beast::http::verb::get)
                      .path(fmt::format("/schemas/ids/{}/versions", id()))
@@ -625,6 +624,9 @@ client::get_schema_id_subject_versions(
         // Selects the context to resolve the id in. query_param_kv
         // percent-encodes the value (":" -> "%3A").
         request.query_param_kv("subject", subject->to_string());
+    }
+    if (inc == include_deleted::yes) {
+        request.query_param_kv("deleted", "true");
     }
     maybe_add_basic_auth(request);
 
