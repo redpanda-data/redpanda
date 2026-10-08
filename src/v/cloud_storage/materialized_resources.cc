@@ -183,8 +183,23 @@ inline ssize_t projected_remote_segment_memory_usage() {
     // This is an estimate. When the reader is created it's size should be
     // checked and if it's larger units should be acquired. If it's smaller
     // some units should be released.
-    static constexpr size_t segment_index_projected_size = 0x1000;
-    return sizeof(remote_segment) + segment_index_projected_size;
+
+    // index ~4KB + coarse index ~256B + segment_chunks base ~1KB
+    // + heap paths ~512B + chunk map entries (assumes small segment) ~512B
+    static constexpr size_t subobject_overhead = 0x2800; // ~10KB
+
+    // run_hydrate_bg (640B) + hydration_loop_state::hydrate (232B)
+    // + do_hydrate_index (1112B) + do_hydrate_txrange (512B)
+    // + 2x download_object (2x1368B) + segment_chunks::run_hydrate_bg (392B)
+    // + heap allocations for hydration state (~1100B)
+    static constexpr size_t coroutine_overhead = 0x1A00; // ~6.5KB
+
+    // Cached free chunks in the hydration and chunk waiter expiring_fifos.
+    static size_t waiter_overhead
+      = remote_segment::estimate_wait_list_overhead(); // ~40KB
+
+    return sizeof(remote_segment) + subobject_overhead + coroutine_overhead
+           + waiter_overhead;
 }
 
 materialized_manifest_cache&
@@ -231,14 +246,14 @@ void materialized_resources::register_segment(materialized_segment_state& s) {
     if (units > estimate) {
         vlog(
           cst_log.debug,
-          "Returning extra units. Current: {}, extimate: {}",
+          "Returning extra units. Current: {}, estimate: {}",
           units,
           estimate);
         s._units.return_units(units - estimate);
     } else {
         vlog(
           cst_log.debug,
-          "Adopting extra units. Current: {}, extimate: {}",
+          "Adopting extra units. Current: {}, estimate: {}",
           units,
           estimate);
         auto tr = _mem_units.take(estimate - units);

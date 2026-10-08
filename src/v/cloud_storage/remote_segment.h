@@ -135,6 +135,11 @@ public:
     /// Return memory occupied by the object
     size_t estimate_memory_use() const;
 
+    /// Estimated memory overhead from the hydration wait lists in the segment
+    /// and its chunks. Each expiring_fifo retains one free chunk after draining
+    /// concurrent waiters.
+    static size_t estimate_wait_list_overhead();
+
     retry_chain_node* get_retry_chain_node() { return &_rtc; }
 
     bool download_in_progress() const noexcept {

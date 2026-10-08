@@ -339,13 +339,45 @@ remote_segment::maybe_get_offsets(kafka::offset kafka_offset) {
     return pos;
 }
 
+/// Per-segment overhead from chunked_fifo's save_free_chunks=1 policy. The
+/// average case of 1 active chunked_fifo for segment hydration and 1 active
+/// segment chunk fifo is assumed.
+size_t remote_segment::estimate_wait_list_overhead() {
+    // Each expiring_fifo entry is ~160 bytes, chunked_fifo stores 128 per
+    // chunk plus a pointer and two indices of bookkeeping.
+    static constexpr size_t waiter_fifo_size_bytes = 160 * 128 + sizeof(void*)
+                                                     + 2 * sizeof(unsigned);
+    return 2 * waiter_fifo_size_bytes;
+}
+
 size_t remote_segment::estimate_memory_use() const {
-    // NOTE: this is imprecise and doesn't account for certain
-    // things (e.g. chunks api)
     size_t res = sizeof(remote_segment);
+
+    // Heap-allocated filesystem paths
+    res += _path().native().capacity();
+    res += _index_path.native().capacity();
+    res += _chunk_root.native().capacity();
+
     if (_index) {
         res += _index->estimate_memory_use();
     }
+
+    if (_coarse_index) {
+        // absl::btree_map base overhead + per-entry cost
+        res += 256 + _coarse_index->size() * 24;
+    }
+
+    if (_chunks_api) {
+        // segment_chunks owns a btree_map of segment_chunk entries plus
+        // background loop infrastructure (gate, abort_source, cvar, timers,
+        // retry chain, etc.)
+        res += sizeof(segment_chunks);
+        res += _chunks_in_segment * sizeof(segment_chunk);
+    }
+
+    // Cached free chunks in the hydration and chunk waiter expiring_fifos.
+    res += estimate_wait_list_overhead();
+
     return res;
 }
 
