@@ -171,6 +171,148 @@ SEASTAR_THREAD_TEST_CASE(test_remote_segment_index_builder) {
     }
 }
 
+BOOST_AUTO_TEST_CASE(remote_segment_index_find_timestamp_test) {
+    // 100 entries: 6 full compressed rows plus a partial write buffer, so
+    // both storage tiers of the index are covered by the queries below.
+    const size_t num_entries = 100;
+    const int64_t base_ts = 1000;
+    const int64_t step = 10;
+    const model::offset base_rp{100};
+    const kafka::offset base_kaf{50};
+
+    offset_index index(base_rp, base_kaf, 0, 1000, model::timestamp{base_ts});
+    for (size_t i = 0; i < num_entries; i++) {
+        index.add(
+          base_rp + model::offset(i),
+          base_kaf + kafka::offset(i),
+          static_cast<int64_t>((i + 1) * 2000),
+          model::timestamp(base_ts + step * static_cast<int64_t>(i)));
+    }
+
+    // Nothing is provably below a timestamp at or before the first entry:
+    // the caller has to scan from the start of the segment.
+    BOOST_REQUIRE(!index.find_timestamp(model::timestamp{base_ts - 1}));
+    BOOST_REQUIRE(!index.find_timestamp(model::timestamp{base_ts}));
+
+    for (size_t i = 1; i < num_entries; i++) {
+        // A query matching entry i exactly must start scanning at entry
+        // i-1: entry values are running maxima including their own batch,
+        // so the first matching record may sit in the gap before entry i.
+        auto ts = model::timestamp(base_ts + step * static_cast<int64_t>(i));
+        auto res = index.find_timestamp(ts);
+        BOOST_REQUIRE(res.has_value());
+        BOOST_REQUIRE_EQUAL(res->rp_offset, base_rp + model::offset(i - 1));
+        BOOST_REQUIRE_EQUAL(res->kaf_offset, base_kaf + kafka::offset(i - 1));
+        BOOST_REQUIRE_EQUAL(res->file_pos, i * 2000);
+
+        // A query between entries i and i+1 starts at entry i.
+        auto mid = index.find_timestamp(model::timestamp(ts.value() + 1));
+        BOOST_REQUIRE(mid.has_value());
+        BOOST_REQUIRE_EQUAL(mid->rp_offset, base_rp + model::offset(i));
+    }
+
+    // A query above all entries starts at the last entry.
+    auto last = index.find_timestamp(
+      model::timestamp(base_ts + step * static_cast<int64_t>(num_entries)));
+    BOOST_REQUIRE(last.has_value());
+    BOOST_REQUIRE_EQUAL(
+      last->rp_offset, base_rp + model::offset(num_entries - 1));
+}
+
+BOOST_AUTO_TEST_CASE(remote_segment_index_find_timestamp_non_monotonic_test) {
+    // Indexes written before entries became running maxima may hold
+    // non-monotonic per-batch timestamps. Such entries cannot bound the
+    // scan start (a matching batch may hide in a sampling gap), so any
+    // query whose scan observes a decrease must return nullopt.
+    offset_index index(
+      model::offset{0}, kafka::offset{0}, 0, 1000, model::timestamp{1000});
+    const std::vector<int64_t> timestamps{1000, 1010, 990, 1020};
+    for (size_t i = 0; i < timestamps.size(); i++) {
+        index.add(
+          model::offset(i),
+          kafka::offset(i),
+          static_cast<int64_t>((i + 1) * 2000),
+          model::timestamp(timestamps[i]));
+    }
+
+    // Stops at entry 1 (1010 >= 1005) before observing the decrease:
+    // entries 0..1 are trustworthy and bound the scan.
+    auto res = index.find_timestamp(model::timestamp{1005});
+    BOOST_REQUIRE(res.has_value());
+    BOOST_REQUIRE_EQUAL(res->rp_offset, model::offset(0));
+
+    // These scans reach the 1010 -> 990 decrease: bail out.
+    BOOST_REQUIRE(!index.find_timestamp(model::timestamp{1015}));
+    BOOST_REQUIRE(!index.find_timestamp(model::timestamp{2000}));
+
+    // First entry is already at or above the query.
+    BOOST_REQUIRE(!index.find_timestamp(model::timestamp{995}));
+}
+
+SEASTAR_THREAD_TEST_CASE(test_remote_segment_index_builder_running_max) {
+    // A single batch far in the future (the "spike") followed by batches
+    // that drop back below it, sized so that the sampling step skips the
+    // spike batch entirely. The builder must index running maxima: the
+    // first sampled batch after the spike then carries the spike's
+    // timestamp, so a query between the pre-spike max and the spike
+    // starts its scan before the spike batch. An index of raw per-batch
+    // timestamps would never cross such a query and the scan would start
+    // at the end of the segment, skipping the only matching record.
+    static const model::offset base_offset{0};
+    static const kafka::offset kbase_offset{0};
+    constexpr int records_per_batch = 10;
+    constexpr size_t spike_index = 10;
+    constexpr size_t num_batches = 21;
+    constexpr int64_t spike_ts = 50000;
+    constexpr size_t sampling_step = 4000;
+
+    std::vector<batch_t> batches;
+    for (size_t i = 0; i < num_batches; i++) {
+        // Batches 9-11 are far below the sampling step so the window
+        // reset caused by sampling batch 9 leaves batches 10 (the spike)
+        // and 11 unsampled; every other batch exceeds the step on its
+        // own.
+        const size_t record_size = (i >= 9 && i <= 11) ? 10 : 450;
+        batches.push_back(
+          batch_t{
+            .num_records = records_per_batch,
+            .type = model::record_batch_type::raft_data,
+            .record_sizes = std::vector<size_t>(records_per_batch, record_size),
+            .timestamp = i == spike_index
+                           ? model::timestamp(spike_ts)
+                           : model::timestamp(
+                               1000 + 100 * static_cast<int64_t>(i)),
+          });
+    }
+    auto [segment, co] = generate_segment(base_offset, batches);
+    auto is = make_iobuf_input_stream(std::move(segment));
+    offset_index ix(
+      base_offset, kbase_offset, 0, 0, model::timestamp{0xdeadbeef});
+    auto parser = make_remote_segment_index_builder(
+      test_ntp, std::move(is), ix, model::offset_delta(0), sampling_step);
+    auto pclose = ss::defer([&parser] { parser->close().get(); });
+    auto result = parser->consume().get();
+    BOOST_REQUIRE(result.has_value());
+
+    // Query above every non-spike batch but below the spike: the first
+    // matching record is in the (unsampled) spike batch, so the scan must
+    // start at or before the last batch preceding it.
+    auto res = ix.find_timestamp(model::timestamp{20000});
+    BOOST_REQUIRE(res.has_value());
+    BOOST_REQUIRE_LE(
+      res->rp_offset,
+      base_offset + model::offset((spike_index - 1) * records_per_batch));
+
+    // Query above the spike (= above everything): the running max keeps
+    // every entry below it, so the scan starts at the last entry and the
+    // caller finds no match.
+    auto above = ix.find_timestamp(model::timestamp{spike_ts + 100});
+    BOOST_REQUIRE(above.has_value());
+    BOOST_REQUIRE_GT(
+      above->rp_offset,
+      base_offset + model::offset(spike_index * records_per_batch));
+}
+
 SEASTAR_THREAD_TEST_CASE(test_remote_segment_build_coarse_index) {
     const model::offset base_offset{100};
     const kafka::offset kbase_offset{100};

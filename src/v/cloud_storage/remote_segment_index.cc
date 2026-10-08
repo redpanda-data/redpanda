@@ -42,12 +42,14 @@ void remote_segment_index_builder::consume_batch_start(
     if (is_config) {
         _running_delta += delta;
     } else {
+        _running_max_timestamp = std::max(
+          _running_max_timestamp, hdr.max_timestamp);
         if (_window >= _sampling_step) {
             _ix.add(
               hdr.base_offset,
               hdr.base_offset - _running_delta,
               static_cast<int64_t>(physical_base_offset),
-              hdr.max_timestamp);
+              _running_max_timestamp);
             _window = 0;
         }
     }

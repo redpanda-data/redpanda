@@ -84,12 +84,16 @@ public:
     /// returned.
     std::optional<find_result> find_kaf_offset(kafka::offset upper_bound);
 
-    /// Find index entry which is strictly lower than the timestamp
+    /// Find a safe position to start a forward scan for the first record
+    /// with a timestamp at or after 'upper_bound'.
     ///
-    /// The returned value has timestamp less than upper_bound.
-    /// If all elements are larger than 'upper_bound' nullopt is returned.
-    /// If all elements are smaller than 'upper_bound' the last value is
-    /// returned.
+    /// Returns the last entry whose running max timestamp is strictly
+    /// lower than 'upper_bound': no batch at or before it can match, and
+    /// the first match (if any) is reachable by scanning forward from it.
+    /// Returns nullopt when no such entry exists or when the entries are
+    /// not monotonic (possible in older indexes built from non-monotonic
+    /// producer timestamps, where a matching batch may hide in a sampling
+    /// gap); the caller then has to scan the segment from the beginning.
     std::optional<find_result> find_timestamp(model::timestamp upper_bound);
 
     /// Builds a coarse index mapping kafka offsets to file positions. The step
