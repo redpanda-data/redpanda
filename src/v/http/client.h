@@ -183,7 +183,7 @@ public:
         bool is_done() const;
 
         /// Return true if the header parsing is done
-        bool is_header_done() const;
+        bool is_header_done() const { return _is_header_done; }
 
         /// Access response headers (should only be called if is_headers_done()
         /// == true)
@@ -213,6 +213,7 @@ public:
         client* _client;
         prefix_logger& _ctxlog;
         response_parser _parser;
+        bool _is_header_done{false};
         iobuf _buffer; /// store incomplete tail elements
         iobuf _prefetch;
         client_probe::subprobe _sprobe;
