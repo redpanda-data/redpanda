@@ -87,9 +87,26 @@ public:
     ss::future<> maybe_checkpoint(
       size_t checkpoint_threshold = default_checkpoint_threshold);
 
-    /// Removes the offset translation state starting from the offset
-    /// (inclusive).
-    ss::future<> truncate(model::offset);
+    /// First phase of a log suffix truncation at `offset`. Durably lowers the
+    /// persisted highest known offset below `offset` BEFORE the log is
+    /// truncated, and caps any checkpoint that runs before
+    /// `complete_truncate()` so it cannot raise the persisted coverage back
+    /// into the range being truncated. In-memory translation state is not
+    /// modified, so a failure (which must abort the enclosing log truncation
+    /// before the log is modified) leaves the translator fully consistent.
+    ///
+    /// This ordering guarantees that the persisted state never claims
+    /// coverage of offsets the log has rewritten. If the post-truncation
+    /// checkpoint in `complete_truncate()` is lost (I/O error, shutdown), the
+    /// persisted highest known offset is already below the truncation point,
+    /// so a restart re-reads the rewritten range from the log instead of
+    /// silently skipping it.
+    ss::future<> prepare_truncate(model::offset);
+
+    /// Second phase of a log suffix truncation at `offset`: removes the
+    /// translation state starting from `offset` (inclusive), clears the
+    /// coverage cap set by `prepare_truncate()`, and finally checkpoints.
+    ss::future<> complete_truncate(model::offset);
 
     /// Removes the offset translation state up to and including the offset. The
     /// offset delta for the next offsets is preserved.
@@ -135,6 +152,28 @@ private:
 
     // The last offset for which we have offset translation state (inclusive).
     model::offset _highest_known_offset;
+
+    // The highest known offset value most recently persisted to the kvstore.
+    // Used by `prepare_truncate()` to only ever lower (never raise) the
+    // persisted coverage.
+    model::offset _persisted_highest_known_offset = model::offset::min();
+
+    // While a two-phase truncation is in flight, checkpoints must not persist a
+    // highest known offset above this cap: the log range above it is about to
+    // be (or may have been) rewritten.
+    //
+    // This exists instead of holding `_checkpoint_lock` from
+    // `prepare_truncate()` through `complete_truncate()` because log truncation
+    // may try to acquire segment write locks while a concurrent eviction
+    // through the prefix truncation path is holding them, and
+    // `offset_translator::prefix_truncate()` also takes `_checkpoint_lock`,
+    // potentially leading to a deadlock.
+    //
+    // The cap deliberately lingers if the truncation aborts between the
+    // phases: that only under-claims persisted coverage, which costs extra
+    // log re-reading at the next startup and is cleared by the truncation
+    // retry (or the next successful complete_truncate).
+    std::optional<model::offset> _max_checkpoint_offset;
 
     size_t _bytes_processed = 0;
 

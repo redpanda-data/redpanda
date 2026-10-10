@@ -137,11 +137,20 @@ ss::future<> offset_translator::start(must_reset reset) {
               _state->ntp(), std::move(*map_buf));
             _highest_known_offset = reflection::from_iobuf<model::offset>(
               std::move(*highest_known_offset_buf));
+            _persisted_highest_known_offset = _highest_known_offset;
 
-            // highest known offset could be more stale than the map, in
-            // this case we take it from the map
-            _highest_known_offset = std::max(
-              _highest_known_offset, _state->last_gap_offset());
+            // The map and the highest known offset are persisted separately,
+            // so they can be mutually stale. Trust only the checkpoint both
+            // agree on by dropping map entries above the persisted highest
+            // known offset (since they may describe log content that has since
+            // been truncated and rewritten) and re-derive that range from the
+            // log in sync_with_log.
+            auto [checkpoint, changed] = _state->reconcile_with_checkpoint(
+              _highest_known_offset);
+            _highest_known_offset = checkpoint;
+            if (changed) {
+                ++_map_version;
+            }
         } else {
             vlog(
               _logger.info,
@@ -238,7 +247,36 @@ ss::future<> offset_translator::sync_with_log(
     co_await maybe_checkpoint();
 }
 
-ss::future<> offset_translator::truncate(model::offset offset) {
+ss::future<> offset_translator::prepare_truncate(model::offset offset) {
+    if (_filtered_types.empty()) {
+        co_return;
+    }
+
+    auto units = co_await _checkpoint_lock.get_units();
+    const auto cap = model::prev_offset(offset);
+    // Cap concurrent checkpoints (e.g. from a prefix truncation running on
+    // the eviction fiber) until `complete_truncate()` finishes. If the
+    // truncation is aborted after this point the cap lingers, which is safe (it
+    // only makes the next startup re-read more of the log).
+    _max_checkpoint_offset = _max_checkpoint_offset
+                               ? std::min(*_max_checkpoint_offset, cap)
+                               : cap;
+    if (cap < _persisted_highest_known_offset) {
+        co_await _kvs.put(
+          storage::kvstore::key_space::offset_translator,
+          highest_known_offset_key(),
+          reflection::to_iobuf(cap));
+        _persisted_highest_known_offset = cap;
+        vlog(
+          _logger.debug,
+          "prepare_truncate at offset {}: lowered persisted "
+          "highest_known_offset to {}",
+          offset,
+          cap);
+    }
+}
+
+ss::future<> offset_translator::complete_truncate(model::offset offset) {
     if (_filtered_types.empty()) {
         co_return;
     }
@@ -249,6 +287,7 @@ ss::future<> offset_translator::truncate(model::offset offset) {
 
     model::offset prev = model::prev_offset(offset);
     _highest_known_offset = std::min(prev, _highest_known_offset);
+    _max_checkpoint_offset.reset();
 
     vlog(_logger.info, "truncate at offset: {}, new state: {}", offset, _state);
 
@@ -353,7 +392,14 @@ ss::future<> offset_translator::do_checkpoint() {
         map_buf.emplace(_state->serialize_map());
     }
 
-    iobuf hko_buf = reflection::to_iobuf(_highest_known_offset);
+    // While a two-phase truncation is in flight, never persist coverage of
+    // an offset range that is being truncated (it is about to be
+    // rewritten).
+    auto hko = _highest_known_offset;
+    if (_max_checkpoint_offset) {
+        hko = std::min(hko, *_max_checkpoint_offset);
+    }
+    iobuf hko_buf = reflection::to_iobuf(hko);
 
     // Persisting offsets map before highest offset so that if the latter
     // fails, we are still left with a consistent state (map can be
@@ -371,6 +417,7 @@ ss::future<> offset_translator::do_checkpoint() {
       storage::kvstore::key_space::offset_translator,
       highest_known_offset_key(),
       std::move(hko_buf));
+    _persisted_highest_known_offset = hko;
     _bytes_processed_at_checkpoint = bytes_processed;
     _bytes_processed_units.return_all();
 
