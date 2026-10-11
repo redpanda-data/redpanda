@@ -46,6 +46,7 @@ _helm_e2e_artifacts/
 # bazel
 /bazel-*
 user.bazelrc
+.bazelrc.nix
 /external
 
 # Vagrant
@@ -289,7 +290,10 @@ bazel_cc_flags.json
 # perf
 perf.data*
 
- # rpk binary
+#nix
+result*
+
+# rpk binary
 src/go/rpk/cmd/rpk/rpk
 
 # antithesis

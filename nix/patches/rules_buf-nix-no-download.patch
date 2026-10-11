@@ -1,0 +1,82 @@
+--- a/buf/internal/toolchain.bzl	2026-03-08 11:06:44.629313612 -0700
++++ b/buf/internal/toolchain.bzl	2026-03-08 11:06:44.630887963 -0700
+@@ -97,66 +97,19 @@
+     return goos, goarch
+ 
+ def _buf_download_releases_impl(ctx):
+-    version = ctx.attr.version
+-    repository_url = ctx.attr.repository_url
+-    sha256 = ctx.attr.sha256
+-    if not version:
+-        ctx.report_progress("Finding latest buf version")
+-
+-        # Get the latest version from github. Refer: https://docs.github.com/en/rest/reference/releases
+-        #
+-        # TODO: Change this to use https://api.github.com/repos/bufbuild/buf/releases/latest once we hit v1.
+-        ctx.download(
+-            url = "https://api.github.com/repos/bufbuild/buf/releases?per_page=1",
+-            output = "versions.json",
+-        )
+-        versions_data = ctx.read("versions.json")
+-        versions = json.decode(versions_data)
+-        version = versions[0]["name"]
+-
++    # Nix sandbox stub: create placeholder toolchains without downloading.
++    # The buf toolchain is a transitive dependency not used by the build.
+     os, cpu = _detect_host_platform(ctx)
+-    if os not in ["linux", "darwin", "windows"] or cpu not in ["arm64", "amd64"]:
+-        fail("Unsupported operating system or cpu architecture ")
+     if os == "linux" and cpu == "arm64":
+         cpu = "aarch64"
+     if cpu == "amd64":
+         cpu = "x86_64"
+-
+-    ctx.report_progress("Downloading buf release hash")
+-    sha256 = ctx.download(
+-        url = [
+-            "{}/{}/sha256.txt".format(repository_url, version),
+-        ],
+-        sha256 = sha256,
+-        output = "sha256.txt",
+-    ).sha256
+     ctx.file("WORKSPACE", "workspace(name = \"{name}\")".format(name = ctx.name))
+     ctx.file("toolchain.bzl", _TOOLCHAIN_FILE)
+-    sha_list = ctx.read("sha256.txt").splitlines()
+-    for sha_line in sha_list:
+-        if sha_line.strip(" ").endswith(".tar.gz"):
+-            continue
+-        (sum, _, bin) = sha_line.partition(" ")
+-        bin = bin.strip(" ")
+-        lower_case_bin = bin.lower()
+-        if lower_case_bin.find(os) == -1 or lower_case_bin.find(cpu) == -1:
+-            continue
+-
+-        output = lower_case_bin[:lower_case_bin.find(os) - 1]
+-        if os == "windows":
+-            output += ".exe"
+-
+-        ctx.report_progress("Downloading " + bin)
+-        download_info = ctx.download(
+-            url = "{}/{}/{}".format(repository_url, version, bin),
+-            sha256 = sum,
+-            executable = True,
+-            output = output,
+-        )
+-
++    for cmd in ["buf", "protoc-gen-buf-lint", "protoc-gen-buf-breaking"]:
++        ctx.file(cmd, "", executable = True)
+     if os == "darwin":
+         os = "osx"
+-
+     ctx.file(
+         "BUILD",
+         _BUILD_FILE.format(
+@@ -165,7 +118,7 @@
+             rules_buf_repo_name = Label("//buf/repositories.bzl").workspace_name,
+         ),
+     )
+-    return update_attrs(ctx.attr, ["version", "sha256"], {"version": version, "sha256": sha256})
++    return ctx.attr
+ 
+ buf_download_releases = repository_rule(
+     implementation = _buf_download_releases_impl,
