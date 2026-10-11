@@ -18,6 +18,7 @@
 #include "ssx/abort_source.h"
 #include "utils/human.h"
 
+#include <seastar/core/abort_on_expiry.hh>
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/lowres_clock.hh>
 #include <seastar/core/semaphore.hh>
@@ -85,35 +86,57 @@ read_pipeline<Clock>::make_reader(
     _probe.set_memory_usage_gauge(_current_size + size_estimate);
     auto lat_probe = _probe.register_request_processing_time();
     auto err_fallback = ss::defer([this] { _probe.register_request_error(); });
+
+    // The memory quota used to be awaited with no deadline, so a fetch that
+    // couldn't get memory parked here until shutdown aborted it -- long past
+    // the point the Kafka client had timed out the request and stopped
+    // listening, leaving the fetch holding the connection until the client
+    // disconnected. Bound the wait by the request's own timeout; a read that
+    // can't make memory in time gives up as errc::timeout, same as any other
+    // slow sub-read, and the fetch returns what it already has.
+    auto timeout_as = ss::abort_on_expiry<Clock>(timeout);
+    ssx::composite_abort_source mem_as{as, timeout_as.abort_source()};
+
     std::optional<
       ss::semaphore_units<ss::named_semaphore_exception_factory, Clock>>
       half_open_units;
-    switch (_breaker.state()) {
-    case circuit_breaker_state::open:
-        break;
-    case circuit_breaker_state::half_open:
-        // If the circuit breaker is half open acquire units twice.
-        // Possibly, we will have to use different mechanism here.
-        half_open_units = ss::try_get_units(_mem_quota, size_estimate);
-        if (!half_open_units) {
-            // Track the time we are waiting for memory as memory pressure event
+    std::optional<
+      ss::semaphore_units<ss::named_semaphore_exception_factory, Clock>>
+      units;
+    try {
+        switch (_breaker.state()) {
+        case circuit_breaker_state::open:
+            break;
+        case circuit_breaker_state::half_open:
+            // If the circuit breaker is half open acquire units twice.
+            // Possibly, we will have to use different mechanism here.
+            half_open_units = ss::try_get_units(_mem_quota, size_estimate);
+            if (!half_open_units) {
+                // Track the time we are waiting for memory as memory pressure
+                // event
+                auto measure = _probe.register_memory_pressure_blocked(
+                  size_estimate);
+                half_open_units = co_await ss::get_units(
+                  _mem_quota, size_estimate, mem_as.as());
+            }
+            break;
+        case circuit_breaker_state::closed:
+            err_fallback.cancel();
+            _probe.register_request_timeout();
+            co_return std::unexpected(errc::timeout);
+        }
+
+        units = ss::try_get_units(_mem_quota, size_estimate);
+        if (!units) {
             auto measure = _probe.register_memory_pressure_blocked(
               size_estimate);
-            half_open_units = co_await ss::get_units(
-              _mem_quota, size_estimate, as);
+            units = co_await ss::get_units(
+              _mem_quota, size_estimate, mem_as.as());
         }
-        break;
-    case circuit_breaker_state::closed:
+    } catch (const ss::timed_out_error&) {
         err_fallback.cancel();
         _probe.register_request_timeout();
         co_return std::unexpected(errc::timeout);
-    }
-
-    // TODO: add timeout
-    auto units = ss::try_get_units(_mem_quota, size_estimate);
-    if (!units) {
-        auto measure = _probe.register_memory_pressure_blocked(size_estimate);
-        units = co_await ss::get_units(_mem_quota, size_estimate, as);
     }
     _current_size += size_estimate;
 
@@ -137,6 +160,7 @@ read_pipeline<Clock>::make_reader(
 
     auto fut = request.response.get_future();
     this->get_pending().push_back(request);
+    this->arm_expiry_timer();
 
     // Notify all active event_filter instances that new item is enqueued
     this->signal(stage);
@@ -259,6 +283,7 @@ void read_pipeline<Clock>::reenqueue(read_request<Clock>& r, bool signal) {
         // and notify the corresponding event filter.
         r.stage = next;
         this->get_pending().push_back(r);
+        this->arm_expiry_timer();
         if (signal) {
             this->signal(r.stage);
         }

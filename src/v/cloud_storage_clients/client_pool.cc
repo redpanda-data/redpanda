@@ -204,6 +204,30 @@ void client_pool::shutdown_connections() {
 
 bool client_pool::shutdown_initiated() { return _as.abort_requested(); }
 
+ss::future<> client_pool::admit_before_deadline(
+  cloud_io::group_id gid,
+  ss::abort_source& as,
+  std::optional<ss::lowres_clock::time_point> deadline) {
+    if (!deadline.has_value()) {
+        co_await _admission_control->admit(gid, as);
+        co_return;
+    }
+    auto timeout_as = ss::abort_on_expiry(deadline.value());
+    auto wait_as = ssx::composite_abort_source(as, timeout_as.abort_source());
+    try {
+        co_await _admission_control->admit(gid, wait_as.as());
+    } catch (const ss::abort_requested_exception&) {
+        // The reservation waiter raises a bare abort when it drops out of the
+        // queue, whether that was shutdown or our deadline firing. If the
+        // deadline is what expired, surface the timeout the callers already
+        // handle rather than letting the abort escape as a hard error.
+        if (ss::lowres_clock::now() >= deadline.value()) {
+            throw ss::timed_out_error{};
+        }
+        throw;
+    }
+}
+
 /// \brief Acquire http client from the pool.
 ///
 /// as: An abort source which must outlive the lease, that will
@@ -286,7 +310,7 @@ ss::future<client_pool::client_lease> client_pool::acquire(
                       _cvar.wait(), deadline.value_or(model::no_timeout), as);
                     continue;
                 }
-                co_await _admission_control->admit(gid, as);
+                co_await admit_before_deadline(gid, as, deadline);
                 // Guard against another fiber draining _idle_clients
                 // while we were suspended in admit.
                 if (_idle_clients.empty()) {
@@ -328,7 +352,7 @@ ss::future<client_pool::client_lease> client_pool::acquire(
             }
 
             if (likely(!_idle_clients.empty())) {
-                co_await _admission_control->admit(gid, as);
+                co_await admit_before_deadline(gid, as, deadline);
                 if (_idle_clients.empty()) {
                     _admission_control->release(gid);
                     continue;
