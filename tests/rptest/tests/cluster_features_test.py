@@ -1427,34 +1427,70 @@ class ManualFinalizationUpgradeTest(UnfinalizedUpgradeMixin, FeaturesTestBase):
     def _exercise_tiered_cloud_topics(self):
         """tiered_cloud_topics gate: creating a topic with the tiered_v2
         (cloud-architecture) storage mode is refused until the feature is
-        active. Drive that
-        validator path while unfinalized and confirm the feature is unavailable
-        and the create is rejected. The topic is never created, so exercising
-        the gate cannot leave state that would block a downgrade."""
+        active. Drive that validator path while unfinalized and confirm the
+        feature is unavailable and the create is rejected -- via both spellings
+        that resolve to tiered_v2:
+          1. the explicit read-only redpanda.storage.mode.impl=tiered_v2
+             selector, and
+          2. redpanda.storage.mode=tiered resolved through the
+             default_redpanda_storage_mode_tiered_impl=tiered_v2 cluster
+             default.
+        The cluster default is NOT itself feature-gated, so path 2 is the
+        hole check: an operator flipping it during the (weeks-long) window must
+        not let a tiered_v2 topic slip past the create gate via mode resolution
+        (the same shape of hole seen in iceberg_extended_mode_config). No topic
+        is ever created, so exercising the gate cannot leave state that would
+        block a downgrade.
+
+        Note: the alter-config gate (AlterConfigs/IncrementalAlterConfigs) is
+        deliberately not exercised here -- the only storage-mode transition
+        permitted into tiered_v2 is cloud -> tiered_v2, and creating the cloud
+        source topic requires cloud storage, which this single-cluster test does
+        not configure."""
         assert self._feature_state("tiered_cloud_topics") == "unavailable", (
             "tiered_cloud_topics should be unavailable while the upgrade is unfinalized"
         )
+
+        # Path 1: the explicit impl selector.
+        self._assert_tiered_v2_create_gated(
+            "perturb-tiered-cloud-impl",
+            TopicSpec.storage_mode_config(TopicSpec.STORAGE_MODE_IMPL_TIERED_V2),
+        )
+
+        # Path 2: alias resolution via the cluster default. Setting the default
+        # to tiered_v2 makes a plain redpanda.storage.mode=tiered create resolve
+        # to tiered_v2; the gate must still reject it. Restore the default in a
+        # finally so later perturbation steps (and cycles) are unaffected.
+        self.redpanda.set_cluster_config(
+            {"default_redpanda_storage_mode_tiered_impl": "tiered_v2"}
+        )
         try:
-            RpkTool(self.redpanda).create_topic(
-                "perturb-tiered-cloud",
-                partitions=1,
-                config=TopicSpec.storage_mode_config(
-                    TopicSpec.STORAGE_MODE_IMPL_TIERED_V2
-                ),
+            self._assert_tiered_v2_create_gated(
+                "perturb-tiered-cloud-alias",
+                {TopicSpec.PROPERTY_STORAGE_MODE: TopicSpec.STORAGE_MODE_TIERED},
             )
+        finally:
+            self.redpanda.set_cluster_config(
+                {"default_redpanda_storage_mode_tiered_impl": "tiered_v1"}
+            )
+
+    def _assert_tiered_v2_create_gated(self, topic, config):
+        """Attempt to create `topic` with a config that resolves to the tiered_v2
+        storage mode and assert it is rejected by the storage-mode gate -- not by
+        an unrelated rpk/controller error (timeout, UNAVAILABLE, controller not
+        ready) that would otherwise read as a false "gate worked". The HEAD
+        validator rejects with INVALID_CONFIG and this distinctive message; the
+        create only ever runs on the HEAD binary, so the string is stable."""
+        try:
+            RpkTool(self.redpanda).create_topic(topic, partitions=1, config=config)
         except RpkException as e:
-            # Confirm the create failed via the storage-mode gate, not an
-            # unrelated rpk/controller error (timeout, UNAVAILABLE, controller
-            # not ready) that would otherwise read as a false "gate worked". The
-            # HEAD validator rejects with INVALID_CONFIG and this distinctive
-            # message; the create only ever runs on the HEAD binary, so the
-            # string is stable.
             assert "Invalid storage mode" in str(e), (
-                f"tiered_cloud create failed, but not via the storage-mode gate: {e}"
+                f"tiered_v2 create ({topic}) failed, but not via the "
+                f"storage-mode gate: {e}"
             )
         else:
             raise AssertionError(
-                "creating a tiered_cloud topic should be gated while unfinalized"
+                f"creating a tiered_v2 topic ({topic}) should be gated while unfinalized"
             )
 
     def _validate_role_sync_config(self):
