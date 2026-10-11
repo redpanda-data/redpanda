@@ -111,6 +111,15 @@ class CloudTopicsL0GCTestBase(RedpandaTest):
             "vectorized_cloud_topics_l0_gc_bytes_deleted_total", nodes=nodes
         )
 
+    def get_safety_blocked_rounds(self, nodes: list[ClusterNode] | None = None) -> int:
+        """Count of GC rounds skipped because the safety monitor judged the
+        cluster unhealthy (e.g. a node is down). Increments while GC is
+        paused; flat while GC is running normally."""
+        return self._get_metric_total(
+            "vectorized_cloud_topics_l0_gc_safety_blocked_rounds_total",
+            nodes=nodes,
+        )
+
     def _get_metric_total(
         self, name: str, nodes: list[ClusterNode] | None = None
     ) -> int:
@@ -769,8 +778,10 @@ class CloudTopicsL0GCDataIntegrityTest(CloudTopicsL0GCTestBase):
 
 class CloudTopicsL0GCResilienceTest(CloudTopicsL0GCTestBase):
     """
-    Integration: Verify GC survives cluster disruptions -- node failures
-    and topic deletion -- without losing progress.
+    Integration: Verify GC survives cluster disruptions -- a node going
+    down and topic deletion. GC gates on cluster health, so it must pause
+    collection while a node is down and resume, without losing progress,
+    once the cluster recovers.
     """
 
     @cluster(num_nodes=4)
@@ -798,31 +809,51 @@ class CloudTopicsL0GCResilienceTest(CloudTopicsL0GCTestBase):
             retry_on_exc=True,
         )
 
-        # -- Node failure: kill, verify survivors continue, restart --
+        # -- Node failure: GC gates on cluster health (see
+        # cluster_safety_monitor in level_zero_gc.cc), so a node going down
+        # must pause collection cluster-wide rather than continue on the
+        # survivors. --
         kill_node = self.redpanda.nodes[-1]
         kill_node_id = self.redpanda.node_id(kill_node)
         surviving_nodes = [n for n in self.redpanda.nodes if n != kill_node]
-        deleted_before_kill = self.get_num_objects_deleted(nodes=surviving_nodes)
 
         self.logger.info(f"Killing {kill_node.name} (id={kill_node_id})")
         self.redpanda.stop_node(kill_node, timeout=30)
 
-        self.logger.info("Verifying surviving nodes continue GC")
+        # Once the survivors observe the node as down, the safety monitor
+        # starts skipping collection rounds, which bumps this counter. This
+        # is the deterministic signal that GC has paused (as opposed to
+        # racing the pre-block grace window and catching in-flight deletes).
+        blocked_before = self.get_safety_blocked_rounds(nodes=surviving_nodes)
+        self.logger.info(f"Verifying GC pauses while node is down ({blocked_before=})")
         wait_until(
-            lambda: self.get_num_objects_deleted(nodes=surviving_nodes)
-            > deleted_before_kill,
+            lambda: self.get_safety_blocked_rounds(nodes=surviving_nodes)
+            > blocked_before,
             timeout_sec=60,
             backoff_sec=3,
             retry_on_exc=True,
         )
 
+        # -- Recovery: restart the node; once the cluster is healthy again
+        # (node back up and partitions re-replicated) GC must resume and make
+        # progress on the backlog that accrued while it was paused. --
+        # Capture the paused deletion count from the live nodes *before*
+        # restarting: GC is frozen while a node is down, so any progress after
+        # recovery is guaranteed to exceed it. Sampling after the restart would
+        # race GC draining the remaining backlog before we read the baseline.
+        deleted_while_paused = self.get_num_objects_deleted(nodes=surviving_nodes)
+
         self.logger.info(f"Restarting {kill_node.name}")
         self.redpanda.start_node(kill_node, timeout=30, node_id_override=kill_node_id)
 
-        self.logger.info("Waiting for restarted node to resume GC")
+        # Wait cluster-wide so we don't depend on which node resumes collecting
+        # (the restarted node's counter also resets to 0 on restart).
+        self.logger.info(
+            f"Verifying GC resumes after recovery ({deleted_while_paused=})"
+        )
         wait_until(
-            lambda: self.get_num_objects_deleted(nodes=[kill_node]) > 0,
-            timeout_sec=60,
+            lambda: self.get_num_objects_deleted() > deleted_while_paused,
+            timeout_sec=90,
             backoff_sec=3,
             retry_on_exc=True,
         )
