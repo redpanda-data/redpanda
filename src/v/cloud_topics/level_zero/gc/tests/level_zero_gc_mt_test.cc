@@ -23,13 +23,14 @@
 #include "test_utils/async.h"
 #include "test_utils/test.h"
 
+#include <seastar/core/manual_clock.hh>
 #include <seastar/core/sharded.hh>
-#include <seastar/core/sleep.hh>
 
 #include <gtest/gtest.h>
 
 using namespace std::chrono_literals;
 using namespace cloud_topics;
+using mc_gc = level_zero_gc_t<ss::manual_clock>;
 
 namespace {
 
@@ -188,7 +189,6 @@ struct level_zero_gc_mt_test : public seastar_test {
         // Create shared state on shard 0
         g_bucket_state = std::make_unique<shared_bucket_state>();
 
-        // Start GC on all shards
         co_await gc_.start(
           ss::sharded_parameter([] {
               return level_zero_gc_config{
@@ -209,13 +209,35 @@ struct level_zero_gc_mt_test : public seastar_test {
           ss::sharded_parameter(
             [] { return std::make_unique<mt_node_info>(); }),
           ss::sharded_parameter(
-            [] { return std::make_unique<safety_monitor_test_impl>(); }));
+            [] { return std::make_unique<safety_monitor_test_impl>(); }),
+          ss::sharded_parameter([] -> mc_gc::jitter_fn {
+              return [](auto) { return ss::manual_clock::duration::zero(); };
+          }));
     }
 
     ss::future<> TearDownAsync() override {
-        co_await gc_.invoke_on_all(&level_zero_gc::stop);
+        co_await gc_.invoke_on_all(&mc_gc::stop);
         co_await gc_.stop();
         g_bucket_state = nullptr;
+    }
+
+    /// Advance the manual clock and drain all shard task queues.
+    ss::future<> tick(ss::manual_clock::duration delta = 20ms) {
+        ss::manual_clock::advance(delta);
+        co_await tests::drain_task_queue();
+    }
+
+    /// Repeatedly tick until a condition is met.
+    template<typename Fn>
+    ss::future<> tick_until(Fn&& fn, int max_ticks = 500) {
+        for (int i = 0; i < max_ticks; ++i) {
+            co_await tick();
+            if (fn()) {
+                co_return;
+            }
+        }
+        ADD_FAILURE() << "tick_until: condition not met after " << max_ticks
+                      << " ticks";
     }
 
     // Add objects with various prefixes (call from shard 0 context)
@@ -250,7 +272,7 @@ struct level_zero_gc_mt_test : public seastar_test {
           g_bucket_state->shards_that_deleted.load(std::memory_order_relaxed));
     }
 
-    ss::sharded<level_zero_gc> gc_;
+    ss::sharded<mc_gc> gc_;
     // Global pointer to shared state (lives on shard 0)
     // This is safe because tests run sequentially and we manage its lifecycle
     std::unique_ptr<shared_bucket_state> g_bucket_state{};
@@ -269,11 +291,11 @@ TEST_F_CORO(level_zero_gc_mt_test, objects_deleted_across_shards) {
 
     EXPECT_EQ(get_total_deleted(), 0);
 
-    co_await gc_.invoke_on_all(&level_zero_gc::start);
+    co_await gc_.invoke_on_all(&mc_gc::start);
 
-    RPTEST_REQUIRE_EVENTUALLY_CORO(
-      5s, [this] { return get_total_deleted() == num_objects; });
+    co_await tick_until([this] { return get_total_deleted() == num_objects; });
 
+    EXPECT_EQ(get_total_deleted(), num_objects);
     EXPECT_EQ(get_shards_that_deleted(), ss::this_smp_shard_count());
     EXPECT_EQ(get_shards_that_listed(), ss::this_smp_shard_count());
 }
@@ -284,13 +306,9 @@ TEST_F_CORO(level_zero_gc_mt_test, objects_deleted_across_shards) {
 TEST_F_CORO(level_zero_gc_mt_test, no_objects_no_crash) {
     set_max_epoch(100);
 
-    // Start GC on all shards with an empty bucket
-    co_await gc_.invoke_on_all(&level_zero_gc::start);
+    co_await gc_.invoke_on_all(&mc_gc::start);
+    co_await tick(1h);
 
-    // Give it some time to run
-    co_await ss::sleep(500ms);
-
-    // Should complete without crashing or trying to delete anything
     EXPECT_EQ(get_shards_that_listed(), ss::this_smp_shard_count())
       << "No shards attempted to list";
     EXPECT_EQ(get_shards_that_deleted(), 0);
@@ -302,15 +320,10 @@ TEST_F_CORO(level_zero_gc_mt_test, no_objects_no_crash) {
  */
 TEST_F_CORO(level_zero_gc_mt_test, no_eligible_epoch) {
     populate_objects(num_objects);
-    // Don't set max_epoch - it will be nullopt
 
-    // Start GC on all shards
-    co_await gc_.invoke_on_all(&level_zero_gc::start);
+    co_await gc_.invoke_on_all(&mc_gc::start);
+    co_await tick(1h);
 
-    // Give it some time to run
-    co_await ss::sleep(500ms);
-
-    // Objects should not be deleted since there's no eligible epoch
     EXPECT_EQ(get_shards_that_listed(), ss::this_smp_shard_count())
       << "No shards attempted to list";
     EXPECT_EQ(get_shards_that_deleted(), 0);
@@ -324,29 +337,27 @@ TEST_F_CORO(level_zero_gc_mt_test, concurrent_reset_start_pause) {
     populate_objects(num_objects, true /* dynamic_epoch */);
     set_max_epoch(num_objects / 2 - 1);
 
-    co_await gc_.invoke_on_all(&level_zero_gc::start);
-    co_await ss::sleep(100ms);
+    co_await gc_.invoke_on_all(&mc_gc::start);
+    co_await tick(1h);
 
     std::vector<ss::future<>> futs;
 
     for (int i = 0; i < 10; ++i) {
-        futs.push_back(
-          gc_.invoke_on_all([](level_zero_gc& gc) { return gc.reset(); }));
-        futs.push_back(
-          gc_.invoke_on_all([](level_zero_gc& gc) { return gc.reset(); }));
-        futs.push_back(gc_.invoke_on_all(&level_zero_gc::start));
-        futs.push_back(gc_.invoke_on_all(&level_zero_gc::pause));
-        futs.push_back(gc_.invoke_on_all(&level_zero_gc::start));
+        futs.push_back(gc_.invoke_on_all([](mc_gc& gc) { return gc.reset(); }));
+        futs.push_back(gc_.invoke_on_all([](mc_gc& gc) { return gc.reset(); }));
+        futs.push_back(gc_.invoke_on_all(&mc_gc::start));
+        futs.push_back(gc_.invoke_on_all(&mc_gc::pause));
+        futs.push_back(gc_.invoke_on_all(&mc_gc::start));
     }
 
     co_await ss::when_all_succeed(std::move(futs));
 
-    co_await gc_.invoke_on_all(&level_zero_gc::start);
+    co_await gc_.invoke_on_all(&mc_gc::start);
 
     set_max_epoch(num_objects);
 
-    RPTEST_REQUIRE_EVENTUALLY_CORO(
-      5s, [this] { return get_total_deleted() == num_objects; });
+    co_await tick_until([this] { return get_total_deleted() == num_objects; });
+    EXPECT_EQ(get_total_deleted(), num_objects);
 }
 
 /*
@@ -354,24 +365,18 @@ TEST_F_CORO(level_zero_gc_mt_test, concurrent_reset_start_pause) {
  */
 TEST_F_CORO(level_zero_gc_mt_test, start_pause_start_cycle) {
     populate_objects(num_objects);
-    // don't set max epoch so nothing will be deleted initially
 
-    // Start GC
-    co_await gc_.invoke_on_all(&level_zero_gc::start);
-    co_await ss::sleep(200ms);
+    co_await gc_.invoke_on_all(&mc_gc::start);
+    co_await tick(1h);
 
-    // Pause GC
-    co_await gc_.invoke_on_all(&level_zero_gc::pause);
-    co_await ss::sleep(100ms);
+    co_await gc_.invoke_on_all(&mc_gc::pause);
+    co_await tick(1h);
 
     EXPECT_EQ(get_total_deleted(), 0);
 
-    // now bump max epoch so we'll start deleting after unpause
     set_max_epoch(100);
+    co_await gc_.invoke_on_all(&mc_gc::start);
 
-    // Start again
-    co_await gc_.invoke_on_all(&level_zero_gc::start);
-
-    RPTEST_REQUIRE_EVENTUALLY_CORO(
-      5s, [this] { return get_total_deleted() == num_objects; });
+    co_await tick_until([this] { return get_total_deleted() == num_objects; });
+    EXPECT_EQ(get_total_deleted(), num_objects);
 }
