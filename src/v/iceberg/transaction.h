@@ -14,6 +14,7 @@
 #include "iceberg/action.h"
 #include "iceberg/manifest_io.h"
 #include "iceberg/merge_append_action.h"
+#include "iceberg/row_delta_action.h"
 #include "iceberg/schema.h"
 #include "iceberg/table_metadata.h"
 
@@ -58,6 +59,18 @@ public:
     ss::future<txn_outcome> merge_append(
       manifest_io&,
       chunked_vector<file_to_append>,
+      chunked_vector<std::pair<ss::sstring, ss::sstring>> snapshot_props = {},
+      std::optional<ss::sstring> tag_name = std::nullopt,
+      std::optional<int64_t> tag_expiration_ms = std::nullopt);
+
+    // Adds the given data files and delete files to a new snapshot.
+    // Delete files reference rows to be removed from existing data files.
+    // Creates an overwrite snapshot (data+deletes), delete_data (deletes
+    // only), or append (data only) depending on inputs.
+    ss::future<txn_outcome> row_delta(
+      manifest_io&,
+      chunked_vector<file_to_append> data_files,
+      chunked_vector<file_to_delete> delete_files,
       chunked_vector<std::pair<ss::sstring, ss::sstring>> snapshot_props = {},
       std::optional<ss::sstring> tag_name = std::nullopt,
       std::optional<int64_t> tag_expiration_ms = std::nullopt);

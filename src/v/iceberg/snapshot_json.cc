@@ -134,6 +134,10 @@ snapshot parse_snapshot(const json::Value& v) {
     maybe_parse_metric("total-records", &summary.total_records);
     maybe_parse_metric("added-files-size", &summary.added_files_size);
     maybe_parse_metric("total-files-size", &summary.total_files_size);
+    maybe_parse_metric("deleted-data-files", &summary.deleted_data_files);
+    maybe_parse_metric("added-delete-files", &summary.added_delete_files);
+    maybe_parse_metric("total-delete-files", &summary.total_delete_files);
+    maybe_parse_metric("deleted-records", &summary.deleted_records);
     auto operation_str = parse_required_str(summary_json, "operation");
     return snapshot{
       .id = snapshot_id{id},
@@ -209,6 +213,10 @@ void rjson_serialize(iceberg::json_writer& w, const iceberg::snapshot& s) {
     maybe_serialize_metric("total-records", s.summary.total_records);
     maybe_serialize_metric("added-files-size", s.summary.added_files_size);
     maybe_serialize_metric("total-files-size", s.summary.total_files_size);
+    maybe_serialize_metric("deleted-data-files", s.summary.deleted_data_files);
+    maybe_serialize_metric("added-delete-files", s.summary.added_delete_files);
+    maybe_serialize_metric("total-delete-files", s.summary.total_delete_files);
+    maybe_serialize_metric("deleted-records", s.summary.deleted_records);
     w.EndObject();
 
     w.EndObject();
