@@ -74,7 +74,7 @@ public:
     // connections a test is about to open.
     void enable_sasl_and_wait() {
         enable_sasl();
-        RPTEST_REQUIRE_EVENTUALLY(5s, [] {
+        RPTEST_REQUIRE_EVENTUALLY(5s, [&] {
             auto shards = boost::irange(0u, ss::this_smp_shard_count());
             return ss::map_reduce(
               shards.begin(),
