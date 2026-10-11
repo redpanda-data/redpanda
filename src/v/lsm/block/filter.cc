@@ -10,10 +10,15 @@
 
 #include "base/units.h"
 #include "base/vassert.h"
+#include "hashing/crc32c.h"
 #include "hashing/xx.h"
+#include "lsm/core/compression.h"
+#include "lsm/core/exceptions.h"
 #include "lsm/core/internal/keys.h"
 
 #include <seastar/core/byteorder.hh>
+#include <seastar/core/coroutine.hh>
+#include <seastar/core/future.hh>
 #include <seastar/core/temporary_buffer.hh>
 
 #include <algorithm>
@@ -150,44 +155,172 @@ void filter_builder::generate_filter() {
     _keys.clear();
 }
 
-filter_reader::filter_reader(ss::lw_shared_ptr<block::contents> c)
-  : _contents(std::move(c))
-  , _offset(0)
-  , _num(0)
-  , _base_lg(0) {
-    size_t n = _contents->size();
-    constexpr static size_t min_footer_size = sizeof(uint8_t)
-                                              + sizeof(uint32_t);
-    if (n < min_footer_size) {
-        return;
+filter_reader::filter_reader(
+  io::random_access_file_reader* file,
+  uint64_t content_offset,
+  contents tail,
+  uint32_t offsets_start,
+  size_t num,
+  uint8_t base_lg,
+  chunked_vector<uint32_t> region_crcs)
+  : _file(file)
+  , _content_offset(content_offset)
+  , _tail(std::move(tail))
+  , _offsets_start(offsets_start)
+  , _num(num)
+  , _base_lg(base_lg)
+  , _region_crcs(std::move(region_crcs)) {}
+
+ss::future<filter_reader> filter_reader::open(
+  io::random_access_file_reader* file,
+  uint64_t content_offset,
+  uint64_t content_size) {
+    // The content ends with a (offsets_start: u32, base_lg: u8) trailer.
+    constexpr size_t trailer_size = sizeof(uint32_t) + sizeof(uint8_t);
+    if (content_size < trailer_size) {
+        // Too small to be a valid filter; treat every key as "may match".
+        co_return filter_reader(
+          file, content_offset, contents(ioarray{}), 0, 0, 0, {});
     }
-    _base_lg = (*_contents)[n - 1];
-    auto offsets_start = _contents->read_fixed32(n - min_footer_size);
-    if (offsets_start > n - min_footer_size) {
-        return;
+    auto trailer = co_await file->read(
+      content_offset + content_size - trailer_size, trailer_size);
+    uint32_t offsets_start = trailer.read_fixed32(0);
+    auto base_lg = static_cast<uint8_t>(trailer[sizeof(uint32_t)]);
+    if (offsets_start > content_size - trailer_size) {
+        co_return filter_reader(
+          file,
+          content_offset,
+          contents(ioarray{}),
+          offsets_start,
+          0,
+          base_lg,
+          {});
     }
-    _offset = offsets_start;
-    _num = (n - min_footer_size - offsets_start) / 4;
+    size_t num = (content_size - trailer_size - offsets_start)
+                 / sizeof(uint32_t);
+    // Retain only the tail: the offset array plus the trailer. The bulk of the
+    // filter (the per-region bloom data) is left on disk and read on demand.
+    auto tail_buf = co_await file->read(
+      content_offset + offsets_start, content_size - offsets_start);
+    block::contents tail(std::move(tail_buf));
+
+    // The SST builder writes the filter as an uncompressed block, so a trailer
+    // -- a compression-type byte followed by the whole-block CRC -- immediately
+    // follows the content. Validate that CRC, and in the same pass compute a
+    // CRC over each region so lazy region reads can be checked against it.
+    constexpr size_t block_trailer_size = sizeof(uint8_t)
+                                          + sizeof(crc::crc32c::value_type);
+    auto block_trailer = co_await file->read(
+      content_offset + content_size, block_trailer_size);
+    if (
+      compression_type_from_raw(static_cast<uint8_t>(block_trailer[0]))
+      != compression_type::none) {
+        co_await ss::coroutine::return_exception(corruption_exception(
+          "filter block unexpectedly compressed in {}", *file));
+    }
+    uint32_t expected_crc = block_trailer.read_fixed32(sizeof(uint8_t));
+
+    // Region ordinal i covers [offset[i], offset[i+1]); the last region ends at
+    // offsets_start. Offsets are contiguous, so a single forward scan over the
+    // region data assigns each byte to exactly one region.
+    auto region_end = [&](size_t i) -> uint64_t {
+        return (i + 1 < num) ? tail.read_fixed32((i + 1) * sizeof(uint32_t))
+                             : offsets_start;
+    };
+    constexpr size_t crc_window = 128 * 1024;
+    crc::crc32c whole;
+    chunked_vector<uint32_t> region_crcs;
+    region_crcs.reserve(num);
+    size_t region_idx = 0;
+    crc::crc32c region;
+    for (uint64_t rel = 0; rel < offsets_start;) {
+        uint64_t win_len = std::min<uint64_t>(crc_window, offsets_start - rel);
+        auto buf = co_await file->read(content_offset + rel, win_len);
+        block::contents window(std::move(buf));
+        crc_extend_iobuf(whole, window.share(0, win_len));
+        // Split this window at region boundaries, carrying a region's CRC
+        // across windows when the region is larger than one.
+        for (uint64_t cur = rel; cur < rel + win_len && region_idx < num;) {
+            uint64_t end = std::min<uint64_t>(
+              region_end(region_idx), rel + win_len);
+            if (end > cur) {
+                crc_extend_iobuf(region, window.share(cur - rel, end - cur));
+                cur = end;
+            }
+            if (cur == region_end(region_idx)) {
+                region_crcs.push_back(region.value());
+                region = crc::crc32c{};
+                ++region_idx;
+            } else {
+                break; // region continues into the next window
+            }
+        }
+        rel += win_len;
+    }
+    // Finalize any trailing empty regions (offset[i] == offsets_start).
+    while (region_idx < num) {
+        region_crcs.push_back(region.value());
+        region = crc::crc32c{};
+        ++region_idx;
+    }
+
+    // Fold the retained tail and the compression byte into the whole-block CRC
+    // (it covers the content plus that byte) and verify it.
+    crc_extend_iobuf(whole, tail.share(0, content_size - offsets_start));
+    char compression_byte = block_trailer[0];
+    whole.extend(&compression_byte, 1);
+    if (whole.value() != expected_crc) {
+        co_await ss::coroutine::return_exception(corruption_exception(
+          "unexpected filter crc, got: {}, want: {} in {}",
+          whole.value(),
+          expected_crc,
+          *file));
+    }
+
+    co_return filter_reader(
+      file,
+      content_offset,
+      std::move(tail),
+      offsets_start,
+      num,
+      base_lg,
+      std::move(region_crcs));
 }
 
-bool filter_reader::key_may_match(
-  uint64_t block_offset, internal::key_view key) {
+ss::future<bool>
+filter_reader::key_may_match(uint64_t block_offset, internal::key_view key) {
     uint64_t index = block_offset >> _base_lg;
-    if (index < _num) {
-        // TODO(perf): This is very much on the hot path, and decoding int32
-        // from segmented bytes is not going to be the cheapest operation in the
-        // world, maybe it makes sense to be able to decode these at
-        // construction time and free the memory in _contents, with some kind of
-        // `trim` operation.
-        uint32_t position = _offset + (index * sizeof(uint32_t));
-        auto start = _contents->read_fixed32(position);
-        auto limit = _contents->read_fixed32(position + sizeof(uint32_t));
-        if (start <= limit && limit <= _offset) {
-            return bloom_filter::key_may_match(
-              key.user_key(), *_contents, start, limit - start);
-        }
+    if (index >= _num) {
+        co_return true; // Unknown region: conservatively may match.
     }
-    return true; // Unknown/error cases we don't know
+    // The offset array lives at the start of the retained tail. Entry `index`
+    // is region `index`'s start (a position within the filter content); the
+    // next entry -- or the offsets_start trailer for the last region -- is its
+    // end.
+    uint32_t start = _tail.read_fixed32(index * sizeof(uint32_t));
+    uint32_t limit = _tail.read_fixed32((index + 1) * sizeof(uint32_t));
+    if (start > limit || limit > _offsets_start) {
+        co_return true; // Malformed offsets: conservatively may match.
+    }
+    if (limit - start < 2) {
+        co_return false; // Empty region: no keys hashed here.
+    }
+    auto region = co_await _file->read(_content_offset + start, limit - start);
+    block::contents region_contents(std::move(region));
+    // Verify the region against the CRC computed at open, so a post-open disk
+    // bit-flip is caught here rather than silently becoming a false negative.
+    crc::crc32c actual;
+    crc_extend_iobuf(actual, region_contents.share(0, limit - start));
+    if (actual.value() != _region_crcs[index]) {
+        co_await ss::coroutine::return_exception(corruption_exception(
+          "filter region {} failed crc check, got: {}, want: {} in {}",
+          index,
+          actual.value(),
+          _region_crcs[index],
+          *_file));
+    }
+    co_return bloom_filter::key_may_match(
+      key.user_key(), region_contents, 0, limit - start);
 }
 
 } // namespace lsm::block

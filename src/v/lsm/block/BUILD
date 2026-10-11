@@ -66,7 +66,10 @@ redpanda_cc_library(
         "filter.h",
     ],
     implementation_deps = [
+        "//src/v/hashing:crc32c",
         "//src/v/hashing:xx",
+        "//src/v/lsm/core:compression",
+        "//src/v/lsm/core:exceptions",
     ],
     deps = [
         ":contents",
