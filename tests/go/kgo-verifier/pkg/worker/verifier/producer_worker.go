@@ -458,6 +458,16 @@ func (pw *ProducerWorker) produceInner(n int64) (int64, []BadOffset, error) {
 			} else if expectOffset != r.Offset {
 				log.Warnf("Produced at unexpected offset %d (expected %d) on partition %d", r.Offset, expectOffset, r.Partition)
 				pw.Status.OnBadOffset()
+				if pw.tolerateDataLoss && r.Offset < expectOffset {
+					// A retried record landing below its expected offset
+					// means the log was truncated and rewritten from
+					// r.Offset: previously acked offsets from there on no
+					// longer hold the records that were acked. Invalidate
+					// them so readers don't validate against stale data.
+					pw.Status.lock.Lock()
+					pw.validOffsets.TruncateAt(r.Partition, r.Offset)
+					pw.Status.lock.Unlock()
+				}
 				bad_offsets <- BadOffset{r.Partition, r.Offset}
 				errored = true
 				log.Debugf("errored = %t", errored)
