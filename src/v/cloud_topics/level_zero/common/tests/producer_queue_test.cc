@@ -156,6 +156,81 @@ TEST_CORO(producer_queue_test, auto_release_on_destruction) {
     ticket3.release();
 }
 
+TEST_CORO(producer_queue_test, release_does_not_poison_successor) {
+    producer_queue queue;
+    model::producer_id pid{1};
+
+    auto ticket1 = queue.reserve(pid);
+    auto ticket2 = queue.reserve(pid);
+
+    co_await ticket1.redeem();
+    // A normal release means ticket1's request reached raft; ticket2 must not
+    // be poisoned.
+    ticket1.release();
+
+    co_await ticket2.redeem();
+    ASSERT_FALSE_CORO(ticket2.poisoned());
+    ticket2.release();
+}
+
+TEST_CORO(producer_queue_test, abandon_poisons_next_waiter) {
+    producer_queue queue;
+    model::producer_id pid{1};
+
+    auto ticket1 = queue.reserve(pid);
+    auto ticket2 = queue.reserve(pid);
+
+    co_await ticket1.redeem();
+    // ticket1's request failed before reaching raft (e.g. epoch fence
+    // rejected). The next waiter must observe the poison so it fails in order
+    // rather than leapfrogging ticket1's lower sequence into rm_stm.
+    ticket1.abandon();
+
+    co_await ticket2.redeem();
+    ASSERT_TRUE_CORO(ticket2.poisoned());
+    ticket2.release();
+}
+
+TEST_CORO(producer_queue_test, poison_cascades_down_the_queue) {
+    producer_queue queue;
+    model::producer_id pid{1};
+
+    auto ticket1 = queue.reserve(pid);
+    auto ticket2 = queue.reserve(pid);
+    auto ticket3 = queue.reserve(pid);
+
+    co_await ticket1.redeem();
+    ticket1.abandon();
+
+    co_await ticket2.redeem();
+    ASSERT_TRUE_CORO(ticket2.poisoned());
+    // A poisoned request abandons in turn, propagating the poison.
+    ticket2.abandon();
+
+    co_await ticket3.redeem();
+    ASSERT_TRUE_CORO(ticket3.poisoned());
+    ticket3.release();
+}
+
+TEST_CORO(producer_queue_test, dropped_ticket_poisons_successor) {
+    producer_queue queue;
+    model::producer_id pid{1};
+
+    auto ticket1 = queue.reserve(pid);
+    auto ticket2 = queue.reserve(pid);
+
+    co_await ticket1.redeem();
+    {
+        // ticket1 is dropped without an explicit release(): it never reached
+        // raft, so the successor must be poisoned (fail-safe).
+        auto dropped = std::move(ticket1);
+    }
+
+    co_await ticket2.redeem();
+    ASSERT_TRUE_CORO(ticket2.poisoned());
+    ticket2.release();
+}
+
 TEST_CORO(producer_queue_test, continuation_cleanup) {
     producer_queue queue;
     model::producer_id pid{1};
