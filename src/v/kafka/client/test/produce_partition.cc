@@ -17,6 +17,7 @@
 #include "model/record.h"
 #include "test_utils/async.h"
 
+#include <seastar/core/sleep.hh>
 #include <seastar/testing/thread_test_case.hh>
 
 #include <boost/test/tools/old/interface.hpp>
@@ -72,5 +73,62 @@ SEASTAR_THREAD_TEST_CASE(test_produce_partition_record_count) {
     BOOST_REQUIRE_EQUAL(consumed_batches[1].record_count(), 3);
     auto c_res2 = c_res2_fut.get();
     BOOST_REQUIRE_EQUAL(c_res2.base_offset, model::offset{3});
+    producer.stop().get();
+}
+
+// produce_partition dispatches at most one request at a time. The test puts
+// one batch in flight, then produces five records that each exceed the
+// flush thresholds: none may dispatch while the first is outstanding. After
+// handle_response() they go out as one batch. Per-partition ordering rests
+// on this: dispatches that never overlap cannot reorder.
+SEASTAR_THREAD_TEST_CASE(test_produce_partition_serializes_dispatch) {
+    int outstanding = 0;
+    int consumed = 0;
+    auto consumer = [&](model::record_batch&&) {
+        BOOST_REQUIRE_EQUAL(outstanding, 0);
+        ++outstanding;
+        ++consumed;
+    };
+
+    auto cfg = kc::configuration{};
+    // force a flush attempt on every produce
+    cfg.produce_batch_size_bytes.set_value(1);
+    cfg.produce_batch_record_count.set_value(1);
+
+    kc::produce_partition producer(
+      kc::producer_configuration::from_config_store(cfg), consumer);
+
+    auto c_res0_fut = producer.produce(make_batch(model::offset(0), 1));
+    RPTEST_REQUIRE_EVENTUALLY(5s, [&consumed]() { return consumed == 1; });
+
+    std::vector<ss::future<kc::produce_partition::response>> futs;
+    futs.reserve(5);
+    for (int i = 1; i <= 5; ++i) {
+        futs.push_back(producer.produce(make_batch(model::offset(i), 1)));
+    }
+    // give the flush timers every chance to (wrongly) fire
+    ss::sleep(100ms).get();
+    BOOST_REQUIRE_EQUAL(consumed, 1);
+
+    --outstanding;
+    producer.handle_response(
+      kafka::produce_response::partition{
+        .partition_index{model::partition_id{42}},
+        .error_code = kafka::error_code::none,
+        .base_offset{model::offset{0}}});
+    BOOST_REQUIRE_EQUAL(c_res0_fut.get().base_offset, model::offset{0});
+
+    // the buffered records go out as one request
+    RPTEST_REQUIRE_EVENTUALLY(5s, [&consumed]() { return consumed == 2; });
+
+    --outstanding;
+    producer.handle_response(
+      kafka::produce_response::partition{
+        .partition_index{model::partition_id{42}},
+        .error_code = kafka::error_code::none,
+        .base_offset{model::offset{1}}});
+    for (auto& fut : futs) {
+        fut.get();
+    }
     producer.stop().get();
 }

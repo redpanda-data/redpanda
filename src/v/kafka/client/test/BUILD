@@ -128,7 +128,29 @@ redpanda_cc_btest(
         "//src/v/model",
         "//src/v/test_utils:seastar_boost",
         "@boost//:test",
+        "@seastar",
         "@seastar//:testing",
+    ],
+)
+
+redpanda_cc_gtest(
+    name = "producer_test",
+    timeout = "short",
+    srcs = [
+        "producer_test.cc",
+    ],
+    deps = [
+        ":utils",
+        "//src/v/kafka/client",
+        "//src/v/kafka/client:brokers",
+        "//src/v/kafka/client:configuration",
+        "//src/v/kafka/client:logger",
+        "//src/v/kafka/client:topic_cache",
+        "//src/v/model",
+        "//src/v/test_utils:gtest",
+        "//src/v/utils:prefix_logger",
+        "@googletest//:gtest",
+        "@seastar",
     ],
 )
 

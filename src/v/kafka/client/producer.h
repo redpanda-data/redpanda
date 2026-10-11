@@ -12,6 +12,7 @@
 #pragma once
 
 #include "absl/container/flat_hash_map.h"
+#include "absl/container/flat_hash_set.h"
 #include "kafka/client/logger.h"
 #include "kafka/client/produce_batcher.h"
 #include "kafka/client/produce_partition.h"
@@ -63,6 +64,8 @@ public:
     }
 
 private:
+    friend struct producer_test_access;
+
     ss::future<> send(model::topic_partition tp, model::record_batch&& batch);
 
     ss::future<produce_response::partition>
@@ -89,6 +92,9 @@ private:
     retries_configuration& _retries_config;
     absl::flat_hash_map<model::topic_partition, shared_produce_partition>
       _partitions;
+    /// Partitions with a produce dispatch outstanding; send() rejects a
+    /// second dispatch for a partition already present.
+    absl::flat_hash_set<model::topic_partition> _in_flight_sends;
     prefix_logger* _logger;
     error_handler _error_handler;
     topic_cache& _topic_cache;
