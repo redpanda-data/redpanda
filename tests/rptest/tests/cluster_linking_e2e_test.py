@@ -3825,6 +3825,38 @@ class ShadowLinkTopicFailoverTests(ShadowLinkPreAllocTestBase):
             except Exception:
                 return []
 
+        def target_partition_0_hwm() -> int | None:
+            try:
+                for part in self.target_cluster_rpk.describe_topic(
+                    topic.name, timeout=3
+                ):
+                    if part.id == 0:
+                        return part.high_watermark
+            except Exception as e:
+                self.logger.debug(f"Failed to describe target topic: {e}")
+            return None
+
+        last_hwm: int | None = None
+        consecutive_matches = 0
+
+        def target_hwm_settled() -> bool:
+            # Failover completion is a health-report heuristic (see
+            # link_status_reconciler.try_finish_failover), not a guarantee
+            # that every mirrored write has already landed on the target.
+            # Wait for the target's high watermark to stop moving across
+            # several of wait_until's own polling iterations before
+            # producing, so kgo-verifier's one-shot list-offsets(-1)
+            # snapshot doesn't race a trailing mirrored write and
+            # misreport it as an idempotency bug (CORE-16631).
+            nonlocal last_hwm, consecutive_matches
+            hwm = target_partition_0_hwm()
+            if hwm is None or hwm != last_hwm:
+                last_hwm = hwm
+                consecutive_matches = 0
+                return False
+            consecutive_matches += 1
+            return consecutive_matches >= 3
+
         produce(n=num_messages, redpanda=self.source_cluster.service)
 
         self.target_cluster_service.wait_until(
@@ -3843,6 +3875,13 @@ class ShadowLinkTopicFailoverTests(ShadowLinkPreAllocTestBase):
 
         self.failover_link(name="test-link")
         self.wait_for_link_failover(link="test-link")
+
+        wait_until(
+            target_hwm_settled,
+            timeout_sec=30,
+            backoff_sec=1,
+            err_msg="Target high watermark never settled after failover",
+        )
 
         second_round = 2
 
