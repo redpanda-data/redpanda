@@ -40,8 +40,14 @@ common --java_runtime_version=remotejdk_21
 # By default build without CGO
 build --@rules_go//go/config:pure
 
-build:gofips --//bazel:gofips=True --@rules_go//go/toolchain:sdk_name=go_sdk_with_systemcrypto
-build:gofips --@rules_go//go/config:pure=false
+# FIPS rpk: rules_go does not support GOFIPS140 yet
+# (https://github.com/bazel-contrib/rules_go/issues/4293), so a Bazel gofips
+# build would produce a binary that self-identifies as FIPS (`fips` build tag)
+# while running non-FIPS crypto. Fail with a self-describing unknown flag
+# until rules_go ships support; restore `--//bazel:gofips=True` then.
+# Release rpk-fips binaries are built by goreleaser with GOFIPS140
+# (see src/go/.goreleaser.yaml).
+build:gofips --gofips_is_unsupported_until_rules_go_issue_4293_is_resolved_see_bazelrc
 
 #################
 # Rust settings #
