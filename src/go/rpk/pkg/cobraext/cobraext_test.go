@@ -116,6 +116,19 @@ func TestStripFlags(t *testing.T) {
 			expKept:     []string{"cmd", "-i", "keep", "-i=keep", "subcmd", "-i", "3", "-i", "3", "-i", "--", "-hvs=3"},
 			expStripped: []string{"--foo", "-i", "-hv", "-hv", "-vs", "3", "--int", "4", "-v=4", "-s", "str"},
 		},
+
+		{
+			// --value-file - keep both; "-" is the value of a flag we do not own
+			// --tag t=1      keep
+			// -              keep; a positional "-"
+			// --foo -        strip; "-" is the value of our flag
+			name:        "bare dash is stdin, not a flag",
+			args:        []string{"cmd", "--value-file", "-", "--tag", "t=1", "-", "--foo", "-"},
+			long:        []string{"foo"},
+			short:       []string{"h"},
+			expKept:     []string{"cmd", "--value-file", "-", "--tag", "t=1", "-"},
+			expStripped: []string{"--foo", "-"},
+		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			kept, stripped := StripFlags(test.args, fs, test.long, test.short)

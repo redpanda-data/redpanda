@@ -18,32 +18,51 @@ import (
 )
 
 func TestParseFlags_StripsRpkGlobals(t *testing.T) {
-	// Build a minimal `rpk ai ...` command tree so parseFlags sees the
-	// same rpk-global flags it would in production. cmd.Flags() only
-	// merges inherited flags once cobra begins executing the command —
-	// hence root.Execute() below rather than calling parseFlags directly.
-	root := &cobra.Command{Use: "rpk"}
-	pf := root.PersistentFlags()
-	pf.String("config", "", "")
-	pf.String("profile", "", "")
-	pf.StringArrayP("config-opt", "X", nil, "")
-	pf.BoolP("verbose", "v", false, "")
-
-	var got []string
-	var gotErr error
-	aiCmd := &cobra.Command{
-		Use:                "ai",
-		DisableFlagParsing: true,
-		Args:               cobra.MinimumNArgs(0),
-		Run: func(cmd *cobra.Command, args []string) {
-			got, gotErr = parseFlags(new(config.Params), cmd, args)
+	for _, test := range []struct {
+		name string
+		args []string
+		exp  []string
+	}{
+		{
+			name: "rpk globals are stripped",
+			args: []string{"ai", "--config", "/foo", "-X", "cloud_token=abc", "llm", "list", "--foo=bar"},
+			exp:  []string{"llm", "list", "--foo=bar"},
 		},
-	}
-	aiCmd.Flags().BoolP("help", "h", false, "")
-	root.AddCommand(aiCmd)
+		{
+			name: "a bare dash reaches the plugin",
+			args: []string{"ai", "secret", "create", "ID", "--value-file", "-", "--tag", "team=ai"},
+			exp:  []string{"secret", "create", "ID", "--value-file", "-", "--tag", "team=ai"},
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			// Build a minimal `rpk ai ...` command tree so parseFlags sees the
+			// same rpk-global flags it would in production. cmd.Flags() only
+			// merges inherited flags once cobra begins executing the command —
+			// hence root.Execute() below rather than calling parseFlags directly.
+			root := &cobra.Command{Use: "rpk"}
+			pf := root.PersistentFlags()
+			pf.String("config", "", "")
+			pf.String("profile", "", "")
+			pf.StringArrayP("config-opt", "X", nil, "")
+			pf.BoolP("verbose", "v", false, "")
 
-	root.SetArgs([]string{"ai", "--config", "/foo", "-X", "cloud_token=abc", "llm", "list", "--foo=bar"})
-	require.NoError(t, root.Execute())
-	require.NoError(t, gotErr)
-	require.Equal(t, []string{"llm", "list", "--foo=bar"}, got)
+			var got []string
+			var gotErr error
+			aiCmd := &cobra.Command{
+				Use:                "ai",
+				DisableFlagParsing: true,
+				Args:               cobra.MinimumNArgs(0),
+				Run: func(cmd *cobra.Command, args []string) {
+					got, gotErr = parseFlags(new(config.Params), cmd, args)
+				},
+			}
+			aiCmd.Flags().BoolP("help", "h", false, "")
+			root.AddCommand(aiCmd)
+
+			root.SetArgs(test.args)
+			require.NoError(t, root.Execute())
+			require.NoError(t, gotErr)
+			require.Equal(t, test.exp, got)
+		})
+	}
 }
