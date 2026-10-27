@@ -771,3 +771,19 @@ PARTITION  LEADER  EPOCH  REPLICAS  LOG-START-OFFSET  HIGH-WATERMARK
 		})
 	}
 }
+
+func TestHelpDescribeStorageIncludesAllModes(t *testing.T) {
+	expectedModes := []string{
+		"disabled",
+		"write_only",
+		"read_only",
+		"full",
+		"read_replica",
+		"cloud_topic",
+		"tiered_cloud_topic",
+		"cloud_topic_read_replica",
+	}
+	for _, mode := range expectedModes {
+		require.Contains(t, helpDescribeStorage, mode)
+	}
+}

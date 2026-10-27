@@ -291,7 +291,7 @@ SUMMARY
 
 The summary section contains general information about the topic, the cloud
 storage mode (one of disabled, write_only, read_only, full, read_replica,
-cloud_topic, and cloud_topic_read_replica),
+cloud_topic, tiered_cloud_topic, and cloud_topic_read_replica),
 and the delta in milliseconds since the last upload of either the partition
 manifest or a segment.
 
