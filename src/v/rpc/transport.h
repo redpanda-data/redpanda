@@ -208,6 +208,7 @@ private:
     struct entry {
         scattered_buffer bufs;
         uint32_t correlation_id;
+        ssx::semaphore_units memory_units;
     };
     using requests_queue_t
       = absl::btree_map<sequence_t, std::unique_ptr<entry>>;
@@ -289,6 +290,7 @@ private:
 
     friend class ::rpc_integration_fixture_oc_ns_adl_serde_no_upgrade;
     friend class ::rpc_integration_fixture_oc_ns_adl_only_no_upgrade;
+    friend struct ::rpc_transport_test_accessor;
     void set_version(transport_version v) { _version = v; }
 
     std::unique_ptr<client_probe> _probe;
