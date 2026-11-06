@@ -97,7 +97,7 @@ class EndToEndTest(Test):
 
         if extra_rp_conf is not None:
             # merge both configurations, the extra_rp_conf passed in
-            # paramter takes the precedence
+            # parameter takes the precedence
             self._extra_rp_conf = {**self._extra_rp_conf, **extra_rp_conf}
         assert self.redpanda is None
 
