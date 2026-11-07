@@ -210,9 +210,21 @@ func (f *netTunersFactory) NewRxTxQueueCountTuner(interfaces []network.Nic, effe
 				return NewTuneResult(false)
 			}
 
-			_, targetChannels, err := network.GetCurrentAndTargetChannels(nic, effectiveConfig, f.ethtool)
+			currentChannels, targetChannels, err := network.GetCurrentAndTargetChannels(nic, effectiveConfig, f.ethtool)
 			if err != nil {
 				return NewTuneError(err)
+			}
+
+			channelsNeedChange := currentChannels.RxCount != targetChannels.RxCount ||
+				currentChannels.TxCount != targetChannels.TxCount ||
+				currentChannels.CombinedCount != targetChannels.CombinedCount
+
+			if channelsNeedChange && f.executor.IsLazy() {
+				return NewTuneError(fmt.Errorf("cannot generate tuning script when NIC '%s' channel count must change (current: combined=%d rx=%d tx=%d, target: combined=%d rx=%d tx=%d): dependent IRQ, RPS, and RFS tuning requires updated interface topology; apply channel changes directly or run tune without --output-script",
+					nic.Name(),
+					currentChannels.CombinedCount, currentChannels.RxCount, currentChannels.TxCount,
+					targetChannels.CombinedCount, targetChannels.RxCount, targetChannels.TxCount,
+				))
 			}
 
 			err = f.executor.Execute(

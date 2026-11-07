@@ -25,6 +25,7 @@ import (
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/tuners/hwloc"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/tuners/irq"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/tuners/network"
+	et "github.com/safchain/ethtool"
 	"github.com/spf13/afero"
 	"github.com/stretchr/testify/require"
 	"gopkg.in/yaml.v3"
@@ -241,4 +242,145 @@ func TestYaml(t *testing.T) {
 	data, err := yaml.Marshal(&cfg)
 	require.NoError(t, err)
 	require.Equal(t, yml, string(data))
+}
+
+type mockChannelsEthtool struct {
+	ethtool.EthtoolWrapper
+	currentChannels   et.Channels
+	setChannelsCalled bool
+	lastSetChannels   et.Channels
+}
+
+func (m *mockChannelsEthtool) GetChannels(string) (et.Channels, error) {
+	return m.currentChannels, nil
+}
+
+func (m *mockChannelsEthtool) SetChannels(_ string, ch et.Channels) (et.Channels, error) {
+	m.setChannelsCalled = true
+	m.lastSetChannels = ch
+	return ch, nil
+}
+
+type mockNic struct {
+	network.Nic
+	name             string
+	supportsLowering bool
+}
+
+func (m *mockNic) Name() string {
+	return m.name
+}
+
+func (m *mockNic) SupportsRxTxQueueLowering() (bool, error) {
+	return m.supportsLowering, nil
+}
+
+func mockNetTunersFactoryWithEthtool(
+	fs afero.Fs, exec executors.Executor, eth ethtool.EthtoolWrapper,
+) tuners.NetTunersFactory {
+	procFile := irq.NewProcFile(fs)
+	proc := osutil.NewProc()
+	timeout := 1 * time.Second
+	hwlocCmd := hwloc.NewHwLocCmd(proc, timeout)
+	return tuners.NewNetTunersFactory(
+		fs,
+		config.RpkNodeConfig{},
+		procFile,
+		irq.NewDeviceInfo(fs, procFile),
+		eth,
+		irq.NewBalanceService(fs, proc, exec, timeout),
+		irq.NewCPUMasks(fs, hwlocCmd, exec),
+		exec,
+		proc,
+		"",
+	)
+}
+
+func TestRxTxQueueCountTuner_QueueReductionScriptModeRejects(t *testing.T) {
+	const scriptPath = "/tune.sh"
+	fs := afero.NewMemMapFs()
+	exec := executors.NewScriptRenderingExecutor(fs, scriptPath)
+
+	eth := &mockChannelsEthtool{
+		currentChannels: et.Channels{
+			CombinedCount: 8,
+			MaxCombined:   8,
+		},
+	}
+	f := mockNetTunersFactoryWithEthtool(fs, exec, eth)
+
+	nic := &mockNic{name: "eth0", supportsLowering: true}
+	effectiveConfig := network.EffectiveNicConfig{
+		Mode:           irq.Dedicated,
+		IRQCPUMaskSize: 2,
+	}
+
+	tuner := f.NewRxTxQueueCountTuner([]network.Nic{nic}, effectiveConfig)
+	res := tuner.Tune()
+
+	require.True(t, res.IsFailed())
+	require.Error(t, res.Error())
+	require.Contains(t, res.Error().Error(), "cannot generate tuning script when NIC 'eth0' channel count must change")
+	require.Contains(t, res.Error().Error(), "current: combined=8")
+	require.Contains(t, res.Error().Error(), "target: combined=2")
+
+	// Ensure the generated script does not reference queues that would be removed (e.g. rx-2 through rx-7)
+	contents, err := afero.ReadFile(fs, scriptPath)
+	require.NoError(t, err)
+	for q := 2; q < 8; q++ {
+		require.NotContains(t, string(contents), fmt.Sprintf("rx-%d", q))
+	}
+}
+
+func TestRxTxQueueCountTuner_QueueReductionDirectModeSucceeds(t *testing.T) {
+	fs := afero.NewMemMapFs()
+	exec := executors.NewDirectExecutor()
+
+	eth := &mockChannelsEthtool{
+		currentChannels: et.Channels{
+			CombinedCount: 8,
+			MaxCombined:   8,
+		},
+	}
+	f := mockNetTunersFactoryWithEthtool(fs, exec, eth)
+
+	nic := &mockNic{name: "eth0", supportsLowering: true}
+	effectiveConfig := network.EffectiveNicConfig{
+		Mode:           irq.Dedicated,
+		IRQCPUMaskSize: 2,
+	}
+
+	tuner := f.NewRxTxQueueCountTuner([]network.Nic{nic}, effectiveConfig)
+	res := tuner.Tune()
+
+	require.False(t, res.IsFailed())
+	require.NoError(t, res.Error())
+	require.True(t, eth.setChannelsCalled)
+	require.Equal(t, uint32(2), eth.lastSetChannels.CombinedCount)
+}
+
+func TestRxTxQueueCountTuner_AlreadyMatchingChannelsScriptMode(t *testing.T) {
+	const scriptPath = "/tune.sh"
+	fs := afero.NewMemMapFs()
+	exec := executors.NewScriptRenderingExecutor(fs, scriptPath)
+
+	eth := &mockChannelsEthtool{
+		currentChannels: et.Channels{
+			CombinedCount: 2,
+			MaxCombined:   8,
+		},
+	}
+	f := mockNetTunersFactoryWithEthtool(fs, exec, eth)
+
+	nic := &mockNic{name: "eth0", supportsLowering: true}
+	effectiveConfig := network.EffectiveNicConfig{
+		Mode:           irq.Dedicated,
+		IRQCPUMaskSize: 2,
+	}
+
+	tuner := f.NewRxTxQueueCountTuner([]network.Nic{nic}, effectiveConfig)
+	res := tuner.Tune()
+
+	require.False(t, res.IsFailed())
+	require.NoError(t, res.Error())
 }
