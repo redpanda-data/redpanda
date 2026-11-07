@@ -27,6 +27,8 @@ Describe benefit and urgency for the user and Redpanda
 
 ### Additional notes
 
+- [ ] Docs Update Required (add `doc-needed` label)
+
 <!--
 Relevant GH issues and pull requests
 Dependencies on other features or components

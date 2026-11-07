@@ -53,3 +53,7 @@ point of the change, e.g.
 * Short description of how this PR improves existing behavior.
 
 -->
+## Documentation Updates
+<!--
+If the changes in this PR affect the behaviour or configurability of Redpanda in a way that requires users to be aware, then we may need to update the documentation. Be sure to add the `doc-needed` label and enter in this section a few words to highlight to the docs team what may need to be documented
+-->
