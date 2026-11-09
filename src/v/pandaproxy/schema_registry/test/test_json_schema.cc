@@ -996,6 +996,26 @@ static const auto compatibility_test_cases = std::to_array<compatibility_test_ca
 })",
     .compat_result = {{"#/required/a", incompat_t::required_attribute_added}},
   },
+  // object checks: removing a required property not ok if it has a boolean
+  // subschema, a boolean subschema has no default value
+  {
+    .reader_schema = R"(
+{
+  "type": "object",
+  "properties": {
+    "a": true
+  },
+  "required": ["a"]
+})",
+    .writer_schema = R"(
+{
+  "type": "object",
+  "properties": {
+    "a": true
+  }
+})",
+    .compat_result = {{"#/required/a", incompat_t::required_attribute_added}},
+  },
   // Both type-specific and combined checks fail
   {
     .reader_schema = R"(
@@ -1226,6 +1246,49 @@ static const auto compatibility_test_cases = std::to_array<compatibility_test_ca
   "required": [
     "a"
   ]
+})",
+    .compat_result = {},
+  },
+  // object checks: a required property with a boolean subschema is kept
+  // required, adding an optional property is ok
+  {
+    .reader_schema = R"(
+{
+  "type": "object",
+  "properties": {
+    "a": true,
+    "b": {"type": "string"}
+  },
+  "required": ["a"]
+})",
+    .writer_schema = R"(
+{
+  "type": "object",
+  "properties": {
+    "a": true
+  },
+  "required": ["a"]
+})",
+    .compat_result = {},
+  },
+  // object checks: a required property with a false subschema is kept
+  // unchanged
+  {
+    .reader_schema = R"(
+{
+  "type": "object",
+  "properties": {
+    "a": false
+  },
+  "required": ["a"]
+})",
+    .writer_schema = R"(
+{
+  "type": "object",
+  "properties": {
+    "a": false
+  },
+  "required": ["a"]
 })",
     .compat_result = {},
   },

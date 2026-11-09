@@ -1697,7 +1697,9 @@ json_compatibility_result is_object_required_superset(
     // newer_req.
     std::ranges::for_each(older_req, [&](const json::Value& o) {
         auto it = older_props.FindMember(o);
-        bool has_default = it != older_props.MemberEnd()
+        // in >= draft6 a property schema can be a boolean, which has no
+        // "default"
+        bool has_default = it != older_props.MemberEnd() && it->value.IsObject()
                            && it->value.HasMember("default");
         if (
           std::ranges::find(newer_req, o) == newer_req.End() && !has_default) {
