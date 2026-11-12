@@ -71,6 +71,7 @@ cluster::topic_configuration consumer_offsets_topic_configuration(
 
     topic.properties.cleanup_policy_bitflags
       = model::cleanup_policy_bitflags::compaction;
+    topic.properties.storage_mode = model::redpanda_storage_mode::local;
     // allow creation even if a consumer group migration is in progress
     topic.is_migrated = true;
     return topic;
