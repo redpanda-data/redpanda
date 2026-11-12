@@ -261,6 +261,9 @@ public:
 
     std::optional<batch_cache_index> create_cache(with_cache);
 
+    size_t expected_data_size_bytes() const;  
+  
+
 private:
     using bflags = log_housekeeping_meta::bitflags;
 
@@ -272,6 +275,10 @@ private:
       = chunked_hash_map<model::ntp, std::unique_ptr<log_housekeeping_meta>>;
     using compaction_list_type
       = intrusive_list<log_housekeeping_meta, &log_housekeeping_meta::link>;
+
+
+    ss::future<size_t> actual_data_size_bytes() const;
+    ss::future<size_t> actual_data_size_bytes(const std::filesystem::path& dir) const;
 
     ss::future<ss::shared_ptr<log>> do_manage(
       ntp_config,
