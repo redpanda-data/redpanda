@@ -6602,12 +6602,22 @@ class RedpandaService(Service, RedpandaServiceABC):
 
             return len(waiting_for) == 0
 
+        # Primary failure signal is progress: bail only if no partition
+        # completes scrubbing within progress_sec. timeout_sec is an
+        # absolute ceiling that scales with the workload so large-partition
+        # tests get a proportionally longer budget.
         n_partitions = len(cloud_storage_partitions)
         timeout = (n_partitions // 100) * 60 + 120
-        wait_until(
-            all_partitions_scrubbed,
+        wait_until_with_progress_check(
+            check=lambda: len(scrubbed),
+            condition=all_partitions_scrubbed,
             timeout_sec=timeout,
+            progress_sec=30,
             backoff_sec=5,
+            err_msg=lambda: (
+                f"internal scrub pending: {cloud_storage_partitions - scrubbed}"
+            ),
+            logger=self.logger,
             retry_on_exc=True,
         )
 
