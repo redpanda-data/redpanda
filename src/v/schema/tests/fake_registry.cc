@@ -116,7 +116,7 @@ schema::fake_registry::list_subject_versions(
         if (!inc_del && s.deleted) {
             continue;
         }
-        out.push_back({s.schema.sub(), s.version, s.deleted});
+        out.push_back({s.schema.sub(), s.version, s.id, s.deleted});
     }
     co_return out;
 }

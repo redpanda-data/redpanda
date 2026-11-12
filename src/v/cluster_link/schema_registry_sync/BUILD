@@ -20,6 +20,54 @@ redpanda_cc_library(
 )
 
 redpanda_cc_library(
+    name = "tail_reader",
+    hdrs = [
+        "tail_reader.h",
+    ],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":source_reader",
+        "//src/v/base",
+        "//src/v/cluster_link:fwd",
+        "//src/v/container:chunked_hash_map",
+        "//src/v/pandaproxy/schema_registry:types",
+        "@seastar",
+    ],
+)
+
+redpanda_cc_library(
+    name = "schemas_topic_tail_reader",
+    srcs = [
+        "schemas_topic_tail_reader.cc",
+    ],
+    hdrs = [
+        "schemas_topic_tail_reader.h",
+    ],
+    implementation_deps = [
+        "//src/v/base",
+        "//src/v/cluster_link:impl",
+        "//src/v/cluster_link:logger",
+        "//src/v/cluster_link:utils",
+        "//src/v/container:chunked_vector",
+        "//src/v/json",
+        "//src/v/kafka/client:cluster",
+        "//src/v/kafka/client/direct_consumer",
+        "//src/v/kafka/protocol",
+        "//src/v/model",
+        "//src/v/model:batch_compression",
+        "//src/v/pandaproxy/schema_registry:seq_writer",
+        "//src/v/ssx:future_util",
+        "//src/v/ssx:sformat",
+        "@rapidjson",
+    ],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":tail_reader",
+        "@seastar",
+    ],
+)
+
+redpanda_cc_library(
     name = "http_source_reader",
     srcs = [
         "http_source_reader.cc",
@@ -57,12 +105,14 @@ redpanda_cc_library(
 redpanda_cc_library(
     name = "mirroring_task",
     srcs = [
+        "discovery.cc",
         "mirroring_task.cc",
         "probe.cc",
         "reconciler.cc",
         "scope.cc",
     ],
     hdrs = [
+        "discovery.h",
         "mirroring_task.h",
         "probe.h",
         "reconciler.h",
@@ -85,6 +135,7 @@ redpanda_cc_library(
     visibility = ["//visibility:public"],
     deps = [
         ":source_reader",
+        ":tail_reader",
         "//src/v/cluster_link:impl",
         "//src/v/cluster_link/model",
         "//src/v/metrics",
@@ -92,6 +143,7 @@ redpanda_cc_library(
         "//src/v/schema:registry",
         "//src/v/ssx:mutex",
         "//src/v/ssx:semaphore",
+        "//src/v/utils:prefix_logger",
         "@seastar",
     ],
 )
