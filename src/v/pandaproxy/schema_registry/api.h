@@ -58,6 +58,7 @@ public:
 
     ss::future<> start();
     ss::future<> stop();
+    ss::future<> stop_clients();
     ss::future<> restart();
 
     const configuration& get_config() const;
