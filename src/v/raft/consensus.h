@@ -695,7 +695,9 @@ private:
     ss::future<std::error_code>
     replicate_configuration(ssx::semaphore_units u, group_configuration);
 
-    void maybe_update_follower_commit_idx(model::offset);
+    void maybe_update_follower_commit_idx(
+      model::offset leader_commit_idx, model::offset matched_upto);
+    void maybe_advance_follower_commit_idx();
 
     void arm_vote_timeout();
     void update_node_append_timestamp(vnode);
@@ -984,6 +986,20 @@ private:
      */
     model::offset _last_quorum_replicated_index_with_flush;
     model::offset _last_leader_visible_offset;
+    /**
+     * Commit index last reported by a leader, clamped to the log prefix that
+     * the reporting request proved to match the leader's log.
+     *
+     * Kept separately from _commit_index because a follower may only commit
+     * what it flushed, while it replies to heartbeats without flushing: the
+     * commit index derived from a request is clamped by a flushed offset that
+     * may still be stale. Re-applied whenever _flushed_offset moves forward,
+     * since the leader stops sending full heartbeats as soon as our flush is
+     * reported back and lightweight heartbeats carry no commit index.
+     *
+     * Clamped down together with _flushed_offset on suffix truncation.
+     */
+    model::offset _last_leader_commit_index;
     flush_after_append _last_write_flushed;
     offset_monitor<model::offset> _consumable_offset_monitor;
     ss::condition_variable _follower_reply;
