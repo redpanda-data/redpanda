@@ -671,7 +671,15 @@ YAML::Node application::hydrate_node_config(const po::variables_map& cfg) {
     // Retain the original bytes loaded so that we can hexdump them later
     // if YAML Parse fails.
     // Related: https://github.com/redpanda-data/redpanda/issues/3798
-    auto yaml_raw_bytes = read_fully_tmpbuf(cfg_path).get();
+    ss::temporary_buffer<char> yaml_raw_bytes;
+    try {
+        yaml_raw_bytes = read_fully_tmpbuf(cfg_path).get();
+    } catch (...) {
+        throw std::runtime_error(format_file_io_error(
+          fmt::format("Failed to read config file {}", cfg_path.string()),
+          std::current_exception()));
+    }
+
     auto yaml_raw_str = ss::to_sstring(yaml_raw_bytes.clone());
     YAML::Node config;
     try {

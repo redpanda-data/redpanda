@@ -240,6 +240,7 @@ redpanda_cc_library(
         "//src/v/base",
         "//src/v/bytes:iobuf",
         "//src/v/bytes:iostream",
+        "@fmt",
         "@seastar",
     ],
 )
