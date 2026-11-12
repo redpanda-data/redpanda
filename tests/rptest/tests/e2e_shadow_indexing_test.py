@@ -152,7 +152,7 @@ def num_manifests_downloaded(test_self):
 
 class EndToEndShadowIndexingTest(EndToEndShadowIndexingBase):
     @cluster(num_nodes=4)
-    @matrix(cloud_storage_type=get_cloud_storage_type()[0:1])
+    @matrix(cloud_storage_type=get_cloud_storage_type())
     def test_reset(self, cloud_storage_type):
         msg_count_before_reset = 50 * (self.segment_size // 2056)
         producer = KgoVerifierProducer(

@@ -354,9 +354,24 @@ std::optional<iobuf> multipart_response_parser::get_part() {
             continue;
         }
         // unlikely, but we may have skipped some bytes that appeared to be
-        // part of a delimiter.
-        part_len += delim_idx + 1;
+        // part of a delimiter. Re-check the current character against the
+        // start of the delimiter, as in advance_to_first_boundary.
+        // NOTE: this is not full string search — it only handles overlap with
+        // _delim[0], not longer prefix/suffix overlaps. Fine in practice
+        // because RFC 2046 boundaries start with "--" and real server
+        // boundaries don't have repeated prefixes.
+        auto matched_prefix_len = delim_idx;
         delim_idx = 0;
+        if (c == _delim[0]) {
+            // The character that broke the match is also the start of a
+            // potential new match. Only commit the previously matched
+            // prefix to the part length; keep c out of the content until
+            // we know whether this new match succeeds.
+            part_len += matched_prefix_len;
+            delim_idx = 1;
+            continue;
+        }
+        part_len += matched_prefix_len + 1;
         auto [is_lf, _] = line_feed.try_put(c);
         // eat up any leading CRLFs so the resulting part starts on text
         if (!part_start.has_value()) [[unlikely]] {
@@ -535,12 +550,32 @@ find_multipart_boundary(const http::client::response_header& headers) {
         if (n_eq != 1) {
             boundary = {};
         }
-        // Remove quotes if present
+        // Remove quotes if present. Per RFC 2045 a parameter value is
+        // either a token or a quoted-string.
         if (!boundary.empty() && boundary.front() == '"') {
             boundary = boundary.substr(1);
-        }
-        if (!boundary.empty() && boundary.back() == '"') {
-            boundary = boundary.substr(0, boundary.size() - 1);
+            // The closing quote marks the end of the value.
+            if (auto q = boundary.find('"'); q != boundary.npos) {
+                boundary = boundary.substr(0, q);
+            } else {
+                // Malformed: opening quote with no closing quote.
+                // Trim at semicolon as a fallback.
+                if (auto sc = boundary.find(';'); sc != boundary.npos) {
+                    boundary = boundary.substr(0, sc);
+                }
+            }
+        } else {
+            // Unquoted token: trim at the first semicolon (start of the
+            // next Content-Type parameter) per RFC 2045 §5.1.
+            if (auto sc = boundary.find(';'); sc != boundary.npos) {
+                boundary = boundary.substr(0, sc);
+            }
+            // Also strip any trailing whitespace that may precede the
+            // semicolon or end of header.
+            while (!boundary.empty()
+                   && (boundary.back() == ' ' || boundary.back() == '\t')) {
+                boundary = boundary.substr(0, boundary.size() - 1);
+            }
         }
     }
     if (boundary.empty()) {
