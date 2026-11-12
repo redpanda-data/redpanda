@@ -18,6 +18,7 @@
 #include "cloud_storage_clients/client.h"
 #include "cloud_storage_clients/client_pool.h"
 #include "cloud_storage_clients/multipart_upload.h"
+#include "metrics/metrics.h"
 #include "model/metadata.h"
 #include "utils/lazy_abort_source.h"
 
@@ -239,6 +240,79 @@ public:
 
 private:
     ss::sharded<cloud_storage_clients::client_pool>& _pool;
+
+    // DR mirror: best-effort copy of a just-uploaded object to the
+    // configured secondary bucket (same credentials). No-op unless
+    // cloud_storage_secondary_bucket is set and the target was the
+    // primary bucket.
+    std::optional<cloud_storage_clients::bucket_name>
+    cloud_storage_secondary_for(
+      const cloud_storage_clients::bucket_name& primary) const;
+
+    // True if `bucket` is the configured primary (only primary-bucket writes
+    // are mirrored -- never reads, other buckets, or a mirror's own target).
+    bool is_primary_bucket(const cloud_storage_clients::bucket_name&) const;
+
+    // Fast hot-path gate: is ANY DR mirror configured? False by default, so
+    // single-bucket tiered storage pays a single check per upload.
+    bool tiered_storage_mirror_active() const {
+        return _tiered_storage_mirror_remote != nullptr
+               || config::shard_local_cfg()
+                    .cloud_storage_secondary_bucket()
+                    .has_value();
+    }
+
+    // Cross-cloud DR mirror target (different credentials). Injected by
+    // cloud_topics::app when cloud_topics_secondary_full_mirror is on; when
+    // set it supersedes the same-credential cloud_storage_secondary_for path.
+    remote* _tiered_storage_mirror_remote{nullptr};
+    std::optional<cloud_storage_clients::bucket_name>
+      _tiered_storage_mirror_bucket;
+    // DR mirror completeness signal. The mirror is synchronous best-effort:
+    // a failed mirror upload is dropped (the primary write still succeeds), so
+    // a non-zero error count means the secondary is missing objects and is NOT
+    // safely restorable. Restore readiness = errors == 0 with full-mirror on
+    // from genesis.
+    uint64_t _tiered_storage_mirror_ok{0};
+    uint64_t _tiered_storage_mirror_errors{0};
+    uint64_t _tiered_storage_mirror_backfilled{0};
+    uint64_t _tiered_storage_mirror_bytes{0};
+    metrics::internal_metric_groups _tiered_storage_mirror_metrics;
+
+public:
+    void set_tiered_storage_mirror(
+      remote& target, cloud_storage_clients::bucket_name bucket) {
+        _tiered_storage_mirror_remote = &target;
+        _tiered_storage_mirror_bucket = std::move(bucket);
+        setup_tiered_storage_mirror_metrics();
+        start_tiered_storage_mirror_backfill();
+    }
+
+    // Number of DR-mirror uploads that failed and were dropped from the
+    // secondary. Non-zero => the secondary is not a complete restorable copy.
+    uint64_t tiered_storage_mirror_errors() const {
+        return _tiered_storage_mirror_errors;
+    }
+
+private:
+    void setup_tiered_storage_mirror_metrics();
+    void note_tiered_storage_mirror_result(bool ok, size_t bytes = 0) {
+        if (ok) {
+            ++_tiered_storage_mirror_ok;
+            _tiered_storage_mirror_bytes += bytes;
+        } else {
+            ++_tiered_storage_mirror_errors;
+        }
+    }
+    // Cross-cloud full-mirror back-fill: a periodic best-effort sweep (shard 0)
+    // that re-lists the primary bucket and re-mirrors objects missing from the
+    // secondary across all prefixes, so a mirror enabled after genesis -- or
+    // one that dropped objects on transient failure -- still converges to a
+    // complete restorable copy. Gated on
+    // cloud_topics_secondary_full_mirror_backfill_interval_ms > 0.
+    void start_tiered_storage_mirror_backfill();
+    ss::future<> tiered_storage_mirror_backfill_loop();
+    ss::future<> backfill_tiered_storage_mirror();
 
     ss::gate _gate;
     ss::abort_source _as;

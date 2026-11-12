@@ -400,8 +400,10 @@ build_tls_credentials(const client_configuration& config) {
       [](const s3_configuration& s3_cfg) {
           if (!s3_cfg.disable_tls) {
               return make_tls_credentials_builder(s3_cfg.tls_truststore_path)
-                .then([](ss::tls::credentials_builder builder) {
-                    return build_tls_credentials("s3", std::move(builder));
+                .then([suffix = s3_cfg.probe_detail_suffix](
+                        ss::tls::credentials_builder builder) {
+                    return build_tls_credentials(
+                      "s3" + suffix, std::move(builder));
                 });
           }
           return ss::make_ready_future<val_t>(nullptr);
@@ -409,8 +411,10 @@ build_tls_credentials(const client_configuration& config) {
       [](const abs_configuration& abs_cfg) {
           if (!abs_cfg.disable_tls) {
               return make_tls_credentials_builder(abs_cfg.tls_truststore_path)
-                .then([](ss::tls::credentials_builder builder) {
-                    return build_tls_credentials("abs", std::move(builder));
+                .then([suffix = abs_cfg.probe_detail_suffix](
+                        ss::tls::credentials_builder builder) {
+                    return build_tls_credentials(
+                      "abs" + suffix, std::move(builder));
                 });
           }
           return ss::make_ready_future<val_t>(nullptr);

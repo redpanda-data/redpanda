@@ -424,6 +424,28 @@ struct configuration final : public config_store {
       cloud_storage_segment_max_upload_interval_sec;
     property<std::optional<std::chrono::seconds>>
       cloud_storage_manifest_max_upload_interval_sec;
+    // Tiered-storage dual-write: asynchronous staging uploads
+    property<bool> tiered_storage_staging_enabled;
+    property<std::chrono::milliseconds>
+      tiered_storage_staging_upload_interval_ms;
+    property<size_t> tiered_storage_staging_max_bytes_per_round;
+    property<std::optional<ss::sstring>>
+      tiered_storage_staging_secondary_bucket;
+    property<std::optional<ss::sstring>> cloud_topics_secondary_provider;
+    property<std::optional<ss::sstring>> cloud_topics_secondary_bucket;
+    property<std::optional<ss::sstring>> cloud_topics_secondary_endpoint;
+    property<std::optional<ss::sstring>> cloud_topics_secondary_region;
+    property<std::optional<ss::sstring>> cloud_topics_secondary_access_key;
+    property<std::optional<ss::sstring>> cloud_topics_secondary_secret_key;
+    property<bool> tiered_storage_staging_recovery_enabled;
+    property<std::chrono::milliseconds>
+      tiered_storage_staging_reconcile_interval_ms;
+    property<std::chrono::milliseconds> tiered_storage_staging_retention_ms;
+    property<std::optional<ss::sstring>> cloud_storage_secondary_bucket;
+    property<bool> tiered_storage_trim_to_staged_enabled;
+    property<bool> cloud_topics_secondary_full_mirror;
+    property<std::chrono::milliseconds>
+      cloud_topics_secondary_full_mirror_backfill_interval_ms;
     property<std::chrono::milliseconds>
       cloud_storage_readreplica_manifest_sync_timeout_ms;
     property<std::chrono::milliseconds> cloud_storage_metadata_sync_timeout_ms;

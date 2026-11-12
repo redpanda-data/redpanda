@@ -14,8 +14,10 @@
 #include "cloud_storage/remote.h"
 #include "cloud_storage/remote_label.h"
 #include "cloud_storage/remote_path_provider.h"
+#include "cluster/archival/staging_recovery.h"
 #include "model/metadata.h"
 #include "model/record.h"
+#include "ssx/mutex.h"
 #include "storage/ntp_config.h"
 #include "storage/offset_translator_state.h"
 #include "utils/retry_chain_node.h"
@@ -25,6 +27,8 @@
 #include <seastar/core/sharded.hh>
 #include <seastar/core/shared_ptr.hh>
 
+#include <optional>
+#include <utility>
 #include <vector>
 
 namespace cluster {
@@ -47,12 +51,32 @@ struct log_recovery_result {
     model::offset max_offset;
     cloud_storage::partition_manifest manifest;
     ss::lw_shared_ptr<storage::offset_translator_state> ot_state;
+    // Present when a staged tail was materialized on top of (or instead of)
+    // the canonical download: raft term as of max_offset.
+    std::optional<model::term_id> staged_last_term;
+    // Offset-translator gaps contributed by the staged tail, [base, last]
+    // per filtered batch, in offset order.
+    std::vector<std::pair<model::offset, model::offset>> staged_gaps;
+    // max_offset of the canonical download alone, before any staged-tail
+    // extension. The archival STM snapshot may only claim canonically
+    // uploaded offsets, staged ones must be re-uploaded by the archiver.
+    std::optional<model::offset> canonical_max_offset;
 };
 
 /// Data recovery provider is used to download topic segments from S3 (or
 /// compatible storage) during topic re-creation process
 class partition_recovery_manager {
 public:
+    /// Rebuild a partition's local log purely from the staging tier
+    /// (no canonical manifest involved). Used for cloud-engine topics
+    /// (storage.mode cloud / tiered_cloud), whose canonical tier is CT
+    /// L0/L1 and which have no v1 recovery primitive: the staged raft log
+    /// is materialized from offset 0 and the caller bootstraps over it.
+    ss::future<cloud_storage::log_recovery_result> recover_staged_only(
+      const storage::ntp_config& ntp_cfg,
+      model::initial_revision_id remote_revision,
+      std::optional<model::cluster_uuid> source_cluster);
+
     partition_recovery_manager(
       cloud_storage_clients::bucket_name bucket, ss::sharded<remote>& remote);
 
@@ -91,6 +115,12 @@ public:
 private:
     ss::future<bool> is_topic_recovery_active() const;
 
+    /// Lazily list staging/ and parse every staged-object index once; all
+    /// partition downloads share the catalog. Returns nullptr when staged
+    /// recovery is disabled or the catalog is empty.
+    ss::future<const archival::staging_recovery_catalog*> get_staging_catalog(
+      std::optional<model::cluster_uuid> source_cluster = std::nullopt);
+
     cloud_storage_clients::bucket_name _bucket;
     ss::sharded<remote>& _remote;
     // Late initialized objects
@@ -103,6 +133,8 @@ private:
     ss::gate _gate;
     retry_chain_node _root;
     ss::abort_source _as;
+    ssx::mutex _staging_catalog_mutex{"staging_recovery_catalog"};
+    std::optional<archival::staging_recovery_catalog> _staging_catalog;
 };
 
 /// Topic downloader is used to download topic segments from S3 (or compatible
@@ -120,7 +152,8 @@ public:
       cloud_storage_clients::bucket_name bucket,
       ss::gate& gate_root,
       retry_chain_node& parent,
-      model::opt_abort_source_t as);
+      model::opt_abort_source_t as,
+      const archival::staging_recovery_catalog* staging_catalog = nullptr);
 
     partition_downloader(const partition_downloader&) = delete;
     partition_downloader(partition_downloader&&) = delete;
@@ -229,6 +262,7 @@ private:
     retry_chain_node _rtcnode;
     retry_chain_logger _ctxlog;
     model::opt_abort_source_t _as;
+    const archival::staging_recovery_catalog* _staging_catalog;
 };
 
 } // namespace cloud_storage

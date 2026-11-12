@@ -39,6 +39,10 @@ struct default_overrides {
 struct common_configuration {
     /// URI of the access point
     access_point_uri uri;
+    /// Suffix appended to the TLS probe metric detail label; lets a second
+    /// client stack (e.g. the cross-cloud secondary) coexist with the
+    /// primary without seastar double-registration.
+    ss::sstring probe_detail_suffix{};
     /// Max time that connection can spend idle
     ss::lowres_clock::duration max_idle_time;
 

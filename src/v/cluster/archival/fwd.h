@@ -19,6 +19,7 @@ class upload_housekeeping_service;
 class purger;
 class scrubber;
 class archiver_manager;
+class staging_uploader;
 
 class archiver_operations_api;
 

@@ -270,7 +270,8 @@ private:
     ss::future<cloud_storage::log_recovery_result> maybe_download_log(
       storage::ntp_config& ntp_cfg,
       std::optional<remote_topic_properties> rtp,
-      cloud_storage::remote_path_provider& path_provider);
+      cloud_storage::remote_path_provider& path_provider,
+      std::optional<model::cluster_uuid> source_cluster);
 
     ss::future<xshard_transfer_state> do_shutdown(ss::lw_shared_ptr<partition>);
 

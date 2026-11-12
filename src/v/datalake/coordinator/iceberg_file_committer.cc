@@ -84,6 +84,9 @@ get_iceberg_committed_offset(
     const auto& cur_snap_id = *table.current_snapshot_id;
     auto snap_it = std::ranges::find(
       table.snapshots.value(), cur_snap_id, &iceberg::snapshot::id);
+    // Most-recent commit offset written by some OTHER cluster, remembered
+    // while walking in case this cluster has never committed to the table.
+    std::optional<model::offset> latest_foreign_offset;
     while (snap_it != table.snapshots->end()) {
         const auto& snap = *snap_it;
         const auto& props = snap.summary.other;
@@ -103,19 +106,30 @@ get_iceberg_committed_offset(
             if (!meta.cluster.has_value() || *meta.cluster == cluster) {
                 return meta.offset;
             }
-            // The metadata wasn't written by this cluster. Keep looking for
-            // some metadata that was.
+            // The metadata wasn't written by this cluster. Remember the most
+            // recent foreign offset (first seen in the walk) and keep looking
+            // for some metadata that this cluster wrote.
+            if (!latest_foreign_offset.has_value()) {
+                latest_foreign_offset = meta.offset;
+            }
         }
 
         if (!snap.parent_snapshot_id.has_value()) {
-            return std::nullopt;
+            break;
         }
         snap_it = std::ranges::find(
           table.snapshots.value(),
           *snap.parent_snapshot_id,
           &iceberg::snapshot::id);
     }
-    return std::nullopt;
+    // This cluster has never committed to the table, but a previous cluster
+    // has. On whole-cluster restore the replacement cluster inherits the
+    // table: its datalake control topic was restored (staged-tail replay),
+    // so the recorded control-topic offset is valid to resume from. Adopt it
+    // -- returning nullopt here would leave the coordinator unable to resume
+    // past the cluster-identity fence, stalling translation and leaving the
+    // acked-but-uncommitted window permanently out of the table.
+    return latest_foreign_offset;
 }
 
 checked<iceberg::struct_value, file_committer::errc> build_partition_key_struct(
