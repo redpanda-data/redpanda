@@ -398,6 +398,12 @@ schema_registry_topic_configuration(int16_t replication_factor) {
     cfg.properties.cleanup_policy_bitflags
       = model::cleanup_policy_bitflags::compaction;
     cfg.properties.compression = model::compression::none;
+    // If cloud storage is available, use tiered storage, otherwise local.
+    // TODO: once we're comfortable, resolve the correct tiered storage impl.
+    cfg.properties.storage_mode
+      = config::shard_local_cfg().cloud_storage_enabled()
+          ? model::redpanda_storage_mode::tiered
+          : model::redpanda_storage_mode::local;
     cfg.properties.retention_bytes = tristate<size_t>{disable_tristate};
     cfg.properties.retention_duration = tristate<std::chrono::milliseconds>{
       disable_tristate};
