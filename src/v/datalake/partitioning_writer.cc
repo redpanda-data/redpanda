@@ -107,47 +107,47 @@ ss::future<
 partitioning_writer::finish() && {
     chunked_vector<partitioned_file> files;
     auto first_error = writer_error::ok;
-    // TODO: parallelize me!
-    for (auto& [pk, writer] : writers_) {
-        auto file_res = co_await writer->finish();
-        if (file_res.has_error()) {
-            auto is_shutdown_error = file_res.error()
-                                     == writer_error::shutting_down;
-            vlogl(
-              datalake_log,
-              is_shutdown_error ? ss::log_level::debug : ss::log_level::error,
-              "Failed to finish writer: {}",
-              file_res.error());
-            if (first_error == writer_error::ok) {
-                first_error = file_res.error();
-            }
-            // Even on error, move on so that we can close all the writers.
-            continue;
-        }
-        auto partition_key_path_res = partition_key_to_path(spec_, pk);
-        if (partition_key_path_res.has_error()) {
-            vlog(
-              datalake_log.error,
-              "Failed to convert partition key to remote path - {}",
-              partition_key_path_res.error().what());
-            continue;
-        }
+    co_await ss::max_concurrent_for_each(
+      writers_, 10, [&](auto& entry) -> ss::future<> {
+          auto& [pk, writer] = entry;
+          auto file_res = co_await writer->finish();
+          if (file_res.has_error()) {
+              auto is_shutdown_error = file_res.error()
+                                       == writer_error::shutting_down;
+              vlogl(
+                datalake_log,
+                is_shutdown_error ? ss::log_level::debug : ss::log_level::error,
+                "Failed to finish writer: {}",
+                file_res.error());
+              if (first_error == writer_error::ok) {
+                  first_error = file_res.error();
+              }
+              co_return;
+          }
+          auto partition_key_path_res = partition_key_to_path(spec_, pk);
+          if (partition_key_path_res.has_error()) {
+              vlog(
+                datalake_log.error,
+                "Failed to convert partition key to remote path - {}",
+                partition_key_path_res.error().what());
+              co_return;
+          }
 
-        vlog(
-          datalake_log.trace,
-          "writer finished: file_bytes={}, file_path={}",
-          file_res.value().size_bytes,
-          file_res.value().path());
+          vlog(
+            datalake_log.trace,
+            "writer finished: file_bytes={}, file_path={}",
+            file_res.value().size_bytes,
+            file_res.value().path());
 
-        files.push_back(
-          partitioned_file{
-            .local_file = std::move(file_res.value()),
-            .data_location = remote_prefix_,
-            .schema_id = schema_id_,
-            .partition_spec_id = spec_.spec_id,
-            .partition_key = std::move(pk),
-            .partition_key_path = std::move(partition_key_path_res.value())});
-    }
+          files.push_back(
+            partitioned_file{
+              .local_file = std::move(file_res.value()),
+              .data_location = remote_prefix_,
+              .schema_id = schema_id_,
+              .partition_spec_id = spec_.spec_id,
+              .partition_key = std::move(pk),
+              .partition_key_path = std::move(partition_key_path_res.value())});
+      });
 
     vlog(
       datalake_log.trace,

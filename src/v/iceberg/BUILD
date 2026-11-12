@@ -500,6 +500,7 @@ redpanda_cc_library(
         ":snapshot",
         ":table_requirement",
         "//src/v/random:generators",
+        "@seastar",
     ],
     deps = [
         ":action",
