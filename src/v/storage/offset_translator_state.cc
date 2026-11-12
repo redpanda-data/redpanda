@@ -338,6 +338,30 @@ bool offset_translator_state::prefix_truncate(model::offset offset) {
     return true;
 }
 
+std::pair<model::offset, bool>
+offset_translator_state::reconcile_with_checkpoint(
+  model::offset persisted_hko) {
+    vassert(
+      !_last_offset2batch.empty(),
+      "ntp {}: offsets map shouldn't be empty",
+      _ntp);
+
+    // The state is always trustworthy up to (and including) the first entry.
+    auto checkpoint = std::max(
+      persisted_hko, _last_offset2batch.begin()->first);
+    auto it = _last_offset2batch.upper_bound(checkpoint);
+    if (it == _last_offset2batch.end()) {
+        return {checkpoint, false};
+    }
+    if (it->second.base_offset <= checkpoint) {
+        // The checkpoint offset falls inside the first dropped gap; its prefix
+        // must be re-read together with the rest of the gap.
+        checkpoint = model::prev_offset(it->second.base_offset);
+    }
+    _last_offset2batch.erase(it, _last_offset2batch.end());
+    return {checkpoint, true};
+}
+
 namespace {
 
 struct persisted_batch {

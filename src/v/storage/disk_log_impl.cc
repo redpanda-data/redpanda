@@ -3558,12 +3558,19 @@ ss::future<> disk_log_impl::do_truncate_prefix(truncate_prefix_config cfg) {
 
 ss::future<> disk_log_impl::truncate(truncate_config cfg) {
     throw_if_closed();
-    // Truncate the log before the offset translator. This ordering ensures
-    // that if the OT update fails (I/O error on checkpoint), the in-memory
-    // OT state is already correct (the map erase happens before the
-    // checkpoint) so runtime offset translations remain accurate. On
-    // restart, sync_with_log will reconcile the on-disk OT state with the
-    // actual log.
+    // Durably lower the offset translator's persisted coverage below the
+    // truncation point before the log is modified. If this preparation step
+    // fails, the truncation is aborted while the log and translator are still
+    // fully consistent, and raft will retry. Once it succeeds, a failure in
+    // either `do_truncate()` or `complete_truncate()` below can no longer leave
+    // the persisted state diverged.
+    //
+    // The log itself is truncated before the in-memory offset translator
+    // state so that if the truncation fails midway, runtime offset
+    // translations remain accurate. On restart, startup reconciliation trims
+    // the loaded map to the coverage persisted above and sync_with_log re-reads
+    // the rest from the log.
+    co_await _offset_translator.prepare_truncate(cfg.base_offset);
     co_await _failure_probes.truncate().then([this, cfg]() mutable {
         // Before truncation, erase any claim about a particular segment being
         // clean: this may refer to a segment we are about to delete, or it
@@ -3580,7 +3587,7 @@ ss::future<> disk_log_impl::truncate(truncate_config cfg) {
               return do_truncate(cfg, std::nullopt);
           });
     });
-    co_await _offset_translator.truncate(cfg.base_offset);
+    co_await _offset_translator.complete_truncate(cfg.base_offset);
 }
 
 ss::future<> disk_log_impl::do_truncate(
