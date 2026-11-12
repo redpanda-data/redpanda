@@ -160,8 +160,30 @@ kafka::offset log_eviction_stm::kafka_start_offset_override() {
     return _cached_kafka_start_offset_override;
 }
 
+std::optional<kafka::offset>
+log_eviction_stm::try_sync_kafka_start_offset_override() {
+    // Sync ensures that the stm has applied all batches from any previous term.
+    // If we're already sync'd up to the current term then there is no need to
+    // sync.
+    if (_raft->is_leader() && _insync_term == _raft->term()) {
+        return kafka_start_offset_override();
+    }
+    return std::nullopt;
+}
+
 ss::future<result<kafka::offset, std::error_code>>
 log_eviction_stm::sync_kafka_start_offset_override(
+  model::timeout_clock::duration timeout) {
+    // Fast path for when we're already in-sync.
+    if (auto override = try_sync_kafka_start_offset_override()) {
+        return ss::make_ready_future<result<kafka::offset, std::error_code>>(
+          *override);
+    }
+    return do_sync_kafka_start_offset_override(timeout);
+}
+
+ss::future<result<kafka::offset, std::error_code>>
+log_eviction_stm::do_sync_kafka_start_offset_override(
   model::timeout_clock::duration timeout) {
     /// Call this method to ensure followers have processed up until the
     /// most recent known version of the special batch. This is particularly

@@ -23,6 +23,8 @@
 #include <seastar/core/queue.hh>
 #include <seastar/util/log.hh>
 
+#include <optional>
+
 namespace cluster {
 
 class consensus;
@@ -107,6 +109,13 @@ public:
     ss::future<result<kafka::offset, std::error_code>>
     sync_kafka_start_offset_override(model::timeout_clock::duration timeout);
 
+    /// Non-suspending fast path of `sync_kafka_start_offset_override`:
+    /// returns the override iff the stm has already synced within the
+    /// current term, in which case the locally applied override reflects
+    /// every previous term's writes; the same guarantee the syncing
+    /// variant provides. Returns std::nullopt when a sync is required.
+    std::optional<kafka::offset> try_sync_kafka_start_offset_override();
+
     /// If `kafka::offset{}` is returned and archival storage is enabled for the
     /// given ntp then the caller should fall back on the archival stm to check
     /// if a start offset override exists and if so what its value is.
@@ -144,6 +153,9 @@ private:
       model::record_batch batch,
       ss::lowres_clock::time_point deadline,
       std::optional<std::reference_wrapper<ss::abort_source>> as);
+
+    ss::future<result<kafka::offset, std::error_code>>
+      do_sync_kafka_start_offset_override(model::timeout_clock::duration);
 
 private:
     ss::abort_source _as;
