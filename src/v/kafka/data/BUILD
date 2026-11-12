@@ -65,6 +65,7 @@ redpanda_cc_library(
         "//src/v/cluster",
         "//src/v/cluster:types",
         "//src/v/kafka/server:write_at_offset_stm",
+        "//src/v/ssx:sformat",
         "@boost//:numeric_conversion",
     ],
     visibility = ["//visibility:public"],

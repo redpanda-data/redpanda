@@ -422,6 +422,16 @@ configuration::configuration(ctor_key)
       "0.",
       {.visibility = visibility::tunable},
       3)
+  , raft_follower_nudge_debounce_ms(
+      *this,
+      "raft_follower_nudge_debounce_ms",
+      "Minimum time between out of band metadata pushes to a single follower "
+      "that expedite its view of the leader's committed and visible offsets, "
+      "e.g. when the leader refers a fetch-from-follower consumer to it. Set "
+      "to null to disable the pushes altogether.",
+      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
+      10ms,
+      {.min = 1ms})
 
   , raft_max_recovery_memory(
       *this,
@@ -711,6 +721,16 @@ configuration::configuration(ctor_key)
       "minimum bytes was not reached.",
       {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
       1ms)
+  , kafka_fetch_follower_catchup_wait_ms(
+      *this,
+      "kafka_fetch_follower_catchup_wait_ms",
+      "Maximum time a follower fetch waits for the follower to catch up to "
+      "the requested offset before returning offset_not_available. Also "
+      "capped by the raft heartbeat interval and the fetch's max wait time. "
+      "Set to 0 to disable the wait.",
+      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
+      300ms,
+      {.min = std::chrono::milliseconds(0)})
   , kafka_fetch_request_timeout_ms(
       *this,
       "kafka_fetch_request_timeout_ms",

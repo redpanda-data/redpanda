@@ -10,6 +10,7 @@
  */
 #include "kafka/data/replicated_partition.h"
 
+#include "base/vlog.h"
 #include "cloud_storage/types.h"
 #include "cluster/partition.h"
 #include "cluster/partition_kafka_offsets.h"
@@ -22,6 +23,7 @@
 #include "model/fundamental.h"
 #include "model/timeout_clock.h"
 #include "raft/errc.h"
+#include "ssx/sformat.h"
 #include "storage/types.h"
 
 #include <seastar/core/future.hh>
@@ -625,37 +627,50 @@ ss::future<error_code> replicated_partition::validate_fetch_offset(
 
     // offset validation logic on follower
     if (reading_from_follower && !_partition->is_leader()) {
-        auto ec = error_code::none;
-
-        const auto available_to_read = std::min(
-          leader_high_watermark(), log_end_offset());
-
-        if (fetch_offset < start_offset()) {
-            ec = error_code::offset_out_of_range;
-        } else if (fetch_offset > available_to_read) {
-            /**
-             * Offset know to be committed but not yet available on the
-             * follower.
-             */
-            ec = error_code::offset_not_available;
-        }
-
-        if (ec != error_code::none) {
-            vlog(
-              kdlog.warn,
-              "ntp {}: fetch offset out of range on follower, requested: {}, "
-              "partition start offset: {}, high watermark: {}, leader high "
-              "watermark: {}, log end offset: {}, ec: {}",
+        // only the expected, retried-on debug message is rate limited
+        auto log_rejected = [&](ss::log_level level, std::string_view reason) {
+            if (!kdlog.is_enabled(level)) {
+                return;
+            }
+            auto msg = ssx::sformat(
+              "ntp {}: fetch offset {} on follower, requested: {}, partition "
+              "start offset: {}, high watermark: {}, leader high watermark: "
+              "{}, log end offset: {}",
               ntp(),
+              reason,
               fetch_offset,
               start_offset(),
               high_watermark(),
               leader_high_watermark(),
-              log_end_offset(),
-              ec);
+              log_end_offset());
+            if (level == ss::log_level::debug) {
+                thread_local static ss::logger::rate_limit rate(
+                  std::chrono::seconds(1));
+                vloglr(kdlog, level, rate, "{}", msg);
+            } else {
+                vlogl(kdlog, level, "{}", msg);
+            }
+        };
+
+        if (fetch_offset < start_offset()) {
+            log_rejected(ss::log_level::warn, "out of range");
+            return ss::make_ready_future<error_code>(
+              error_code::offset_out_of_range);
         }
 
-        return ss::make_ready_future<error_code>(ec);
+        const auto available_to_read = std::min(
+          leader_high_watermark(), log_end_offset());
+        if (fetch_offset > available_to_read) {
+            /**
+             * Offset known to be committed but not yet available on the
+             * follower.
+             */
+            log_rejected(ss::log_level::debug, "not yet available");
+            return ss::make_ready_future<error_code>(
+              error_code::offset_not_available);
+        }
+
+        return ss::make_ready_future<error_code>(error_code::none);
     }
 
     // Grab the up to date start offset

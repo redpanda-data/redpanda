@@ -1211,3 +1211,155 @@ TEST_F_CORO(raft_fixture, test_leadership_blocked_replicas_can_elect_leader) {
     auto leader = co_await wait_for_leader(60s);
     ASSERT_NE_CORO(leader, blocked_follower);
 }
+
+namespace {
+// a follower with inflight appends is not nudged, wait for any pending
+// replication round to settle
+ss::future<> wait_for_no_inflight_appends(
+  ss::lw_shared_ptr<consensus> leader_raft, vnode follower) {
+    return tests::cooperative_spin_wait_with_timeout(
+      10s, [leader_raft, follower] {
+          return !leader_raft->get_follower_states()
+                    .get(follower)
+                    .has_inflight_appends();
+      });
+}
+} // namespace
+
+/**
+ * Nudging a follower pushes the leader's protocol metadata (commit index and
+ * last visible index) to it outside the heartbeat schedule, so its view of
+ * the leader offsets catches up promptly.
+ */
+TEST_F_CORO(raft_fixture, test_follower_nudge_advances_visible_offsets) {
+    co_await create_simple_group(3);
+    auto leader_id = co_await wait_for_leader(10s);
+    auto leader_raft = node(leader_id).raft();
+
+    /**
+     * Push scheduled heartbeats out of the assertion window so that any
+     * catch-up observed below must come from the nudge.
+     */
+    set_election_timeout(60s);
+    set_heartbeat_interval(5s);
+
+    auto result = co_await leader_raft->replicate(
+      make_batches(10, 10, 128),
+      replicate_options(consistency_level::quorum_ack));
+    ASSERT_FALSE_CORO(result.has_error());
+    const auto leader_visible = leader_raft->last_visible_index();
+
+    auto follower_id = random_follower_id().value();
+    auto follower_raft = node(follower_id).raft();
+
+    co_await wait_for_no_inflight_appends(
+      leader_raft, node(follower_id).get_vnode());
+
+    /**
+     * The leader advanced its visible index after the append round was
+     * acked and nothing has carried it to the followers yet - the next
+     * heartbeat is seconds away.
+     */
+    ASSERT_LT_CORO(follower_raft->last_leader_visible_index(), leader_visible);
+    const auto nudges_before
+      = leader_raft->get_probe().follower_nudge_requests();
+
+    leader_raft->nudge_follower(follower_id);
+
+    ASSERT_EQ_CORO(
+      leader_raft->get_probe().follower_nudge_requests(), nudges_before + 1);
+    // the next scheduled heartbeat is seconds away, catching up within a
+    // second demonstrates the nudge carried the offsets
+    co_await tests::cooperative_spin_wait_with_timeout(1s, [&] {
+        return follower_raft->last_leader_visible_index() >= leader_visible;
+    });
+}
+
+/**
+ * Repeated nudges for unchanged leader state collapse into a single request:
+ * once the current protocol metadata was sent to the follower, subsequent
+ * nudges are no-ops until the leader state changes.
+ */
+TEST_F_CORO(raft_fixture, test_follower_nudge_debounce) {
+    co_await create_simple_group(3);
+    auto leader_id = co_await wait_for_leader(10s);
+    auto leader_raft = node(leader_id).raft();
+
+    set_election_timeout(60s);
+    set_heartbeat_interval(5s);
+
+    auto result = co_await leader_raft->replicate(
+      make_batches(1, 1, 128),
+      replicate_options(consistency_level::quorum_ack));
+    ASSERT_FALSE_CORO(result.has_error());
+
+    auto follower_id = random_follower_id().value();
+    co_await wait_for_no_inflight_appends(
+      leader_raft, node(follower_id).get_vnode());
+
+    const auto nudges_before
+      = leader_raft->get_probe().follower_nudge_requests();
+    for (int i = 0; i < 100; ++i) {
+        leader_raft->nudge_follower(follower_id);
+    }
+    ASSERT_LE_CORO(
+      leader_raft->get_probe().follower_nudge_requests(), nudges_before + 1);
+}
+
+/**
+ * Nudges are safe no-ops when called on a non-leader, for an unknown target
+ * node and for a stopped follower.
+ */
+TEST_F_CORO(raft_fixture, test_follower_nudge_no_ops) {
+    co_await create_simple_group(3);
+    auto leader_id = co_await wait_for_leader(10s);
+    auto leader_raft = node(leader_id).raft();
+
+    auto follower_id = random_follower_id().value();
+    auto follower_raft = node(follower_id).raft();
+
+    // non-leader
+    follower_raft->nudge_follower(leader_id);
+    ASSERT_EQ_CORO(follower_raft->get_probe().follower_nudge_requests(), 0);
+
+    // unknown target
+    const auto nudges_before
+      = leader_raft->get_probe().follower_nudge_requests();
+    leader_raft->nudge_follower(model::node_id(123));
+    ASSERT_EQ_CORO(
+      leader_raft->get_probe().follower_nudge_requests(), nudges_before);
+
+    // stopped follower, the dispatched request fails in the background
+    // without surfacing an error
+    co_await stop_node(follower_id);
+    auto result = co_await leader_raft->replicate(
+      make_batches(1, 1, 128),
+      replicate_options(consistency_level::quorum_ack));
+    ASSERT_FALSE_CORO(result.has_error());
+    leader_raft->nudge_follower(follower_id);
+    co_await ss::sleep(100ms);
+}
+
+/**
+ * A waiter on a follower's visible offset monitor is woken by a heartbeat
+ * that only carries the leader's advanced visible index, without any new
+ * appends. The fetch-from-follower catch-up wait relies on this.
+ */
+TEST_F_CORO(
+  raft_fixture, test_follower_visible_offset_monitor_woken_by_heartbeat) {
+    co_await create_simple_group(3);
+    auto leader_id = co_await wait_for_leader(10s);
+    auto leader_raft = node(leader_id).raft();
+
+    auto result = co_await leader_raft->replicate(
+      make_batches(10, 10, 128),
+      replicate_options(consistency_level::quorum_ack));
+    ASSERT_FALSE_CORO(result.has_error());
+    const auto leader_visible = leader_raft->last_visible_index();
+
+    auto follower_id = random_follower_id().value();
+    co_await node(follower_id)
+      .raft()
+      ->visible_offset_monitor()
+      .wait(leader_visible, model::timeout_clock::now() + 10s, std::nullopt);
+}
