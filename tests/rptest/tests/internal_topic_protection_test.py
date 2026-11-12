@@ -407,3 +407,45 @@ class InternalTopicProtectionLargeClusterTest(RedpandaTest):
         assert num_found == 0, (
             f"Expected to find 0 messages about _schemas but found {num_found}"
         )
+
+
+class SchemaRegistryTopicAutoCreateTest(RedpandaTest):
+    """
+    Verify that the schema registry internal topic is created with its
+    intended configuration (compacted) even when `auto_create_topics_enabled`
+    is set: the authorization pre-flight metadata probe must not auto-create
+    `_schemas` with cluster-default properties (cleanup.policy=delete).
+    """
+
+    def __init__(self, *args, **kwargs):
+        kwargs["schema_registry_config"] = SchemaRegistryConfig()
+        super().__init__(
+            *args,
+            extra_rp_conf={"auto_create_topics_enabled": True},
+            **kwargs,
+        )
+
+        self.rpk = RpkTool(self.redpanda)
+
+    @cluster(num_nodes=3)
+    def test_schemas_topic_cleanup_policy(self):
+        # The first schema registry request triggers creation of _schemas.
+        _ = get_subjects(self.redpanda.nodes, self.logger)
+
+        wait_until(
+            lambda: "_schemas" in self.rpk.list_topics(),
+            timeout_sec=30,
+            backoff_sec=1,
+            err_msg="_schemas topic was never created",
+        )
+
+        configs = self.rpk.describe_topic_configs("_schemas")
+        cleanup_policy, source = configs["cleanup.policy"]
+        assert cleanup_policy == "compact", (
+            f"Expected cleanup.policy=compact for _schemas but got "
+            f"{cleanup_policy} (source: {source})"
+        )
+        assert source == "DYNAMIC_TOPIC_CONFIG", (
+            f"Expected _schemas cleanup.policy to be explicitly set "
+            f"(DYNAMIC_TOPIC_CONFIG) but source is {source}"
+        )

@@ -265,6 +265,11 @@ ss::future<> kafka_client_transport::validate_topic_creation_authorization(
     req.data.topics = {kafka::metadata_request_topic{
       .name = model::schema_registry_internal_tp.topic}};
     req.data.include_topic_authorized_operations = true;
+    // The protocol default is true; if the broker has
+    // auto_create_topics_enabled set, this probe would auto-create the
+    // topic with cluster-default properties (cleanup.policy=delete)
+    // instead of the compacted config create_topic sets below.
+    req.data.allow_auto_topic_creation = false;
     auto resp = co_await _client->fetch_metadata(std::move(req));
     vlog(srlog.trace, "Validating topic creation authorization");
     // If authz is not enabled on the cluster, then no need to validate
