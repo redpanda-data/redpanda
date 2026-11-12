@@ -34,6 +34,7 @@ from rptest.tests.cluster_linking_test_base import (
     StorageModeFlipper,
 )
 from rptest.tests.idempotency_stress_test import matrix
+from rptest.services.admin import Admin
 from rptest.services.admin_ops_fuzzer import AdminOperationsFuzzer
 from rptest.utils.node_operations import NodeOpsExecutor
 from rptest.utils.mode_checks import is_debug_mode
@@ -553,6 +554,10 @@ class ShadowLinkingRandomOpsTest(ShadowLinkTestBase):
             # decommission that keeps moving partitions
             chaos_max_wait_sec=240,
         )
+
+        # Wait for internal topics to bootstrap to full replication factor or
+        # decommission will stall.
+        Admin(self.redpanda).wait_for_internal_topic_replication(timeout_sec=120)
 
         for i, op in enumerate(
             generate_random_workload(available_nodes=active_node_idxs)
