@@ -1392,7 +1392,11 @@ topics_frontend::partitions_with_lost_majority(
             const auto& assignments = (it->second).get_assignments();
             const auto topic_revision = it->second.get_revision();
             for (const auto& [_, assignment] : assignments) {
-                const auto& current = assignment.replicas;
+                auto current = assignment.replicas;
+                // sort for a consistent final output ordering.
+                std::ranges::sort(current, [](const auto& a, const auto& b) {
+                    return a.node_id < b.node_id;
+                });
                 auto remaining = subtract_replica_sets_by_node_id(
                   current, dead_nodes);
                 auto lost_majority = remaining.size()
@@ -1400,12 +1404,22 @@ topics_frontend::partitions_with_lost_majority(
                 if (!lost_majority) {
                     continue;
                 }
+                // Extract node_ids of dead replicas of this partition
+                std::vector<model::node_id> dead_replicas;
+                dead_replicas.reserve(dead_nodes.size());
+                for (const auto& replica : current) {
+                    if (
+                      std::ranges::find(dead_nodes, replica.node_id)
+                      != dead_nodes.end()) {
+                        dead_replicas.push_back(replica.node_id);
+                    }
+                }
                 model::ntp ntp(tn.ns, tn.tp, assignment.id);
                 result.emplace_back(
                   std::move(ntp),
                   topic_revision,
-                  assignment.replicas,
-                  dead_nodes);
+                  std::move(current),
+                  std::move(dead_replicas));
                 co_await ss::coroutine::maybe_yield();
                 it.check();
             }
