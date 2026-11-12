@@ -399,6 +399,28 @@ redpanda_cc_btest(
 )
 
 redpanda_cc_btest(
+    name = "timequery_cost_test",
+    timeout = "moderate",
+    srcs = [
+        "timequery_cost_test.cc",
+    ],
+    cpu = 1,
+    deps = [
+        "//src/v/base",
+        "//src/v/cloud_io/tests:s3_imposter",
+        "//src/v/cloud_storage",
+        "//src/v/cloud_storage:types",
+        "//src/v/cloud_storage/tests:common",
+        "//src/v/model",
+        "//src/v/storage",
+        "//src/v/test_utils:seastar_boost",
+        "@boost//:test",
+        "@seastar",
+        "@seastar//:testing",
+    ],
+)
+
+redpanda_cc_btest(
     name = "async_manifest_view_test",
     timeout = "short",
     srcs = [

@@ -146,6 +146,48 @@ remote_partition::borrow_result_t remote_partition::borrow_next_segment_reader(
         }
     } else {
         mit = manifest.segment_containing(hint);
+
+        // A timequery may skip any segment the manifest already proves cannot
+        // hold a match, but only as far as another segment in this manifest:
+        // skipping is an optimization and must never be the reason the walk
+        // reaches 'manifest_end'. That is reported below as "no such segment",
+        // which ends the read rather than advancing the cursor to the next
+        // spillover manifest - only exhausting a reader does that - and the
+        // match may well live there. Where the whole remainder is skippable,
+        // fall through to the segment we would have read anyway and let its
+        // exhaustion carry the cursor over the boundary.
+        if (config.first_timestamp.has_value()) {
+            const auto ts = config.first_timestamp.value();
+            const auto cannot_match = [ts](const segment_meta& sm) {
+                return sm.max_timestamp != model::timestamp::missing()
+                       && sm.max_timestamp < ts && sm.base_timestamp <= ts;
+            };
+
+            // The manifest iterator is not copyable, so count on a second one
+            // and only advance 'mit' if the skip stops short of the end.
+            size_t skippable = 0;
+            auto probe = manifest.segment_containing(hint);
+            while (probe != manifest_end && cannot_match(*probe)) {
+                ++probe;
+                ++skippable;
+            }
+            if (probe == manifest_end) {
+                skippable = 0;
+            }
+            if (skippable > 0) {
+                vlog(
+                  _ctxlog.debug,
+                  "timequery for {}: skipping {} segment(s) from {} that the "
+                  "manifest proves cannot match",
+                  ts,
+                  skippable,
+                  hint);
+            }
+            for (size_t i = 0; i < skippable; ++i) {
+                ++mit;
+            }
+        }
+
         while (mit != manifest_end) {
             // The segment 'mit' points to might not have any
             // data batches. In this case we need to move iterator forward.
@@ -545,7 +587,14 @@ private:
         _seg_reader = std::move(reader);
         _next_segment_base_offset = next_offset;
 
-        if (_seg_reader) {
+        // It is not worth prefetching segments in the case of a timequery,
+        // since we are not performing linear reads over the log, but rather
+        // trying to skip ahead towards the first batch that can answer the
+        // query.
+        const bool seeks_by_timestamp
+          = _seg_reader && _seg_reader->config().first_timestamp.has_value();
+
+        if (_seg_reader && !seeks_by_timestamp) {
             _partition->maybe_prefetch_small_segments(
               manifest,
               _next_segment_base_offset,

@@ -211,6 +211,7 @@ index_state index_state::make_empty_index(
     index_state idx{};
     idx.base_offset = base_offset;
     idx.with_offset = with_offset;
+    idx.running_max_timestamps = true;
 
     return idx;
 }
@@ -238,8 +239,12 @@ bool index_state::maybe_index(
     // to override the timestamps of any config batch that was indexed
     // by virtue of being the first in the segment.
     if (user_data && non_data_timestamps) {
+        base_timestamp = first_timestamp;
+        max_timestamp = std::max(first_timestamp, last_timestamp);
+
         auto time_col_reset = index.try_reset_relative_time_index(
-          offset_time_index{last_timestamp, with_offset}.raw_value());
+          offset_time_index{max_timestamp - base_timestamp, with_offset}
+            .raw_value());
         // We can only add a non-data timestamp to the empty index. This
         // is why we can assume that the index size is 1. The
         // 'try_reset_relative_time_index' will return true if this is the case.
@@ -252,8 +257,6 @@ bool index_state::maybe_index(
           index.size(),
           *this);
 
-        base_timestamp = first_timestamp;
-        max_timestamp = first_timestamp;
         non_data_timestamps = false;
     }
 
@@ -307,10 +310,13 @@ bool index_state::maybe_index(
         // uint32_t::max+1 would be in the same page on disk ok to return that
         // the prev (offset 0) would be the default start of the disk read
         if (offset_delta <= std::numeric_limits<uint32_t>::max()) {
+            const auto entry_timestamp = running_max_timestamps
+                                           ? max_timestamp
+                                           : last_timestamp;
             add_entry(
               // We know that a segment cannot be > 4GB
               batch_base_offset() - base_offset(),
-              offset_time_index{last_timestamp - base_timestamp, with_offset},
+              offset_time_index{entry_timestamp - base_timestamp, with_offset},
               starting_position_in_file);
             if (should_set_non_data_timestamp) {
                 non_data_timestamps = true;
@@ -330,7 +336,8 @@ fmt::iterator index_state::format_to(fmt::iterator it) const {
       it,
       "{{header_bitflags:{}, base_offset:{}, max_offset:{}, "
       "base_timestamp:{}, max_timestamp:{}, "
-      "batch_timestamps_are_monotonic:{}, with_offset:{}, "
+      "batch_timestamps_are_monotonic:{}, running_max_timestamps:{}, "
+      "with_offset:{}, "
       "non_data_timestamps:{}, broker_timestamp:{}, "
       "num_compactible_records_appended:{}, clean_compact_timestamp:{}, "
       "may_have_tombstone_records:{}, self_compact_timestamp:{}, "
@@ -342,6 +349,7 @@ fmt::iterator index_state::format_to(fmt::iterator it) const {
       base_timestamp,
       max_timestamp,
       batch_timestamps_are_monotonic,
+      running_max_timestamps,
       with_offset,
       non_data_timestamps,
       broker_timestamp,
@@ -376,6 +384,7 @@ void index_state::serde_write(iobuf& out) const {
     write(tmp, self_compact_timestamp);
     write(tmp, may_have_transaction_control_batches);
     write(tmp, may_have_transaction_data_or_fence_batches);
+    write(tmp, running_max_timestamps);
 
     crc::crc32c crc;
     crc_extend_iobuf(crc, tmp);
@@ -507,6 +516,11 @@ void read_nested(
     } else {
         st.may_have_transaction_data_or_fence_batches = true;
     }
+    if (hdr._version >= index_state::running_max_timestamps_version) {
+        read_nested(p, st.running_max_timestamps, 0U);
+    } else {
+        st.running_max_timestamps = false;
+    }
 }
 
 index_state index_state::copy() const { return *this; }
@@ -567,6 +581,7 @@ index_state::index_state(const index_state& o) noexcept
   , max_timestamp(o.max_timestamp)
   , index(o.index.copy())
   , batch_timestamps_are_monotonic(o.batch_timestamps_are_monotonic)
+  , running_max_timestamps(o.running_max_timestamps)
   , with_offset(o.with_offset)
   , non_data_timestamps(o.non_data_timestamps)
   , broker_timestamp(o.broker_timestamp)

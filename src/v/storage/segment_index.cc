@@ -136,10 +136,15 @@ void segment_index::maybe_track(
   size_t filepos) {
     _acc += hdr.size_bytes;
 
-    _state.update_batch_timestamps_are_monotonic(
-      hdr.max_timestamp >= _last_batch_max_timestamp);
-    _last_batch_max_timestamp = std::max(
-      hdr.first_timestamp, hdr.max_timestamp);
+    const auto user_data = path().is_internal_topic()
+                           || hdr.type == model::record_batch_type::raft_data;
+
+    if (user_data) {
+        const auto batch_max_timestamp = model::batch_max_timestamp(hdr);
+        _state.update_batch_timestamps_are_monotonic(
+          batch_max_timestamp >= _last_batch_max_timestamp);
+        _last_batch_max_timestamp = batch_max_timestamp;
+    }
 
     if (
       _state.maybe_index(
@@ -151,8 +156,7 @@ void segment_index::maybe_track(
         hdr.first_timestamp,
         hdr.max_timestamp,
         to_optional_model_timestamp(new_broker_ts),
-        path().is_internal_topic()
-          || hdr.type == model::record_batch_type::raft_data,
+        user_data,
         compaction::is_filterable(hdr.type) ? hdr.record_count : 0)) {
         _acc = 0;
     }

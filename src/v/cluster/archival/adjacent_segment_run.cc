@@ -70,7 +70,9 @@ bool adjacent_segment_run::maybe_add_segment(
             }
             // Move the end of the small segment run forward
             meta.committed_offset = s.committed_offset;
-            meta.max_timestamp = s.max_timestamp;
+            // The merged segment covers every segment in the run, so its
+            // max_timestamp has to bound all of them.
+            meta.max_timestamp = std::max(meta.max_timestamp, s.max_timestamp);
             num_segments++;
             meta.size_bytes += s.size_bytes;
             segments.push_back(remote_path);

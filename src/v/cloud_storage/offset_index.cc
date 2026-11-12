@@ -19,6 +19,8 @@
 
 #include <seastar/util/variant_utils.hh>
 
+#include <limits>
+
 namespace cloud_storage {
 
 offset_index::offset_index(
@@ -193,44 +195,100 @@ offset_index::find_timestamp(model::timestamp upper_bound) {
         return std::nullopt;
     }
 
-    auto search_result = maybe_find_offset(
-      upper_bound.value(), _time_index, _time_offsets);
+    // Entries written by current builders hold the running maximum data
+    // batch timestamp and are monotonic by construction, so the last entry
+    // below the target is a safe scan starting position: no batch at or
+    // before it holds a record with a timestamp at or after the target.
+    // Older indexes recorded each sampled batch's own max timestamp
+    // instead, which is not monotonic when producers use non-monotonic
+    // CreateTime timestamps; a batch above the target may then sit between
+    // entries that are below it (or in an unindexed sampling gap). The
+    // entries are therefore only trusted while they are non-decreasing:
+    // when a decrease is observed the index cannot bound the scan start
+    // and the caller has to scan the segment from the beginning.
+    std::optional<size_t> candidate;
+    size_t ix = 0;
+    int64_t running_max = std::numeric_limits<int64_t>::min();
+    bool monotonic = true;
+    bool stop = false;
+    auto consume = [&](int64_t value) {
+        if (value < running_max) {
+            monotonic = false;
+            return false;
+        }
+        running_max = value;
+        if (value >= upper_bound.value()) {
+            return false;
+        }
+        candidate = ix++;
+        return true;
+    };
 
-    return ss::visit(
-      search_result,
-      [](std::monostate) -> std::optional<find_result> { return std::nullopt; },
-      [](find_result result) -> std::optional<find_result> { return result; },
-      [this](index_value index_result) -> std::optional<find_result> {
-          size_t ix = index_result.ix;
+    decoder_t time_dec(
+      _time_index.get_initial_value(),
+      _time_index.get_row_count(),
+      _time_index.share());
+    std::array<int64_t, buffer_depth> buffer{};
+    while (!stop && time_dec.read(buffer)) {
+        for (auto value : buffer) {
+            if (!consume(value)) {
+                stop = true;
+                break;
+            }
+        }
+        buffer = {};
+    }
+    if (!stop) {
+        for (size_t i = 0; i < (_pos & index_mask); i++) {
+            if (!consume(_time_offsets.at(i))) {
+                break;
+            }
+        }
+    }
 
-          // Decode all offset indices to build up the result.
-          decoder_t rp_dec(
-            _rp_index.get_initial_value(),
-            _rp_index.get_row_count(),
-            _rp_index.copy());
-          auto rp_offset = _fetch_ix(std::move(rp_dec), ix);
-          vassert(rp_offset.has_value(), "Inconsistent index state");
+    if (!monotonic || !candidate.has_value()) {
+        return std::nullopt;
+    }
 
-          decoder_t kaf_dec(
-            _kaf_index.get_initial_value(),
-            _kaf_index.get_row_count(),
-            _kaf_index.copy());
-          auto kaf_offset = _fetch_ix(std::move(kaf_dec), ix);
-          vassert(kaf_offset.has_value(), "Inconsistent index state");
+    const size_t num_encoded = static_cast<size_t>(_time_index.get_row_count())
+                               * buffer_depth;
+    if (*candidate >= num_encoded) {
+        // The candidate is in the write buffer that has not been
+        // compressed yet.
+        auto i = *candidate - num_encoded;
+        return offset_index::find_result{
+          .rp_offset = model::offset(_rp_offsets.at(i)),
+          .kaf_offset = kafka::offset(_kaf_offsets.at(i)),
+          .file_pos = _file_offsets.at(i)};
+    }
 
-          foffset_decoder_t file_dec(
-            _file_index.get_initial_value(),
-            _file_index.get_row_count(),
-            _file_index.copy(),
-            delta_delta_t(_min_file_pos_step));
-          auto file_pos = _fetch_ix(std::move(file_dec), ix);
-          vassert(file_pos.has_value(), "Inconsistent index state");
+    // Decode all offset indices to build up the result.
+    decoder_t rp_dec(
+      _rp_index.get_initial_value(),
+      _rp_index.get_row_count(),
+      _rp_index.share());
+    auto rp_offset = _fetch_ix(std::move(rp_dec), *candidate);
+    vassert(rp_offset.has_value(), "Inconsistent index state");
 
-          return offset_index::find_result{
-            .rp_offset = model::offset(*rp_offset),
-            .kaf_offset = kafka::offset(*kaf_offset),
-            .file_pos = *file_pos};
-      });
+    decoder_t kaf_dec(
+      _kaf_index.get_initial_value(),
+      _kaf_index.get_row_count(),
+      _kaf_index.share());
+    auto kaf_offset = _fetch_ix(std::move(kaf_dec), *candidate);
+    vassert(kaf_offset.has_value(), "Inconsistent index state");
+
+    foffset_decoder_t file_dec(
+      _file_index.get_initial_value(),
+      _file_index.get_row_count(),
+      _file_index.share(),
+      delta_delta_t(_min_file_pos_step));
+    auto file_pos = _fetch_ix(std::move(file_dec), *candidate);
+    vassert(file_pos.has_value(), "Inconsistent index state");
+
+    return offset_index::find_result{
+      .rp_offset = model::offset(*rp_offset),
+      .kaf_offset = kafka::offset(*kaf_offset),
+      .file_pos = *file_pos};
 }
 
 offset_index::coarse_index_t offset_index::build_coarse_index(

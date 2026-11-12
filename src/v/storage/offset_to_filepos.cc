@@ -116,7 +116,16 @@ ss::future<result<offset_to_file_pos_result>> convert_begin_offset_to_file_pos(
                 }
 
                 offset_found = true;
-                ts = hdr.first_timestamp;
+                // Only a data batch may describe where the range begins: a
+                // configuration or archival metadata batch carries walltime,
+                // which on a topic whose data sits far from walltime would
+                // describe a time the range does not cover - and one that can
+                // land above the range's own maximum. Leaving the caller's
+                // seed, the segment's own data-only base, under-reports
+                // instead, which is the safe direction.
+                if (hdr.type == model::record_batch_type::raft_data) {
+                    ts = hdr.first_timestamp;
+                }
                 return batch_consumer::consume_result::stop_parser;
             });
       });
@@ -188,27 +197,24 @@ ss::future<result<offset_to_file_pos_result>> convert_end_offset_to_file_pos(
 
     bool offset_found = false;
     model::timestamp ts = max_timestamp;
+    // Running maximum over the data batches inside the range.
+    model::timestamp max_data_ts = model::timestamp::missing();
 
     auto reader_handle = co_await segment->reader().data_stream(scan_from);
 
     bool offset_inside_batch = false;
     auto res = co_await storage::internal::with_segment_reader_handle(
       std::move(reader_handle),
-      [&max_timestamp,
-       &end_inclusive,
-       &fo,
-       &offset_found,
-       &ts,
-       &offset_inside_batch](segment_reader_handle& handle) {
+      [&end_inclusive, &fo, &offset_found, &max_data_ts, &offset_inside_batch](
+        segment_reader_handle& handle) {
           auto ostr = utils::make_null_output_stream();
           return transform_stream(
             handle.take_stream(),
             std::move(ostr),
             [off_end = end_inclusive,
              &fo,
-             &ts,
+             &max_data_ts,
              &offset_found,
-             &max_timestamp,
              &offset_inside_batch](model::record_batch_header& hdr) {
                 if (hdr.last_offset() <= off_end) {
                     // If last offset of the record batch is within the range
@@ -216,9 +222,13 @@ ss::future<result<offset_to_file_pos_result>> convert_end_offset_to_file_pos(
                     // total size).
                     fo = hdr.last_offset();
 
+                    if (hdr.type == model::record_batch_type::raft_data) {
+                        max_data_ts = std::max(
+                          max_data_ts, model::batch_max_timestamp(hdr));
+                    }
+
                     if (hdr.last_offset() == off_end) {
                         offset_found = true;
-                        ts = hdr.max_timestamp;
                     }
 
                     return batch_consumer::consume_result::accept_batch;
@@ -230,12 +240,24 @@ ss::future<result<offset_to_file_pos_result>> convert_end_offset_to_file_pos(
 
                 offset_found = true;
 
-                if (ts == max_timestamp) {
-                    ts = hdr.max_timestamp;
-                }
                 return batch_consumer::consume_result::stop_parser;
             });
       });
+
+    // The scan starts at an index entry, so data batches before it are never
+    // visited and the largest timestamp in the range may be one of them. Bound
+    // the result by what the index knows about everything up to that entry:
+    // with a running-max time column that is the prefix maximum, and without
+    // one the segment's own data-only maximum. Note the entry sits near the
+    // range's end, so neither is a tight bound - both can reach past the range.
+    // That is the safe direction for a query, though it does make a segment
+    // look newer than its data to time-based retention; under-reporting would
+    // make a timequery pass over the segment holding the first matching record.
+    const auto prefix_max = ix_end
+                                && segment->index().has_running_max_timestamps()
+                              ? ix_end->timestamp
+                              : segment->index().max_timestamp();
+    ts = std::max(max_data_ts, prefix_max);
 
     if (res.has_error()) {
         vlog(stlog.error, "Can't read segment file, error: {}", res.error());

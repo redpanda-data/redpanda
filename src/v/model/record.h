@@ -34,6 +34,7 @@
 #include <boost/iterator/counting_iterator.hpp>
 #include <boost/range/numeric.hpp>
 
+#include <algorithm>
 #include <bitset>
 #include <compare>
 #include <cstdint>
@@ -611,6 +612,18 @@ struct record_batch_header
 
     fmt::iterator format_to(fmt::iterator it) const;
 };
+
+/// The largest timestamp the batch's records carry.
+///
+/// Some clients leave 'max_timestamp' unset on a batch holding a single
+/// record, so the field cannot be folded into a maximum on its own: taken raw
+/// it is 'missing()' rather than any real time, which reads as a step
+/// backwards and drags a running maximum below the data it is meant to bound.
+/// Prefer this over 'hdr.max_timestamp' wherever a batch contributes to a
+/// timestamp bound.
+inline timestamp batch_max_timestamp(const record_batch_header& hdr) {
+    return std::max(hdr.first_timestamp, hdr.max_timestamp);
+}
 
 using tx_seq = named_type<int64_t, struct tm_tx_seq>;
 using producer_id = named_type<int64_t, struct producer_identity_id>;
