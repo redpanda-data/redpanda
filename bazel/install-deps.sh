@@ -50,6 +50,21 @@ fedora_deps=(
   sudo
 )
 
+arch_deps=(
+  autoconf
+  automake
+  bison
+  elfutils
+  gettext
+  git
+  libtool
+  make
+  perl
+  pkgconf
+  sudo
+  xorg-util-macros
+)
+
 case "$ID" in
   ubuntu | debian | pop)
     apt-get update
@@ -62,6 +77,12 @@ case "$ID" in
     dnf install -y "${fedora_deps[@]}"
     if [[ $CLEAN_PKG_CACHE == true ]]; then
       dnf clean all
+    fi
+    ;;
+  arch)
+    pacman -Sy --needed --noconfirm "${arch_deps[@]}"
+    if [[ $CLEAN_PKG_CACHE == true ]]; then
+      rm -rf /var/cache/pacman/pkg/* /var/lib/pacman/sync/*
     fi
     ;;
   *)
