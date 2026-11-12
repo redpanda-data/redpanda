@@ -160,6 +160,7 @@ func executeBundle(ctx context.Context, bp bundleParams) error {
 		saveResourceUsageData(ps, bp.y),
 		saveSingleAdminAPICalls(ctx, ps, bp.fs, bp.p, addrs, bp.cpuProfilerWait),
 		saveMetricsAPICalls(ctx, ps, bp.fs, bp.p, addrs, bp.metricsInterval, bp.metricsSampleCount),
+		saveSelfIdentification(ctx, ps, bp.fs, bp.p, ""),
 		saveStartupLog(ps, bp.y),
 		saveSlabInfo(ps),
 		saveSocketData(ctx, ps),
