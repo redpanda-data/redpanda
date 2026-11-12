@@ -80,6 +80,13 @@ class leader_balancer {
      */
     static constexpr clock_type::duration node_status_changed_delay = 10s;
 
+    /*
+     * when the balancer goes idle (nothing to balance, no in-flight changes),
+     * it registers for global leadership change notifications. this debounce
+     * delay coalesces rapid-fire leadership changes into a single balance tick.
+     */
+    static constexpr clock_type::duration idle_wakeup_debounce_delay = 5s;
+
 public:
     leader_balancer(
       topic_table&,
@@ -148,6 +155,9 @@ private:
     void check_register_leadership_change_notification();
     void check_unregister_leadership_change_notification();
 
+    void enter_idle();
+    void exit_idle();
+
     void trigger_balance();
     ss::future<> balance_fiber();
     ss::future<ss::stop_iteration> balance();
@@ -169,21 +179,11 @@ private:
     /*
      * the balancer will go idle in different scenarios such as losing raft0
      * leadership, or when leadership balance cannot be improved.  for good
-     * responsivenss, sub-system upcalls may wake-up the balancer when
-     * leadership is regained or some threshold set of leadership change is
-     * identified. as a defensive measure, we set an idle timeout to run a
-     * balancing tick at low frequency in case some upcall is missed.
-     *
-     * TODO:
-     *   - raft0 leadership upcall is active, but we require polling to wake-up
-     *   the balancer when it has gone idel because balancing completed. for
-     *   this we need ot add an upcall notification mechanism to the leaders
-     *   table / dissemination framework.
-     *
-     *      See: https://github.com/redpanda-data/redpanda/issues/2031
-     *
-     *   Once this item is complete it would also make sense to increase this
-     *   timeout to something larger like 5 minutes.
+     * responsiveness, sub-system upcalls wake-up the balancer when leadership
+     * is regained, a global leadership change is detected while idle, or a
+     * node membership change occurs. as a defensive measure, we set an idle
+     * timeout to run a balancing tick at low frequency in case some upcall is
+     * missed.
      */
     config::binding<std::chrono::milliseconds> _idle_timeout;
 
@@ -232,7 +232,9 @@ private:
     cluster::notification_id_type _leader_notify_handle;
     std::optional<cluster::notification_id_type>
       _leadership_change_notify_handle;
+    std::optional<cluster::notification_id_type> _idle_leadership_notify_handle;
     cluster::notification_id_type _maintenance_state_notify_handle;
+    cluster::notification_id_type _members_updated_notify_handle;
     cluster::notification_id_type _topic_deltas_handle;
     cluster::notification_id_type _health_monitor_handle;
     ss::gate _gate;

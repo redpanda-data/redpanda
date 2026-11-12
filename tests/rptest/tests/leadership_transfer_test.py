@@ -515,6 +515,50 @@ class AutomaticLeadershipBalancingTest(RedpandaTest):
             )
 
 
+class LeaderBalancerIdleTest(RedpandaTest):
+    """
+    Verify the leader balancer enters an idle state when leadership is
+    already balanced, avoiding repeated index rebuilds and health report
+    fetches.
+    """
+
+    topics = (TopicSpec(partition_count=9, replication_factor=3),)
+
+    @cluster(num_nodes=3)
+    def test_enters_idle_when_balanced(self):
+        """
+        With a small, balanced cluster the leader balancer should complete
+        its tick, find nothing to do, and enter idle — confirmed by the
+        "entering idle" log message on the controller leader.
+        """
+
+        def all_leaders_elected():
+            admin = Admin(self.redpanda)
+            partitions = admin.get_partitions(topic=self.topic)
+            return len(partitions) == 9 and all(
+                p.get("leader_id", -1) >= 0 for p in partitions
+            )
+
+        wait_until(
+            all_leaders_elected,
+            timeout_sec=30,
+            backoff_sec=2,
+            err_msg="Not all partition leaders elected",
+        )
+
+        controller = self.redpanda.controller()
+        assert controller is not None, "No controller leader found"
+
+        wait_until(
+            lambda: self.redpanda.search_log_node(
+                controller, "leader balancer entering idle"
+            ),
+            timeout_sec=90,
+            backoff_sec=5,
+            err_msg="Leader balancer did not enter idle state",
+        )
+
+
 class Ordering(str, Enum):
     ordered = "ordered"
     unordered = "unordered"
