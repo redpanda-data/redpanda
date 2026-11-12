@@ -710,7 +710,7 @@ apply_local(const cluster_config_delta_cmd_data& data, bool silent) {
             // so catch-all as an invalid property value.
             if (!silent) {
                 vlog(
-                  clusterlog.warn,
+                  clusterlog.error,
                   "Unexpected error setting property {}={}: {}",
                   u.key,
                   property.format_raw(val_yaml),
