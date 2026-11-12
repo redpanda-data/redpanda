@@ -99,6 +99,12 @@ func StripFlags(args []string, fs *pflag.FlagSet, long []string, short []string)
 		k := kv[0]
 
 		switch {
+		case arg == "-":
+			// A lone "-" is stdin by convention, either a positional or the
+			// value of a plugin flag (--file -), never a flag. It carries no
+			// short flags, so the short-flag case below would drop it.
+			keep = append(keep, arg)
+
 		case strings.HasPrefix(k, "--"):
 			k = k[2:]
 			f := fs.Lookup(k)
