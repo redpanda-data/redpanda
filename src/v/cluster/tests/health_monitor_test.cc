@@ -33,6 +33,8 @@
 #include <unordered_set>
 #include <vector>
 
+using namespace std::chrono_literals;
+
 static cluster::cluster_report_filter get_all{};
 
 void check_reports_the_same(
@@ -326,6 +328,113 @@ FIXTURE_TEST(test_alive_status, cluster_test_fixture) {
                  model::node_id(1))
                == cluster::alive::no;
     }).get();
+}
+
+struct health_monitor_restart_fixture : public cluster_test_fixture {
+    static constexpr model::node_id r_id{1};
+
+    std::vector<application*> _non_restarted_nodes;
+
+    void bring_up_cluster_and_restart_r(bool wipe_r_data) {
+        for (int i = 0; i < 3; ++i) {
+            auto* app = create_node_application(model::node_id{i});
+            if (model::node_id{i} != r_id) {
+                _non_restarted_nodes.push_back(app);
+            }
+        }
+        wait_for_all_members(10s).get();
+
+        auto has_all_reports = [](application* node) {
+            return node->controller->get_health_monitor()
+              .local()
+              .get_cluster_health(
+                get_all, cluster::force_refresh::yes, model::no_timeout)
+              .then([](result<cluster::cluster_health_report> res) {
+                  return res.has_value()
+                         && res.value().node_reports.size() == 3;
+              });
+        };
+        for (auto* node : _non_restarted_nodes) {
+            tests::cooperative_spin_wait_with_timeout(10s, [&] {
+                return has_all_reports(node);
+            }).get();
+        }
+
+        remove_node_application(r_id);
+        if (wipe_r_data) {
+            std::filesystem::remove_all(
+              std::filesystem::path(ssx::sformat("{}.{}", _base_dir, r_id())));
+        }
+        create_node_application(r_id);
+        wait_for_all_members(10s).get();
+    }
+
+    model::topic_namespace create_post_restart_topic(ss::sstring name) {
+        model::topic_namespace tp(
+          model::kafka_namespace, model::topic(std::move(name)));
+        create_topic(tp, 1, 3).get();
+        return tp;
+    }
+
+    void wait_restarted_node_seen_with_topic(
+      const model::topic_namespace& tp, ss::lowres_clock::duration timeout) {
+        tests::cooperative_spin_wait_with_timeout(timeout, [&] {
+            return _non_restarted_nodes.front()
+              ->controller->get_health_monitor()
+              .local()
+              .get_cluster_health(
+                get_all, cluster::force_refresh::yes, model::no_timeout)
+              .then([&](result<cluster::cluster_health_report> res) {
+                  if (!res.has_value()) {
+                      return false;
+                  }
+                  auto& h = res.value();
+                  auto it = std::ranges::find(
+                    h.node_reports, r_id, &cluster::node_health_report::id);
+                  return it != h.node_reports.end()
+                         && (*it)->topics.contains(tp);
+              });
+        }).get();
+    }
+};
+
+// A peer's health report for a restarted node must not stay stale just because
+// the restarted node's in-memory version counter reset below the pre-restart
+// value. Scenario:
+//   1. Nodes A, R, B come up and get report from R (version >= 1).
+//   2. R restarts. Its in-memory health version counter resets to 1,
+//      while peers still remember the pre-restart version.
+//   3. A new topic is created post-restart; R is part of its replica set.
+//   4. A forces a cluster health refresh. A must observe R's post-restart
+//      topic set, independent of whether the data reaches A directly from
+//      R or piggybacked via B.
+FIXTURE_TEST(abr_restart_scenario, health_monitor_restart_fixture) {
+    bring_up_cluster_and_restart_r(/*wipe_r_data=*/false);
+    auto tp_post = create_post_restart_topic("post-restart-topic");
+    wait_restarted_node_seen_with_topic(tp_post, 10s);
+}
+
+// Recovery path: data-dir wipe of R reuses the same node_id but starts the
+// kvstore-backed boot id at 1, which can be lower than what peers stored
+// before the wipe. (incarnation, version) ordering then locks in stale data
+// indefinitely. drop_health_cache (the admin recovery hook) is the way out:
+// every peer drops its remote stores and refuses repopulation for the
+// suppress window; once the window expires, fresh data takes over because
+// the stores are empty and any non-default version wins.
+FIXTURE_TEST(
+  wipe_recovery_via_drop_health_cache, health_monitor_restart_fixture) {
+    bring_up_cluster_and_restart_r(/*wipe_r_data=*/true);
+    auto tp_post = create_post_restart_topic("post-wipe-topic");
+
+    constexpr auto suppress = 1s;
+    for (auto* node : _non_restarted_nodes) {
+        node->controller->get_health_monitor()
+          .local()
+          .drop_health_cache(suppress)
+          .get();
+    }
+
+    wait_restarted_node_seen_with_topic(tp_post, 15s);
 }
 
 // tests below are non-rp-fixture unit tests but we don't want to add another

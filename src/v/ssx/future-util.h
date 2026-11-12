@@ -550,6 +550,23 @@ seastar::future<T...> with_timeout_abortable(
     return result;
 }
 
+/// do_with_fwd() is like seastar::do_with(), but only moves rvalue reference
+/// arguments into managed storage. Lvalue references are passed through as-is,
+/// trusting the caller to ensure their lifetime exceeds that of the returned
+/// future.
+///
+/// This avoids unnecessary copies when passing references to objects whose
+/// lifetime is already guaranteed (e.g. member variables, gate-held state).
+template<typename T, typename Func>
+inline auto do_with_fwd(T&& val, Func&& func) {
+    if constexpr (std::is_lvalue_reference_v<T>) {
+        return seastar::futurize_invoke(
+          std::forward<Func>(func), std::forward<T>(val));
+    } else {
+        return seastar::do_with(std::forward<T>(val), std::forward<Func>(func));
+    }
+}
+
 // Create a ready future with template deduction.
 //
 // In most cases you should not need specify a template parameter using this

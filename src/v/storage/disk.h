@@ -56,7 +56,9 @@ struct disk
     unsigned long int fsid;
 
     fmt::iterator format_to(fmt::iterator it) const;
-    friend bool operator==(const disk&, const disk&) = default;
+    // fsid is excluded: it is not serialized, so it cannot survive a round trip
+    // and comparing it would break equality across the wire.
+    friend bool operator==(const disk&, const disk&);
 };
 
 } // namespace storage

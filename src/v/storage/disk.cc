@@ -17,6 +17,11 @@
 
 namespace storage {
 
+bool operator==(const disk& a, const disk& b) {
+    return a.path == b.path && a.free == b.free && a.total == b.total
+           && a.alert == b.alert;
+}
+
 fmt::iterator disk::format_to(fmt::iterator it) const {
     return fmt::format_to(
       it,

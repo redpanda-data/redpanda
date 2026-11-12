@@ -8,6 +8,7 @@
 // by the Apache License, Version 2.0
 
 #include "cluster/health_monitor_types.h"
+#include "serde/async.h"
 
 #include <seastar/testing/perf_tests.hh>
 
@@ -127,4 +128,198 @@ PERF_TEST(node_health_report, deserialize_many_topics) {
 
 PERF_TEST(node_health_report, deserialize_many_topics_replicated_partitions) {
     bench_deserialize_node_health_report(50000, 3);
+}
+
+// --- New dissemination types benchmarks ---
+
+namespace {
+
+using namespace cluster::health;
+
+topic_partition_data_map
+make_data_map(size_t num_topics, size_t partitions_per_topic) {
+    topic_partition_data_map data;
+    for (size_t t = 0; t < num_topics; ++t) {
+        auto tp_ns = model::topic_namespace(
+          model::ns("foo"), model::topic("bar" + std::to_string(t)));
+        chunked_hash_map<model::partition_id, partition_data> parts;
+        for (size_t p = 0; p < partitions_per_topic; ++p) {
+            partition_data pd;
+            pd.size_bytes = 100000 + p;
+            pd.high_watermark = kafka::offset(1000 + p);
+            pd.reclaimable_size_bytes = 50;
+            pd.cloud_topic_max_gc_eligible_epoch = 10;
+            parts.emplace(model::partition_id(p), pd);
+        }
+        data.emplace(tp_ns, std::move(parts));
+    }
+    return data;
+}
+
+topic_partition_metadata_map
+make_metadata_map(size_t num_topics, size_t partitions_per_topic) {
+    topic_partition_metadata_map meta;
+    for (size_t t = 0; t < num_topics; ++t) {
+        auto tp_ns = model::topic_namespace(
+          model::ns("foo"), model::topic("bar" + std::to_string(t)));
+        chunked_hash_map<model::partition_id, partition_metadata> parts;
+        for (size_t p = 0; p < partitions_per_topic; ++p) {
+            partition_metadata pm;
+            pm.term = model::term_id(1);
+            pm.leader_id = model::node_id(1);
+            pm.revision_id = model::revision_id(1);
+            pm.shard = 0;
+            if (p % 10 == 0) {
+                pm.under_replicated_replicas = 2;
+                pm.followers_stats = cluster::followers_stats{
+                  .in_sync = 2,
+                  .out_of_sync = {model::node_id(1)},
+                  .down = {model::node_id(2)}};
+            }
+            parts.emplace(model::partition_id(p), pm);
+        }
+        meta.emplace(tp_ns, std::move(parts));
+    }
+    return meta;
+}
+
+topic_partition_metadata_diff
+make_metadata_diff(size_t num_topics, size_t partitions_per_topic) {
+    topic_partition_metadata_diff diff;
+    for (size_t t = 0; t < num_topics; ++t) {
+        auto tp_ns = model::topic_namespace(
+          model::ns("foo"), model::topic("bar" + std::to_string(t)));
+        partition_metadata_diff_list parts;
+        // ~5% of partitions have metadata changes
+        for (size_t p = 0; p < partitions_per_topic; ++p) {
+            if (p % 20 == 0) {
+                partition_metadata pm;
+                pm.term = model::term_id(2);
+                pm.leader_id = model::node_id(3);
+                pm.revision_id = model::revision_id(1);
+                pm.shard = 1;
+                parts.emplace_back(model::partition_id(p), std::move(pm));
+            }
+        }
+        if (!parts.empty()) {
+            diff.emplace_back(tp_ns, std::move(parts));
+        }
+    }
+    return diff;
+}
+
+health_snapshot make_snapshot(size_t num_topics, size_t partitions_per_topic) {
+    health_snapshot snap;
+    snap.src_timestamp = approx_timestamp{model::timeout_clock::now()};
+    snap.local_state.redpanda_version = cluster::node::application_version(
+      "v26.2.1");
+    snap.local_state.logical_version = cluster::cluster_version(10);
+    snap.local_state.uptime = std::chrono::milliseconds(100);
+    snap.local_state.data_disk.path = "/var/lib/redpanda/data";
+    snap.local_state.data_disk.total = 1000000000;
+    snap.local_state.data_disk.free = 500000000;
+    snap.data = make_data_map(num_topics, partitions_per_topic);
+    return snap;
+}
+
+diff_entry_serde
+make_diff_serde(size_t num_topics, size_t partitions_per_topic) {
+    diff_entry_serde d;
+    d.start = node_health_version(1);
+    d.end = node_health_version(2);
+    d.snapshot = value_or_foreign<health_snapshot>(
+      make_snapshot(num_topics, partitions_per_topic));
+    d.metadata_diff = value_or_foreign<topic_partition_metadata_diff>(
+      make_metadata_diff(num_topics, partitions_per_topic));
+    return d;
+}
+
+versioned_report_serde
+make_report_serde(size_t num_topics, size_t partitions_per_topic) {
+    versioned_report_serde r;
+    r.version = node_health_version(1);
+    r.snapshot = value_or_foreign<health_snapshot>(
+      make_snapshot(num_topics, partitions_per_topic));
+    r.metadata = value_or_foreign<topic_partition_metadata_map>(
+      make_metadata_map(num_topics, partitions_per_topic));
+    return r;
+}
+
+struct dissemination_bench {};
+
+ss::future<> bench_serialize_diff(size_t num_topics, size_t parts_per_topic) {
+    auto d = make_diff_serde(num_topics, parts_per_topic);
+    auto buf = iobuf();
+    perf_tests::start_measuring_time();
+    co_await serde::write_async(buf, std::move(d));
+    perf_tests::do_not_optimize(buf);
+    perf_tests::stop_measuring_time();
+}
+
+ss::future<> bench_deserialize_diff(size_t num_topics, size_t parts_per_topic) {
+    auto d = make_diff_serde(num_topics, parts_per_topic);
+    auto buf = iobuf();
+    co_await serde::write_async(buf, std::move(d));
+    auto parser = iobuf_parser{std::move(buf)};
+    perf_tests::start_measuring_time();
+    auto result = co_await serde::read_async_nested<diff_entry_serde>(
+      parser, 0);
+    perf_tests::do_not_optimize(result);
+    perf_tests::stop_measuring_time();
+}
+
+ss::future<> bench_serialize_report(size_t num_topics, size_t parts_per_topic) {
+    auto r = make_report_serde(num_topics, parts_per_topic);
+    auto buf = iobuf();
+    perf_tests::start_measuring_time();
+    co_await serde::write_async(buf, std::move(r));
+    perf_tests::do_not_optimize(buf);
+    perf_tests::stop_measuring_time();
+}
+
+ss::future<>
+bench_deserialize_report(size_t num_topics, size_t parts_per_topic) {
+    auto r = make_report_serde(num_topics, parts_per_topic);
+    auto buf = iobuf();
+    co_await serde::write_async(buf, std::move(r));
+    auto parser = iobuf_parser{std::move(buf)};
+    perf_tests::start_measuring_time();
+    auto result = co_await serde::read_async_nested<versioned_report_serde>(
+      parser, 0);
+    perf_tests::do_not_optimize(result);
+    perf_tests::stop_measuring_time();
+}
+
+} // namespace
+
+PERF_TEST_C(dissemination_bench, serialize_diff_many_partitions) {
+    co_await bench_serialize_diff(10, 5000);
+}
+
+PERF_TEST_C(dissemination_bench, serialize_diff_many_topics) {
+    co_await bench_serialize_diff(50000, 1);
+}
+
+PERF_TEST_C(dissemination_bench, deserialize_diff_many_partitions) {
+    co_await bench_deserialize_diff(10, 5000);
+}
+
+PERF_TEST_C(dissemination_bench, deserialize_diff_many_topics) {
+    co_await bench_deserialize_diff(50000, 1);
+}
+
+PERF_TEST_C(dissemination_bench, serialize_report_many_partitions) {
+    co_await bench_serialize_report(10, 5000);
+}
+
+PERF_TEST_C(dissemination_bench, serialize_report_many_topics) {
+    co_await bench_serialize_report(50000, 1);
+}
+
+PERF_TEST_C(dissemination_bench, deserialize_report_many_partitions) {
+    co_await bench_deserialize_report(10, 5000);
+}
+
+PERF_TEST_C(dissemination_bench, deserialize_report_many_topics) {
+    co_await bench_deserialize_report(50000, 1);
 }

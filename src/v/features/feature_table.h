@@ -67,6 +67,7 @@ enum class feature : std::uint64_t {
     controller_snapshots = 1ULL << 23U,
     cloud_storage_manifest_format_v2 = 1ULL << 24U,
     force_partition_reconfiguration = 1ULL << 26U,
+    health_dissemination = 1ULL << 28U,
     delete_records = 1ULL << 29U,
     raft_coordinated_recovery = 1ULL << 31U,
     cloud_storage_scrubbing = 1ULL << 32U,
@@ -593,6 +594,12 @@ inline constexpr std::array feature_schema{
     release_version::v26_2_1,
     "fetch_controller_snapshot_rpc",
     feature::fetch_controller_snapshot_rpc,
+    feature_spec::available_policy::always,
+    feature_spec::prepare_policy::always},
+  feature_spec{
+    release_version::v26_3_1,
+    "health_dissemination",
+    feature::health_dissemination,
     feature_spec::available_policy::always,
     feature_spec::prepare_policy::always},
 };
