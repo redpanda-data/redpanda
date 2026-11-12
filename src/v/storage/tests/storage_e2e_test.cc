@@ -3508,6 +3508,110 @@ TEST_F(storage_test_fixture, test_simple_compaction_rebuild_index) {
     linear_int_kv_batch_generator::validate_post_compaction(std::move(batches));
 };
 
+namespace {
+model::record_batch make_kv_batch(std::string_view key, std::string_view val) {
+    storage::record_batch_builder b(
+      model::record_batch_type::raft_data, model::offset(0));
+    b.add_raw_kv(iobuf::from(key), iobuf::from(val));
+    auto batch = std::move(b).build();
+    batch.set_term(model::term_id(1));
+    return batch;
+}
+} // namespace
+
+// Regression test for record loss on compacted topics when a compaction
+// index update fails for a batch whose data write succeeded.
+//
+// By the time segment::do_append observes the index failure, the batch is
+// already visible in the log, and raft will not re-append it (a retried
+// append entries request skip-matches batches that are already present). The
+// compaction index writer stays live, keeps indexing later batches and seals
+// with a valid footer. Unless the index is marked incomplete (forcing a
+// rebuild from segment data), compaction trusts it and silently drops the
+// unindexed batch's records - even when they hold the newest value of a key.
+TEST_F(storage_test_fixture, unindexed_visible_batch_is_not_compacted) {
+    if (!finjector::honey_badger::is_enabled()) {
+        GTEST_SKIP() << "Failure injection is only enabled in debug mode.";
+        return;
+    }
+    storage::log_manager mgr = make_log_manager();
+    auto deferred = ss::defer([&mgr]() mutable { mgr.stop().get(); });
+
+    auto ntp = model::ntp("kafka", "compacted", 0);
+    storage::ntp_config::default_overrides overrides;
+    overrides.cleanup_policy_bitflags
+      = model::cleanup_policy_bitflags::compaction;
+    storage::ntp_config ntp_cfg(
+      ntp,
+      mgr.config().base_dir,
+      std::make_unique<storage::ntp_config::default_overrides>(overrides));
+    auto log = manage_log(mgr, std::move(ntp_cfg));
+    ss::abort_source as;
+    log->start(std::nullopt, as).get();
+
+    auto append = [&](std::string_view key, std::string_view val) {
+        auto appender = log->make_appender(
+          storage::log_append_config{storage::log_append_config::fsync::no});
+        auto b = make_kv_batch(key, val);
+        appender(b).get();
+        return appender.end_of_stream().get();
+    };
+
+    // offsets 0, 1: indexed normally
+    append("k1", "v1");
+    append("k2", "v2");
+
+    // offset 2: the newest value of k1; its data write succeeds but the
+    // compaction index update fails, and (like a raft retry, which
+    // skip-matches batches already present in the log) it is not re-appended
+    log->segments().back()->fail_next_compaction_index_batch();
+    EXPECT_THROW(append("k1", "v3"), std::runtime_error);
+    ASSERT_EQ(log->offsets().dirty_offset, model::offset(2));
+
+    // offset 3: the index writer is still live and keeps indexing
+    append("k3", "v4");
+
+    // seal the segment (closes the compaction index with a valid footer)
+    log->force_roll().get();
+
+    storage::housekeeping_config cfg(
+      model::timestamp::max(),
+      std::nullopt,
+      model::offset::max(),
+      model::offset::max(),
+      model::offset::max(),
+      std::nullopt,
+      std::nullopt,
+      std::chrono::milliseconds{0},
+      as);
+    log->housekeeping(cfg).get();
+    ASSERT_TRUE(
+      log->segments().front()->index().self_compact_timestamp().has_value());
+
+    // collect the surviving records
+    auto batches = read_and_validate_all_batches(log);
+    std::map<ss::sstring, ss::sstring> kvs;
+    for (auto& b : batches) {
+        b.for_each_record([&kvs](model::record r) {
+            auto to_string = [](iobuf buf) {
+                auto bytes = iobuf_to_bytes(buf);
+                return ss::sstring(
+                  reinterpret_cast<const char*>(bytes.data()), bytes.size());
+            };
+            kvs[to_string(r.key().copy())] = to_string(r.value().copy());
+        });
+    }
+
+    // k1's newest value lives in the unindexed batch at offset 2 and was
+    // never superseded: compaction must not remove it
+    ASSERT_TRUE(kvs.contains("k1"));
+    EXPECT_EQ(kvs["k1"], "v3")
+      << "compaction dropped the newest value of k1 (the unindexed batch) "
+         "and kept an older one";
+    EXPECT_EQ(kvs["k2"], "v2");
+    EXPECT_EQ(kvs["k3"], "v4");
+}
+
 struct compact_test_args {
     model::offset max_compact_offs;
     long num_compactable_msg;

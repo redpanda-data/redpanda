@@ -13,6 +13,7 @@
 #include "base/vlog.h"
 #include "compaction/utils.h"
 #include "config/configuration.h"
+#include "finjector/hbadger.h"
 #include "model/batch_compression.h"
 #include "ssx/future-util.h"
 #include "storage/batch_cache.h"
@@ -505,6 +506,13 @@ ss::future<> segment::compaction_index_batch(const model::record_batch& b) {
         co_return;
     }
 
+    if constexpr (finjector::honey_badger::is_enabled()) {
+        if (unlikely(std::exchange(_fail_next_compaction_index_batch, false))) {
+            co_await ss::coroutine::return_exception(
+              std::runtime_error("injected compaction index batch failure"));
+        }
+    }
+
     if (!b.compressed()) {
         co_return co_await do_compaction_index_batch(b);
     }
@@ -633,11 +641,42 @@ ss::future<append_result> segment::do_append(const model::record_batch& b) {
           auto index_err = std::move(index_fut).get_exception();
           vlog(
             stlog.error,
-            "segment::append index: {}. ignoring append: {}",
+            "segment::append: compaction index update failed: {}. batch {} "
+            "remains in the log; marking compaction index incomplete for "
+            "rebuild",
             index_err,
             ret);
-          return ss::make_exception_future<append_result>(index_err);
+          // The data write succeeded but the compaction index did not. Left as
+          // is, the compaction index can seal cleanly while permanently
+          // missing this batch, and self compaction would silently drop its
+          // records (since self compaction relies on the entries within the
+          // compaction index for deduplication). Mark the index incomplete so
+          // that compaction rebuilds it from the segment data instead.
+          return close_compaction_index_as_incomplete()
+            .handle_exception([](std::exception_ptr e) {
+                vlog(
+                  stlog.warn,
+                  "failed to close compaction index as incomplete: {}",
+                  e);
+            })
+            .then([index_err]() mutable {
+                return ss::make_exception_future<append_result>(index_err);
+            });
       });
+}
+
+ss::future<> segment::close_compaction_index_as_incomplete() {
+    if (!has_compaction_index()) {
+        co_return;
+    }
+    auto compacted_index
+      = std::exchange(_compaction_index, std::nullopt).value();
+    compacted_index->set_flag(compacted_index::footer_flags::incomplete);
+    vlog(
+      gclog.info,
+      "Marking compaction index {} as incomplete",
+      compacted_index->filename());
+    co_await compacted_index->close();
 }
 
 ss::future<append_result> segment::append(const model::record_batch& b) {
@@ -649,15 +688,7 @@ ss::future<append_result> segment::append(const model::record_batch& b) {
             // be aborted in the next segment. We mark this index as
             // `incomplete` and rebuild it later from scratch during compaction.
             try {
-                auto compacted_index
-                  = std::exchange(_compaction_index, std::nullopt).value();
-                compacted_index->set_flag(
-                  compacted_index::footer_flags::incomplete);
-                vlog(
-                  gclog.info,
-                  "Marking compaction index {} as incomplete",
-                  compacted_index->filename());
-                co_await compacted_index->close();
+                co_await close_compaction_index_as_incomplete();
             } catch (...) {
                 co_return ss::coroutine::exception(std::current_exception());
             }
