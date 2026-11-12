@@ -16,6 +16,7 @@ on:
       - 'proto/redpanda/core/admin/**'
       - 'proto/redpanda/core/common/**'
       - 'buf.gen.yaml'
+      - 'buf.gen.metastore.yaml'
       - 'tools/go-comment-pbgen/**'
       - 'src/v/pandaproxy/schema_registry/protobuf/**'
       - '.github/workflows/rpk-build.yml'
@@ -25,6 +26,7 @@ on:
       - 'proto/redpanda/core/admin/**'
       - 'proto/redpanda/core/common/**'
       - 'buf.gen.yaml'
+      - 'buf.gen.metastore.yaml'
       - 'tools/go-comment-pbgen/**'
       - 'src/v/pandaproxy/schema_registry/protobuf/**'
       - '.github/workflows/rpk-build.yml'
@@ -75,11 +77,14 @@ jobs:
           setup_only: true
       - name: Generate proto files
         run: buf generate
+      - name: Generate internal metastore proto bindings
+        run: make -C src/go/rpk generate-metastore-proto
       - name: Check for uncommitted changes
         run: |
-          if ! git diff --exit-code src/go/rpk/gen/; then
-            git diff src/go/rpk/gen/
+          gen_dirs="src/go/rpk/gen/ src/go/rpk/pkg/cli/debug/cloudtopics/metastore/internal/"
+          if ! git diff --exit-code $gen_dirs; then
+            git diff $gen_dirs
             echo "Error: Generated proto files are out of date"
-            echo "Run 'buf generate' and commit the changes"
+            echo "Run 'buf generate' and 'make -C src/go/rpk generate-metastore-proto' and commit the changes"
             exit 1
           fi

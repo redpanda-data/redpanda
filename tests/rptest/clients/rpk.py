@@ -1460,6 +1460,50 @@ class RpkTool:
         else:
             return f"{node.account.hostname}:9644"
 
+    def debug_cloud_topics_metastore_layout(
+        self, partition: str | int = "all", node=None
+    ) -> list[dict[str, Any]]:
+        """Run `rpk debug cloud-topics metastore layout` against the admin API
+        and return its --format json output: one entry per metastore
+        partition, each with memtable/total sizes and LSM levels."""
+        cmd = [
+            self._rpk_binary(),
+            "debug",
+            "cloud-topics",
+            "metastore",
+            "layout",
+            "--partition",
+            str(partition),
+            "--format",
+            "json",
+            "-X",
+            "admin.hosts=" + self._admin_host(node),
+        ]
+        return json.loads(self._execute(cmd))
+
+    def debug_cloud_topics_metastore_files(
+        self, partition: str | int = "all", level: str | int = "all", node=None
+    ) -> list[dict[str, Any]]:
+        """Run `rpk debug cloud-topics metastore files` against the admin API
+        and return its --format json output (same per-partition shape as
+        layout, optionally filtered to the given LSM level)."""
+        cmd = [
+            self._rpk_binary(),
+            "debug",
+            "cloud-topics",
+            "metastore",
+            "files",
+            "--partition",
+            str(partition),
+            "--level",
+            str(level),
+            "--format",
+            "json",
+            "-X",
+            "admin.hosts=" + self._admin_host(node),
+        ]
+        return json.loads(self._execute(cmd))
+
     def admin_config_print(self, node):
         return self._execute(
             [
