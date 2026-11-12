@@ -82,7 +82,7 @@ ss::future<segment_reader_handle> segment_reader::data_stream(size_t pos) {
     auto handle = co_await get();
     handle.set_stream(make_file_input_stream(
       _data_file, pos, _file_size - pos, std::move(options)));
-    co_return std::move(handle);
+    co_return std::move(handle); // move this
 }
 
 ss::future<segment_reader_handle> segment_reader::get() {
