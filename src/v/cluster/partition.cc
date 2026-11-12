@@ -713,48 +713,40 @@ ss::future<std::optional<storage::timequery_result>> partition::local_timequery(
             }
 
             if (
-              _raft->log()->start_timestamp() <= cfg.time
-              && result->time > cfg.time) {
-                // start_timestamp() points to the beginning of the oldest
-                // segment, but start_offset points to somewhere within a
-                // segment.  If our timequery hits the range between the start
-                // of segment and the start_offset, consensus::timequery may
-                // answer with the start offset rather than the
-                // pre-start-offset location where the timestamp is actually
-                // found. Ref
-                // https://github.com/redpanda-data/redpanda/issues/9669
+              start_cloud_offset()
+              < _raft->log()->from_log_offset(_raft->start_offset())) {
+                // Offsets below the local log start are retained in cloud
+                // storage and may contain a match earlier than the local
+                // result, so the local result cannot be proven to be the
+                // first record at or after the query time:
+                //
+                // - start_timestamp() points to the beginning of the oldest
+                //   segment, but start_offset points to somewhere within a
+                //   segment. If the query hits the range between the start
+                //   of segment and the start_offset, consensus::timequery
+                //   may answer with the start offset rather than the
+                //   pre-start-offset location where the timestamp is
+                //   actually found. Ref
+                //   https://github.com/redpanda-data/redpanda/issues/9669
+                // - even an exact-timestamp hit can be preceded by a
+                //   cloud-only record carrying the same timestamp, and with
+                //   non-monotonic producer timestamps by one carrying a
+                //   greater timestamp.
+                //
+                // Return null so that the caller falls back to cloud
+                // storage. Without such a cloud-only prefix the local
+                // answer is authoritative: result->time > cfg.time is the
+                // normal outcome whenever the query time falls between two
+                // record timestamps and must not be discarded.
                 vlog(
                   clusterlog.debug,
-                  "Timequery (raft) {} cfg(r)={} miss on local log "
-                  "(start_timestamp "
-                  "{}, result {})",
+                  "Timequery (raft) {} cfg(r)={} local result cannot be "
+                  "proven first, cloud retains offsets below local start "
+                  "(start_timestamp {}, result {})",
                   _raft->ntp(),
                   cfg,
                   _raft->log()->start_timestamp(),
                   result->time);
-                co_return std::nullopt;
-            }
-        }
-
-        if (result->offset == _raft->log()->offsets().start_offset) {
-            // If we hit at the start of the local log, this is ambiguous:
-            // there could be earlier batches prior to start_offset which
-            // have the same timestamp and are present in cloud storage.
-            vlog(
-              clusterlog.debug,
-              "Timequery (raft) {} cfg(r)={} hit start_offset in local log "
-              "(start_offset {} start_timestamp {}, result {})",
-              _raft->ntp(),
-              cfg,
-              _raft->log()->offsets().start_offset,
-              _raft->log()->start_timestamp(),
-              cfg.time);
-
-            if (allow_cloud_fallback) {
-                // Even though we hit data with the desired timestamp, we
-                // cannot be certain that this is the _first_ batch with
-                // the desired timestamp: return null so that the caller
-                // will fall back to cloud storage.
                 co_return std::nullopt;
             }
         }
