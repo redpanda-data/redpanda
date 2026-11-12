@@ -3109,8 +3109,9 @@ ss::future<> ntp_archiver::apply_spillover() {
         if (fo != so.value()) {
             vlog(
               _rtclog.warn,
-              "Spillover invariant violated: manifest start_offset {}, first "
-              "segment base_offset {}",
+              "Expected GC to leave start_offset = segment base_offset, "
+              "skipping spillover until GC succeeds: manifest start_offset "
+              "{}, first segment base_offset {}",
               so.value(),
               fo);
             co_return;
