@@ -33,7 +33,7 @@ using remote_path = named_type<std::filesystem::path, struct remote_path_tag>;
 /// (identical to Parquet PLAIN encoding for all supported types).
 struct per_column_stats
   : serde::
-      envelope<per_column_stats, serde::version<0>, serde::compat_version<0>> {
+      envelope<per_column_stats, serde::version<1>, serde::compat_version<0>> {
     auto serde_fields() {
         return std::tie(
           field_id,
@@ -41,7 +41,8 @@ struct per_column_stats
           upper_bound,
           null_value_count,
           value_count,
-          column_size_bytes);
+          column_size_bytes,
+          nan_value_count);
     }
 
     int32_t field_id = -1;
@@ -50,6 +51,7 @@ struct per_column_stats
     int64_t null_value_count = 0;
     int64_t value_count = 0;
     int64_t column_size_bytes = 0;
+    int64_t nan_value_count = 0;
 
     friend bool
     operator==(const per_column_stats&, const per_column_stats&) = default;

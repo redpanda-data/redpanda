@@ -69,6 +69,7 @@ public:
     void record_value(ref_type v) {
         if constexpr (std::is_floating_point_v<decltype(v.val)>) {
             if (std::isnan(v.val)) {
+                ++_nan_count;
                 return;
             }
         }
@@ -86,6 +87,7 @@ public:
     // Merge another stats collector into this one.
     void merge(column_stats_collector<value_type, comparator>& other) {
         _null_count += other._null_count;
+        _nan_count += other._nan_count;
         if (
           other._min
           && (!_min || comparator(*other._min, *_min) == std::strong_ordering::less)) {
@@ -100,11 +102,13 @@ public:
 
     void reset() {
         _null_count = 0;
+        _nan_count = 0;
         _min = std::nullopt;
         _max = std::nullopt;
     }
 
     int64_t null_count() const { return _null_count; }
+    int64_t nan_count() const { return _nan_count; }
 
     // Byte-array bounds are retained untruncated.
     int64_t memory_usage() const {
@@ -138,6 +142,7 @@ private:
     std::optional<value_type> _min;
     std::optional<value_type> _max;
     int64_t _null_count = 0;
+    int64_t _nan_count = 0;
 };
 
 } // namespace serde::parquet

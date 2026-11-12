@@ -298,7 +298,8 @@ public:
                     chunked_hash_map<iceberg::nested_field::id_t, iobuf>
                       lower_bounds, upper_bounds;
                     chunked_hash_map<iceberg::nested_field::id_t, int64_t>
-                      null_value_counts, value_counts, column_sizes;
+                      null_value_counts, nan_value_counts, value_counts,
+                      column_sizes;
                     for (const auto& cs : f.column_stats) {
                         auto fid = iceberg::nested_field::id_t{cs.field_id};
                         if (cs.lower_bound) {
@@ -308,6 +309,7 @@ public:
                             upper_bounds[fid] = bytes_to_iobuf(*cs.upper_bound);
                         }
                         null_value_counts[fid] = cs.null_value_count;
+                        nan_value_counts[fid] = cs.nan_value_count;
                         value_counts[fid] = cs.value_count;
                         column_sizes[fid] = cs.column_size_bytes;
                     }
@@ -318,6 +320,7 @@ public:
                         file.upper_bounds = std::move(upper_bounds);
                     }
                     file.null_value_counts = std::move(null_value_counts);
+                    file.nan_value_counts = std::move(nan_value_counts);
                     file.value_counts = std::move(value_counts);
                     file.column_sizes = std::move(column_sizes);
                 }

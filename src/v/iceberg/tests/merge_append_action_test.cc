@@ -22,6 +22,8 @@
 
 #include <gtest/gtest.h>
 
+#include <limits>
+
 using namespace iceberg;
 using namespace std::chrono_literals;
 
@@ -478,6 +480,182 @@ TEST_F(MergeAppendActionTest, TestPartitionSummaries) {
       latest_partitions[0].lower_bound, value_to_bytes(int_value{base_pk}));
     ASSERT_EQ(
       latest_partitions[0].upper_bound, value_to_bytes(int_value{last_pk}));
+}
+
+TEST_F(MergeAppendActionTest, TestPartitionSummaryContainsNan) {
+    // Create a table with a float partition field so we can test NaN handling.
+    auto create_float_partitioned_table = [this]() {
+        struct_type schema_struct;
+        schema_struct.fields.emplace_back(
+          nested_field::create(1, "id", field_required::yes, int_type{}));
+        schema_struct.fields.emplace_back(
+          nested_field::create(2, "val", field_required::no, float_type{}));
+        auto s = schema{
+          .schema_struct = std::move(schema_struct),
+          .schema_id = schema::id_t{0},
+          .identifier_field_ids = {},
+        };
+        chunked_vector<schema> schemas;
+        schemas.emplace_back(s.copy());
+        chunked_vector<partition_spec> pspecs;
+        pspecs.emplace_back(partition_spec{
+          .spec_id = partition_spec::id_t{0},
+          .fields = {
+            partition_field{
+              .source_id = nested_field::id_t{2},
+              .field_id = partition_field::id_t{1000},
+              .name = "val",
+              .transform = identity_transform{},
+            },
+          },
+        });
+        return table_metadata{
+          .format_version = format_version::v2,
+          .table_uuid = uuid_t::create(),
+          .location = uri(fmt::format("s3://{}/foo/bar", bucket_name())),
+          .last_sequence_number = sequence_number{0},
+          .last_updated_ms = model::timestamp::now(),
+          .last_column_id = s.highest_field_id().value(),
+          .schemas = std::move(schemas),
+          .current_schema_id = schema::id_t{0},
+          .partition_specs = std::move(pspecs),
+          .default_spec_id = partition_spec::id_t{0},
+          .last_partition_id = partition_field::id_t{-1},
+        };
+    };
+
+    // Append files with only normal float values.
+    {
+        transaction tx(create_float_partitioned_table());
+        auto files = create_data_files(
+          tx.table(), "normal", 1, 10, float_value{1.5f});
+        auto res = tx.merge_append(io, std::move(files)).get();
+        ASSERT_FALSE(res.has_error()) << res.error();
+
+        auto mlist_path = tx.table().snapshots->back().manifest_list_path;
+        auto mlist = io.download_manifest_list(mlist_path).get();
+        ASSERT_TRUE(mlist.has_value());
+        const auto& partitions = mlist.value().files[0].partitions;
+        ASSERT_EQ(1, partitions.size());
+        ASSERT_FALSE(partitions[0].contains_null);
+        EXPECT_FALSE(partitions[0].contains_nan.value_or(false));
+        EXPECT_TRUE(partitions[0].lower_bound.has_value());
+        EXPECT_TRUE(partitions[0].upper_bound.has_value());
+    }
+
+    // Append files with only NaN partition values.
+    {
+        transaction tx(create_float_partitioned_table());
+        auto nan = std::numeric_limits<float>::quiet_NaN();
+        auto files = create_data_files(
+          tx.table(), "nan_only", 1, 10, float_value{nan});
+        auto res = tx.merge_append(io, std::move(files)).get();
+        ASSERT_FALSE(res.has_error()) << res.error();
+
+        auto mlist_path = tx.table().snapshots->back().manifest_list_path;
+        auto mlist = io.download_manifest_list(mlist_path).get();
+        ASSERT_TRUE(mlist.has_value());
+        const auto& partitions = mlist.value().files[0].partitions;
+        ASSERT_EQ(1, partitions.size());
+        ASSERT_FALSE(partitions[0].contains_null);
+        ASSERT_TRUE(partitions[0].contains_nan.has_value());
+        EXPECT_TRUE(partitions[0].contains_nan.value());
+        // NaN should not contribute to bounds.
+        EXPECT_FALSE(partitions[0].lower_bound.has_value());
+        EXPECT_FALSE(partitions[0].upper_bound.has_value());
+    }
+
+    // Append files with a mix of normal and NaN values.
+    {
+        transaction tx(create_float_partitioned_table());
+        auto nan = std::numeric_limits<float>::quiet_NaN();
+        auto normal_files = create_data_files(
+          tx.table(), "mixed_normal", 1, 10, float_value{3.0f});
+        auto nan_files = create_data_files(
+          tx.table(), "mixed_nan", 1, 10, float_value{nan});
+        std::move(
+          nan_files.begin(), nan_files.end(), std::back_inserter(normal_files));
+        auto res = tx.merge_append(io, std::move(normal_files)).get();
+        ASSERT_FALSE(res.has_error()) << res.error();
+
+        auto mlist_path = tx.table().snapshots->back().manifest_list_path;
+        auto mlist = io.download_manifest_list(mlist_path).get();
+        ASSERT_TRUE(mlist.has_value());
+        const auto& partitions = mlist.value().files[0].partitions;
+        ASSERT_EQ(1, partitions.size());
+        ASSERT_FALSE(partitions[0].contains_null);
+        ASSERT_TRUE(partitions[0].contains_nan.has_value());
+        EXPECT_TRUE(partitions[0].contains_nan.value());
+        // Bounds should reflect only non-NaN values.
+        EXPECT_TRUE(partitions[0].lower_bound.has_value());
+        EXPECT_TRUE(partitions[0].upper_bound.has_value());
+        auto expected_bytes = value_to_bytes(float_value{3.0f});
+        EXPECT_EQ(partitions[0].lower_bound.value(), expected_bytes);
+        EXPECT_EQ(partitions[0].upper_bound.value(), expected_bytes);
+    }
+
+    // Same tests with double.
+    {
+        // Need a double partition field.
+        struct_type schema_struct;
+        schema_struct.fields.emplace_back(
+          nested_field::create(1, "id", field_required::yes, int_type{}));
+        schema_struct.fields.emplace_back(
+          nested_field::create(2, "val", field_required::no, double_type{}));
+        auto s = schema{
+          .schema_struct = std::move(schema_struct),
+          .schema_id = schema::id_t{0},
+          .identifier_field_ids = {},
+        };
+        chunked_vector<schema> schemas;
+        schemas.emplace_back(s.copy());
+        chunked_vector<partition_spec> pspecs;
+        pspecs.emplace_back(partition_spec{
+          .spec_id = partition_spec::id_t{0},
+          .fields = {
+            partition_field{
+              .source_id = nested_field::id_t{2},
+              .field_id = partition_field::id_t{1000},
+              .name = "val",
+              .transform = identity_transform{},
+            },
+          },
+        });
+        auto table = table_metadata{
+          .format_version = format_version::v2,
+          .table_uuid = uuid_t::create(),
+          .location = uri(fmt::format("s3://{}/foo/bar", bucket_name())),
+          .last_sequence_number = sequence_number{0},
+          .last_updated_ms = model::timestamp::now(),
+          .last_column_id = s.highest_field_id().value(),
+          .schemas = std::move(schemas),
+          .current_schema_id = schema::id_t{0},
+          .partition_specs = std::move(pspecs),
+          .default_spec_id = partition_spec::id_t{0},
+          .last_partition_id = partition_field::id_t{-1},
+        };
+        transaction tx(std::move(table));
+        auto nan = std::numeric_limits<double>::quiet_NaN();
+        auto normal_files = create_data_files(
+          tx.table(), "dbl_normal", 1, 10, double_value{2.5});
+        auto nan_files = create_data_files(
+          tx.table(), "dbl_nan", 1, 10, double_value{nan});
+        std::move(
+          nan_files.begin(), nan_files.end(), std::back_inserter(normal_files));
+        auto res = tx.merge_append(io, std::move(normal_files)).get();
+        ASSERT_FALSE(res.has_error()) << res.error();
+
+        auto mlist_path = tx.table().snapshots->back().manifest_list_path;
+        auto mlist = io.download_manifest_list(mlist_path).get();
+        ASSERT_TRUE(mlist.has_value());
+        const auto& partitions = mlist.value().files[0].partitions;
+        ASSERT_EQ(1, partitions.size());
+        ASSERT_TRUE(partitions[0].contains_nan.has_value());
+        EXPECT_TRUE(partitions[0].contains_nan.value());
+        auto expected_bytes = value_to_bytes(double_value{2.5});
+        EXPECT_EQ(partitions[0].lower_bound.value(), expected_bytes);
+        EXPECT_EQ(partitions[0].upper_bound.value(), expected_bytes);
+    }
 }
 
 TEST_F(MergeAppendActionTest, TestBadMetadata) {

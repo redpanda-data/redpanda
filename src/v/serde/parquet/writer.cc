@@ -220,6 +220,7 @@ public:
               .bounds = col.writer.file_column_stats(),
               .value_count = col.file_value_count,
               .column_size_bytes = col.file_column_size_bytes,
+              .nan_value_count = col.writer.file_nan_count(),
             });
         }
         return result;

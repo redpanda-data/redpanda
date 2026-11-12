@@ -565,6 +565,64 @@ TEST(ParquetWriter, StatsEdgeFloat64) {
       f64_type{}, {float64_value{lim::lowest()}, float64_value{lim::max()}});
 }
 
+TEST(ParquetWriter, NanValueCountFloat32) {
+    using lim = std::numeric_limits<float>;
+    iobuf file;
+    writer w(
+      {.schema = single_col_schema(f32_type{}), .max_stats_truncate_length = 0},
+      make_iobuf_ref_output_stream(file));
+    w.init().get();
+    // Write 2 NaN values and 3 normal values.
+    for (auto v : {lim::quiet_NaN(), 1.0f, lim::signaling_NaN(), 2.0f, 3.0f}) {
+        chunked_vector<group_member> fields;
+        fields.push_back(group_member{float32_value{v}});
+        w.write_row(group_value{std::move(fields)}).get();
+    }
+    w.close().get();
+    auto stats = w.column_file_stats();
+    ASSERT_EQ(1, stats.size());
+    EXPECT_EQ(2, stats[0].nan_value_count);
+    EXPECT_EQ(5, stats[0].value_count);
+}
+
+TEST(ParquetWriter, NanValueCountFloat64) {
+    using lim = std::numeric_limits<double>;
+    iobuf file;
+    writer w(
+      {.schema = single_col_schema(f64_type{}), .max_stats_truncate_length = 0},
+      make_iobuf_ref_output_stream(file));
+    w.init().get();
+    // Write 1 NaN, 2 normal values.
+    for (auto v : {lim::quiet_NaN(), 1.0, 2.0}) {
+        chunked_vector<group_member> fields;
+        fields.push_back(group_member{float64_value{v}});
+        w.write_row(group_value{std::move(fields)}).get();
+    }
+    w.close().get();
+    auto stats = w.column_file_stats();
+    ASSERT_EQ(1, stats.size());
+    EXPECT_EQ(1, stats[0].nan_value_count);
+    EXPECT_EQ(3, stats[0].value_count);
+}
+
+TEST(ParquetWriter, NanValueCountIntColumn) {
+    // Non-float columns should always have nan_value_count == 0.
+    iobuf file;
+    writer w(
+      {.schema = single_col_schema(i32_type{}), .max_stats_truncate_length = 0},
+      make_iobuf_ref_output_stream(file));
+    w.init().get();
+    for (int i = 0; i < 5; ++i) {
+        chunked_vector<group_member> fields;
+        fields.push_back(group_member{int32_value{i}});
+        w.write_row(group_value{std::move(fields)}).get();
+    }
+    w.close().get();
+    auto stats = w.column_file_stats();
+    ASSERT_EQ(1, stats.size());
+    EXPECT_EQ(0, stats[0].nan_value_count);
+}
+
 TEST(ParquetWriter, StatsEdgeByteArray) {
     // Empty string: min == max == ""
     check_byte_array_stats({""});
