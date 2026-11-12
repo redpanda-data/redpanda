@@ -200,6 +200,25 @@ group_configuration deserialize_configuration(iobuf_parser& parser) {
 
     return reflection::adl<group_configuration>{}.from(parser);
 }
+std::optional<model::term_id>
+peek_configuration_batch_term(const model::record_batch& batch) noexcept {
+    if (
+      batch.header().type != model::record_batch_type::raft_configuration
+      || batch.compressed()) {
+        return std::nullopt;
+    }
+    try {
+        auto records = batch.copy_records();
+        if (records.empty()) {
+            return std::nullopt;
+        }
+        iobuf_parser parser(records.begin()->release_value());
+        return deserialize_configuration(parser).term();
+    } catch (...) {
+        return std::nullopt;
+    }
+}
+
 group_configuration deserialize_nested_configuration(iobuf_parser& parser) {
     const auto version = serde::peek_version(parser);
     if (likely(version >= group_configuration::v_6())) {

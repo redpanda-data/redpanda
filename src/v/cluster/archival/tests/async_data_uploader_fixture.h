@@ -447,7 +447,7 @@ public:
     auto load_log_segment_concat(inclusive_offset_range range) {
         std::vector<ss::lw_shared_ptr<storage::segment>> segments;
         for (auto& s : get_partition_log()->segments()) {
-            auto o = s->offsets();
+            const auto& o = s->offsets();
             if (o.get_base_offset() > o.get_committed_offset()) {
                 // tail segment with no data. skip it.
                 continue;

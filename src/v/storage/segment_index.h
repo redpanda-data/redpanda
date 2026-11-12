@@ -252,6 +252,17 @@ public:
         return false;
     }
 
+    /// Update the cached term spans (mirror of the segment's
+    /// offset_tracker).
+    void set_term_spans(chunked_vector<term_span> spans) {
+        _state.term_spans = std::move(spans);
+        _needs_persistence = true;
+    }
+
+    const chunked_vector<term_span>& term_spans() const {
+        return _state.term_spans;
+    }
+
     // Get the cleanly compacted timestamp.
     std::optional<model::timestamp> clean_compact_timestamp() const {
         return _state.clean_compact_timestamp;

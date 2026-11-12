@@ -48,17 +48,32 @@ class ControllerEraseTest(RedpandaTest):
         if partial:
             self.redpanda.set_cluster_config({"controller_snapshot_max_age_sec": 3600})
 
-        # Do a bunch of metadata operations to put something in the controller log
-        transfers_leadership_count = 4
+        def controller_elected():
+            ctrl = self.redpanda.controller()
+            return (ctrl is not None, ctrl)
+
+        # The node we will intentionally damage
+        victim_node = self.redpanda.nodes[1]
+
+        # Do a bunch of metadata operations to put something in the controller
+        # log. Raft term changes no longer roll a segment (terms are recorded
+        # inside the active segment), so leadership transfers alone do not
+        # create new segments. Instead, restart the victim node each round: a
+        # reopened segment has no appender, so the first controller append
+        # after the restart rolls a new segment on the victim.
+        segment_roll_count = 4
         pre_transfer_dirty_offset = -1
-        for i in range(0, transfers_leadership_count):
+        for i in range(0, segment_roll_count):
+            self.redpanda.restart_nodes(victim_node)
+
             for j in range(0, 4):
                 spec = TopicSpec(partition_count=1, replication_factor=3)
                 self.client().create_topic(spec)
 
-            # Move a leader to roll a segment
-            leader_node = self.redpanda.controller()
-            assert leader_node
+            # Move the leader around to generate leadership churn in the log
+            leader_node = wait_until_result(
+                controller_elected, timeout_sec=15, backoff_sec=1
+            )
             pre_transfer_dirty_offset = admin.get_controller_status(leader_node)[
                 "dirty_offset"
             ]
@@ -66,13 +81,6 @@ class ControllerEraseTest(RedpandaTest):
             admin.partition_transfer_leadership(
                 "redpanda", "controller", 0, next_leader
             )
-
-        # Stop the node we will intentionally damage
-        victim_node = self.redpanda.nodes[1]
-
-        def controller_elected():
-            ctrl = self.redpanda.controller()
-            return (ctrl is not None, ctrl)
 
         bystander_node = wait_until_result(
             controller_elected, timeout_sec=15, backoff_sec=1
@@ -123,8 +131,11 @@ class ControllerEraseTest(RedpandaTest):
                 .partitions["0_0"]
                 .segments.keys()
             )
-            assert len(segments) == transfers_leadership_count + 1
-            segments = sorted(list(segments))
+            assert len(segments) == segment_roll_count + 1
+            # Sort by numeric base offset ({base}-{term}-vN) to pick the
+            # latest segment; a lexicographic sort misorders offsets of
+            # different digit counts.
+            segments = sorted(segments, key=lambda name: int(name.split("-")[0]))
             victim_path = f"{controller_path}/{segments[-1]}.log"
         else:
             # Full deletion: remove all log segments.

@@ -193,7 +193,7 @@ public:
 
     const storage::ntp_config* ntp_cfg() const;
 
-    cloud_storage::segment_name adjust_segment_name() const;
+    cloud_storage::segment_name adjust_segment_name(model::term_id term) const;
 
     /// Creates upload candidate by computing file offsets and timestamps from
     /// the collected segments.

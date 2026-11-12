@@ -977,23 +977,36 @@ disk_log_impl::find_adjacent_compaction_ranges(
     chunked_vector<std::pair<segment_set::iterator, segment_set::iterator>>
       ranges;
 
+    // ranges may merge across raft terms when the feature is active and
+    // every segment in the range is v2: v2 terms are recoverable per offset
+    // (index span cache + configuration batch payloads), while a multi-term
+    // v1 segment would be silently misread by older binaries
+    const bool allow_cross_term_merge = _feature_table.local().is_active(
+      features::feature::multi_term_segments);
+    auto is_v2 = [](const segment_set::type& s) {
+        return s->reader().path().get_version() == record_version_type::v2;
+    };
+
     auto it = _segs.begin();
     size_t current_size{0};
-    model::term_id current_term{(*it)->offsets().get_term()};
+    model::term_id current_term{(*it)->offsets().last_term()};
+    bool range_is_v2 = is_v2(*it);
 
     std::pair<segment_set::iterator, segment_set::iterator> current_range = {
       it, it};
     while (it != _segs.end()) {
         auto& seg = *it;
         auto seg_size = seg->size_bytes();
-        auto seg_term = seg->offsets().get_term();
+        auto seg_term = seg->offsets().get_base_term();
 
         current_size += seg_size;
 
         auto num_segments_in_range = std::distance(
           current_range.first, current_range.second);
 
-        bool term_boundary = seg_term != current_term;
+        bool term_boundary
+          = seg_term != current_term
+            && !(allow_cross_term_merge && range_is_v2 && is_v2(seg));
         bool size_boundary = current_size
                              > _manager.config().max_compacted_segment_size();
         bool is_unstable = unstable(seg);
@@ -1023,11 +1036,12 @@ disk_log_impl::find_adjacent_compaction_ranges(
             auto next_it = is_unstable ? std::next(it) : it;
             auto next_size = is_unstable ? 0 : seg_size;
             auto next_term = next_it != _segs.end()
-                               ? (*next_it)->offsets().get_term()
+                               ? (*next_it)->offsets().last_term()
                                : model::term_id{};
             current_range = {next_it, next_it};
             current_size = next_size;
             current_term = next_term;
+            range_is_v2 = next_it != _segs.end() && is_v2(*next_it);
 
             if (!is_unstable) {
                 ++current_range.second;
@@ -1035,6 +1049,8 @@ disk_log_impl::find_adjacent_compaction_ranges(
 
         } else {
             ++current_range.second;
+            current_term = seg->offsets().last_term();
+            range_is_v2 = range_is_v2 && is_v2(seg);
         }
         ++it;
     }
@@ -1981,7 +1997,7 @@ model::term_id disk_log_impl::term() const {
         // the next append() will truncate if greater
         return model::term_id{0};
     }
-    return _segs.back()->offsets().get_term();
+    return _segs.back()->offsets().last_term();
 }
 
 bool disk_log_impl::is_new_log() const {
@@ -2039,10 +2055,14 @@ offset_stats disk_log_impl::offsets() const {
       .start_offset = start_offset,
 
       .committed_offset = eof.get_committed_offset(),
-      .committed_offset_term = eof.get_term(),
+      // the committed offset sits below the segment base while appended
+      // data is not yet committed; fall back to the base term (the field
+      // is only ever logged)
+      .committed_offset_term
+      = eof.term_at(eof.get_committed_offset()).value_or(eof.get_base_term()),
 
       .dirty_offset = eof.get_dirty_offset(),
-      .dirty_offset_term = eof.get_term(),
+      .dirty_offset_term = eof.last_term(),
     };
 }
 
@@ -2052,18 +2072,29 @@ model::offset disk_log_impl::find_last_term_start_offset() const {
     }
 
     segment_set::type end;
-    segment_set::type term_start;
+    model::offset term_start;
     for (auto it = _segs.rbegin(); it != _segs.rend(); ++it) {
         auto& seg = *it;
         if (!seg->empty()) {
             if (!end) {
                 end = seg;
+                term_start = seg->offsets().last_term_base_offset();
+                // the last term starts inside this segment
+                if (
+                  seg->offsets().get_base_term()
+                  != seg->offsets().last_term()) {
+                    break;
+                }
+                continue;
             }
             // find term start offset
-            if (seg->offsets().get_term() < end->offsets().get_term()) {
+            if (seg->offsets().last_term() < end->offsets().last_term()) {
                 break;
             }
-            term_start = seg;
+            term_start = seg->offsets().last_term_base_offset();
+            if (seg->offsets().get_base_term() != seg->offsets().last_term()) {
+                break;
+            }
         }
     }
 
@@ -2071,7 +2102,7 @@ model::offset disk_log_impl::find_last_term_start_offset() const {
         return {};
     }
 
-    return term_start->offsets().get_base_offset();
+    return term_start;
 }
 
 model::timestamp disk_log_impl::start_timestamp() const {
@@ -2097,6 +2128,13 @@ ss::future<> disk_log_impl::new_segment(model::offset o, model::term_id t) {
     // Recomputing here means that any roll size checks after this takes into
     // account updated segment size.
     _max_segment_size = compute_max_segment_size();
+    // v2 segments may span raft terms; the filename term is the term of the
+    // base offset only. Emitting v2 makes older binaries refuse the segment
+    // instead of silently attributing the filename term to every batch.
+    const auto version = _feature_table.local().is_active(
+                           features::feature::multi_term_segments)
+                           ? record_version_type::v2
+                           : record_version_type::v1;
     return _manager
       .make_log_segment(
         config(),
@@ -2104,7 +2142,8 @@ ss::future<> disk_log_impl::new_segment(model::offset o, model::term_id t) {
         t,
         config::shard_local_cfg().storage_read_buffer_size(),
         config::shard_local_cfg().storage_read_readahead_count(),
-        _max_segment_size)
+        _max_segment_size,
+        version)
       .then([this](ss::lw_shared_ptr<segment> handles) mutable {
           return remove_empty_segments().then(
             [this, h = std::move(handles)]() mutable {
@@ -2260,6 +2299,57 @@ ss::future<> disk_log_impl::force_roll() {
       .then([this, next_offset, t] { return new_segment(next_offset, t); });
 }
 
+bool disk_log_impl::try_advance_term_unlocked(
+  const model::record_batch& batch, model::offset next_offset) {
+    if (!_feature_table.local().is_active(
+          features::feature::multi_term_segments)) {
+        return false;
+    }
+    // only configuration batches whose payload carries the term may begin a
+    // new term span: the payload is what makes the transition recoverable
+    // from log data during crash recovery
+    if (batch.header().type != model::record_batch_type::raft_configuration) {
+        return false;
+    }
+    if (_segs.empty()) {
+        return false;
+    }
+    auto& seg = *_segs.back();
+    if (!seg.has_appender() || seg.is_tombstone() || seg.is_closed()) {
+        return false;
+    }
+    if (seg.empty() || next_offset <= seg.offsets().last_term_base_offset()) {
+        // an empty segment is simply replaced by a roll: advancing its term
+        // would leave the filename term at odds with the first batch
+        return false;
+    }
+    if (seg.appender().file_byte_offset() >= _max_segment_size) {
+        // the segment is due for a size roll anyway
+        return false;
+    }
+    // only v2 segments may span terms: older binaries would silently
+    // attribute the filename term to every batch of a v1 segment
+    if (seg.reader().path().get_version() != record_version_type::v2) {
+        return false;
+    }
+    const auto t = batch.term();
+    if (t <= term()) {
+        return false;
+    }
+    const auto& parser = _manager.config().batch_term_parser;
+    if (!parser || parser(batch) != t) {
+        return false;
+    }
+    vlog(
+      stlog.debug,
+      "{} advancing active segment to term {} at offset {}",
+      config().ntp(),
+      t,
+      next_offset);
+    seg.advance_term(t, next_offset);
+    return true;
+}
+
 ss::future<> disk_log_impl::maybe_roll_unlocked(
   model::term_id t, model::offset next_offset) {
     vassert(
@@ -2397,9 +2487,9 @@ ss::future<> disk_log_impl::apply_segment_ms() {
 
     add_segment_bytes(last, last->size_bytes());
     co_await last->release_appender(_readers_cache.get());
-    auto offsets = last->offsets();
+    const auto& offsets = last->offsets();
     auto new_so = model::next_offset(offsets.get_committed_offset());
-    co_await new_segment(new_so, offsets.get_term());
+    co_await new_segment(new_so, offsets.get_base_term());
     vlog(
       stlog.trace,
       "{} segment rolled, new segment start offset: {}",
@@ -2825,7 +2915,7 @@ disk_log_impl::offset_range_size(
           offsets());
         co_return std::nullopt;
     } else {
-        auto lstat = base_it->get()->offsets();
+        const auto& lstat = base_it->get()->offsets();
         if (
           first < lstat.get_base_offset()
           || first > lstat.get_committed_offset()) {
@@ -2841,7 +2931,7 @@ disk_log_impl::offset_range_size(
     file_offset_t first_segment_file_offsets{};
     auto first_segment = *base_it;
     size_t first_segment_size = first_segment->file_size();
-    auto first_segment_offsets = first_segment->offsets();
+    auto first_segment_offsets = first_segment->offsets().copy();
 
     auto [f_locks, segments] = [&]() {
         std::vector<ss::future<ss::rwlock::holder>> f_locks;
@@ -3234,7 +3324,7 @@ disk_log_impl::make_reader(timequery_config config) {
 std::optional<model::term_id> disk_log_impl::get_term(model::offset o) const {
     auto it = _segs.lower_bound(o);
     if (it != _segs.end() && o >= _start_offset) {
-        return (*it)->offsets().get_term();
+        return (*it)->offsets().term_at(o);
     }
 
     return std::nullopt;
@@ -3252,11 +3342,9 @@ disk_log_impl::get_term_last_offset(model::term_id term) const {
     }
     it = std::prev(it);
 
-    if ((*it)->offsets().get_term() == term) {
-        return (*it)->offsets().get_dirty_offset();
-    }
-
-    return std::nullopt;
+    // the term may end inside the segment when the segment covers multiple
+    // terms; for the segment's last term this is the dirty offset
+    return (*it)->offsets().term_last_offset(term);
 }
 std::optional<model::offset>
 disk_log_impl::index_lower_bound(model::offset o) const {

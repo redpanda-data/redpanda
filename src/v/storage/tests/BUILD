@@ -171,6 +171,20 @@ redpanda_test_cc_library(
 )
 
 redpanda_cc_gtest(
+    name = "fs_utils_test",
+    timeout = "short",
+    srcs = [
+        "fs_utils_test.cc",
+    ],
+    deps = [
+        "//src/v/model",
+        "//src/v/storage",
+        "//src/v/test_utils:gtest",
+        "@googletest//:gtest",
+    ],
+)
+
+redpanda_cc_gtest(
     name = "segment_offset_tracker_test",
     timeout = "short",
     srcs = [

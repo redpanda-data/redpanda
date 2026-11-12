@@ -62,6 +62,14 @@ persist_snapshot(storage::simple_snapshot_manager&, snapshot_metadata, iobuf&&);
 
 group_configuration deserialize_configuration(iobuf_parser&);
 
+/// Extract the replication term from a raft_configuration batch payload.
+/// Returns nullopt if the configuration predates v_8 (no term in the
+/// payload) or if the batch cannot be decoded. Never throws: this is used
+/// by storage to rebuild segment term spans during log recovery, where
+/// undecodable batches simply provide no term information.
+std::optional<model::term_id>
+peek_configuration_batch_term(const model::record_batch&) noexcept;
+
 group_configuration deserialize_nested_configuration(iobuf_parser&);
 
 /// looks up for the broker with request id in a vector of brokers

@@ -38,6 +38,13 @@ namespace storage {
 using log_clock = ss::lowres_clock;
 using jitter_percents = named_type<int, struct jitter_percents_tag>;
 
+/// Extracts the replication term from a raft_configuration batch payload,
+/// if present (raft::group_configuration >= v_8). Injected by the raft
+/// layer so that storage can rebuild segment term spans from log data
+/// during recovery without depending on raft serialization.
+using config_batch_term_parser
+  = std::function<std::optional<model::term_id>(const model::record_batch&)>;
+
 // Helps to identify transactional stms in the registered list of stms.
 // Avoids an ugly dynamic cast to the base class.
 enum class stm_type : int8_t {

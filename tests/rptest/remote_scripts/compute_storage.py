@@ -129,36 +129,49 @@ def md5_for_filename(calculate_md5: bool, file: Path) -> str:
 
 
 def compute_size_for_file(file: Path, calc_md5: bool):
-    file_size = file.stat().st_size
     if file.suffix == ".log":
         page_size = 4096
 
-        # just read segments for small files
-        if file_size < 4 * page_size:
-            data = file.read_bytes()
-            reader = SegmentReader(io.BytesIO(data))
-            return md5_for_bytes(calc_md5, data), sum(h.batch_size for h in reader)
-        else:
+        with file.open("rb") as f:
+            # size the open fd rather than the path: an active segment can be
+            # concurrently truncated from its fallocated size down to its
+            # committed size when its appender closes
+            file_size = os.fstat(f.fileno()).st_size
+
+            # just read segments for small files
+            if file_size < 4 * page_size:
+                data = f.read()
+                reader = SegmentReader(io.BytesIO(data))
+                return md5_for_bytes(calc_md5, data), sum(h.batch_size for h in reader)
+
             # if the last page is not a null page this is a properly closed and
             # truncated segment and hence we can just use filesize otherwise
             # compute the size of the segment
-            with file.open("rb") as f:
+            try:
                 f.seek(-page_size, io.SEEK_END)
                 end_page = f.read(page_size)
-                if end_page != b"\x00" * page_size:
-                    return md5_for_filename(calc_md5, file), file_size
-
+            except OSError:
+                # the segment shrank below one page after the fstat above;
+                # fall back to the small-file path
                 f.seek(0)
                 data = f.read()
-
-                # Pass the file handle directly to segment reader. Since we sometimes want to rewind
-                # and re-read the stream, passing a static view of data is not useful, we want the
-                # current data on disk.
-                f.seek(0)
-                reader = SegmentReader(f)
+                reader = SegmentReader(io.BytesIO(data))
                 return md5_for_bytes(calc_md5, data), sum(h.batch_size for h in reader)
+
+            if end_page != b"\x00" * page_size:
+                return md5_for_filename(calc_md5, file), file_size
+
+            f.seek(0)
+            data = f.read()
+
+            # Pass the file handle directly to segment reader. Since we sometimes want to rewind
+            # and re-read the stream, passing a static view of data is not useful, we want the
+            # current data on disk.
+            f.seek(0)
+            reader = SegmentReader(f)
+            return md5_for_bytes(calc_md5, data), sum(h.batch_size for h in reader)
     else:
-        return md5_for_filename(calc_md5, file), file_size
+        return md5_for_filename(calc_md5, file), file.stat().st_size
 
 
 def compute_size(

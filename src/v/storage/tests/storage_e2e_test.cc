@@ -1324,6 +1324,42 @@ void append_single_record_batch(
 }
 
 /**
+ * Storage tests cannot depend on raft's group_configuration serialization,
+ * so multi-term segment tests emulate the raft convention with
+ * configuration-type batches that carry the term in the record key, plus a
+ * matching parser injected via log_config::batch_term_parser.
+ */
+void append_configuration_batch(
+  ss::shared_ptr<storage::log> log, model::term_id term) {
+    storage::record_batch_builder builder(
+      model::record_batch_type::raft_configuration, model::offset(0));
+    builder.add_raw_kv(reflection::to_iobuf(term()), iobuf());
+    auto batch = std::move(builder).build();
+    batch.set_term(term);
+    auto reader = model::make_memory_record_batch_reader({std::move(batch)});
+    storage::log_append_config cfg{
+      .should_fsync = storage::log_append_config::fsync::no,
+    };
+    std::move(reader)
+      .for_each_ref(log->make_appender(cfg), model::no_timeout)
+      .get();
+}
+
+storage::config_batch_term_parser make_test_batch_term_parser() {
+    return [](const model::record_batch& b) -> std::optional<model::term_id> {
+        auto records = b.copy_records();
+        if (records.empty()) {
+            return std::nullopt;
+        }
+        auto key = records.begin()->release_key();
+        if (key.size_bytes() == 0) {
+            return std::nullopt;
+        }
+        return model::term_id(reflection::from_iobuf<int64_t>(std::move(key)));
+    };
+}
+
+/**
  * Test scenario:
  *   1) append few single record batches in term 1
  *   2) truncate in the middle of segment
@@ -1799,7 +1835,7 @@ TEST_F(storage_test_fixture, adjacent_segment_compaction) {
 
     // Check if it honors max_compactible offset by setting it to the base
     // offset of first segment. Nothing should be compacted.
-    const auto first_segment_offsets = log->segments().front()->offsets();
+    const auto& first_segment_offsets = log->segments().front()->offsets();
     c_cfg.compact.max_removable_local_log_offset
       = first_segment_offsets.get_base_offset();
     log->housekeeping(c_cfg).get();
@@ -1860,20 +1896,506 @@ TEST_F(storage_test_fixture, adjacent_segment_compaction_terms) {
       0ms,
       as);
 
-    // compact all the individual segments
-    // the two segments with term 2 can be combined
+    // with the multi_term_segments feature active, adjacent merge
+    // compaction crosses raft terms: all closed segments combine into one
     log->housekeeping(c_cfg).get();
-    ASSERT_EQ(log->segment_count(), 5);
+    ASSERT_EQ(log->segment_count(), 2);
 
-    // no more pairs with the same term
+    // compaction is stable afterwards
     log->housekeeping(c_cfg).get();
     log->housekeeping(c_cfg).get();
     log->housekeeping(c_cfg).get();
     log->housekeeping(c_cfg).get();
-    ASSERT_EQ(log->segment_count(), 5);
+    ASSERT_EQ(log->segment_count(), 2);
 
-    for (int i = 0; i < 5; i++) {
-        ASSERT_EQ(log->segments()[i]->offsets().get_term()(), i + 1);
+    // the merged segment retains per-offset term attribution. batches were
+    // appended as: offsets [0, 20) term 1, [20, 80) term 2, [80, 120) term
+    // 3, [120, 170) term 4, with term 5 in the active segment.
+    const auto& merged = log->segments()[0]->offsets();
+    ASSERT_EQ(merged.get_base_term()(), 1);
+    ASSERT_EQ(merged.last_term()(), 4);
+    ASSERT_EQ(merged.term_at(model::offset(0)), model::term_id(1));
+    ASSERT_EQ(merged.term_at(model::offset(19)), model::term_id(1));
+    ASSERT_EQ(merged.term_at(model::offset(20)), model::term_id(2));
+    ASSERT_EQ(merged.term_at(model::offset(79)), model::term_id(2));
+    ASSERT_EQ(merged.term_at(model::offset(80)), model::term_id(3));
+    ASSERT_EQ(merged.term_at(model::offset(119)), model::term_id(3));
+    ASSERT_EQ(merged.term_at(model::offset(120)), model::term_id(4));
+    ASSERT_EQ(log->segments()[1]->offsets().get_base_term()(), 5);
+}
+
+/**
+ * With the multi_term_segments feature active, a configuration batch whose
+ * payload carries the term advances the active segment's term instead of
+ * rolling. Verifies term queries and per-batch term stamping over a
+ * multi-term segment, across a clean restart (index span cache) and across
+ * an index-less restart (span recovery from the log data itself).
+ *
+ * Batch layout: offsets [0, 10) term 1, 10 = config, (10, 21) term 2,
+ * 21 = config, (21, 32) term 3.
+ */
+TEST_F(storage_test_fixture, multi_term_active_segment) {
+    auto cfg = default_log_config(test_dir);
+    cfg.batch_term_parser = make_test_batch_term_parser();
+
+    auto ntp = model::ntp("default", "test_multi_term", 0);
+    auto verify_terms = [&](ss::shared_ptr<storage::log> log) {
+        ASSERT_EQ(log->offsets().dirty_offset_term, model::term_id(3));
+        ASSERT_EQ(*log->get_term(model::offset(0)), model::term_id(1));
+        ASSERT_EQ(*log->get_term(model::offset(9)), model::term_id(1));
+        ASSERT_EQ(*log->get_term(model::offset(10)), model::term_id(2));
+        ASSERT_EQ(*log->get_term(model::offset(20)), model::term_id(2));
+        ASSERT_EQ(*log->get_term(model::offset(21)), model::term_id(3));
+        ASSERT_EQ(*log->get_term(model::offset(31)), model::term_id(3));
+        ASSERT_EQ(
+          *log->get_term_last_offset(model::term_id(1)), model::offset(9));
+        ASSERT_EQ(
+          *log->get_term_last_offset(model::term_id(2)), model::offset(20));
+        ASSERT_EQ(
+          *log->get_term_last_offset(model::term_id(3)), model::offset(31));
+        ASSERT_EQ(log->find_last_term_start_offset(), model::offset(21));
+
+        // the reader stamps every batch with the term of its own offset
+        auto batches = read_and_validate_all_batches(log);
+        for (const auto& b : batches) {
+            ASSERT_EQ(b.term(), *log->get_term(b.base_offset()))
+              << "batch at offset " << b.base_offset();
+        }
+    };
+
+    {
+        storage::log_manager mgr = make_log_manager(cfg);
+        auto deferred = ss::defer([&mgr]() mutable { mgr.stop().get(); });
+        auto log = manage_log(
+          mgr, storage::ntp_config(ntp, mgr.config().base_dir));
+
+        append_single_record_batch(log, 10, model::term_id(1));
+        append_configuration_batch(log, model::term_id(2));
+        append_single_record_batch(log, 10, model::term_id(2));
+        append_configuration_batch(log, model::term_id(3));
+        append_single_record_batch(log, 10, model::term_id(3));
+        log->flush().get();
+
+        // term transitions did not roll the segment
+        ASSERT_EQ(log->segment_count(), 1);
+        ASSERT_NO_FATAL_FAILURE(verify_terms(log));
+    }
+
+    // clean restart: term spans come from the index cache
+    {
+        storage::log_manager mgr = make_log_manager(cfg);
+        auto deferred = ss::defer([&mgr]() mutable { mgr.stop().get(); });
+        auto log = manage_log(
+          mgr, storage::ntp_config(ntp, mgr.config().base_dir));
+        ASSERT_EQ(log->segment_count(), 1);
+        ASSERT_NO_FATAL_FAILURE(verify_terms(log));
+    }
+
+    // index-less restart: term spans are rebuilt from the configuration
+    // batches in the log data
+    {
+        auto dir = storage::ntp_config(ntp, cfg.base_dir).work_directory();
+        for (const auto& e :
+             std::filesystem::directory_iterator(std::filesystem::path(dir))) {
+            if (e.path().extension() == ".base_index") {
+                std::filesystem::remove(e.path());
+            }
+        }
+        storage::log_manager mgr = make_log_manager(cfg);
+        auto deferred = ss::defer([&mgr]() mutable { mgr.stop().get(); });
+        auto log = manage_log(
+          mgr, storage::ntp_config(ntp, mgr.config().base_dir));
+        ASSERT_EQ(log->segment_count(), 1);
+        ASSERT_NO_FATAL_FAILURE(verify_terms(log));
+    }
+}
+
+/**
+ * Crash recovery of a multi-term segment with a torn tail. The file is cut
+ * mid way through the term 3 configuration batch (a crash during a term
+ * transition), so recovery must truncate the invalid tail and rebuild a
+ * term map covering only terms 1 and 2 - the torn configuration batch must
+ * not contribute a term transition. Also verifies that recovery persists
+ * the rebuilt spans to the index (the subsequent clean restart does not
+ * rescan the log).
+ *
+ * Batch layout: offsets [0, 5) term 1, 5 = config, (5, 11) term 2, then a
+ * torn term 3 configuration batch and term 3 data beyond the cut.
+ */
+TEST_F(storage_test_fixture, multi_term_segment_recovery_torn_tail) {
+    auto cfg = default_log_config(test_dir);
+    cfg.batch_term_parser = make_test_batch_term_parser();
+    auto ntp = model::ntp("default", "test_torn_tail", 0);
+
+    ss::sstring segment_file;
+    size_t bytes_through_term_two = 0;
+    {
+        storage::log_manager mgr = make_log_manager(cfg);
+        auto deferred = ss::defer([&mgr]() mutable { mgr.stop().get(); });
+        auto log = manage_log(
+          mgr, storage::ntp_config(ntp, mgr.config().base_dir));
+
+        append_single_record_batch(log, 5, model::term_id(1));
+        append_configuration_batch(log, model::term_id(2));
+        append_single_record_batch(log, 5, model::term_id(2));
+        log->flush().get();
+        bytes_through_term_two = log->segments().back()->size_bytes();
+
+        append_configuration_batch(log, model::term_id(3));
+        append_single_record_batch(log, 5, model::term_id(3));
+        log->flush().get();
+
+        ASSERT_EQ(log->segment_count(), 1);
+        ASSERT_EQ(log->offsets().dirty_offset_term, model::term_id(3));
+        segment_file = log->segments().back()->filename();
+    }
+
+    // tear the file inside the term 3 configuration batch and drop the
+    // index so the segment goes through full recovery
+    std::filesystem::resize_file(
+      std::filesystem::path(segment_file), bytes_through_term_two + 10);
+    auto index_file = std::filesystem::path(segment_file);
+    index_file.replace_extension(".base_index");
+    std::filesystem::remove(index_file);
+
+    auto verify_recovered = [&](ss::shared_ptr<storage::log> log) {
+        ASSERT_EQ(log->segment_count(), 1);
+        ASSERT_EQ(log->offsets().dirty_offset, model::offset(10));
+        ASSERT_EQ(log->offsets().dirty_offset_term, model::term_id(2));
+        ASSERT_EQ(*log->get_term(model::offset(4)), model::term_id(1));
+        ASSERT_EQ(*log->get_term(model::offset(5)), model::term_id(2));
+        ASSERT_EQ(*log->get_term(model::offset(10)), model::term_id(2));
+        ASSERT_EQ(
+          *log->get_term_last_offset(model::term_id(1)), model::offset(4));
+        ASSERT_EQ(
+          *log->get_term_last_offset(model::term_id(2)), model::offset(10));
+        // the torn term 3 configuration batch contributes no transition
+        ASSERT_FALSE(log->get_term_last_offset(model::term_id(3)).has_value());
+        ASSERT_EQ(log->find_last_term_start_offset(), model::offset(5));
+    };
+
+    {
+        storage::log_manager mgr = make_log_manager(cfg);
+        auto deferred = ss::defer([&mgr]() mutable { mgr.stop().get(); });
+        auto log = manage_log(
+          mgr, storage::ntp_config(ntp, mgr.config().base_dir));
+        ASSERT_NO_FATAL_FAILURE(verify_recovered(log));
+
+        // the log accepts the term transition again after recovery
+        append_configuration_batch(log, model::term_id(3));
+        append_single_record_batch(log, 3, model::term_id(3));
+        log->flush().get();
+        ASSERT_EQ(log->offsets().dirty_offset_term, model::term_id(3));
+        ASSERT_EQ(
+          *log->get_term_last_offset(model::term_id(2)), model::offset(10));
+        ASSERT_EQ(log->find_last_term_start_offset(), model::offset(11));
+    }
+}
+
+/**
+ * Recovery after data loss rebuilds the term map from the surviving data
+ * alone: the entire term 2 suffix (configuration batch included) is cut
+ * from the file, and the recovered log must know only term 1, even though
+ * spans naming term 2 were previously cached and flushed.
+ */
+TEST_F(storage_test_fixture, recovery_after_data_loss_rebuilds_spans) {
+    auto cfg = default_log_config(test_dir);
+    cfg.batch_term_parser = make_test_batch_term_parser();
+    auto ntp = model::ntp("default", "test_stale_spans", 0);
+
+    ss::sstring segment_file;
+    size_t bytes_through_term_one = 0;
+    {
+        storage::log_manager mgr = make_log_manager(cfg);
+        auto deferred = ss::defer([&mgr]() mutable { mgr.stop().get(); });
+        auto log = manage_log(
+          mgr, storage::ntp_config(ntp, mgr.config().base_dir));
+
+        append_single_record_batch(log, 5, model::term_id(1));
+        log->flush().get();
+        bytes_through_term_one = log->segments().back()->size_bytes();
+
+        append_configuration_batch(log, model::term_id(2));
+        append_single_record_batch(log, 5, model::term_id(2));
+        log->flush().get();
+        segment_file = log->segments().back()->filename();
+    }
+
+    // cut off the entire term 2 suffix and drop the index so the segment
+    // goes through full recovery over the surviving term 1 data
+    std::filesystem::resize_file(
+      std::filesystem::path(segment_file), bytes_through_term_one);
+    auto index_file = std::filesystem::path(segment_file);
+    index_file.replace_extension(".base_index");
+    std::filesystem::remove(index_file);
+
+    {
+        storage::log_manager mgr = make_log_manager(cfg);
+        auto deferred = ss::defer([&mgr]() mutable { mgr.stop().get(); });
+        auto log = manage_log(
+          mgr, storage::ntp_config(ntp, mgr.config().base_dir));
+        ASSERT_EQ(log->offsets().dirty_offset, model::offset(4));
+        ASSERT_EQ(log->offsets().dirty_offset_term, model::term_id(1));
+        ASSERT_FALSE(log->get_term_last_offset(model::term_id(2)).has_value());
+        ASSERT_EQ(
+          *log->get_term_last_offset(model::term_id(1)), model::offset(4));
+    }
+}
+
+/**
+ * Suffix truncation across an in-segment term boundary trims the term
+ * spans, and the log accepts new term transitions afterwards.
+ */
+TEST_F(storage_test_fixture, truncate_across_term_spans) {
+    auto cfg = default_log_config(test_dir);
+    cfg.batch_term_parser = make_test_batch_term_parser();
+
+    storage::log_manager mgr = make_log_manager(cfg);
+    auto deferred = ss::defer([&mgr]() mutable { mgr.stop().get(); });
+    auto ntp = model::ntp("default", "test_truncate_spans", 0);
+    auto log = manage_log(mgr, storage::ntp_config(ntp, mgr.config().base_dir));
+
+    // offsets [0, 10) term 1, 10 = config, (10, 21) term 2, 21 = config,
+    // (21, 32) term 3
+    append_single_record_batch(log, 10, model::term_id(1));
+    append_configuration_batch(log, model::term_id(2));
+    append_single_record_batch(log, 10, model::term_id(2));
+    append_configuration_batch(log, model::term_id(3));
+    append_single_record_batch(log, 10, model::term_id(3));
+    log->flush().get();
+    ASSERT_EQ(log->segment_count(), 1);
+
+    // truncate into the middle of the term 2 span
+    log->truncate(storage::truncate_config(model::offset(15))).get();
+
+    ASSERT_EQ(log->offsets().dirty_offset, model::offset(14));
+    ASSERT_EQ(log->offsets().dirty_offset_term, model::term_id(2));
+    ASSERT_EQ(*log->get_term_last_offset(model::term_id(2)), model::offset(14));
+    ASSERT_FALSE(log->get_term_last_offset(model::term_id(3)).has_value());
+    ASSERT_EQ(log->find_last_term_start_offset(), model::offset(10));
+
+    // new term transitions are accepted after truncation
+    append_configuration_batch(log, model::term_id(4));
+    append_single_record_batch(log, 5, model::term_id(4));
+    log->flush().get();
+
+    ASSERT_EQ(log->segment_count(), 1);
+    ASSERT_EQ(log->offsets().dirty_offset_term, model::term_id(4));
+    ASSERT_EQ(*log->get_term(model::offset(14)), model::term_id(2));
+    ASSERT_EQ(*log->get_term(model::offset(15)), model::term_id(4));
+    ASSERT_EQ(log->find_last_term_start_offset(), model::offset(15));
+}
+
+/**
+ * Compaction (sliding window and adjacent merge) must preserve raft
+ * configuration batches: with the multi_term_segments feature they are the
+ * durable source of term transitions, so their removal would make term
+ * spans unrecoverable from log data.
+ */
+TEST_F(storage_test_fixture, compaction_preserves_configuration_batches) {
+    auto cfg = default_log_config(test_dir);
+    cfg.batch_term_parser = make_test_batch_term_parser();
+    cfg.cache = storage::with_cache::yes;
+    storage::ntp_config::default_overrides overrides;
+    overrides.cleanup_policy_bitflags
+      = model::cleanup_policy_bitflags::compaction;
+
+    ss::abort_source as;
+    storage::log_manager mgr = make_log_manager(cfg);
+    auto deferred = ss::defer([&mgr]() mutable { mgr.stop().get(); });
+    auto ntp = model::ntp("default", "test_config_preserved", 0);
+    auto log = manage_log(
+      mgr,
+      storage::ntp_config(
+        ntp,
+        mgr.config().base_dir,
+        std::make_unique<storage::ntp_config::default_overrides>(overrides)));
+
+    // several segments of duplicate-keyed data interleaved with
+    // configuration batches carrying term transitions
+    std::vector<model::offset> config_offsets;
+    for (int term = 1; term <= 3; ++term) {
+        if (term > 1) {
+            append_configuration_batch(log, model::term_id(term));
+            config_offsets.emplace_back(log->offsets().dirty_offset);
+        }
+        append_single_record_batch(log, 20, model::term_id(term));
+        log->force_roll().get();
+        append_single_record_batch(log, 20, model::term_id(term));
+    }
+    log->flush().get();
+
+    storage::housekeeping_config c_cfg(
+      model::timestamp::min(),
+      std::nullopt,
+      model::offset::max(),
+      model::offset::max(),
+      model::offset::max(),
+      std::nullopt,
+      std::nullopt,
+      0ms,
+      as);
+    log->housekeeping(c_cfg).get();
+    log->housekeeping(c_cfg).get();
+
+    // every configuration batch survived compaction at its original offset
+    auto batches = read_and_validate_all_batches(log);
+    for (auto config_offset : config_offsets) {
+        auto it = std::ranges::find_if(batches, [&](const auto& b) {
+            return b.base_offset() == config_offset;
+        });
+        ASSERT_TRUE(it != batches.end())
+          << "configuration batch at offset " << config_offset
+          << " was removed by compaction";
+        ASSERT_EQ(
+          it->header().type, model::record_batch_type::raft_configuration);
+    }
+
+    // and term attribution is intact after compaction
+    for (auto config_offset : config_offsets) {
+        ASSERT_EQ(
+          *log->get_term(config_offset),
+          *log->get_term(model::next_offset(config_offset)));
+        ASSERT_LT(
+          *log->get_term(model::prev_offset(config_offset)),
+          *log->get_term(config_offset));
+    }
+}
+
+/**
+ * Adjacent merge compaction combines a bunch of single-term segments from
+ * differing raft terms into one segment, and the merged segment's
+ * offset -> term map is verified exhaustively: every offset resolves to
+ * the term it was appended in, including across skipped term numbers
+ * (failed elections). Also verifies the merged map survives a restart via
+ * the index span cache.
+ */
+TEST_F(storage_test_fixture, adjacent_compaction_merges_many_terms) {
+    auto cfg = default_log_config(test_dir);
+    cfg.batch_term_parser = make_test_batch_term_parser();
+    cfg.cache = storage::with_cache::yes;
+    storage::ntp_config::default_overrides overrides;
+    overrides.cleanup_policy_bitflags
+      = model::cleanup_policy_bitflags::compaction;
+
+    ss::abort_source as;
+    auto ntp = model::ntp("default", "test_merge_many_terms", 0);
+
+    // terms deliberately non-contiguous, with varying amounts of data
+    const std::vector<std::pair<model::term_id, int>> term_layout = {
+      {model::term_id(1), 5},
+      {model::term_id(2), 8},
+      {model::term_id(4), 3},
+      {model::term_id(7), 10},
+      {model::term_id(8), 1},
+      {model::term_id(12), 6},
+      {model::term_id(13), 4},
+      {model::term_id(20), 7},
+    };
+    std::vector<model::term_id> expected_term_per_offset;
+    for (const auto& [term, batches] : term_layout) {
+        // +1 for the configuration batch beginning the term
+        for (int i = 0; i < batches + 1; ++i) {
+            expected_term_per_offset.push_back(term);
+        }
+    }
+    const auto total = static_cast<int64_t>(expected_term_per_offset.size());
+
+    auto verify_merged = [&](ss::shared_ptr<storage::log> log) {
+        const auto& merged = log->segments().front()->offsets();
+        ASSERT_EQ(merged.get_base_offset(), model::offset(0));
+        ASSERT_EQ(merged.get_base_term(), term_layout.front().first);
+        ASSERT_EQ(merged.last_term(), term_layout.back().first);
+        for (int64_t o = 0; o < total; ++o) {
+            ASSERT_EQ(
+              merged.term_at(model::offset(o)), expected_term_per_offset[o])
+              << "offset " << o;
+            ASSERT_EQ(
+              *log->get_term(model::offset(o)), expected_term_per_offset[o])
+              << "offset " << o;
+        }
+        int64_t last_offset_of_term = -1;
+        for (const auto& [term, batches] : term_layout) {
+            // +1 for the configuration batch beginning the term
+            last_offset_of_term += batches + 1;
+            ASSERT_EQ(
+              *log->get_term_last_offset(term),
+              model::offset(last_offset_of_term))
+              << "term " << term;
+        }
+        // terms skipped by the layout (e.g. failed elections) are unknown
+        for (auto skipped : {3, 5, 9, 14, 21}) {
+            ASSERT_FALSE(
+              log->get_term_last_offset(model::term_id(skipped)).has_value())
+              << "term " << skipped;
+        }
+        // the reader stamps surviving batches with per-offset terms
+        auto batches = read_and_validate_all_batches(log);
+        for (const auto& b : batches) {
+            if (b.base_offset() >= model::offset(total)) {
+                break;
+            }
+            ASSERT_EQ(b.term(), expected_term_per_offset[b.base_offset()()])
+              << "batch at offset " << b.base_offset();
+        }
+    };
+
+    {
+        storage::log_manager mgr = make_log_manager(cfg);
+        auto deferred = ss::defer([&mgr]() mutable { mgr.stop().get(); });
+        auto log = manage_log(
+          mgr,
+          storage::ntp_config(
+            ntp,
+            mgr.config().base_dir,
+            std::make_unique<storage::ntp_config::default_overrides>(
+              overrides)));
+
+        // one single-term segment per term, each beginning with the
+        // term's configuration batch, as raft produces them: the preceding
+        // force_roll leaves an empty active segment, and term transitions
+        // on empty segments roll rather than advance
+        for (const auto& [term, batches] : term_layout) {
+            append_configuration_batch(log, term);
+            append_single_record_batch(
+              log, batches, term, 0, /*rand_key=*/true);
+            log->force_roll().get();
+        }
+        log->flush().get();
+        ASSERT_EQ(log->segment_count(), term_layout.size() + 1);
+
+        storage::housekeeping_config c_cfg(
+          model::timestamp::min(),
+          std::nullopt,
+          model::offset::max(),
+          model::offset::max(),
+          model::offset::max(),
+          std::nullopt,
+          std::nullopt,
+          0ms,
+          as);
+        log->housekeeping(c_cfg).get();
+        ASSERT_EQ(log->segment_count(), 2);
+        ASSERT_NO_FATAL_FAILURE(verify_merged(log));
+
+        // stable under repeated housekeeping
+        log->housekeeping(c_cfg).get();
+        ASSERT_EQ(log->segment_count(), 2);
+        ASSERT_NO_FATAL_FAILURE(verify_merged(log));
+    }
+
+    // the merged term map survives a restart via the index span cache
+    {
+        storage::log_manager mgr = make_log_manager(cfg);
+        auto deferred = ss::defer([&mgr]() mutable { mgr.stop().get(); });
+        auto log = manage_log(
+          mgr,
+          storage::ntp_config(
+            ntp,
+            mgr.config().base_dir,
+            std::make_unique<storage::ntp_config::default_overrides>(
+              overrides)));
+        ASSERT_NO_FATAL_FAILURE(verify_merged(log));
     }
 }
 
@@ -5993,6 +6515,14 @@ struct sliding_ranges_test_case {
 };
 
 TEST_F(storage_test_fixture, find_sliding_ranges) {
+    // this test's expectations encode term-bounded range selection; with
+    // multi_term_segments active, ranges may cross raft terms (covered by
+    // adjacent_segment_compaction_terms)
+    feature_table
+      .invoke_on_all([](features::feature_table& f) {
+          f.testing_deactivate(features::feature::multi_term_segments);
+      })
+      .get();
     scoped_config test_local_cfg;
     auto log_cfg = default_log_config(test_dir);
     log_cfg.max_compacted_segment_size = config::mock_binding<size_t>(1_MiB);

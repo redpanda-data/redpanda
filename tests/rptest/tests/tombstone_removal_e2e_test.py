@@ -38,6 +38,14 @@ class TombstoneRemovalTest(RedpandaTest):
             health_monitor_max_metadata_age=100,  # ms
             raft_learner_recovery_rate=10 * 1024 * 1024,  # 10MB/s
             tombstone_retention_ms=1000,  # 1 second
+            # tombstone removal is gated on the coordinated
+            # max_tombstone_remove_offset reaching the segment's stable
+            # offset; once it does, only the next housekeeping tick removes
+            # them, so keep the cadence tight
+            log_compaction_interval_ms=1000,
+            # allow a small segment.ms so idle active segments roll (see the
+            # comment where compaction is enabled below)
+            log_segment_ms_min=10000,
         )
         super(TombstoneRemovalTest, self).__init__(
             num_brokers=5,
@@ -228,6 +236,15 @@ class TombstoneRemovalTest(RedpandaTest):
             self.rpk.alter_topic_config(
                 self.topic_name, "min.cleanable.dirty.ratio", "0.0"
             )
+            # segments no longer roll on raft term change, so nothing closes
+            # an idle replica's active segment (e.g. node 4's recovered data)
+            # and compaction never touches it, pinning the coordinated
+            # max_tombstone_remove_offset at its base offset. Set segment.ms
+            # so idle active segments roll: the roll opens a fresh active
+            # segment at committed+1, which is identical on all replicas of a
+            # quiescent partition, letting the coordinated offset reach the
+            # top of the log everywhere.
+            self.rpk.alter_topic_config(self.topic_name, "segment.ms", "10000")
 
             # make sure compaction on node 1 removes data before tombstones
             wait_until(
@@ -252,10 +269,20 @@ class TombstoneRemovalTest(RedpandaTest):
         # make node 4 the leader, thus making sure it caught up
         self.transfer_leadership_to_node(4)
 
-        # wait until node 4 pre-tombstones data is compacted
+        # the leadership transfers above append raft configuration batches to
+        # each replica's active segment, and segment.ms only rolls segments
+        # that hold data batches (first_write_ts is data-only). produce a few
+        # data records so every replica's active segment rolls, after which
+        # all replicas share the same active segment base.
+        for _ in range(5):
+            self.rpk.produce(topic=self.topic_name, key="key-0", msg="data")
+
+        # wait until node 4 pre-tombstones data is compacted. compaction of
+        # node 4's recovered data cannot start until segment.ms rolls its
+        # active segment, so allow for the roll plus a full pass over the log.
         wait_until(
             lambda: self.get_first_offset(node4) >= first_tombstone_offset,
-            timeout_sec=30,
+            timeout_sec=90,
             backoff_sec=1,
             err_msg="compaction did not remove before 5-9 tombstones on node4",
         )
@@ -270,7 +297,7 @@ class TombstoneRemovalTest(RedpandaTest):
         # make sure node 4 tombstones are also removed
         wait_until(
             lambda: self.get_first_offset(node4) >= offset_after_tombstones,
-            timeout_sec=30,
+            timeout_sec=90,
             backoff_sec=1,
             err_msg="timed out waiting for compaction to remove all tombstones on node 4",
         )
@@ -278,7 +305,7 @@ class TombstoneRemovalTest(RedpandaTest):
         # check node 1 tombstones are also removed
         wait_until(
             lambda: self.get_first_offset(node1) >= offset_after_tombstones,
-            timeout_sec=30,
+            timeout_sec=90,
             backoff_sec=1,
             err_msg="timed out waiting for compaction to remove all tombstones on node 1",
         )
