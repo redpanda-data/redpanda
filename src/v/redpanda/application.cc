@@ -56,6 +56,7 @@
 #include "version/version.h"
 #include "wasm/cache.h"
 
+#include <seastar/core/coroutine.hh>
 #include <seastar/core/memory.hh>
 #include <seastar/core/metrics.hh>
 #include <seastar/core/prometheus.hh>
@@ -640,6 +641,32 @@ void application::setup_internal_metrics() {
          [] { return static_cast<unsigned int>(config::node().fips_mode()); },
          sm::description(
            "Identifies whether or not Redpanda is running in FIPS mode."))});
+}
+
+ss::future<> application::register_cluster_identity_metrics() {
+    namespace sm = ss::metrics;
+
+    if (!metrics::any_enabled()) {
+        co_return;
+    }
+
+    // The cluster UUID is not known when setup_metrics() runs: it is loaded
+    // from the kvstore (restart) or replicated via the bootstrap command
+    // (brand new cluster) only after storage starts. Wait for it and register
+    // the identity metrics late; the waiter is broken at shutdown.
+    if (!co_await storage.local().wait_for_cluster_uuid()) {
+        co_return;
+    }
+
+    _cluster_identity_metrics.add_group(
+      "cluster",
+      {sm::make_gauge(
+         "info",
+         [] { return 1; },
+         sm::description("Redpanda cluster identity information"),
+         {sm::label("cluster_uuid")(
+           ssx::sformat("{}", *storage.local().get_cluster_uuid()))})
+         .aggregate({sm::shard_label})});
 }
 
 void application::validate_arguments(const po::variables_map& cfg) {

@@ -97,7 +97,10 @@ public:
 
     void set_cluster_uuid(const model::cluster_uuid& cluster_uuid) {
         _cluster_uuid = cluster_uuid;
-        _has_cluster_uuid_cond.signal();
+        // broadcast, not signal: multiple independent fibers may be blocked
+        // in wait_for_cluster_uuid() on the same shard (cloud metadata
+        // uploader, datalake committer, identity metrics registration).
+        _has_cluster_uuid_cond.broadcast();
     }
     const std::optional<model::cluster_uuid>& get_cluster_uuid() const {
         return _cluster_uuid;
