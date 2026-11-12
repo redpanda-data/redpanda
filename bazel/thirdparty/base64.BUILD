@@ -37,6 +37,18 @@ cmake(
             "BASE64_WITH_NEON32": "OFF",
             "BASE64_WITH_NEON64": "ON",
         },
+        # Any other architecture builds the plain C codec. base64 has no SIMD
+        # backend for them, and without this branch the select() fails to
+        # resolve and the build stops before it reaches a real error.
+        "//conditions:default": {
+            "BASE64_WITH_SSSE3": "OFF",
+            "BASE64_WITH_SSE41": "OFF",
+            "BASE64_WITH_SSE42": "OFF",
+            "BASE64_WITH_AVX": "OFF",
+            "BASE64_WITH_AVX2": "OFF",
+            "BASE64_WITH_NEON32": "OFF",
+            "BASE64_WITH_NEON64": "OFF",
+        },
     }),
     generate_args = ["-GNinja"],
     lib_source = ":srcs",

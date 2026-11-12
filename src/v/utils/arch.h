@@ -30,6 +30,7 @@ public:
 struct arch {
     static constexpr cpu_arch AMD64{"amd64"};
     static constexpr cpu_arch ARM64{"arm64"};
+    static constexpr cpu_arch RISCV64{"riscv64"};
 };
 
 inline constexpr cpu_arch cpu_arch::current() {
@@ -37,6 +38,8 @@ inline constexpr cpu_arch cpu_arch::current() {
     return arch::AMD64;
 #elif defined(__aarch64__)
     return arch::ARM64;
+#elif defined(__riscv) && __riscv_xlen == 64
+    return arch::RISCV64;
 #else
 #error unknown arch
 #endif
