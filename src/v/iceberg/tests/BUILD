@@ -527,6 +527,22 @@ redpanda_cc_gtest(
 )
 
 redpanda_cc_gtest(
+    name = "rename_columns_action_test",
+    timeout = "short",
+    srcs = [
+        "rename_columns_action_test.cc",
+    ],
+    cpu = 1,
+    deps = [
+        ":test_schemas",
+        "//src/v/iceberg:datatypes",
+        "//src/v/iceberg:transaction",
+        "//src/v/test_utils:gtest",
+        "@googletest//:gtest",
+    ],
+)
+
+redpanda_cc_gtest(
     name = "values_avro_test",
     timeout = "short",
     srcs = [

@@ -67,6 +67,8 @@ public:
     ss::future<checked<void, iceberg::catalog_describe_error>>
     describe_catalog();
 
+    iceberg::catalog* catalog() { return catalog_.get(); }
+
 private:
     void start_managing(cluster::partition&);
     void stop_managing(const model::ntp&);

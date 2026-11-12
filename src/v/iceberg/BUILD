@@ -999,6 +999,7 @@ redpanda_cc_library(
     ],
     implementation_deps = [
         ":remove_snapshots_action",
+        ":rename_columns_action",
         ":table_update_applier",
         ":update_partition_spec_action",
         ":update_schema_action",
@@ -1008,6 +1009,7 @@ redpanda_cc_library(
         ":action",
         ":manifest_io",
         ":merge_append_action",
+        ":rename_columns_action",
         ":schema",
         ":table_metadata",
         ":table_requirement",
@@ -1164,6 +1166,29 @@ redpanda_cc_library(
         ":action",
         ":schema",
         ":table_metadata",
+        "@seastar",
+    ],
+)
+
+redpanda_cc_library(
+    name = "rename_columns_action",
+    srcs = [
+        "rename_columns_action.cc",
+    ],
+    hdrs = [
+        "rename_columns_action.h",
+    ],
+    implementation_deps = [
+        ":table_requirement",
+        ":table_update",
+    ],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":action",
+        ":datatypes",
+        ":schema",
+        ":table_metadata",
+        "//src/v/container:chunked_vector",
         "@seastar",
     ],
 )

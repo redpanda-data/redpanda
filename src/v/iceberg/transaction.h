@@ -14,6 +14,7 @@
 #include "iceberg/action.h"
 #include "iceberg/manifest_io.h"
 #include "iceberg/merge_append_action.h"
+#include "iceberg/rename_columns_action.h"
 #include "iceberg/schema.h"
 #include "iceberg/table_metadata.h"
 
@@ -61,6 +62,11 @@ public:
       chunked_vector<std::pair<ss::sstring, ss::sstring>> snapshot_props = {},
       std::optional<ss::sstring> tag_name = std::nullopt,
       std::optional<int64_t> tag_expiration_ms = std::nullopt);
+
+    // Renames columns by nested field path, creating a new schema version
+    // with the renamed fields.
+    ss::future<txn_outcome>
+      rename_columns(chunked_vector<rename_columns_action::rename_entry>);
 
     // Removes expired snapshots from the table, computing expiration based on
     // the given timestamp. Note, this does not perform IO to delete any
